@@ -62,9 +62,14 @@ func NewServer(s *store.Store, mgr *state.Manager, fetcher Fetcher) *Server {
 // so trusted local clients can authenticate.
 func (s *Server) Token() string { return s.token }
 
-// Handler returns the underlying http.Handler, including auth middleware.
+// Handler returns the underlying http.Handler, including the CORS,
+// auth, and logging middleware. CORS sits outermost so that preflight
+// OPTIONS requests are answered without first being rejected by the
+// bearer-token check; the renderer process (Tauri webview, browser dev
+// server, etc.) lives at a different origin than 127.0.0.1:<random> and
+// would otherwise have its preflight blocked.
 func (s *Server) Handler() http.Handler {
-	return s.authMiddleware(s.logMiddleware(s.mux))
+	return s.corsMiddleware(s.authMiddleware(s.logMiddleware(s.mux)))
 }
 
 // Listen starts the HTTP server on 127.0.0.1:0 and returns its address.
@@ -420,6 +425,13 @@ func writeSSE(w http.ResponseWriter, event string, v any) error {
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Preflight requests carry no Authorization header by design;
+		// they are answered by corsMiddleware and never reach here, but
+		// be defensive in case the chain is reordered in the future.
+		if r.Method == http.MethodOptions {
+			next.ServeHTTP(w, r)
+			return
+		}
 		auth := r.Header.Get("Authorization")
 		if !strings.HasPrefix(auth, "Bearer ") {
 			writeError(w, http.StatusUnauthorized, "missing bearer token")
@@ -432,6 +444,36 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// corsMiddleware permits the renderer (Tauri webview or `vite dev` at
+// http://localhost:1420) to call the loopback API. Security is provided
+// by the bearer token in the lockfile and the fact that the listener is
+// bound to 127.0.0.1 — the broad Allow-Origin is acceptable for that
+// model. Preflight OPTIONS requests short-circuit here with 204.
+func (s *Server) corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		setCORSHeaders(w, r)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func setCORSHeaders(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		origin = "*"
+	}
+	h := w.Header()
+	h.Set("Access-Control-Allow-Origin", origin)
+	h.Set("Vary", "Origin")
+	h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept, Cache-Control")
+	h.Set("Access-Control-Expose-Headers", "Content-Type")
+	h.Set("Access-Control-Max-Age", "600")
 }
 
 func (s *Server) logMiddleware(next http.Handler) http.Handler {

@@ -142,6 +142,45 @@ The resolvers are pluggable interfaces; Phase 1 leaves them `nil` (so
 `geosite`/`geoip` conditions never fire), Phase 2 wires in real GeoSite
 and MaxMind data files.
 
+## Quickstart (development)
+
+The fastest way to bring the whole stack up locally — daemon, CLI, and
+the Tauri GUI — is the dev runner:
+
+```bash
+# macOS / Linux
+scripts/dev.sh
+
+# Windows (PowerShell 7+)
+pwsh scripts/dev.ps1
+```
+
+What it does:
+
+1. Builds `mosaicd` and `mosaic` into `./bin/`.
+2. Sets `MOSAIC_DATA_DIR=./.mosaic-dev` and exports it for both the
+   daemon and the Tauri shell, so they share one data directory and
+   the GUI can find the daemon's lockfile regardless of host defaults.
+3. Starts `mosaicd` in the background, waits for `daemon.lock` to appear,
+   then runs `npm run tauri dev` in `ui/`.
+4. On Ctrl-C the daemon is stopped cleanly.
+
+Pass `--no-ui` to run only the daemon (handy for poking the API with
+the CLI), or `--reset` to wipe the dev sandbox before starting.
+
+### "daemon offline / Start mosaicd and reload"
+
+If the GUI shows that splash even though `mosaicd` is running, it almost
+always means the GUI is looking at a different `daemon.lock` than the
+one the daemon wrote. Either:
+
+- Set `MOSAIC_DATA_DIR` to the same absolute path in both shells before
+  launching the daemon and the GUI, or
+- Use `scripts/dev.sh` / `scripts/dev.ps1`, which does that for you.
+
+(The daemon's CORS middleware also has to be present for the webview's
+`fetch()` to succeed; this is built-in as of the Phase 3e wiring.)
+
 ## Build
 
 Requires Go 1.22+.

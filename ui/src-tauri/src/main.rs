@@ -31,7 +31,16 @@ struct DaemonEndpoint {
 
 /// data_dir mirrors internal/paths.DataDir on the Go side. We can't link
 /// against the Go binary, so we re-derive the same per-OS layout here.
+///
+/// MOSAIC_DATA_DIR overrides everything — both sides honour it, which is
+/// how `scripts/dev.sh` keeps the daemon and the GUI pointed at the same
+/// dev sandbox. The variable is taken verbatim (no AppName suffix).
 fn data_dir() -> Option<PathBuf> {
+    if let Ok(d) = std::env::var("MOSAIC_DATA_DIR") {
+        if !d.is_empty() {
+            return Some(PathBuf::from(d));
+        }
+    }
     #[cfg(target_os = "windows")]
     {
         if let Ok(d) = std::env::var("ProgramData") {

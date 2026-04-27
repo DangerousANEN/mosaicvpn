@@ -12,13 +12,23 @@ import (
 // AppName is the directory used for Mosaic data on disk.
 const AppName = "Mosaic"
 
+// DataDirEnv is the env-var that overrides every other data-dir lookup.
+// It is the single source of truth shared between the daemon and the
+// Tauri shell so the GUI can locate the lockfile written by the daemon
+// regardless of the host's per-user defaults.
+const DataDirEnv = "MOSAIC_DATA_DIR"
+
 // DataDir returns the directory holding persistent application data
 // (subscriptions, rules, logs). It does not create the directory.
 //
+//   - $MOSAIC_DATA_DIR if set (used as-is, no AppName suffix appended)
 //   - Windows: %ProgramData%\Mosaic
 //   - macOS:   ~/Library/Application Support/Mosaic
 //   - Linux:   $XDG_DATA_HOME/mosaic or ~/.local/share/mosaic
 func DataDir() string {
+	if d := os.Getenv(DataDirEnv); d != "" {
+		return d
+	}
 	switch runtime.GOOS {
 	case "windows":
 		if d := os.Getenv("ProgramData"); d != "" {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strconv"
@@ -60,6 +61,71 @@ func TestStatusEndpointAuth(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != 401 {
 		t.Fatalf("expected 401 without auth, got %d", resp.StatusCode)
+	}
+}
+
+// TestCORSPreflight ensures the daemon answers CORS preflight requests
+// without first being rejected by the bearer-token check. The Tauri
+// renderer (and `vite dev`) sit at a different origin than the loopback
+// API and rely on this to talk to the daemon.
+func TestCORSPreflight(t *testing.T) {
+	_, _, hs := newTestServer(t, nil)
+
+	req, err := http.NewRequest(http.MethodOptions, hs.URL+"/v1/status", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Origin", "http://localhost:1420")
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	req.Header.Set("Access-Control-Request-Headers", "authorization,content-type")
+
+	resp, err := hs.Client().Do(req)
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("preflight status: got %d, want 204", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "http://localhost:1420" {
+		t.Fatalf("Allow-Origin: got %q, want echo of request origin", got)
+	}
+	allowHeaders := resp.Header.Get("Access-Control-Allow-Headers")
+	for _, want := range []string{"Authorization", "Content-Type"} {
+		if !strings.Contains(allowHeaders, want) {
+			t.Fatalf("Allow-Headers %q missing %q", allowHeaders, want)
+		}
+	}
+	if got := resp.Header.Get("Access-Control-Allow-Methods"); !strings.Contains(got, "GET") {
+		t.Fatalf("Allow-Methods missing GET: %q", got)
+	}
+}
+
+// TestCORSAuthenticatedRequestEchoesOrigin ensures that real (non-OPTIONS)
+// requests also carry the Access-Control-Allow-Origin header so the
+// renderer can read the response body.
+func TestCORSAuthenticatedRequestEchoesOrigin(t *testing.T) {
+	srv, _, hs := newTestServer(t, nil)
+
+	req, err := http.NewRequest(http.MethodGet, hs.URL+"/v1/status", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Origin", "tauri://localhost")
+	req.Header.Set("Authorization", "Bearer "+srv.Token())
+
+	resp, err := hs.Client().Do(req)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d, want 200", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "tauri://localhost" {
+		t.Fatalf("Allow-Origin: got %q, want echo of request origin", got)
 	}
 }
 
