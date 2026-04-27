@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Mosaic · Atlas suite — contents</title>
+<link rel="stylesheet" href="atlas.css">
+<style>
+  body { width: 1200px; min-height: 1600px; }
+
+  .container {
+    position: relative;
+    padding: 60px 56px 60px;
+  }
+
+  .title {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 56px;
+    line-height: 0.95;
+    letter-spacing: -0.015em;
+    margin-bottom: 4px;
+  }
+  .title i { color: var(--copper); font-style: italic; }
+  .subtitle {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 19px;
+    font-style: italic;
+    color: var(--ink-2);
+    line-height: 1.4;
+    max-width: 720px;
+    margin-top: 8px;
+  }
+  .subtitle b { color: var(--ink); font-style: normal; font-weight: 500; }
+
+  .meta {
+    margin-top: 24px;
+    display: flex;
+    gap: 28px;
+    align-items: baseline;
+    border-bottom: 1px solid var(--ink);
+    padding-bottom: 14px;
+  }
+  .meta div {
+    font-size: 10.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+  }
+  .meta div b { color: var(--ink); }
+  .meta div em { font-style: normal; color: var(--copper); }
+
+  .toc-head {
+    margin-top: 36px;
+    display: flex; align-items: baseline; justify-content: space-between;
+    border-bottom: 1px solid var(--ink);
+    padding-bottom: 6px;
+  }
+  .toc-head .l {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 22px;
+    font-style: italic;
+  }
+  .toc-head .r {
+    font-size: 10.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+  }
+
+  .plates {
+    margin-top: 28px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 32px;
+    row-gap: 28px;
+  }
+
+  .plate {
+    display: flex; flex-direction: column;
+  }
+  .plate .frame {
+    position: relative;
+    background: var(--paper-2);
+    border: 1px solid var(--ink);
+    overflow: hidden;
+    aspect-ratio: 1200 / 760;
+  }
+  .plate .frame img {
+    display: block;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    filter: contrast(1.02);
+  }
+  .plate .frame::after {
+    content: "";
+    position: absolute; inset: 0;
+    box-shadow: inset 0 0 0 1px var(--rule-strong);
+    pointer-events: none;
+  }
+
+  .plate .head {
+    margin-top: 12px;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .plate .num {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-style: italic;
+    color: var(--ink-mute);
+    font-size: 22px;
+  }
+  .plate .name {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 24px;
+    line-height: 1;
+    letter-spacing: -0.005em;
+    flex: 1;
+  }
+  .plate .name em { font-style: italic; color: var(--copper); }
+  .plate .lab {
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+    border: 1px solid var(--rule-strong);
+    padding: 2px 7px;
+  }
+  .plate .lab.copper { color: var(--copper); border-color: var(--copper); }
+
+  .plate .desc {
+    margin-top: 6px;
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--ink-2);
+    font-style: italic;
+  }
+  .plate .desc em { color: var(--copper); font-style: italic; }
+  .plate .desc b { font-style: normal; color: var(--ink); font-weight: 500; }
+
+  .plate .feats {
+    margin-top: 8px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink-mute);
+    line-height: 1.6;
+  }
+  .plate .feats b { color: var(--ink-2); font-weight: 500; }
+  .plate .feats em { color: var(--copper); font-style: normal; }
+
+  .plate a.open {
+    margin-top: 10px;
+    align-self: flex-start;
+    font-size: 10.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink);
+    font-weight: 600;
+    text-decoration: none;
+    border-bottom: 1px solid var(--ink);
+    padding-bottom: 2px;
+  }
+  .plate a.open:hover { color: var(--copper); border-color: var(--copper); }
+
+  /* tray plate is narrower — special treatment */
+  .plate.tray .frame { background: var(--paper-2); }
+
+  /* color system block */
+  .system {
+    margin-top: 56px;
+    border-top: 1px solid var(--ink);
+    padding-top: 28px;
+    display: grid;
+    grid-template-columns: 220px 1fr 1fr;
+    column-gap: 36px;
+  }
+  .system h3 {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 26px;
+    line-height: 1;
+    font-weight: 500;
+  }
+  .system h3 i { color: var(--copper); font-style: italic; }
+  .system .lab2 {
+    font-size: 10.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+    margin-top: 4px;
+  }
+
+  .swatches {
+    display: flex; gap: 10px;
+    margin-top: 8px;
+  }
+  .sw {
+    width: 56px;
+  }
+  .sw .chip {
+    height: 56px;
+    border: 1px solid var(--ink);
+    margin-bottom: 6px;
+  }
+  .sw .name {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9.5px;
+    color: var(--ink-2);
+  }
+  .sw .hex {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9.5px;
+    color: var(--ink-mute);
+    margin-top: 1px;
+  }
+
+  .typo .row {
+    display: flex; gap: 18px; align-items: baseline; padding: 8px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .typo .row:last-child { border-bottom: 0; }
+  .typo .row .desc {
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+    flex-shrink: 0;
+    width: 100px;
+  }
+  .typo .row .ex { flex: 1; }
+
+  .protos-block {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .pchip {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    border: 1px solid var(--rule-strong);
+    padding: 4px 8px;
+    color: var(--ink-2);
+  }
+  .pchip span { display: inline-block; width: 7px; height: 7px; margin-right: 6px; transform: translateY(-1px); }
+  .pchip .hy { background: #a26ec0; }
+  .pchip .vl { background: #4f86c2; }
+  .pchip .nv { background: var(--leaf); }
+  .pchip .ss { background: #c89a3a; }
+  .pchip .wg { background: var(--copper); }
+
+  /* notes */
+  .colophon {
+    margin-top: 56px;
+    border-top: 1px solid var(--ink);
+    padding-top: 14px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 10.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+  }
+  .colophon i { font-style: italic; font-family: "Atlas Serif", Georgia, serif; text-transform: none; letter-spacing: 0; color: var(--ink-2); font-size: 12.5px; }
+
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <div class="title">Mosaic <i>—</i> Atlas suite</div>
+  <div class="subtitle">
+    A multi-protocol VPN client for Windows, drawn as <b>an editorial atlas</b>:
+    serif typography, paper backgrounds, copper margin-notes, no generic UI furniture.
+    A single design language for the dashboard, the tray, the routing register,
+    the pool gazetteer and the folio of preferences.
+  </div>
+
+  <div class="meta">
+    <div><b>Volume I</b> · No. 04</div>
+    <div>27 April <b>MMXXVI</b></div>
+    <div>Five plates · <em>1 popup</em></div>
+    <div>Design draft <em>v0.4.1</em></div>
+    <div>Awaiting <b>approval</b> before code begins</div>
+  </div>
+
+  <!-- contents -->
+  <div class="toc-head">
+    <span class="l">Plates</span>
+    <span class="r">five surfaces</span>
+  </div>
+
+  <div class="plates">
+
+    <article class="plate">
+      <div class="frame"><img src="../shots/atlas-main.png" alt="Atlas main dashboard"></div>
+      <div class="head">
+        <span class="num">iv</span>
+        <span class="name">The world, <em>projected</em></span>
+        <span class="lab copper">Main window</span>
+      </div>
+      <div class="desc">
+        The dashboard. A stylised world map with stations marked as Roman pins;
+        a great-circle arc to the current bearing (Tokyo, 38 ms); the Index of Stations
+        on the right; live metrics on the left.
+      </div>
+      <div class="feats">
+        <em>›</em> single status indicator · <em>›</em> 5 protocols · <em>›</em> drag-arc to switch
+        station · <em>›</em> agent presence in margin
+      </div>
+      <a class="open" href="main.html">Open plate iv →</a>
+    </article>
+
+    <article class="plate tray">
+      <div class="frame"><img src="../shots/atlas-tray.png" alt="Atlas tray"></div>
+      <div class="head">
+        <span class="num">·</span>
+        <span class="name">Quick station <em>—</em> tray</span>
+        <span class="lab">Tray popup</span>
+      </div>
+      <div class="desc">
+        A 380-pt popup anchored to the system tray. Holds 90 % of daily use:
+        connect / disconnect, four recent stations, a sparkline, the kill-switch
+        state. Editorial discipline carried into a small surface.
+      </div>
+      <div class="feats">
+        <em>›</em> tail to tray icon · <em>›</em> green diamond mirrors tray dot
+        · <em>›</em> Open Atlas footer link
+      </div>
+      <a class="open" href="tray.html">Open tray →</a>
+    </article>
+
+    <article class="plate">
+      <div class="frame"><img src="../shots/atlas-power.png" alt="Atlas routing register"></div>
+      <div class="head">
+        <span class="num">vii</span>
+        <span class="name">The register <em>of routes</em></span>
+        <span class="lab">Power user</span>
+      </div>
+      <div class="desc">
+        Routing rules drawn as <b>a register</b>: numbered entries, drag-handle in the gutter,
+        action chip (proxy / direct / block), live-preview pane showing what matches
+        right now, the equivalent CLI command underneath, and the agent's last 3
+        invocations as a bottom strip.
+      </div>
+      <div class="feats">
+        <em>›</em> GeoSite · GeoIP · IP-CIDR · domain-suffix · process · port
+        · <em>›</em> AND/OR/NOT · <em>›</em> CLI mirrors UI
+      </div>
+      <a class="open" href="power.html">Open plate vii →</a>
+    </article>
+
+    <article class="plate">
+      <div class="frame"><img src="../shots/atlas-subs.png" alt="Atlas pool gazetteer"></div>
+      <div class="head">
+        <span class="num">iii</span>
+        <span class="name">The pool <em>gazetteer</em></span>
+        <span class="lab">Subscriptions</span>
+      </div>
+      <div class="desc">
+        Subscriptions presented as <b>glossary entries</b>: source URL, format,
+        live count, dead count, median latency, a bar showing the protocol mix,
+        a refresh button. A fourth slot is left empty as an invitation.
+      </div>
+      <div class="feats">
+        <em>›</em> sing-box · clash · v2ray base64 · sip008 · <em>›</em> auto-refresh hourly · <em>›</em>
+        autodetects format
+      </div>
+      <a class="open" href="subs.html">Open plate iii →</a>
+    </article>
+
+    <article class="plate" style="grid-column: 1 / -1;">
+      <div class="frame"><img src="../shots/atlas-settings.png" alt="Atlas folio of preferences"></div>
+      <div class="head">
+        <span class="num">ix</span>
+        <span class="name">The folio <em>of preferences</em></span>
+        <span class="lab">Settings</span>
+      </div>
+      <div class="desc">
+        Settings as <b>a printed folio</b>. Seven chapters in a Table of Contents on the
+        left; chapter content arranged into two columns on the right. Each setting
+        is a row: name in serif, description below in neutral grey, control on the right
+        (segmented control, ON/OFF block, monospaced text input).
+      </div>
+      <div class="feats">
+        <em>›</em> tunnel mode (TUN / SOCKS) · <em>›</em> kill-switch with LAN bypass · <em>›</em> DNS fake-IP
+        · <em>›</em> share to LAN · <em>›</em> auto-start service / user / manual · <em>›</em> MCP server with permission tiers
+      </div>
+      <a class="open" href="settings.html">Open plate ix →</a>
+    </article>
+
+  </div>
+
+  <!-- system block -->
+  <div class="system">
+
+    <div>
+      <h3>The <i>system</i></h3>
+      <div class="lab2">A note on the design language</div>
+
+      <p style="margin-top: 14px; font-family: 'Atlas Serif', Georgia, serif; font-style: italic; font-size: 13px; line-height: 1.55; color: var(--ink-2)">
+        Mosaic is drawn as if it were the volume of an old atlas:
+        cream paper, ink continents, Roman numerals, marginalia.
+        One accent — copper — used everywhere a route is in service.
+      </p>
+    </div>
+
+    <div>
+      <div class="lab2">Palette</div>
+      <div class="swatches">
+        <div class="sw"><div class="chip" style="background:#ece4d0"></div><div class="name">paper</div><div class="hex">#ECE4D0</div></div>
+        <div class="sw"><div class="chip" style="background:#1f1c18"></div><div class="name">ink</div><div class="hex">#1F1C18</div></div>
+        <div class="sw"><div class="chip" style="background:#b85c2c"></div><div class="name">copper</div><div class="hex">#B85C2C</div></div>
+        <div class="sw"><div class="chip" style="background:#4a6e3a"></div><div class="name">leaf</div><div class="hex">#4A6E3A</div></div>
+        <div class="sw"><div class="chip" style="background:#807967"></div><div class="name">mute</div><div class="hex">#807967</div></div>
+      </div>
+
+      <div class="lab2" style="margin-top: 22px">Protocol marks</div>
+      <div class="protos-block">
+        <span class="pchip"><span class="hy"></span>HY² · Hysteria 2</span>
+        <span class="pchip"><span class="vl"></span>VLESS · Reality / Vision</span>
+        <span class="pchip"><span class="nv"></span>NAIVE</span>
+        <span class="pchip"><span class="ss"></span>SS · Shadowsocks 2022</span>
+        <span class="pchip"><span class="wg"></span>AWG · AmneziaWG</span>
+      </div>
+    </div>
+
+    <div class="typo">
+      <div class="lab2">Typography</div>
+      <div class="row">
+        <span class="desc">Display</span>
+        <span class="ex" style="font-family: 'Atlas Serif', Georgia, serif; font-size: 26px; line-height: 1;">Tokyo <i style="color:var(--copper); font-style:italic">— Premium</i></span>
+      </div>
+      <div class="row">
+        <span class="desc">Quote</span>
+        <span class="ex" style="font-family: 'Atlas Serif', Georgia, serif; font-style: italic; font-size: 14px; color:var(--ink-2)">«&nbsp;routes refreshed twelve&nbsp;»</span>
+      </div>
+      <div class="row">
+        <span class="desc">Caps</span>
+        <span class="ex caps">PLATE <i>iv</i> · 147 STATIONS · TOKYO <em>· current</em></span>
+      </div>
+      <div class="row">
+        <span class="desc">Mono</span>
+        <span class="ex mono" style="font-size: 11.5px; color: var(--ink-2);">$ mosaic connect tokyo --proto hy2 --kill-switch on</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- next steps -->
+  <div class="toc-head" style="margin-top: 56px">
+    <span class="l">Next steps</span>
+    <span class="r">awaiting approval</span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; column-gap: 32px; margin-top: 18px;">
+    <div>
+      <div style="font-family: 'Atlas Serif', Georgia, serif; font-size: 18px; font-style: italic; color: var(--copper);">i. Approve</div>
+      <p style="font-family: 'Atlas Serif', Georgia, serif; font-style: italic; color: var(--ink-2); font-size: 13.5px; line-height: 1.5; margin-top: 6px;">
+        Walk through the five plates. If anything reads wrong — typography too tight, a chip
+        out of place, the wrong colour for an action — say so before code begins.
+      </p>
+    </div>
+    <div>
+      <div style="font-family: 'Atlas Serif', Georgia, serif; font-size: 18px; font-style: italic; color: var(--copper);">ii. Implement</div>
+      <p style="font-family: 'Atlas Serif', Georgia, serif; font-style: italic; color: var(--ink-2); font-size: 13.5px; line-height: 1.5; margin-top: 6px;">
+        Go daemon (<em>sing-box</em> + <em>amneziawg-go</em>) → Tauri shell with these screens →
+        CLI bound to the same API → MCP server for the agent → Windows installer.
+      </p>
+    </div>
+    <div>
+      <div style="font-family: 'Atlas Serif', Georgia, serif; font-size: 18px; font-style: italic; color: var(--copper);">iii. Verify</div>
+      <p style="font-family: 'Atlas Serif', Georgia, serif; font-style: italic; color: var(--ink-2); font-size: 13.5px; line-height: 1.5; margin-top: 6px;">
+        Fresh Win10 / Win11 VM. Single-instance enforcement, kill-switch leak test,
+        TUN through Wintun, LAN sharing, agent connecting via MCP.
+      </p>
+    </div>
+  </div>
+
+  <!-- colophon -->
+  <div class="colophon">
+    <span><b>Mosaic</b> · An atlas of secure routes</span>
+    <span><i>Mockups in HTML &amp; SVG; world from simple-world-map (CC BY-SA)</i></span>
+    <span>Vol. I · No. 04</span>
+  </div>
+
+</div>
+
+</body>
+</html>

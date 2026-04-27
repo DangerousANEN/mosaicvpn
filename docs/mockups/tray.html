@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Mosaic · tray</title>
+<link rel="stylesheet" href="atlas.css">
+<style>
+  /* render with windows-taskbar context to show how it sits above tray */
+  body { width: 1120px; height: 740px; }
+
+  .desktop {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(900px 500px at 30% 30%, rgba(184,92,44,.04), transparent 60%),
+      radial-gradient(800px 600px at 80% 80%, rgba(31,28,24,.04), transparent 60%),
+      var(--paper-2);
+  }
+  /* fake desktop wallpaper grain — paper, but slightly different from popup */
+  .desktop::before {
+    content: "";
+    position: absolute; inset: 0;
+    background-image:
+      repeating-linear-gradient(45deg, rgba(31,28,24,.012) 0 1px, transparent 1px 6px),
+      repeating-linear-gradient(-45deg, rgba(31,28,24,.012) 0 1px, transparent 1px 6px);
+    pointer-events: none;
+  }
+
+  /* taskbar at bottom */
+  .taskbar {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 44px;
+    background: rgba(20, 18, 14, 0.92);
+    backdrop-filter: blur(6px);
+    display: flex; align-items: center;
+    padding: 0 18px;
+    border-top: 1px solid rgba(0,0,0,.4);
+    color: var(--paper);
+    font-size: 11px;
+    z-index: 5;
+  }
+  .taskbar .start {
+    display: flex; align-items: center; gap: 16px;
+    margin: 0 auto;
+  }
+  .taskbar .icon {
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    color: rgba(236,228,208,.8);
+    border-radius: 4px;
+  }
+  .taskbar .icon.mosaic {
+    background: var(--copper);
+    color: var(--paper);
+    border-radius: 0;
+    transform: rotate(45deg);
+    width: 16px; height: 16px;
+    box-shadow: 0 0 0 6px rgba(184,92,44,.2);
+  }
+  .taskbar .tray {
+    margin-left: auto;
+    display: flex; align-items: center; gap: 16px;
+    color: rgba(236,228,208,.7);
+    font-size: 11px;
+  }
+  .taskbar .tray .gem {
+    width: 8px; height: 8px;
+    background: var(--leaf);
+    transform: rotate(45deg);
+    box-shadow: 0 0 8px rgba(74,110,58,.7);
+  }
+  .taskbar .clock { color: var(--paper); font-feature-settings: "tnum"; }
+  .taskbar .clock small { display: block; font-size: 9px; opacity: .6; }
+
+  /* the popup window — anchored above tray, near the right edge */
+  .popup {
+    position: absolute;
+    right: 24px; bottom: 56px;
+    width: 380px;
+    background: var(--paper);
+    color: var(--ink);
+    box-shadow:
+      0 0 0 1px rgba(31,28,24,.5),
+      0 30px 60px rgba(31,28,24,.35),
+      0 12px 30px rgba(31,28,24,.25);
+    z-index: 4;
+    display: flex; flex-direction: column;
+    padding: 18px 22px 0;
+  }
+  /* paper grain */
+  .popup::before {
+    content: "";
+    position: absolute; inset: 0;
+    background-image:
+      repeating-radial-gradient(circle at 30% 30%, rgba(31,28,24,.012) 0 1px, transparent 1px 4px),
+      repeating-radial-gradient(circle at 70% 70%, rgba(31,28,24,.014) 0 1px, transparent 1px 5px);
+    pointer-events: none;
+    mix-blend-mode: multiply;
+  }
+  .popup > * { position: relative; z-index: 1; }
+
+  /* tail pointing toward tray-icon */
+  .popup::after {
+    content: "";
+    position: absolute;
+    bottom: -8px;
+    right: 64px;
+    width: 14px; height: 14px;
+    background: var(--paper);
+    transform: rotate(45deg);
+    box-shadow: 1px 1px 0 rgba(31,28,24,.5);
+  }
+
+  /* mast */
+  .mast {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 1px solid var(--ink);
+    padding-bottom: 8px;
+  }
+  .mast .name {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 22px;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    font-weight: 500;
+  }
+  .mast .name i { color: var(--copper); font-style: italic; }
+  .mast .folio {
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+  }
+
+  /* connection panel */
+  .conn {
+    padding: 14px 0 16px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .conn .eyebrow {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--leaf);
+    font-weight: 600;
+  }
+  .conn .city {
+    margin-top: 6px;
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 30px;
+    line-height: 1;
+    letter-spacing: -0.015em;
+    font-weight: 500;
+  }
+  .conn .city em { font-style: italic; color: var(--copper); font-weight: 400; }
+  .conn .meta {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+  }
+  .conn .meta .pair {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 16px;
+    color: var(--ink-2);
+    font-style: italic;
+  }
+  .conn .meta .pair b {
+    font-style: normal;
+    color: var(--ink);
+    font-weight: 400;
+    font-size: 19px;
+  }
+  .conn .meta .pair small {
+    display: block;
+    font-family: "Inter", sans-serif;
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-top: 2px;
+    font-style: normal;
+    font-weight: 600;
+  }
+
+  /* sparkline */
+  .spark { display: block; width: 100%; height: 28px; margin-top: 12px; }
+
+  /* big toggle */
+  .big-toggle {
+    margin-top: 14px;
+    border: 1px solid var(--ink);
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: stretch;
+    background: var(--ink);
+    color: var(--paper);
+  }
+  .big-toggle .label {
+    padding: 12px 14px 11px;
+    background: var(--leaf);
+  }
+  .big-toggle .label .t {
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    font-weight: 700;
+    opacity: .85;
+  }
+  .big-toggle .label .v {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-style: italic;
+    font-size: 17px;
+    line-height: 1.1;
+    margin-top: 2px;
+  }
+  .big-toggle .ctl {
+    padding: 12px 18px;
+    font-size: 10.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    font-weight: 700;
+    border-left: 1px solid var(--paper);
+    display: flex; align-items: center;
+    cursor: pointer;
+  }
+
+  /* quick stations */
+  .quick-head {
+    display: flex; justify-content: space-between;
+    margin-top: 14px; margin-bottom: 6px;
+  }
+  .quick-head .l, .quick-head .r {
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+  }
+  .quick-head .r { font-family: "Atlas Serif", Georgia, serif; font-style: italic; text-transform: none; letter-spacing: 0; color: var(--ink-2); font-size: 11.5px; }
+
+  .qrow {
+    display: grid;
+    grid-template-columns: 18px 1fr auto;
+    gap: 10px;
+    padding: 8px 0 7px;
+    border-bottom: 1px solid var(--rule);
+    font-size: 12px;
+    align-items: baseline;
+    cursor: pointer;
+  }
+  .qrow:hover { background: rgba(31,28,24,.025); }
+  .qrow .n {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-style: italic;
+    color: var(--ink-mute);
+    font-size: 12.5px;
+  }
+  .qrow .name {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 14.5px;
+    line-height: 1.1;
+  }
+  .qrow .pr {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    color: var(--ink-mute);
+    text-transform: uppercase;
+  }
+  .qrow .ms {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 13.5px;
+    color: var(--ink-2);
+    text-align: right;
+  }
+  .qrow.cur .name { color: var(--copper); font-style: italic; }
+  .qrow.cur .ms { color: var(--copper); }
+
+  /* footer */
+  .pop-foot {
+    margin: 0 -22px;
+    padding: 10px 22px 12px;
+    border-top: 1px solid var(--ink);
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+    background: var(--paper-2);
+  }
+  .pop-foot .pulse { color: var(--leaf); }
+  .pop-foot .pulse::before {
+    content: "";
+    display: inline-block;
+    width: 6px; height: 6px;
+    background: var(--leaf);
+    transform: rotate(45deg);
+    margin-right: 7px;
+  }
+  .pop-foot a {
+    color: var(--ink);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--ink-mute);
+  }
+
+</style>
+</head>
+<body>
+
+<div class="desktop"></div>
+
+<!-- caption -->
+<div style="position:absolute; top:24px; left:40px; color:var(--ink-2); font-family:'Atlas Serif',Georgia,serif; font-style:italic; font-size:14px;">
+  Quick station — appears from tray, anchored to the icon.
+</div>
+
+<!-- popup -->
+<div class="popup">
+
+  <div class="mast">
+    <div class="name">Mosaic <i>·</i> tray</div>
+    <div class="folio">Folio iv</div>
+  </div>
+
+  <div class="conn">
+    <div class="eyebrow"><span class="diamond on"></span> CONNECTED · 02:41:18</div>
+    <div class="city">Tokyo<em> — Premium</em></div>
+
+    <div class="meta">
+      <div class="pair">
+        <b>38</b> ms
+        <small>latency</small>
+      </div>
+      <div class="pair">
+        <b>12.4</b> mb/s
+        <small>down</small>
+      </div>
+      <div class="pair">
+        <b>0.86</b> mb/s
+        <small>up</small>
+      </div>
+    </div>
+
+    <svg class="spark" viewBox="0 0 320 28" preserveAspectRatio="none">
+      <line x1="0" y1="14" x2="320" y2="14" stroke="rgba(31,28,24,.18)" stroke-width="0.5" stroke-dasharray="2 4"/>
+      <path d="M0,16 L20,14 L40,18 L60,12 L80,16 L100,10 L120,14 L140,8 L160,12 L180,6 L200,10 L220,4 L240,8 L260,6 L280,4 L300,8 L320,4"
+            fill="none" stroke="#1f1c18" stroke-width="0.9" opacity=".55"/>
+      <path d="M0,16 L20,14 L40,18 L60,12 L80,16 L100,10 L120,14 L140,8 L160,12 L180,6 L200,10 L220,4 L240,8 L260,6 L280,4 L300,8 L320,4"
+            fill="none" stroke="#b85c2c" stroke-width="0.9" opacity="0" />
+      <!-- secondary line: upload -->
+      <path d="M0,22 L40,21 L80,22 L120,20 L160,21 L200,20 L240,19 L280,20 L320,19"
+            fill="none" stroke="#1f1c18" stroke-width="0.6" opacity=".25" stroke-dasharray="3 2"/>
+    </svg>
+  </div>
+
+  <!-- big switch -->
+  <div class="big-toggle" title="Click to disconnect">
+    <div class="label">
+      <div class="t">Tunnel · ON</div>
+      <div class="v">Kill-switch armed · LAN allowed</div>
+    </div>
+    <div class="ctl">Stop</div>
+  </div>
+
+  <!-- quick stations -->
+  <div>
+    <div class="quick-head">
+      <div class="l">Recent stations</div>
+      <div class="r">i—iv of vi</div>
+    </div>
+
+    <div class="qrow cur">
+      <span class="n">i</span>
+      <div>
+        <div class="name">Tokyo <span style="font-style:italic">— Premium</span></div>
+        <div class="pr">Hysteria² · obfs</div>
+      </div>
+      <span class="ms">38</span>
+    </div>
+    <div class="qrow">
+      <span class="n">ii</span>
+      <div>
+        <div class="name">Singapore</div>
+        <div class="pr">VLESS · Reality</div>
+      </div>
+      <span class="ms">62</span>
+    </div>
+    <div class="qrow">
+      <span class="n">iii</span>
+      <div>
+        <div class="name">Frankfurt</div>
+        <div class="pr">Naive · h2</div>
+      </div>
+      <span class="ms">112</span>
+    </div>
+    <div class="qrow">
+      <span class="n">iv</span>
+      <div>
+        <div class="name">New York</div>
+        <div class="pr">AmneziaWG</div>
+      </div>
+      <span class="ms">186</span>
+    </div>
+  </div>
+
+  <div class="pop-foot">
+    <span class="pulse">Service · pid 8124</span>
+    <span><a href="main.html">Open atlas →</a></span>
+  </div>
+
+</div>
+
+<!-- taskbar -->
+<div class="taskbar">
+  <div style="position:absolute; left:18px; top:8px;">
+    <div class="icon" style="background:rgba(236,228,208,.1); width:30px; height:30px; border-radius:4px;">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="5" height="5" fill="#ece4d0"/><rect x="8" y="1" width="5" height="5" fill="#ece4d0"/><rect x="1" y="8" width="5" height="5" fill="#ece4d0"/><rect x="8" y="8" width="5" height="5" fill="#ece4d0"/></svg>
+    </div>
+  </div>
+
+  <div class="start">
+    <div class="icon" style="font-family: 'JetBrains Mono', monospace; font-size: 14px;">⌕</div>
+    <div class="icon" style="font-family: 'JetBrains Mono', monospace; font-size: 14px;">⌘</div>
+    <div class="icon" style="font-family: 'JetBrains Mono', monospace; font-size: 13px;">▦</div>
+    <div class="icon"><svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5" fill="none" stroke="#ece4d0" stroke-width="1"/></svg></div>
+    <div class="icon"><svg width="14" height="14" viewBox="0 0 14 14"><rect x="2" y="3" width="10" height="8" fill="none" stroke="#ece4d0" stroke-width="1"/></svg></div>
+    <div class="icon"><svg width="14" height="14" viewBox="0 0 14 14"><polygon points="2,2 12,7 2,12" fill="none" stroke="#ece4d0" stroke-width="1"/></svg></div>
+  </div>
+
+  <div class="tray">
+    <span style="opacity:.55">∧</span>
+    <span class="gem"></span>
+    <span style="opacity:.55">⏵</span>
+    <span style="opacity:.55">▢</span>
+    <span style="opacity:.55">🔋</span>
+    <div class="clock">
+      9 : 41
+      <small>27 IV 2026</small>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

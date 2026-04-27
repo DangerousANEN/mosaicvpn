@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Mosaic · subscriptions</title>
+<link rel="stylesheet" href="atlas.css">
+<style>
+  body { width: 1200px; height: 760px; }
+
+  .frame {
+    position: absolute;
+    top: 50px; left: 40px; right: 40px; bottom: 50px;
+    display: grid;
+    grid-template-rows: auto auto 1fr auto;
+    row-gap: 14px;
+  }
+
+  .mast {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: baseline;
+    gap: 24px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--ink);
+  }
+  .mast .name {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 30px;
+    line-height: 1;
+    letter-spacing: -0.01em;
+  }
+  .mast .name i { color: var(--copper); font-style: italic; }
+  .mast .sub {
+    font-size: 10.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+  }
+  .mast .right .meta {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-style: italic;
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+
+  .nav-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .nav { display: flex; align-items: center; gap: 26px; }
+  .nav a {
+    font-size: 10.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+    text-decoration: none;
+    padding-bottom: 8px;
+    position: relative;
+  }
+  .nav a.cur { color: var(--ink); }
+  .nav a.cur::after {
+    content: ""; position: absolute;
+    left: 0; right: 0; bottom: -1px;
+    height: 1.5px;
+    background: var(--copper);
+  }
+  .nav-actions { display: flex; gap: 10px; }
+
+  /* gazetteer */
+  .gazetteer {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 28px;
+    row-gap: 0;
+    overflow: hidden;
+  }
+
+  .pool {
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    column-gap: 16px;
+    padding: 18px 0 18px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .pool .num {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-style: italic;
+    color: var(--ink-mute);
+    font-size: 22px;
+    text-align: center;
+    line-height: 1.2;
+  }
+  .pool.cur .num { color: var(--copper); }
+
+  .pool-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 14px;
+  }
+  .pool .name {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 24px;
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+  }
+  .pool.cur .name em { font-style: italic; color: var(--copper); }
+  .pool .badge {
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+    border: 1px solid var(--rule-strong);
+    padding: 2px 7px;
+  }
+  .pool .badge.ok { color: var(--leaf); border-color: var(--leaf); }
+  .pool .badge.warn { color: #b8881e; border-color: #b8881e; }
+  .pool .badge.err { color: var(--copper); border-color: var(--copper); }
+
+  .pool .src {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink-mute);
+    margin-top: 4px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .pool .src b { color: var(--ink-2); font-weight: 500; }
+
+  .pool .verse {
+    margin-top: 8px;
+  }
+
+  .pool .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    margin-top: 14px;
+    border-top: 1px solid var(--rule);
+  }
+  .pool .stats .cell {
+    padding: 10px 12px 8px 0;
+    border-right: 1px solid var(--rule);
+  }
+  .pool .stats .cell:last-child { border-right: 0; padding-right: 0; }
+  .pool .stats .lab {
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+  }
+  .pool .stats .v {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 22px;
+    line-height: 1;
+    margin-top: 4px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  .pool .stats .v small {
+    font-size: 11px;
+    color: var(--ink-mute);
+    margin-left: 3px;
+    font-family: "Inter", sans-serif;
+    font-weight: 500;
+  }
+  .pool .stats .v em { font-style: italic; color: var(--copper); }
+
+  .pool .protos {
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+  }
+  .pool .protos .bar {
+    display: flex;
+    height: 4px;
+    flex: 1;
+    background: var(--rule);
+  }
+  .pool .protos .bar span { display: block; height: 100%; }
+  .pool .protos .bar .hy { background: #a26ec0; }
+  .pool .protos .bar .vl { background: #4f86c2; }
+  .pool .protos .bar .nv { background: var(--leaf); }
+  .pool .protos .bar .ss { background: #c89a3a; }
+  .pool .protos .bar .wg { background: var(--copper); }
+
+  .pool .actions {
+    margin-top: 14px;
+    display: flex;
+    gap: 8px;
+  }
+
+  /* fetch progress */
+  .fetch {
+    margin-top: 10px;
+    height: 2px;
+    background: var(--rule);
+    position: relative;
+    overflow: hidden;
+  }
+  .fetch::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: 38%;
+    background: var(--copper);
+  }
+  .pool .fetch-text {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    color: var(--copper);
+    margin-top: 4px;
+  }
+
+  /* big "add new" footer */
+  .add-row {
+    border-top: 1px solid var(--ink);
+    padding-top: 14px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 16px;
+  }
+  .add-row .lab {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 18px;
+    font-style: italic;
+    color: var(--ink);
+    flex-shrink: 0;
+  }
+  .add-row .lab i {
+    color: var(--copper);
+    font-style: italic;
+  }
+  .add-row .input-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: baseline;
+    gap: 12px;
+    border-bottom: 1px solid var(--ink);
+    padding: 6px 0;
+  }
+  .add-row .input-row .pre {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink-mute);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+  .add-row input[type="text"] {
+    background: transparent;
+    border: 0;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 13px;
+    color: var(--ink);
+    outline: none;
+    width: 100%;
+  }
+  .add-row .formats {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-style: italic;
+    font-size: 11.5px;
+    color: var(--ink-mute);
+  }
+
+</style>
+</head>
+<body>
+
+<!-- page edges -->
+<div class="edge-top"></div>
+<div class="edge-top edge-top-2"></div>
+<div class="edge-bot"></div>
+<div class="edge-bot edge-bot-2"></div>
+
+<div class="marg tl"><b>Mosaic</b> · An atlas of secure routes</div>
+<div class="marg tr">Vol. I · No. 04 · 27 Apr MMXXVI</div>
+<div class="marg bl">Daemon active · Service · pid 8124 · v0.4.1</div>
+<div class="marg br">Plate III · The pool gazetteer</div>
+
+<div class="frame">
+
+  <!-- mast -->
+  <div class="mast">
+    <div class="name">Pool <i>—</i> gazetteer</div>
+    <div class="sub" style="text-align:left">3 subscriptions · 147 stations · auto-refresh every 1 hour</div>
+    <div class="right">
+      <div class="meta">Median latency across pools: <i style="color:var(--copper)">112 ms</i></div>
+    </div>
+  </div>
+
+  <!-- nav -->
+  <div class="nav-row">
+    <div class="nav">
+      <a href="main.html">Atlas</a>
+      <a href="#" class="cur">Pool gazetteer</a>
+      <a href="power.html">Routing register</a>
+      <a href="settings.html">Preferences</a>
+    </div>
+    <div class="nav-actions">
+      <button class="btn ghost">Refresh all</button>
+      <button class="btn">+ Add subscription</button>
+    </div>
+  </div>
+
+  <!-- gazetteer (2 columns) -->
+  <section class="gazetteer">
+
+    <!-- I — Premium Pool (currently in use) -->
+    <article class="pool cur">
+      <div class="num">i</div>
+      <div>
+        <div class="pool-head">
+          <div>
+            <div class="name">Premium Pool <em>— in service</em></div>
+            <div class="src">⌖ <b>https://sub.premium-pool.io/</b>?token=••••f3a · sing-box format</div>
+          </div>
+          <span class="badge ok">◆ refreshed 12 m ago</span>
+        </div>
+
+        <div class="stats">
+          <div class="cell"><div class="lab">Stations</div><div class="v">82</div></div>
+          <div class="cell"><div class="lab">Live</div><div class="v">79<small>· 3 dead</small></div></div>
+          <div class="cell"><div class="lab">Median</div><div class="v">68<small>ms</small></div></div>
+          <div class="cell"><div class="lab">Best</div><div class="v"><em>38</em><small>ms · Tokyo</small></div></div>
+        </div>
+
+        <div class="protos">
+          PROTOCOLS
+          <div class="bar">
+            <span class="hy" style="width: 40%"></span>
+            <span class="vl" style="width: 28%"></span>
+            <span class="nv" style="width: 12%"></span>
+            <span class="ss" style="width: 12%"></span>
+            <span class="wg" style="width: 8%"></span>
+          </div>
+          <span style="color: var(--ink-2)">HY² 33 · VLESS 23 · NAIVE 10 · SS 10 · WG 6</span>
+        </div>
+
+        <div class="actions">
+          <button class="btn ghost">Refresh now</button>
+          <button class="btn ghost">Edit</button>
+          <button class="btn ghost">Browse stations</button>
+          <span style="margin-left:auto; font-family: 'Atlas Serif', Georgia, serif; font-style: italic; color: var(--ink-mute); font-size: 12px">next refresh in 47 min</span>
+        </div>
+      </div>
+    </article>
+
+    <!-- II — Misaka -->
+    <article class="pool">
+      <div class="num">ii</div>
+      <div>
+        <div class="pool-head">
+          <div>
+            <div class="name">Misaka Network</div>
+            <div class="src">⌖ <b>https://misaka.example.com/sub</b> · clash YAML format</div>
+          </div>
+          <span class="badge ok">◆ refreshed 1 h ago</span>
+        </div>
+
+        <div class="stats">
+          <div class="cell"><div class="lab">Stations</div><div class="v">54</div></div>
+          <div class="cell"><div class="lab">Live</div><div class="v">48<small>· 6 dead</small></div></div>
+          <div class="cell"><div class="lab">Median</div><div class="v">142<small>ms</small></div></div>
+          <div class="cell"><div class="lab">Best</div><div class="v">52<small>ms · Amst.</small></div></div>
+        </div>
+
+        <div class="protos">
+          PROTOCOLS
+          <div class="bar">
+            <span class="vl" style="width: 56%"></span>
+            <span class="ss" style="width: 24%"></span>
+            <span class="hy" style="width: 14%"></span>
+            <span class="nv" style="width: 6%"></span>
+          </div>
+          <span style="color: var(--ink-2)">VLESS 30 · SS 13 · HY² 8 · NAIVE 3</span>
+        </div>
+
+        <div class="actions">
+          <button class="btn ghost">Refresh now</button>
+          <button class="btn ghost">Edit</button>
+          <button class="btn ghost">Browse stations</button>
+          <span style="margin-left:auto; font-family: 'Atlas Serif', Georgia, serif; font-style: italic; color: var(--ink-mute); font-size: 12px">refreshes hourly</span>
+        </div>
+      </div>
+    </article>
+
+    <!-- III — Self-hosted (refreshing now) -->
+    <article class="pool">
+      <div class="num">iii</div>
+      <div>
+        <div class="pool-head">
+          <div>
+            <div class="name">Self-hosted <em style="font-style:italic; color:var(--ink-mute)">— private</em></div>
+            <div class="src">⌖ <b>https://vps.svenden.dev/sub.json</b> · sing-box · syncs from 2 boxes</div>
+          </div>
+          <span class="badge warn">⏳ refreshing now</span>
+        </div>
+
+        <div class="stats">
+          <div class="cell"><div class="lab">Stations</div><div class="v">11</div></div>
+          <div class="cell"><div class="lab">Live</div><div class="v">11<small>· all up</small></div></div>
+          <div class="cell"><div class="lab">Median</div><div class="v">96<small>ms</small></div></div>
+          <div class="cell"><div class="lab">Best</div><div class="v">44<small>ms · Helsinki</small></div></div>
+        </div>
+
+        <div class="protos">
+          PROTOCOLS
+          <div class="bar">
+            <span class="wg" style="width: 64%"></span>
+            <span class="vl" style="width: 36%"></span>
+          </div>
+          <span style="color: var(--ink-2)">AWG 7 · VLESS 4</span>
+        </div>
+
+        <div class="fetch"></div>
+        <div class="fetch-text">› GET /sub.json — 38% · waiting on https://vps2.svenden.dev …</div>
+
+        <div class="actions">
+          <button class="btn ghost">Cancel</button>
+          <button class="btn ghost">Edit</button>
+          <button class="btn ghost">Browse stations</button>
+          <span style="margin-left:auto; font-family: 'Atlas Serif', Georgia, serif; font-style: italic; color: var(--ink-mute); font-size: 12px">manual refresh</span>
+        </div>
+      </div>
+    </article>
+
+    <!-- empty slot showing room for IV -->
+    <article class="pool" style="opacity: .55; border-bottom: 0;">
+      <div class="num">iv</div>
+      <div>
+        <div class="pool-head">
+          <div class="name" style="font-style: italic; color: var(--ink-mute)">— empty —</div>
+          <span class="badge">+ add</span>
+        </div>
+        <div class="verse" style="margin-top: 14px">
+          <em>«</em> A fourth pool may be added — paste a subscription URL below. Mosaic auto-detects
+          format and protocol mix on first fetch. <em>»</em>
+        </div>
+      </div>
+    </article>
+
+  </section>
+
+  <!-- add new -->
+  <div class="add-row">
+    <span class="lab"><i>+</i> Add subscription</span>
+    <span class="input-row">
+      <span class="pre">URL</span>
+      <input type="text" value="" placeholder="https://… or vless://, vmess://, ss://, hysteria2://"/>
+      <span class="formats">sing-box · clash · v2ray base64 · sip008</span>
+    </span>
+    <button class="btn primary">Fetch</button>
+  </div>
+
+</div>
+
+</body>
+</html>

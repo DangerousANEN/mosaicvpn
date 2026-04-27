@@ -1,0 +1,17 @@
+# Binaries / test outputs
+bin/
+dist/
+*.exe
+*.test
+*.out
+coverage.out
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local data
+*.log
+mosaic-data/

@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Mosaic · routing</title>
+<link rel="stylesheet" href="atlas.css">
+<style>
+  body { width: 1200px; height: 760px; }
+
+  .frame {
+    position: absolute;
+    top: 50px; left: 40px; right: 40px; bottom: 50px;
+    display: grid;
+    grid-template-rows: auto auto 1fr auto;
+    row-gap: 14px;
+  }
+
+  /* mast row */
+  .mast {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: baseline;
+    gap: 24px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--ink);
+  }
+  .mast .name {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 30px;
+    line-height: 1;
+    letter-spacing: -0.01em;
+  }
+  .mast .name i { color: var(--copper); font-style: italic; }
+  .mast .sub {
+    font-size: 10.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+  }
+  .mast .right { display: flex; align-items: center; gap: 18px; }
+  .mast .right .meta {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-style: italic;
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+
+  .nav {
+    display: flex;
+    align-items: center;
+    gap: 26px;
+  }
+  .nav a {
+    font-size: 10.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+    text-decoration: none;
+    padding-bottom: 8px;
+    position: relative;
+  }
+  .nav a.cur { color: var(--ink); }
+  .nav a.cur::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: -1px;
+    height: 1.5px;
+    background: var(--copper);
+  }
+  .nav .err {
+    background: var(--copper);
+    color: var(--paper);
+    font-size: 9px;
+    padding: 2px 5px;
+    margin-left: 4px;
+    vertical-align: middle;
+    letter-spacing: 0.04em;
+  }
+  .nav-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .nav-actions { display: flex; gap: 10px; }
+
+  /* main content: 2 columns */
+  .main {
+    display: grid;
+    grid-template-columns: 1.05fr 1fr;
+    column-gap: 28px;
+    overflow: hidden;
+  }
+
+  /* left: register of rules */
+  .left {
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    border-right: 1px solid var(--rule);
+    padding-right: 26px;
+  }
+  .left-head {
+    display: grid;
+    grid-template-columns: 28px 1fr auto auto auto;
+    column-gap: 14px;
+    padding: 6px 0 8px;
+    border-bottom: 1px solid var(--ink);
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+  }
+  .left-head .ms { text-align: right; }
+
+  .entry {
+    display: grid;
+    grid-template-columns: 28px 1fr auto auto auto;
+    column-gap: 14px;
+    align-items: baseline;
+    padding: 12px 0 12px;
+    border-bottom: 1px solid var(--rule);
+    cursor: pointer;
+    position: relative;
+  }
+  .entry:hover { background: rgba(31,28,24,.025); }
+  .entry .num {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-style: italic;
+    color: var(--ink-mute);
+    font-size: 16px;
+    text-align: center;
+  }
+  .entry .body .name {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 17px;
+    line-height: 1.05;
+    letter-spacing: -0.005em;
+  }
+  .entry .body .conds {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.02em;
+    color: var(--ink-mute);
+    margin-top: 5px;
+    line-height: 1.5;
+  }
+  .entry .body .conds b { color: var(--ink-2); font-weight: 500; }
+  .entry .action {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    border: 1px solid var(--rule-strong);
+    padding: 4px 8px;
+  }
+  .entry .action.proxy   { color: var(--copper); border-color: var(--copper); }
+  .entry .action.direct  { color: var(--leaf);   border-color: var(--leaf); }
+  .entry .action.block   { color: var(--ink);    border-color: var(--ink); background: var(--ink); color: var(--paper); }
+  .entry .target {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 13.5px;
+    color: var(--ink-2);
+    font-style: italic;
+    width: 100px;
+    text-align: right;
+  }
+  .entry .matches {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink-mute);
+    text-align: right;
+    width: 50px;
+  }
+  .entry .matches b { color: var(--ink); font-weight: 500; }
+  .entry.cur { background: var(--copper-dim); margin: 0 -8px; padding: 12px 8px; }
+  .entry.cur .num { color: var(--copper); }
+  .entry.cur .body .name { color: var(--copper); font-style: italic; }
+
+  /* drag handle */
+  .entry .grip {
+    position: absolute;
+    left: -6px; top: 50%;
+    transform: translateY(-50%);
+    color: var(--ink-faint);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    opacity: 0;
+  }
+  .entry:hover .grip { opacity: .6; }
+  .entry.cur .grip { opacity: .6; color: var(--copper); }
+
+  /* right: editor */
+  .right {
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .editor-mast {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--ink);
+    margin-bottom: 14px;
+  }
+  .editor-mast .num {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-style: italic;
+    color: var(--copper);
+    font-size: 22px;
+    margin-right: 12px;
+  }
+  .editor-mast .title {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 22px;
+    line-height: 1;
+    letter-spacing: -0.01em;
+    color: var(--copper);
+    font-style: italic;
+    flex: 1;
+  }
+  .editor-mast .actions { display: flex; gap: 8px; }
+
+  .ed-row {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    column-gap: 18px;
+    align-items: baseline;
+    padding: 8px 0 8px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .ed-row .lab {
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+    padding-top: 3px;
+  }
+  .ed-row .v {
+    font-size: 13px;
+  }
+  .ed-row .v .chips {
+    display: flex; flex-wrap: wrap; gap: 6px;
+  }
+  .ed-row .v .add {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-style: italic;
+    color: var(--ink-mute);
+    font-size: 12.5px;
+    cursor: pointer;
+    border: 1px dashed var(--rule-strong);
+    padding: 3px 8px;
+  }
+  .ed-row.logic .opts {
+    display: inline-flex;
+    border: 1px solid var(--ink);
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .ed-row.logic .opts span {
+    padding: 4px 10px;
+    cursor: pointer;
+    color: var(--ink-mute);
+    border-right: 1px solid var(--rule);
+  }
+  .ed-row.logic .opts span:last-child { border-right: 0; }
+  .ed-row.logic .opts span.on { background: var(--ink); color: var(--paper); }
+
+  .preview {
+    flex: 1;
+    margin-top: 14px;
+    border: 1px solid var(--rule);
+    background: var(--paper-2);
+    padding: 12px 14px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .preview .ph {
+    display: flex; justify-content: space-between; align-items: baseline;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 6px;
+    margin-bottom: 8px;
+  }
+  .preview .ph .l {
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+  }
+  .preview .ph .l b { color: var(--ink); }
+  .preview .ph .r {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-style: italic;
+    font-size: 12px;
+    color: var(--ink-2);
+  }
+  .preview .ev {
+    display: grid;
+    grid-template-columns: 50px 1fr 24px 80px;
+    gap: 10px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink-2);
+    padding: 3px 0;
+    align-items: baseline;
+  }
+  .preview .ev .t  { color: var(--ink-faint); }
+  .preview .ev .d  { color: var(--ink); }
+  .preview .ev .a {
+    font-size: 9.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--copper);
+  }
+  .preview .ev .a.dir { color: var(--leaf); }
+  .preview .ev .a.blk { color: var(--ink); }
+
+  /* CLI footer */
+  .cli {
+    border-top: 1px solid var(--ink);
+    padding: 10px 0 0;
+    margin-top: 10px;
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 20px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink-2);
+  }
+  .cli .lbl {
+    font-family: "Inter", sans-serif;
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .cli .cmd { color: var(--ink); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cli .cmd b { color: var(--copper); font-weight: 500; }
+
+  /* bottom agent strip */
+  .agent-strip {
+    border-top: 1px solid var(--ink);
+    padding-top: 10px;
+    display: grid;
+    grid-template-columns: 200px 1fr auto;
+    gap: 20px;
+    align-items: center;
+  }
+  .agent-strip .name {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-style: italic;
+    font-size: 14px;
+    color: var(--ink);
+  }
+  .agent-strip .name b { font-style: normal; color: var(--leaf); font-weight: 500; }
+  .agent-strip .lines {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    color: var(--ink-2);
+    display: flex; gap: 20px; overflow: hidden;
+  }
+  .agent-strip .lines .l b { color: var(--ink); font-weight: 500; }
+  .agent-strip .lines .l em { color: var(--copper); font-style: normal; }
+  .agent-strip .ask {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 10.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+  }
+
+</style>
+</head>
+<body>
+
+<!-- page edges -->
+<div class="edge-top"></div>
+<div class="edge-top edge-top-2"></div>
+<div class="edge-bot"></div>
+<div class="edge-bot edge-bot-2"></div>
+
+<div class="marg tl"><b>Mosaic</b> · An atlas of secure routes</div>
+<div class="marg tr">Vol. I · No. 04 · 27 Apr MMXXVI</div>
+<div class="marg bl">Daemon active · Service · pid 8124 · v0.4.1</div>
+<div class="marg br">Plate VII · The register of routes</div>
+
+<div class="frame">
+
+  <!-- mast -->
+  <div class="mast">
+    <div class="name">Routing <i>—</i> register</div>
+    <div class="sub" style="text-align:left">28 rules · 12 selector sets · 3 fallbacks · last edited 4 min ago</div>
+    <div class="right">
+      <div class="meta">All rules apply <i style="color:var(--copper)">in priority order</i></div>
+    </div>
+  </div>
+
+  <!-- nav -->
+  <div class="nav-row">
+    <div class="nav">
+      <a href="main.html">Atlas</a>
+      <a href="#" class="cur">Routing register</a>
+      <a href="#">Diagnostic log <span class="err">3</span></a>
+      <a href="#">Agent transcript</a>
+      <a href="#">Raw config</a>
+    </div>
+    <div class="nav-actions">
+      <button class="btn ghost">+ New rule</button>
+      <button class="btn ghost">Test all</button>
+      <button class="btn">Apply</button>
+    </div>
+  </div>
+
+  <!-- main split -->
+  <section class="main">
+
+    <!-- LEFT: register -->
+    <div class="left">
+      <div class="left-head">
+        <span></span>
+        <span>Rule · Conditions</span>
+        <span>Action</span>
+        <span>Target</span>
+        <span class="ms">Hits / 5m</span>
+      </div>
+
+      <div class="entry">
+        <span class="grip">⋮⋮</span>
+        <span class="num">i</span>
+        <div class="body">
+          <div class="name">Local network bypass</div>
+          <div class="conds">ip-cidr <b>192.168.0.0/16</b> · <b>10.0.0.0/8</b> · <b>172.16.0.0/12</b></div>
+        </div>
+        <span class="action direct">DIRECT</span>
+        <span class="target">—</span>
+        <span class="matches"><b>1k</b></span>
+      </div>
+
+      <div class="entry">
+        <span class="grip">⋮⋮</span>
+        <span class="num">ii</span>
+        <div class="body">
+          <div class="name">Block ads &amp; trackers</div>
+          <div class="conds">geosite <b>category-ads-all</b> · domain-keyword <b>doubleclick</b></div>
+        </div>
+        <span class="action block">BLOCK</span>
+        <span class="target">—</span>
+        <span class="matches"><b>312</b></span>
+      </div>
+
+      <div class="entry cur">
+        <span class="grip">⋮⋮</span>
+        <span class="num">iii</span>
+        <div class="body">
+          <div class="name">Streaming → Singapore</div>
+          <div class="conds">geosite <b>netflix</b>, <b>youtube</b>, <b>disney</b>, <b>spotify</b><br>process <b>chrome.exe</b>, <b>firefox.exe</b>, <b>vivaldi.exe</b></div>
+        </div>
+        <span class="action proxy">PROXY</span>
+        <span class="target">SG-01</span>
+        <span class="matches"><b>87</b></span>
+      </div>
+
+      <div class="entry">
+        <span class="grip">⋮⋮</span>
+        <span class="num">iv</span>
+        <div class="body">
+          <div class="name">Russian sites direct</div>
+          <div class="conds">geosite <b>ru</b> · geoip <b>ru</b></div>
+        </div>
+        <span class="action direct">DIRECT</span>
+        <span class="target">—</span>
+        <span class="matches"><b>54</b></span>
+      </div>
+
+      <div class="entry">
+        <span class="grip">⋮⋮</span>
+        <span class="num">v</span>
+        <div class="body">
+          <div class="name">Telegram dedicated</div>
+          <div class="conds">geosite <b>telegram</b> · ip-cidr <b>91.108.0.0/22</b></div>
+        </div>
+        <span class="action proxy">PROXY</span>
+        <span class="target">DE-FRA</span>
+        <span class="matches"><b>22</b></span>
+      </div>
+
+      <div class="entry">
+        <span class="grip">⋮⋮</span>
+        <span class="num">vi</span>
+        <div class="body">
+          <div class="name">Steam &amp; gaming → low ping</div>
+          <div class="conds">process <b>steam.exe</b>, <b>cs2.exe</b> · port <b>27015–27050</b></div>
+        </div>
+        <span class="action proxy">PROXY</span>
+        <span class="target">JP-TOKYO</span>
+        <span class="matches"><b>14</b></span>
+      </div>
+
+      <div class="entry">
+        <span class="grip">⋮⋮</span>
+        <span class="num">vii</span>
+        <div class="body">
+          <div class="name">Dev tools direct</div>
+          <div class="conds">domain-suffix <b>github.com</b>, <b>npmjs.org</b>, <b>docker.io</b></div>
+        </div>
+        <span class="action direct">DIRECT</span>
+        <span class="target">—</span>
+        <span class="matches"><b>9</b></span>
+      </div>
+
+      <div class="entry">
+        <span class="grip">⋮⋮</span>
+        <span class="num">viii</span>
+        <div class="body">
+          <div class="name">Fallback — final</div>
+          <div class="conds">match-all → <b>url-test</b> over premium pool</div>
+        </div>
+        <span class="action proxy">PROXY</span>
+        <span class="target"><i>auto</i></span>
+        <span class="matches"><b>—</b></span>
+      </div>
+    </div>
+
+    <!-- RIGHT: editor -->
+    <div class="right">
+      <div class="editor-mast">
+        <span class="num">iii</span>
+        <span class="title">Streaming → Singapore</span>
+        <span class="actions">
+          <button class="btn ghost">Test</button>
+          <button class="btn ghost">Disable</button>
+        </span>
+      </div>
+
+      <div class="ed-row logic">
+        <div class="lab">Match</div>
+        <div class="v">
+          Multi-condition with logic
+          <span class="opts" style="margin-left:10px"><span>AND</span><span class="on">OR</span><span>NOT</span></span>
+        </div>
+      </div>
+
+      <div class="ed-row">
+        <div class="lab">GeoSite</div>
+        <div class="v">
+          <div class="chips">
+            <span class="chip"><b>netflix</b><span class="x">×</span></span>
+            <span class="chip"><b>youtube</b><span class="x">×</span></span>
+            <span class="chip"><b>disney</b><span class="x">×</span></span>
+            <span class="chip"><b>spotify</b><span class="x">×</span></span>
+            <span class="add">+ add geosite</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="ed-row">
+        <div class="lab">Process</div>
+        <div class="v">
+          <div class="chips">
+            <span class="chip"><b>chrome.exe</b><span class="x">×</span></span>
+            <span class="chip"><b>firefox.exe</b><span class="x">×</span></span>
+            <span class="chip"><b>vivaldi.exe</b><span class="x">×</span></span>
+            <span class="add">+ add process</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="ed-row">
+        <div class="lab">Action</div>
+        <div class="v">
+          <span class="chip copper" style="font-style: italic; font-family: 'Atlas Serif', Georgia, serif; font-size: 13px"><b style="color:var(--copper); font-style:italic">proxy via station</b></span>
+          <span style="margin: 0 12px; color: var(--ink-mute)">→</span>
+          <span class="chip"><b>Singapore — Reality</b> <span style="color: var(--ink-mute)">62ms</span></span>
+        </div>
+      </div>
+
+      <!-- live preview -->
+      <div class="preview">
+        <div class="ph">
+          <div class="l">Live · last <b>30 s</b></div>
+          <div class="r">14 events match this rule · 2 misses</div>
+        </div>
+        <div class="ev"><span class="t">12.4 s</span> <span class="d">www.netflix.com</span>  <span class="a">↗</span> <span style="text-align:right">→ SG-01</span></div>
+        <div class="ev"><span class="t">11.6 s</span> <span class="d">spotify.com</span>      <span class="a">↗</span> <span style="text-align:right">→ SG-01</span></div>
+        <div class="ev"><span class="t">10.2 s</span> <span class="d">disneyplus.com</span>   <span class="a">↗</span> <span style="text-align:right">→ SG-01</span></div>
+        <div class="ev"><span class="t">8.0 s</span>  <span class="d">api.github.com</span>   <span class="a dir">→</span> <span style="text-align:right">DIRECT (vii)</span></div>
+        <div class="ev"><span class="t">5.1 s</span>  <span class="d">manifest.googlevideo.com</span> <span class="a">↗</span> <span style="text-align:right">→ SG-01</span></div>
+      </div>
+
+      <!-- cli equivalent -->
+      <div class="cli">
+        <span class="lbl">CLI · MCP</span>
+        <span class="cmd">$ <b>mosaic rule update 3</b> --geosite netflix,youtube,disney --proc chrome.exe,firefox.exe --action proxy --station sg-01</span>
+        <span class="kbd">⌘ C</span>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- agent strip -->
+  <div class="agent-strip">
+    <div class="name"><span class="diamond on"></span> Agent <b>online</b> via MCP · 14 tools</div>
+    <div class="lines">
+      <span class="l">› <b>rule.test_match</b>(url: youtube.com) → matched <em>iii</em></span>
+      <span class="l">› <b>diag.run</b>(scope: routing) → <em>3 anomalies</em></span>
+      <span class="l">› <b>station.pick_fastest</b>(group: jp) → tokyo (38 ms)</span>
+    </div>
+    <div class="ask"><span class="kbd">⌘ K</span> Address agent</div>
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test -race ./...
+
+  build-windows:
+    name: build (windows/amd64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: cross compile mosaicd + mosaic
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          go build -o bin/mosaicd.exe ./cmd/mosaicd
+          go build -o bin/mosaic.exe  ./cmd/mosaic
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mosaic-windows-amd64
+          path: bin/*.exe

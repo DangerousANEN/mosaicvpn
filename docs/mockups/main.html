@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>MOSAIC · ATLAS</title>
+<style>
+  :root {
+    --paper: #ece4d0;
+    --paper-2: #e3dac4;
+    --ink: #1f1c18;
+    --ink-2: #423d36;
+    --ink-mute: #807967;
+    --copper: #b85c2c;
+    --rule: rgba(31, 28, 24, 0.18);
+  }
+  @font-face {
+    font-family: "Atlas Serif";
+    src: local("Iowan Old Style"), local("Hoefler Text"), local("Cormorant Garamond"), local("Georgia");
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  body {
+    width: 1200px; height: 760px;
+    overflow: hidden;
+    position: relative;
+    background:
+      radial-gradient(1200px 600px at 20% 0%, rgba(184,92,44,.05), transparent 50%),
+      radial-gradient(800px 400px at 100% 100%, rgba(31,28,24,.04), transparent 60%),
+      var(--paper);
+    /* paper grain */
+  }
+  body::before {
+    content: "";
+    position: absolute; inset: 0;
+    background-image:
+      repeating-radial-gradient(circle at 25% 35%, rgba(31,28,24,.012) 0 1px, transparent 1px 3px),
+      repeating-radial-gradient(circle at 75% 65%, rgba(31,28,24,.015) 0 1px, transparent 1px 4px);
+    pointer-events: none;
+    mix-blend-mode: multiply;
+  }
+  /* ---- top binding margin ---- */
+  .top-rule, .bot-rule {
+    position: absolute; left: 40px; right: 40px;
+    height: 1px; background: var(--ink); opacity: .25;
+  }
+  .top-rule { top: 28px; }
+  .top-rule-2 { top: 32px; height: 0.5px; opacity: .15; }
+  .bot-rule { bottom: 28px; }
+  .bot-rule-2 { bottom: 32px; height: 0.5px; opacity: .15; }
+
+  .marg {
+    position: absolute;
+    font-size: 10.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 500;
+  }
+  .marg.tl { top: 12px; left: 40px; }
+  .marg.tr { top: 12px; right: 40px; }
+  .marg.bl { bottom: 12px; left: 40px; }
+  .marg.br { bottom: 12px; right: 40px; }
+  .marg b { color: var(--ink); font-weight: 600; letter-spacing: 0.22em; }
+
+  /* layout */
+  .frame {
+    position: absolute;
+    top: 50px; left: 40px; right: 40px; bottom: 50px;
+    display: grid;
+    grid-template-columns: 270px 1fr 220px;
+    column-gap: 28px;
+  }
+
+  /* left column — masthead + status */
+  .left {
+    display: flex; flex-direction: column;
+    border-right: 1px solid var(--rule);
+    padding-right: 28px;
+    padding-top: 8px;
+  }
+  .masthead {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-weight: 500;
+    font-size: 36px;
+    line-height: 1;
+    letter-spacing: -0.01em;
+  }
+  .masthead i { font-style: italic; color: var(--copper); }
+  .masthead .sub {
+    font-family: "Inter", sans-serif;
+    font-size: 10.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-top: 8px;
+    font-weight: 600;
+  }
+
+  .h-rule { height: 1px; background: var(--ink); margin: 18px 0; opacity: .85; }
+  .h-rule.thin { opacity: .25; }
+
+  .status-eyebrow {
+    font-size: 10.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 10px;
+  }
+  .square {
+    width: 8px; height: 8px;
+    background: var(--copper);
+    display: inline-block;
+    transform: rotate(45deg);
+  }
+  .square.on { background: #2c6e3f; }
+  .square.off { background: #888; }
+
+  .station-name {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 28px;
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+    margin-bottom: 4px;
+  }
+  .station-coord {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    color: var(--ink-2);
+    letter-spacing: 0.04em;
+  }
+
+  /* metrics column */
+  .metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    margin-top: 22px;
+    border-top: 1px solid var(--rule);
+  }
+  .metric {
+    border-bottom: 1px solid var(--rule);
+    padding: 12px 0 10px;
+  }
+  .metric:nth-child(odd) { border-right: 1px solid var(--rule); padding-right: 14px; }
+  .metric:nth-child(even) { padding-left: 14px; }
+  .metric .lab {
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+  }
+  .metric .val {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 26px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    margin-top: 2px;
+  }
+  .metric .val span { font-size: 13px; color: var(--ink-mute); margin-left: 3px; font-family: "Inter", sans-serif; font-weight: 500; }
+
+  /* rotation */
+  .rot {
+    margin-top: auto;
+    font-size: 11px;
+    color: var(--ink-2);
+    line-height: 1.55;
+  }
+  .rot p { margin-bottom: 6px; }
+  .rot em { font-family: "Atlas Serif", Georgia, serif; font-style: italic; font-size: 13.5px; color: var(--ink); }
+
+  /* center map */
+  .map-wrap {
+    position: relative;
+    overflow: hidden;
+    padding-top: 8px;
+  }
+  .map-eyebrow {
+    display: flex; justify-content: space-between;
+    font-size: 10.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 10px;
+  }
+  .map {
+    position: relative;
+    width: 100%; height: calc(100% - 40px);
+  }
+  .map svg.world {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    display: block;
+  }
+  .map svg.world path {
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 0.5px;
+    opacity: 0.55;
+  }
+  /* graticule (lat/lon lines) */
+  .map svg.grat {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+  }
+  .map svg.grat line { stroke: var(--ink); stroke-width: 0.4; opacity: 0.10; }
+  .map svg.grat line.eq { opacity: 0.22; stroke-dasharray: 1.5 2.5; }
+
+  /* server pins */
+  .pin {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+  .pin .gem {
+    width: 10px; height: 10px;
+    background: var(--paper);
+    border: 1.2px solid var(--ink);
+    transform: rotate(45deg);
+    margin: 0 auto;
+  }
+  .pin.cur .gem { background: var(--copper); border-color: var(--copper); box-shadow: 0 0 0 4px rgba(184,92,44,.12); }
+  .pin .lbl {
+    margin-top: 6px;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.06em;
+    color: var(--ink);
+    white-space: nowrap;
+    background: var(--paper);
+    padding: 2px 6px;
+    border: 0.5px solid var(--rule);
+    border-radius: 1px;
+    display: inline-block;
+  }
+  .pin .lbl b { color: var(--ink); font-weight: 600; }
+  .pin.cur .lbl { background: var(--copper); color: var(--paper); border-color: var(--copper); }
+  .pin.cur .lbl b { color: var(--paper); }
+  .pin .num {
+    position: absolute;
+    top: -15px; left: 50%; transform: translateX(-50%);
+    font-family: "Atlas Serif", Georgia, serif;
+    font-style: italic;
+    font-size: 12px;
+    color: var(--ink-2);
+  }
+  .pin.cur .num { color: var(--copper); }
+
+  /* great-circle arc */
+  .arcs {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+  }
+  .arcs path { fill: none; stroke: var(--copper); stroke-width: 1.2; opacity: .85; }
+  .arcs path.dash { stroke-dasharray: 3 3; opacity: .55; }
+
+  /* compass rose */
+  .compass {
+    position: absolute;
+    bottom: 8px; right: 8px;
+    width: 64px; height: 64px;
+    color: var(--ink-2);
+  }
+  .compass text { font-family: "Atlas Serif", Georgia, serif; font-size: 9px; fill: var(--ink); font-style: italic; }
+
+  /* right column — server list */
+  .right {
+    border-left: 1px solid var(--rule);
+    padding-left: 28px;
+    padding-top: 8px;
+    display: flex; flex-direction: column;
+  }
+  .rh-eyebrow {
+    font-size: 10.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 600;
+    display: flex; justify-content: space-between;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--ink);
+    margin-bottom: 4px;
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 18px 1fr 36px;
+    gap: 8px;
+    align-items: baseline;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--rule);
+    font-size: 12.5px;
+  }
+  .row .num {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-style: italic;
+    color: var(--ink-mute);
+    font-size: 13px;
+  }
+  .row .city {
+    font-family: "Atlas Serif", Georgia, serif;
+    font-size: 15px;
+    line-height: 1.1;
+  }
+  .row .proto {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    color: var(--ink-mute);
+    text-transform: uppercase;
+    margin-top: 1px;
+  }
+  .row .ms {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    text-align: right;
+    color: var(--ink-2);
+  }
+  .row.cur { background: rgba(184,92,44,.05); }
+  .row.cur .city { color: var(--copper); font-style: italic; }
+  .row.cur .ms { color: var(--copper); }
+
+  .footnote {
+    margin-top: auto;
+    padding-top: 14px;
+    border-top: 1px solid var(--ink);
+    font-size: 10.5px;
+    color: var(--ink-mute);
+    letter-spacing: 0.04em;
+    line-height: 1.55;
+  }
+  .footnote em { font-family: "Atlas Serif", Georgia, serif; font-style: italic; color: var(--ink); font-size: 12px; }
+</style>
+</head>
+<body>
+
+<!-- top/bottom rules -->
+<div class="top-rule"></div>
+<div class="top-rule top-rule-2"></div>
+<div class="bot-rule"></div>
+<div class="bot-rule bot-rule-2"></div>
+
+<!-- masthead-style margin notes -->
+<div class="marg tl"><b>Mosaic</b> · An atlas of secure routes</div>
+<div class="marg tr">Vol. I · No. 04 · 27 Apr MMXXVI</div>
+<div class="marg bl">Daemon active · Service · pid 8124</div>
+<div class="marg br">Plate IV · The world, projected</div>
+
+<div class="frame">
+
+  <!-- LEFT: status panel -->
+  <section class="left">
+    <div class="masthead">
+      Mosaic<br>
+      <i>vpn</i><span style="font-style:normal">.</span>
+      <div class="sub">Atlas of routes · Edition I</div>
+    </div>
+
+    <div class="h-rule"></div>
+
+    <div class="status-eyebrow">
+      <span class="square on"></span> Connection · Active
+    </div>
+    <div class="station-name">Tokyo<br>— Premium</div>
+    <div class="station-coord">35°41′N · 139°41′E · 203.0.113.42</div>
+
+    <div class="metrics">
+      <div class="metric"><div class="lab">Latency</div><div class="val">38<span>ms</span></div></div>
+      <div class="metric"><div class="lab">Loss</div><div class="val">0.0<span>%</span></div></div>
+      <div class="metric"><div class="lab">Down</div><div class="val">12.4<span>MB/s</span></div></div>
+      <div class="metric"><div class="lab">Up</div><div class="val">0.86<span>MB/s</span></div></div>
+      <div class="metric"><div class="lab">Uptime</div><div class="val">02:41<span>:18</span></div></div>
+      <div class="metric"><div class="lab">Protocol</div><div class="val" style="font-size:18px">Hysteria<span style="margin-left:0">²</span></div></div>
+    </div>
+
+    <div class="rot">
+      <p style="margin-top:18px"><em>«</em> The system is in <em>rule</em> routing mode. Local networks bypass the tunnel; advertising and tracking domains are blocked at the resolver. <em>»</em></p>
+    </div>
+  </section>
+
+  <!-- CENTER: map -->
+  <section class="map-wrap">
+    <div class="map-eyebrow">
+      <span>Plate <i style="font-style:italic; font-family:'Atlas Serif',Georgia,serif">IV</i> · Routes in service · 147 stations</span>
+      <span style="color:var(--copper)">Tokyo · current bearing</span>
+    </div>
+
+    <div class="map">
+
+      <!-- graticule -->
+      <svg class="grat" viewBox="0 0 1000 500" preserveAspectRatio="none">
+        <line class="eq" x1="0" y1="250" x2="1000" y2="250"/>
+        <line x1="0" y1="125" x2="1000" y2="125"/>
+        <line x1="0" y1="375" x2="1000" y2="375"/>
+        <line x1="0" y1="62"  x2="1000" y2="62"/>
+        <line x1="0" y1="187" x2="1000" y2="187"/>
+        <line x1="0" y1="312" x2="1000" y2="312"/>
+        <line x1="0" y1="437" x2="1000" y2="437"/>
+        <line x1="125" y1="0" x2="125" y2="500"/>
+        <line x1="250" y1="0" x2="250" y2="500"/>
+        <line x1="375" y1="0" x2="375" y2="500"/>
+        <line x1="500" y1="0" x2="500" y2="500"/>
+        <line x1="625" y1="0" x2="625" y2="500"/>
+        <line x1="750" y1="0" x2="750" y2="500"/>
+        <line x1="875" y1="0" x2="875" y2="500"/>
+      </svg>
+
+      <!-- world map (CC BY-SA, simple-world-map) -->
+      <object class="world" data="world.svg" type="image/svg+xml" style="width:100%;height:100%"></object>
+
+      <!-- great-circle arcs from "you" to current server -->
+      <svg class="arcs" viewBox="0 0 1000 500" preserveAspectRatio="none">
+        <!-- you (570,140) → Tokyo (860,210) -->
+        <path d="M 570,140 Q 715,50 860,210" />
+        <!-- candidate routes (faded dashed) -->
+        <path class="dash" style="opacity:.30" d="M 570,140 Q 540,100 510,170"/>
+        <path class="dash" style="opacity:.25" d="M 570,140 Q 480,250 240,210"/>
+        <path class="dash" style="opacity:.20" d="M 570,140 Q 700,260 780,290"/>
+      </svg>
+
+      <!-- pins -->
+      <div class="pin cur"  style="left:86%;top:42%">
+        <div class="num">i</div>
+        <div class="gem"></div>
+        <div class="lbl"><b>Tokyo</b> · 38</div>
+      </div>
+      <div class="pin"      style="left:78%;top:58%">
+        <div class="num">ii</div>
+        <div class="gem"></div>
+        <div class="lbl">Singapore · 62</div>
+      </div>
+      <div class="pin"      style="left:51%;top:34%">
+        <div class="num">iii</div>
+        <div class="gem"></div>
+        <div class="lbl">Frankfurt · 112</div>
+      </div>
+      <div class="pin"      style="left:24%;top:42%">
+        <div class="num">iv</div>
+        <div class="gem"></div>
+        <div class="lbl">New York · 186</div>
+      </div>
+
+      <!-- you-here marker -->
+      <div class="pin" style="left:57%;top:28%">
+        <div class="lbl" style="background:var(--ink); color:var(--paper); border-color:var(--ink); font-style:italic; padding:1px 6px;">vous</div>
+        <div class="gem" style="background:var(--ink); border-color:var(--ink); transform:rotate(0deg); border-radius:50%; width:6px; height:6px; margin-top:4px"></div>
+      </div>
+
+      <!-- compass rose -->
+      <svg class="compass" viewBox="0 0 64 64">
+        <circle cx="32" cy="32" r="28" fill="none" stroke="currentColor" stroke-width=".6" opacity=".6"/>
+        <circle cx="32" cy="32" r="20" fill="none" stroke="currentColor" stroke-width=".4" opacity=".4"/>
+        <path d="M32 6 L34 32 L32 58 L30 32 Z" fill="currentColor" opacity=".7"/>
+        <path d="M6 32 L32 30 L58 32 L32 34 Z" fill="currentColor" opacity=".35"/>
+        <text x="32" y="5" text-anchor="middle">N</text>
+        <text x="32" y="63" text-anchor="middle">S</text>
+        <text x="3" y="35" text-anchor="middle">W</text>
+        <text x="61" y="35" text-anchor="middle">E</text>
+      </svg>
+
+    </div>
+  </section>
+
+  <!-- RIGHT: stations index -->
+  <aside class="right">
+    <div class="rh-eyebrow"><span>Index of Stations</span><span>ms</span></div>
+
+    <div class="row cur">
+      <span class="num">i</span>
+      <div>
+        <div class="city">Tokyo <span style="font-style:italic">— Premium</span></div>
+        <div class="proto">Hysteria² · obfs</div>
+      </div>
+      <span class="ms">38</span>
+    </div>
+    <div class="row">
+      <span class="num">ii</span>
+      <div>
+        <div class="city">Singapore</div>
+        <div class="proto">VLESS · Reality</div>
+      </div>
+      <span class="ms">62</span>
+    </div>
+    <div class="row">
+      <span class="num">iii</span>
+      <div>
+        <div class="city">Frankfurt</div>
+        <div class="proto">Naive · h2</div>
+      </div>
+      <span class="ms">112</span>
+    </div>
+    <div class="row">
+      <span class="num">iv</span>
+      <div>
+        <div class="city">Amsterdam</div>
+        <div class="proto">Shadowsocks 2022</div>
+      </div>
+      <span class="ms">128</span>
+    </div>
+    <div class="row">
+      <span class="num">v</span>
+      <div>
+        <div class="city">New York</div>
+        <div class="proto">Amnezia WG</div>
+      </div>
+      <span class="ms">186</span>
+    </div>
+    <div class="row">
+      <span class="num">vi</span>
+      <div>
+        <div class="city">Paris</div>
+        <div class="proto">VLESS · ws + tls</div>
+      </div>
+      <span class="ms">204</span>
+    </div>
+
+    <div class="footnote">
+      <p><em>«</em> All readings refreshed twelve minutes ago from three subscriptions. Subscribe to a new pool, edit routing rules, or address the agent in the <em>Console</em>. <em>»</em></p>
+    </div>
+  </aside>
+
+</div>
+
+</body>
+</html>
