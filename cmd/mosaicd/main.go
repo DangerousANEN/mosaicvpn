@@ -20,13 +20,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/DangerousANEN/mosaic/internal/api"
-	"github.com/DangerousANEN/mosaic/internal/logx"
-	"github.com/DangerousANEN/mosaic/internal/paths"
-	"github.com/DangerousANEN/mosaic/internal/proto"
-	"github.com/DangerousANEN/mosaic/internal/single"
-	"github.com/DangerousANEN/mosaic/internal/state"
-	"github.com/DangerousANEN/mosaic/internal/store"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/api"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/logx"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/paths"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/single"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/state"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/store"
 )
 
 // Version is set at build time via -ldflags "-X main.Version=...".

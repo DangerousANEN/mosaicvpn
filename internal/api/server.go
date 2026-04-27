@@ -20,11 +20,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DangerousANEN/mosaic/internal/logx"
-	"github.com/DangerousANEN/mosaic/internal/proto"
-	"github.com/DangerousANEN/mosaic/internal/state"
-	"github.com/DangerousANEN/mosaic/internal/store"
-	"github.com/DangerousANEN/mosaic/internal/subs"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/logx"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/state"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/store"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/subs"
 )
 
 // Fetcher is the function used to retrieve subscription payloads. The

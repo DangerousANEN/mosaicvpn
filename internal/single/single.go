@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/DangerousANEN/mosaic/internal/proto"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
 )
 
 // ErrAlreadyRunning is returned when another daemon instance holds the lock.

@@ -146,7 +146,7 @@ and MaxMind data files.
 Requires Go 1.22+.
 
 ```bash
-git clone https://github.com/DangerousANEN/mosaic.git
+git clone https://github.com/pupspochta-cpu/mosaicvpn.git
 cd mosaic
 go build ./...
 ```

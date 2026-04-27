@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/DangerousANEN/mosaic/internal/proto"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
 )
 
 // ParseV2RayBase64 parses a base64-encoded list of share-URIs (or, if the

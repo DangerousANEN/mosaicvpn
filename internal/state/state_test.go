@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DangerousANEN/mosaic/internal/proto"
-	"github.com/DangerousANEN/mosaic/internal/state"
-	"github.com/DangerousANEN/mosaic/internal/store"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/state"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/store"
 )
 
 func newSetup(t *testing.T) (*store.Store, *state.MockBackend, *state.Manager, proto.Server) {

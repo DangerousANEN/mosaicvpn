@@ -20,10 +20,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/DangerousANEN/mosaic/internal/apiclient"
-	"github.com/DangerousANEN/mosaic/internal/paths"
-	"github.com/DangerousANEN/mosaic/internal/proto"
-	"github.com/DangerousANEN/mosaic/internal/store"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/apiclient"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/paths"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/store"
 )
 
 // Version is overridable via -ldflags.

@@ -1,4 +1,4 @@
-module github.com/DangerousANEN/mosaic
+module github.com/pupspochta-cpu/mosaicvpn
 
 go 1.22
 

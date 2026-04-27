@@ -4,8 +4,8 @@ import (
 	"net/netip"
 	"testing"
 
-	"github.com/DangerousANEN/mosaic/internal/proto"
-	"github.com/DangerousANEN/mosaic/internal/rules"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/rules"
 )
 
 type fakeGeoSite map[string][]string
