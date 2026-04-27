@@ -1,0 +1,77 @@
+name: release
+
+# Builds the Tauri Windows installer with the bundled mosaicd sidecar.
+# Triggered manually or on a v* tag — the resulting NSIS .exe is uploaded
+# as a workflow artifact (and attached to the release on a tag push).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+jobs:
+  windows-installer:
+    name: Mosaic-Setup.exe
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ui/src-tauri
+
+      - name: build mosaicd sidecar
+        shell: pwsh
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          New-Item -ItemType Directory -Force -Path ui/src-tauri/binaries | Out-Null
+          go build -ldflags="-s -w" -o ui/src-tauri/binaries/mosaicd-x86_64-pc-windows-msvc.exe ./cmd/mosaicd
+          go build -ldflags="-s -w" -o bin/mosaic.exe ./cmd/mosaic
+
+      - name: install renderer deps
+        working-directory: ui
+        run: npm ci
+
+      - name: build Tauri NSIS installer
+        working-directory: ui
+        run: npm run tauri -- build --target x86_64-pc-windows-msvc --bundles nsis
+
+      - name: collect artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Get-ChildItem -Recurse -Path ui/src-tauri/target/x86_64-pc-windows-msvc/release/bundle |
+            Where-Object { $_.Extension -in '.exe', '.msi' } |
+            ForEach-Object { Copy-Item $_.FullName dist/ }
+          Copy-Item bin/mosaic.exe dist/mosaic.exe
+          Get-ChildItem dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mosaic-windows-installer
+          path: dist/*
+
+      - name: attach to release (tag push only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*

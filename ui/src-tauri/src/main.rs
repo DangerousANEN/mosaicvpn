@@ -9,13 +9,40 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
+use std::process::{Child, Command};
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Manager, RunEvent, WindowEvent,
 };
+
+/// DaemonProcess wraps the mosaicd child process spawned by the shell
+/// at startup. We hold it inside the Tauri AppHandle as managed state
+/// so we can kill it deterministically when the GUI exits — otherwise
+/// the daemon would keep running after the window is closed.
+struct DaemonProcess(Mutex<Option<Child>>);
+
+impl DaemonProcess {
+    fn new() -> Self {
+        Self(Mutex::new(None))
+    }
+
+    fn store(&self, child: Child) {
+        let mut slot = self.0.lock().expect("daemon mutex poisoned");
+        *slot = Some(child);
+    }
+
+    fn shutdown(&self) {
+        let mut slot = self.0.lock().expect("daemon mutex poisoned");
+        if let Some(mut child) = slot.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct DaemonEndpoint {
@@ -71,10 +98,91 @@ fn daemon_endpoint() -> Result<DaemonEndpoint, String> {
         .map_err(|e| format!("decode lockfile: {}", e))
 }
 
+/// resolve_runtime_data_dir returns the directory the daemon should
+/// read/write inside, honouring MOSAIC_DATA_DIR if it is already set,
+/// otherwise falling back to a per-user dir under Tauri's app-data
+/// location. The result is also exported into the env so the spawned
+/// mosaicd child sees the same value via os.Getenv.
+fn resolve_runtime_data_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    if let Ok(d) = std::env::var("MOSAIC_DATA_DIR") {
+        if !d.is_empty() {
+            return Some(PathBuf::from(d));
+        }
+    }
+    let dir = app.path().app_data_dir().ok()?.join("daemon");
+    let _ = std::fs::create_dir_all(&dir);
+    std::env::set_var("MOSAIC_DATA_DIR", &dir);
+    Some(dir)
+}
+
+/// locate_bundled_mosaicd returns the path to the mosaicd executable
+/// shipped alongside the GUI in release builds. It is bundled via
+/// `bundle.externalBin` in tauri.conf.json, which places it next to the
+/// main app exe with the target-triple suffix stripped at install time.
+fn locate_bundled_mosaicd(app: &tauri::AppHandle) -> Option<PathBuf> {
+    // Tauri 2 strips the target-triple suffix at bundle time, so the
+    // installed binary is just `mosaicd[.exe]` next to the app exe.
+    let exe_name = if cfg!(windows) { "mosaicd.exe" } else { "mosaicd" };
+
+    if let Ok(here) = std::env::current_exe() {
+        if let Some(dir) = here.parent() {
+            let p = dir.join(exe_name);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+    }
+    if let Ok(res) = app.path().resource_dir() {
+        let p = res.join(exe_name);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+/// spawn_bundled_daemon launches the bundled mosaicd as a child process.
+/// On dev builds the binary is usually missing — in that case we silently
+/// skip and assume the developer has run `scripts/dev.sh` separately.
+fn spawn_bundled_daemon(app: &tauri::AppHandle) -> Option<Child> {
+    let exe = locate_bundled_mosaicd(app)?;
+    let _ = resolve_runtime_data_dir(app);
+    let mut cmd = Command::new(&exe);
+    if let Ok(d) = std::env::var("MOSAIC_DATA_DIR") {
+        cmd.env("MOSAIC_DATA_DIR", d);
+    }
+    #[cfg(windows)]
+    {
+        // Suppress the console window that would otherwise flash when
+        // launching a non-GUI subsystem binary.
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    match cmd.spawn() {
+        Ok(child) => Some(child),
+        Err(err) => {
+            eprintln!("mosaic-ui: failed to spawn bundled mosaicd at {exe:?}: {err}");
+            None
+        }
+    }
+}
+
 fn main() {
+    let daemon = DaemonProcess::new();
     tauri::Builder::default()
+        .manage(daemon)
         .invoke_handler(tauri::generate_handler![daemon_endpoint])
         .setup(|app| {
+            // In release builds we ship mosaicd alongside the GUI and
+            // launch it ourselves; in dev builds the binary is absent
+            // and we expect the developer to run `scripts/dev.sh`.
+            if let Some(child) = spawn_bundled_daemon(app.handle()) {
+                app.state::<DaemonProcess>().store(child);
+            } else {
+                let _ = resolve_runtime_data_dir(app.handle());
+            }
+
             // Tray menu: Show window · separator · Quit. Connection
             // toggles live in the popup itself; the tray menu is for
             // window/lifecycle controls only.
@@ -120,8 +228,25 @@ fn main() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running mosaic-ui");
+        .build(tauri::generate_context!())
+        .expect("error while building mosaic-ui")
+        .run(|app, event| match event {
+            // When the user closes the last window or quits via the
+            // tray menu we have to make sure the bundled mosaicd dies
+            // with us — otherwise it stays running with the lockfile
+            // taken and the next launch fails the single-instance check.
+            RunEvent::ExitRequested { .. } | RunEvent::Exit => {
+                app.state::<DaemonProcess>().shutdown();
+            }
+            RunEvent::WindowEvent {
+                event: WindowEvent::Destroyed,
+                ..
+            } => {
+                // No-op: tray keeps the app alive until the user picks
+                // "Quit Mosaic" explicitly.
+            }
+            _ => {}
+        });
 }
 
 fn focus_main(app: &tauri::AppHandle) {

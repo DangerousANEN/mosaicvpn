@@ -14,7 +14,8 @@
 
 param(
 	[switch]$NoUi,
-	[switch]$Reset
+	[switch]$Reset,
+	[switch]$NoBuild
 )
 
 $ErrorActionPreference = 'Stop'
@@ -31,16 +32,33 @@ if ($Reset -and (Test-Path $env:MOSAIC_DATA_DIR)) {
 New-Item -ItemType Directory -Force -Path $env:MOSAIC_DATA_DIR | Out-Null
 
 Write-Host "==> data dir:    $env:MOSAIC_DATA_DIR"
-Write-Host "==> building Go binaries"
-go build -o (Join-Path $RepoRoot 'bin\mosaicd.exe') ./cmd/mosaicd
-go build -o (Join-Path $RepoRoot 'bin\mosaic.exe')  ./cmd/mosaic
 
-$DaemonLog = Join-Path $env:MOSAIC_DATA_DIR 'daemon.log'
-Write-Host "==> starting mosaicd (logs: $DaemonLog)"
-$Daemon = Start-Process -FilePath (Join-Path $RepoRoot 'bin\mosaicd.exe') `
+$DaemonExe = Join-Path $RepoRoot 'bin\mosaicd.exe'
+$CliExe    = Join-Path $RepoRoot 'bin\mosaic.exe'
+
+# Skip the Go build if the prebuilt binaries are already in ./bin (or
+# if the user passed -NoBuild). This lets people without Go installed
+# drop in a prebuilt bundle and run the daemon straight away.
+if (-not $NoBuild -and -not ((Test-Path $DaemonExe) -and (Test-Path $CliExe))) {
+	if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
+		throw "go is not on PATH and bin\mosaicd.exe is missing. Install Go 1.22+ from https://go.dev/dl/ or drop prebuilt binaries into bin\, then re-run with -NoBuild."
+	}
+	Write-Host "==> building Go binaries"
+	go build -o $DaemonExe ./cmd/mosaicd
+	go build -o $CliExe    ./cmd/mosaic
+} else {
+	Write-Host "==> using prebuilt binaries in $((Split-Path $DaemonExe))"
+}
+
+$DaemonLog    = Join-Path $env:MOSAIC_DATA_DIR 'daemon.log'
+$DaemonErrLog = Join-Path $env:MOSAIC_DATA_DIR 'daemon.err.log'
+# Start-Process refuses to point stdout and stderr at the same file, so
+# we keep them separate; both are tail-friendly.
+Write-Host "==> starting mosaicd (stdout: $DaemonLog, stderr: $DaemonErrLog)"
+$Daemon = Start-Process -FilePath $DaemonExe `
 	-ArgumentList '-v' `
 	-RedirectStandardOutput $DaemonLog `
-	-RedirectStandardError  $DaemonLog `
+	-RedirectStandardError  $DaemonErrLog `
 	-PassThru -NoNewWindow
 
 try {

@@ -29,9 +29,17 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis", "msi", "app", "dmg", "deb", "rpm", "appimage"],
     "icon": [
       "icons/icon.png"
-    ]
+    ],
+    "externalBin": [
+      "binaries/mosaicd"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
   }
 }
