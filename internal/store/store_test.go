@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
-	"github.com/pupspochta-cpu/mosaicvpn/internal/store"
+	"github.com/DangerousANEN/mosaicvpn/internal/proto"
+	"github.com/DangerousANEN/mosaicvpn/internal/store"
 )
 
 func newStore(t *testing.T) *store.Store {

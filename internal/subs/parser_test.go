@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
-	"github.com/pupspochta-cpu/mosaicvpn/internal/subs"
+	"github.com/DangerousANEN/mosaicvpn/internal/proto"
+	"github.com/DangerousANEN/mosaicvpn/internal/subs"
 )
 
 func TestDetectAndParseSingbox(t *testing.T) {

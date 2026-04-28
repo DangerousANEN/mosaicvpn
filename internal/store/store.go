@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
+	"github.com/DangerousANEN/mosaicvpn/internal/proto"
 )
 
 // State is the persistent in-memory representation of all Mosaic data.

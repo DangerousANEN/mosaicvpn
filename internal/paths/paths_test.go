@@ -3,7 +3,7 @@ package paths_test
 import (
 	"testing"
 
-	"github.com/pupspochta-cpu/mosaicvpn/internal/paths"
+	"github.com/DangerousANEN/mosaicvpn/internal/paths"
 )
 
 // TestDataDirEnvOverride locks in the contract that MOSAIC_DATA_DIR

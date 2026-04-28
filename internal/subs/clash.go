@@ -3,7 +3,7 @@ package subs
 import (
 	"fmt"
 
-	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
+	"github.com/DangerousANEN/mosaicvpn/internal/proto"
 	"gopkg.in/yaml.v3"
 )
 

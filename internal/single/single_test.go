@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
-	"github.com/pupspochta-cpu/mosaicvpn/internal/single"
+	"github.com/DangerousANEN/mosaicvpn/internal/proto"
+	"github.com/DangerousANEN/mosaicvpn/internal/single"
 )
 
 func TestAcquireAndRelease(t *testing.T) {

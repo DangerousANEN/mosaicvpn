@@ -11,11 +11,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pupspochta-cpu/mosaicvpn/internal/api"
-	"github.com/pupspochta-cpu/mosaicvpn/internal/apiclient"
-	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
-	"github.com/pupspochta-cpu/mosaicvpn/internal/state"
-	"github.com/pupspochta-cpu/mosaicvpn/internal/store"
+	"github.com/DangerousANEN/mosaicvpn/internal/api"
+	"github.com/DangerousANEN/mosaicvpn/internal/apiclient"
+	"github.com/DangerousANEN/mosaicvpn/internal/proto"
+	"github.com/DangerousANEN/mosaicvpn/internal/state"
+	"github.com/DangerousANEN/mosaicvpn/internal/store"
 )
 
 func newTestServer(t *testing.T, fetcher api.Fetcher) (*api.Server, *apiclient.Client, *httptest.Server) {

@@ -21,10 +21,12 @@ Last updated: rc12 shipped. Currently blocked on six known bugs (see §6).
   hasn't merged yet; the rc12 build was tagged from the branch tip
   before the PR landed.
 - Old per-rc feature branches were cleaned up; only `main` remains.
-- Module path: `github.com/pupspochta-cpu/mosaicvpn` (note: the GitHub
-  org is `DangerousANEN`, the Go module path uses `pupspochta-cpu`
-  from earlier history — do NOT change this without coordinating, all
-  imports use the latter).
+- Module path: `github.com/DangerousANEN/mosaicvpn`. As of rc20 the
+  Go module path matches the GitHub org; previous tags (rc≤19) used a
+  legacy `pupspochta-cpu/mosaicvpn` path inherited from the initial
+  scaffold. The rename is a no-op for builds (Go resolves internal/*
+  through go.mod) but cleans up stack traces and lets `go install` from
+  the GitHub URL work.
 
 ## 2. User context
 

@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
-	"github.com/pupspochta-cpu/mosaicvpn/internal/store"
+	"github.com/DangerousANEN/mosaicvpn/internal/proto"
+	"github.com/DangerousANEN/mosaicvpn/internal/store"
 )
 
 // MockBackend simulates a VPN connection without touching the network. It

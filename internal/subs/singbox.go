@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
+	"github.com/DangerousANEN/mosaicvpn/internal/proto"
 )
 
 // ParseSingbox accepts a JSON document that contains an "outbounds" array

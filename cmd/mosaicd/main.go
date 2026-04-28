@@ -20,13 +20,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pupspochta-cpu/mosaicvpn/internal/api"
-	"github.com/pupspochta-cpu/mosaicvpn/internal/logx"
-	"github.com/pupspochta-cpu/mosaicvpn/internal/paths"
-	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
-	"github.com/pupspochta-cpu/mosaicvpn/internal/single"
-	"github.com/pupspochta-cpu/mosaicvpn/internal/state"
-	"github.com/pupspochta-cpu/mosaicvpn/internal/store"
+	"github.com/DangerousANEN/mosaicvpn/internal/api"
+	"github.com/DangerousANEN/mosaicvpn/internal/logx"
+	"github.com/DangerousANEN/mosaicvpn/internal/paths"
+	"github.com/DangerousANEN/mosaicvpn/internal/proto"
+	"github.com/DangerousANEN/mosaicvpn/internal/single"
+	"github.com/DangerousANEN/mosaicvpn/internal/state"
+	"github.com/DangerousANEN/mosaicvpn/internal/store"
 )
 
 // Version is set at build time via -ldflags "-X main.Version=...".
@@ -57,6 +57,14 @@ func run(dataDirOverride string) error {
 	if err := paths.EnsureDir(dataDir); err != nil {
 		return fmt.Errorf("create data dir: %w", err)
 	}
+
+	// Reap any sing-box.exe processes that survived a previous crash
+	// of the UI / daemon. With Job Object kill-on-close (rc20+) this
+	// is normally a no-op; on first launch after upgrading from
+	// rc<=19 a stale sing-box may still be running and holding our
+	// loopback ports, which would block this start with "could not
+	// bind a free port for sing-box proxies".
+	reapStaleSingBox(dataDir)
 
 	store, err := store.Open(paths.StoreFile(dataDir))
 	if err != nil {

@@ -17,9 +17,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/pupspochta-cpu/mosaicvpn/internal/logx"
-	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
-	"github.com/pupspochta-cpu/mosaicvpn/internal/store"
+	"github.com/DangerousANEN/mosaicvpn/internal/logx"
+	"github.com/DangerousANEN/mosaicvpn/internal/proto"
+	"github.com/DangerousANEN/mosaicvpn/internal/store"
 )
 
 // SingBoxBackend drives a bundled sing-box executable as a child

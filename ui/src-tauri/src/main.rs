@@ -350,11 +350,137 @@ fn spawn_bundled_daemon(app: &tauri::AppHandle) -> Option<Child> {
     match cmd.spawn() {
         Ok(child) => {
             eprintln!("mosaic-ui: spawned mosaicd pid {} from {exe:?} (data_dir={data_dir:?})", child.id());
+            #[cfg(windows)]
+            {
+                // Tie mosaicd (and any process it spawns — sing-box —
+                // by Windows job-inheritance) to a Job Object owned by
+                // this UI process. When the UI exits cleanly OR is
+                // terminated externally (taskkill, crash, OS shutdown)
+                // every process in the job is hard-killed by the
+                // kernel. Without this the daemon and sing-box would
+                // happily survive a UI crash and accumulate across
+                // launches.
+                if !job::assign(&child) {
+                    eprintln!("mosaic-ui: warning: AssignProcessToJobObject failed; mosaicd will not auto-die when UI exits");
+                }
+            }
             Some(child)
         }
         Err(err) => {
             eprintln!("mosaic-ui: failed to spawn bundled mosaicd at {exe:?}: {err}");
             None
+        }
+    }
+}
+
+/// Windows job-object integration. The first call to `assign()` lazily
+/// creates a single Job Object configured with
+/// JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE; the only handle to that object
+/// is owned by this process and is intentionally leaked so it stays
+/// open for the lifetime of the UI. When the UI exits — for any
+/// reason — Windows closes the handle, the job has zero references
+/// left, and the kernel terminates every process assigned to it.
+///
+/// On Windows 8+ child processes inherit the job of their creator
+/// unless they specifically break away, so once mosaicd is in the
+/// job, sing-box (spawned by mosaicd) joins automatically.
+#[cfg(windows)]
+mod job {
+    use std::ffi::c_void;
+    use std::os::windows::io::AsRawHandle;
+    use std::process::Child;
+    use std::sync::OnceLock;
+
+    type Handle = *mut c_void;
+    type Bool = i32;
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct JobObjectBasicLimitInformation {
+        per_process_user_time_limit: i64,
+        per_job_user_time_limit: i64,
+        limit_flags: u32,
+        minimum_working_set_size: usize,
+        maximum_working_set_size: usize,
+        active_process_limit: u32,
+        affinity: usize,
+        priority_class: u32,
+        scheduling_class: u32,
+    }
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct IoCounters {
+        read_operation_count: u64,
+        write_operation_count: u64,
+        other_operation_count: u64,
+        read_transfer_count: u64,
+        write_transfer_count: u64,
+        other_transfer_count: u64,
+    }
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct JobObjectExtendedLimitInformation {
+        basic_limit_information: JobObjectBasicLimitInformation,
+        io_info: IoCounters,
+        process_memory_limit: usize,
+        job_memory_limit: usize,
+        peak_process_memory_used: usize,
+        peak_job_memory_used: usize,
+    }
+
+    const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: u32 = 0x0000_2000;
+    const JOB_OBJECT_EXTENDED_LIMIT_INFORMATION: i32 = 9;
+
+    extern "system" {
+        fn CreateJobObjectW(security: *mut c_void, name: *const u16) -> Handle;
+        fn SetInformationJobObject(
+            job: Handle,
+            info_class: i32,
+            info: *const c_void,
+            info_len: u32,
+        ) -> Bool;
+        fn AssignProcessToJobObject(job: Handle, process: Handle) -> Bool;
+    }
+
+    // Wrapping the raw HANDLE in a struct so it implements Send/Sync —
+    // OnceLock requires the inner type to satisfy those bounds.
+    #[derive(Copy, Clone)]
+    struct JobHandle(Handle);
+    unsafe impl Send for JobHandle {}
+    unsafe impl Sync for JobHandle {}
+
+    static JOB: OnceLock<JobHandle> = OnceLock::new();
+
+    fn ensure_job() -> Handle {
+        JOB.get_or_init(|| unsafe {
+            let job = CreateJobObjectW(std::ptr::null_mut(), std::ptr::null());
+            if job.is_null() {
+                return JobHandle(std::ptr::null_mut());
+            }
+            let mut info = JobObjectExtendedLimitInformation::default();
+            info.basic_limit_information.limit_flags =
+                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            let _ = SetInformationJobObject(
+                job,
+                JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+                &info as *const _ as *const c_void,
+                std::mem::size_of::<JobObjectExtendedLimitInformation>() as u32,
+            );
+            JobHandle(job)
+        })
+        .0
+    }
+
+    pub fn assign(child: &Child) -> bool {
+        unsafe {
+            let job = ensure_job();
+            if job.is_null() {
+                return false;
+            }
+            let handle = child.as_raw_handle() as Handle;
+            AssignProcessToJobObject(job, handle) != 0
         }
     }
 }

@@ -21,9 +21,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pupspochta-cpu/mosaicvpn/internal/logx"
-	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
-	"github.com/pupspochta-cpu/mosaicvpn/internal/store"
+	"github.com/DangerousANEN/mosaicvpn/internal/logx"
+	"github.com/DangerousANEN/mosaicvpn/internal/proto"
+	"github.com/DangerousANEN/mosaicvpn/internal/store"
 )
 
 // Backend is the abstract VPN engine the manager drives. Phase 1 ships a

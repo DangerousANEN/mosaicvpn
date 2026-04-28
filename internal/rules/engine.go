@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
+	"github.com/DangerousANEN/mosaicvpn/internal/proto"
 )
 
 // Flow describes the connection being routed.

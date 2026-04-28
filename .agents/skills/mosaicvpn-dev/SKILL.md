@@ -15,7 +15,7 @@ Desktop VPN client for Windows. Three pieces:
   startup, written to `daemon.lock` along with a bearer token) and
   drives the bundled `sing-box.exe` as a child of its own.
 
-Module path: `github.com/pupspochta-cpu/mosaicvpn`.
+Module path: `github.com/DangerousANEN/mosaicvpn`.
 
 ## Roadmap & history
 

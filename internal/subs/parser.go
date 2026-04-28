@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
+	"github.com/DangerousANEN/mosaicvpn/internal/proto"
 )
 
 // ErrUnknownFormat is returned when no parser recognises the payload.

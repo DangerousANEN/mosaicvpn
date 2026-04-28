@@ -13,9 +13,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
-	"github.com/pupspochta-cpu/mosaicvpn/internal/single"
-	"github.com/pupspochta-cpu/mosaicvpn/internal/store"
+	"github.com/DangerousANEN/mosaicvpn/internal/proto"
+	"github.com/DangerousANEN/mosaicvpn/internal/single"
+	"github.com/DangerousANEN/mosaicvpn/internal/store"
 )
 
 // ErrDaemonNotRunning is returned when the lockfile is absent or empty.
