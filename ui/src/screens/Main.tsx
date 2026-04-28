@@ -54,8 +54,11 @@ export function Main({ status }: { status: Status }): JSX.Element {
         await api.disconnect();
       } else if (status.server) {
         await api.connect(status.server.id);
-      } else if (servers[0]) {
-        await api.connect(servers[0].id);
+      } else if (servers.length > 0) {
+        // Empty string asks the daemon to reuse LastServerID (persisted
+        // across restarts). Falls back to the first available server
+        // only when the user has never connected before.
+        await api.connect("");
       } else {
         setErr("no servers configured");
       }

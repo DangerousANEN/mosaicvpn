@@ -94,8 +94,11 @@ func DefaultPrefs() Prefs {
 // Default returns a State with sensible defaults.
 func Default() State {
 	return State{
-		Prefs:   DefaultPrefs(),
-		Version: 1,
+		Prefs: DefaultPrefs(),
+		// Version 2: rc23 forced tunnel_mode=proxy on existing
+		// installs to recover from rc21/rc22 wintun bundling bug.
+		// New installs start here so the migration is a no-op.
+		Version: 2,
 	}
 }
 
@@ -134,6 +137,18 @@ func Open(path string) (*Store, error) {
 	// Folio dropdown renders a selected option after upgrade.
 	if s.state.Prefs.TunStack == "" {
 		s.state.Prefs.TunStack = "gvisor"
+	}
+	// One-time migration to v2: rc≤22 left users on tunnel_mode=tun
+	// even when wintun was misbundled, leaving them with no internet
+	// after upgrade. Bump to v2 and force proxy mode once so existing
+	// installs come up in a known-working state; users who actually
+	// want TUN flip the toggle in Folio after this rc.
+	if s.state.Version < 2 {
+		s.state.Prefs.TunnelMode = "proxy"
+		s.state.Version = 2
+		if err := s.persistLocked(); err != nil {
+			return nil, fmt.Errorf("persist v2 migration: %w", err)
+		}
 	}
 	return s, nil
 }

@@ -348,9 +348,9 @@ export function WorldMap({
                     {/* Active: filled copper teardrop, white inner dot. */}
                     <path
                       className="pin-tear"
-                      d="M 0 0 C -8 -11, -8 -24, 0 -24 C 8 -24, 8 -11, 0 0 Z"
+                      d="M 0 0 C -10 -14, -10 -30, 0 -30 C 10 -30, 10 -14, 0 0 Z"
                     />
-                    <circle cy={-16} r={3} className="pin-eye" />
+                    <circle cy={-20} r={4} className="pin-eye" />
                   </>
                 ) : (
                   <>
@@ -359,22 +359,23 @@ export function WorldMap({
                       x1={0}
                       y1={0}
                       x2={0}
-                      y2={-7}
+                      y2={-6}
                       className="pin-stem"
                     />
-                    {/* Diamond, ~7vb radius, centred at y=-13. The two
-                        polylines (transparent fill, ink stroke) form a
-                        crisp 1px outline at any zoom thanks to
-                        non-scaling-stroke. */}
+                    {/* Diamond, ~10vb horiz radius, centred at y=-16.
+                        Larger than rc22 so it reads cleanly at the
+                        default map zoom (rc23 user feedback). The path
+                        is non-scaling-stroke so the outline stays a
+                        crisp ~1 px line at any zoom. */}
                     <path
                       className="pin-diamond"
-                      d="M 0 -20 L 7 -13 L 0 -6 L -7 -13 Z"
+                      d="M 0 -26 L 10 -16 L 0 -6 L -10 -16 Z"
                     />
                     {/* Multi-host marker: small dot inside the diamond. */}
                     {multi ? (
                       <circle
-                        cy={-13}
-                        r={1.6}
+                        cy={-16}
+                        r={2.2}
                         className="pin-multi-dot"
                       />
                     ) : null}
@@ -383,8 +384,8 @@ export function WorldMap({
                 {/* Invisible hit target — bigger than the visible mark
                     so hover + click stay easy on small renderings. */}
                 <circle
-                  cy={-13}
-                  r={16}
+                  cy={-16}
+                  r={20}
                   fill="transparent"
                   style={onPinClick ? { cursor: "pointer" } : undefined}
                   onMouseEnter={() => setHoverIdx(i)}

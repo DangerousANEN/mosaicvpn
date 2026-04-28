@@ -72,7 +72,7 @@
 
 .pool {
   display: grid;
-  grid-template-columns: 28px 1fr;
+  grid-template-columns: 28px minmax(0, 1fr);
   column-gap: 16px;
   padding: 18px 0;
   border-bottom: 1px solid var(--rule);
@@ -97,6 +97,17 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 14px;
+  min-width: 0;
+}
+/* Flex children default to min-width: auto, which collapses ellipsis
+   on the inner pool-src URL line whenever the URL outgrows the
+   available space. Forcing min-width: 0 lets the truncation kick
+   in instead of pushing the whole card horizontally and growing
+   the page (rc23 user feedback: "длинные подписки не влазят"). */
+.pool-head > div:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 .pool-card-name {
   font-family: "Atlas Serif", Georgia, serif;

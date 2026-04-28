@@ -43,8 +43,11 @@ export function Tray({ status }: { status: Status }): JSX.Element {
         await api.disconnect();
       } else if (status.server) {
         await api.connect(status.server.id);
-      } else if (recent[0]) {
-        await api.connect(recent[0].id);
+      } else if (servers.length > 0) {
+        // Defer to daemon's LastServerID (persisted) instead of
+        // jumping to the lowest-latency server, which would silently
+        // change the user's exit on every reconnect.
+        await api.connect("");
       } else {
         setErr("no servers configured");
       }

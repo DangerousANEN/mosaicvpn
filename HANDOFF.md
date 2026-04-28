@@ -6,10 +6,18 @@
 > code; it captures everything the previous agent learned so you don't
 > have to re-discover it.
 
-Last updated: rc20 shipped. Twelve user-reported bugs from rc16 are
-addressed across rc17–rc20; the only deferred items are real TUN
-support (#2) and the README redesign with screenshots (#12). See §6
-for current state of each.
+Last updated: rc23 shipped. Original rc16 docket of 12 bugs is fully
+addressed across rc17–rc23; the user has since opened a second batch
+of feedback (rc21–rc23 cycle) — see §11 for the live status of each.
+
+**Stack of unmerged rc PRs (none merged by user):**
+PR #11 (HANDOFF rc20) ← #12 (rc21 TUN backend) ← #13 (rc22 country
+clustering / LAN share / live polling) ← #14 (rc23 map v2 / proxy
+default migration / reconnect-to-last / Pool URL overflow). User
+intends to merge in numeric order.
+
+**Active branch for next session:**
+`devin/1777403083-rc23-feedback`. Branch off this for rc24.
 
 ---
 
@@ -705,3 +713,150 @@ license-compatible build.
 
 — rc20 agent, signing off.
 — rc12 agent, signing off (original handoff preserved above).
+
+---
+
+## 11. rc21 → rc23 cycle (post-rc20 feedback)
+
+After rc20 the user reported five new issues, then five more after
+rc21, then nine more after rc22. Cycle summary:
+
+### rc21 (PR #12, tag `v0.1.0-rc21`)
+
+- Real TUN backend: bundled `wintun.dll` v0.14.1 via Tauri 2
+  `bundle.resources` and the release workflow's pre-build download
+  step (`.github/workflows/release.yml` lines 73–93).
+- `Prefs.TunStack` (gvisor default) added to `internal/store/store.go`
+  with backfill in `Open()` so the Folio dropdown round-trips.
+- `tunInbound()` in `internal/state/singbox_backend.go`: `mosaic0`
+  interface, `172.19.0.1/30`, MTU 1500, `auto_route`, `strict_route`,
+  stack from prefs.
+- Daemon admin gate: `IsElevated()` / `internal/state/elevation_*.go`
+  (Windows uses `GetTokenInformation TokenElevation`); refuses Connect
+  with `tun:elevation_required` prefix when `tunnel_mode==tun` and
+  not elevated.
+- `internal/geoip/LookupBatch` (ip-api.com `/batch`, 100 IPs / req,
+  ≤15 reqs/min). `handleTestAll` now resolves geo in batches.
+- URL test: `internal/state/singbox_urltest.go` spins up an ephemeral
+  sing-box SOCKS proxy and fetches `gstatic.com/generate_204` through
+  it. Surfaced as a per-server "Verify" button in Pool.
+- Graceful shutdown: UI emits POST `/v1/disconnect` before drop on
+  exit; daemon Job Object still kills runaway children as a backstop.
+
+### rc22 (PR #13, tag `v0.1.0-rc22`)
+
+- `internal/state/wintun.go` — Tauri 2 NSIS bundles
+  `bundle.resources` paths verbatim relative to install root, so the
+  rc21 install layout is `<install>/binaries/wintun.dll` (not under
+  `resources/`). Added that path to the search list and now log every
+  searched path in the missing-DLL error.
+- `ui/src/components/countryCluster.ts` (new): second-pass clusterer.
+  When ≥3 distinct cities in same ISO country, collapse to a single
+  centroid pin with `kind="country"`; otherwise pass through as host
+  pins. Threshold = `COUNTRY_CLUSTER_THRESHOLD = 3`.
+- `ui/src/components/WorldMap.tsx` refactored to render `WorldPin =
+  HostPin | CountryCluster` from the clusterer output. Country pin
+  popover lists up to 12 cities with per-city Connect.
+- LAN share: `prefs.ShareLAN` toggle in Folio → Network. When true,
+  socks-in/http-in inbounds bind on `0.0.0.0` instead of loopback
+  (see `internal/state/singbox_backend.go`).
+- Live polling: `Pool.tsx` and `Main.tsx` now run a 5 s `setInterval`
+  reload while the document is visible.
+- Map labels v1: cream-fill rectangles with a 6 px diamond marker
+  via `::before`.
+
+### rc23 (PR #14, tag `v0.1.0-rc23`) — current
+
+User feedback after rc22 (in user's words, paraphrased):
+
+1. **TUN/mixed mode broken — no internet through tunnel.** Daemon
+   logs needed; user has not provided them yet. Likely root causes:
+   sing-box failing to install wintun adapter, `auto_route` not
+   programming the routing table, or DNS leak. Until logs come in
+   this is unactionable — tell the user to share `mosaicd.log` and
+   `sing-box.log` from `%APPDATA%\com.mosaicvpn.ui\daemon\`. **Not
+   fixed in rc23.**
+2. **Map v2 redesign:** dark continents (rc23 bumped opacity from 0.5
+   to 0.92), bigger SVG diamonds (rc23 grew from 7 vb radius to 10),
+   `vous` in dark-fill rectangle (was bare italic), labels positioned
+   BELOW the geographic anchor (was above). All in
+   `ui/src/styles/app.css` and `ui/src/components/WorldMap.tsx`.
+3. **Default tunnel mode = proxy on existing installs.** Added a
+   one-time v2 migration in `internal/store/store.go` `Open()`: if
+   `state.Version < 2`, force `Prefs.TunnelMode = "proxy"` and bump
+   to v2. New installs start at v2 so the migration is a no-op.
+   `Default()` now sets Version=2 directly.
+4. **Reconnect to LastServerID, not `servers[0]`.** Manager.Connect
+   now treats empty `serverID` as "use LastServerID, falling back to
+   first available". UI `Main.tsx` and `Tray.tsx` toggle now passes
+   `""` after a disconnect so the daemon picks the right server. The
+   store already persisted LastServerID via `RecordConnect`.
+5. **Long subscription URLs overflow Pool page.** Added `min-width:
+   0` to `.pool-head` and made the parent grid column
+   `minmax(0, 1fr)`; flex children now collapse-to-ellipsis as the
+   inner `.pool-src` already had `text-overflow: ellipsis`.
+
+### What rc23 did NOT do (carry to rc24)
+
+These items are user-requested but not yet shipped. Each has a
+concrete starting point:
+
+- **TUN debug** — blocked on user logs. After rc23 ships, the new
+  wintun-missing error message lists every searched path; if it
+  still fails, that text alone tells you where Tauri is dropping the
+  DLL. If TUN starts but no internet flows: dump `route print` on
+  Windows (look for `0.0.0.0/0` going through the wintun adapter), and
+  check sing-box stderr for "auto_route failed" or DNS leak
+  warnings. Likely fix in `tunInbound()` or DNS section of
+  `BuildSingBoxConfig`.
+- **Country pins only render from one subscription** — user has two
+  subscriptions; only the test sub `206.251.50.217:8888/sub.txt`
+  lights up countries. Hypothesis: the other subscription's servers
+  have empty `country` field (geo lookup didn't run, or returned
+  blank). Verify by inspecting `state.json` after a Refresh-all on
+  the offending sub. If `country == ""`, fix is in
+  `resolveServerGeoBatch` — currently skips servers whose
+  `ResolvedIP` is empty, which is exactly the case for hostnames it
+  couldn't resolve. Either add a fallback to `LookupHost` or accept
+  the hostname as-is for countries that are obvious (US `*.amazon`,
+  etc.).
+- **Map zoom + pan** — user explicitly asked. Two paths:
+  (a) `react-zoom-pan-pinch` wrapper around `.worldmap-stage`
+  (smallest patch); (b) re-implement viewBox manipulation in
+  `WorldMap.tsx` (most flexible). I recommend option (a) for rc24.
+- **Live updates still need refresh in some screens** — the rc22
+  poll covers Pool and Main but not Folio (subscription stats),
+  Atlas, or Tray. Either add the same `setInterval(reload, 5000)` to
+  the remaining screens, or wire all of them to `/v1/events` SSE.
+  The cleanest move is a shared `useLiveServers()` hook that owns
+  the SSE subscription + initial fetch.
+- **Subscription preview cards with click-to-expand drill-down** —
+  user wants Pool to render compact cards by default and open a
+  detail screen with the full server list on click. Today Pool
+  already has an "expand to show stations" toggle (`expanded` state),
+  but the user wants it to be a separate route. Suggest a new screen
+  `SubscriptionDetail.tsx` reachable via `?sub=<id>` with full table
+  of servers, RTT, last test, Connect column.
+- **LAN share auth** — currently the SOCKS/HTTP inbounds on
+  `0.0.0.0` are unauthenticated. Add `prefs.ShareUser` /
+  `prefs.SharePass` (already partially scaffolded — there's a
+  `ShareAllow []string` field) and wire the sing-box `socks` /
+  `http` inbound `users` array. Tauri-side toggle is straightforward
+  in Folio.
+
+### Cleanup the next agent should do
+
+- Strip the trailing ` no-expiration` suffix from the saved
+  `GITHUB_PAT` org secret if you re-save it. Existing code already
+  strips with `${GITHUB_PAT%% *}` but a clean token avoids future
+  surprises.
+- Don't bother trying to merge any rc PRs yourself; the user will
+  do it when they decide. They've been stacking rc PRs since rc12
+  and explicitly want this workflow.
+- Watch for state.json migration regressions — rc23 introduced
+  Version=2 with a forced `tunnel_mode=proxy`. If the user later
+  re-flips to TUN and you bump to Version=3 for some other reason,
+  don't reset their TunnelMode again unless that's explicitly
+  intended.
+
+— rc23 agent, signing off.

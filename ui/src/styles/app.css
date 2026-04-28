@@ -384,12 +384,11 @@
   width: 100%;
   height: 100%;
   display: block;
-  opacity: 0.5;
-  /*
-   * world.svg ships with a dark fill on a transparent background, which
-   * reads correctly as inked land masses on the cream paper. No filter
-   * needed.
-   */
+  /* Reference design wants near-solid ink continents on the cream
+     ground (rc23 user feedback). world.svg ships with #2a2620 fill;
+     full opacity reproduces the dark land-on-paper read of the
+     reference screenshot. */
+  opacity: 0.92;
 }
 .worldmap-grat {
   position: absolute;
@@ -557,30 +556,33 @@
   position: absolute;
   pointer-events: auto;
   z-index: 4;
-  transform: translate(-50%, calc(-100% - 28px));
+  /* rc23: labels sit BELOW the geographic anchor, not above, per the
+     reference screenshot. The translate keeps the box centred on the
+     pin's x and pushes it ~12 px below the on-map diamond. */
+  transform: translate(-50%, 12px);
   background: var(--paper);
   color: var(--ink);
-  padding: 3px 8px 4px 22px;
+  padding: 4px 10px 5px 26px;
   font-family: "Atlas Serif", Georgia, serif;
   font-size: 12px;
   line-height: 1.2;
   letter-spacing: 0.01em;
   white-space: nowrap;
   border: 1px solid var(--ink);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
   user-select: none;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
-/* Inline diamond marker in front of each label. Drawn as a 6px
-   square rotated 45° via CSS so it scales with label font and never
-   loses crispness even on HiDPI. */
+/* Inline diamond marker in front of each label. Drawn as a 9 px
+   square rotated 45° via CSS — large enough to read at the default
+   map zoom, scales with label font, stays crisp on HiDPI. */
 .worldmap-label::before {
   content: "";
   position: absolute;
   left: 8px;
   top: 50%;
-  width: 6px;
-  height: 6px;
+  width: 9px;
+  height: 9px;
   background: var(--paper);
   border: 1px solid var(--ink);
   transform: translateY(-50%) rotate(45deg);
@@ -615,34 +617,36 @@
   font-weight: 600;
 }
 
-/* "vous" label — same rectangle treatment as a regular pin, just
-   italic and anchored next to the YOU dot rather than above. */
+/* "vous" label — dark-fill rectangle so the user's own pin reads as
+   the inverse of every other label, mirroring the reference design.
+   Italic + slightly bolder weight gives it the marginalia feel. */
 .worldmap-you-label {
   position: absolute;
-  z-index: 4;
-  transform: translate(-50%, calc(-100% - 18px));
-  background: var(--paper);
-  color: var(--ink);
+  z-index: 5;
+  transform: translate(-50%, 12px);
+  background: var(--ink);
+  color: var(--paper);
   border: 1px solid var(--ink);
-  padding: 3px 8px 4px 22px;
+  padding: 4px 10px 5px 26px;
   font-family: "Atlas Serif", Georgia, serif;
   font-style: italic;
   font-size: 12px;
+  font-weight: 600;
   line-height: 1.2;
   pointer-events: none;
   user-select: none;
   white-space: nowrap;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
 }
 .worldmap-you-label::before {
   content: "";
   position: absolute;
   left: 8px;
   top: 50%;
-  width: 6px;
-  height: 6px;
+  width: 9px;
+  height: 9px;
   background: var(--paper);
-  border: 1px solid var(--ink);
+  border: 1px solid var(--paper);
   transform: translateY(-50%) rotate(45deg);
 }
 /* Multi-host pin popover — sits above the clicked pin, listing every

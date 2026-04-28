@@ -127,6 +127,23 @@ func (m *Manager) Subscribe() (<-chan proto.Status, func()) {
 // the wintun adapter, and exit a few seconds later with an opaque
 // "operation not permitted" buried in singbox.err.log.
 func (m *Manager) Connect(ctx context.Context, serverID string) error {
+	// Empty serverID means "reconnect to the last-used server".
+	// The UI passes "" from the Main toggle and the tray after a
+	// disconnect so the user doesn't get bounced to servers[0]; we
+	// fall back to LastServerID from the persistent store, then to
+	// the first available server only when the store has nothing
+	// recorded yet.
+	if serverID == "" {
+		snap := m.store.Snapshot()
+		if snap.LastServerID != "" {
+			serverID = snap.LastServerID
+		} else if len(snap.Servers) > 0 {
+			serverID = snap.Servers[0].ID
+		}
+		if serverID == "" {
+			return errors.New("no server available; add a subscription first")
+		}
+	}
 	server, ok := m.store.FindServer(serverID)
 	if !ok {
 		return fmt.Errorf("server %q not found", serverID)
