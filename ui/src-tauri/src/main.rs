@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager, RunEvent, WindowEvent,
+    Manager, RunEvent, WebviewWindow, WindowEvent,
 };
 
 /// DaemonProcess wraps the mosaicd child process spawned by the shell
@@ -87,6 +87,154 @@ fn data_dir() -> Option<PathBuf> {
         }
     }
     None
+}
+
+/// is_admin returns true when the current process is running with
+/// administrator privileges (Windows) or root (Unix). The renderer
+/// uses this to gate the TUN tunnel mode toggle in Settings —
+/// Wintun's TUN inbound only works elevated.
+///
+/// On Windows the implementation calls `GetTokenInformation` on the
+/// process token with `TokenElevation`. On non-Windows we always
+/// return true since TUN-vs-proxy is a Windows concept here.
+#[tauri::command]
+fn is_admin() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        unsafe {
+            use std::mem::size_of;
+            #[repr(C)]
+            struct TokenElevation {
+                token_is_elevated: u32,
+            }
+            type Handle = *mut std::ffi::c_void;
+            type Bool = i32;
+            extern "system" {
+                fn GetCurrentProcess() -> Handle;
+                fn OpenProcessToken(
+                    process: Handle,
+                    desired: u32,
+                    token_handle: *mut Handle,
+                ) -> Bool;
+                fn GetTokenInformation(
+                    token: Handle,
+                    class: i32,
+                    info: *mut std::ffi::c_void,
+                    info_len: u32,
+                    return_length: *mut u32,
+                ) -> Bool;
+                fn CloseHandle(h: Handle) -> Bool;
+            }
+            const TOKEN_QUERY: u32 = 0x0008;
+            const TOKEN_ELEVATION_CLASS: i32 = 20;
+
+            let mut token: Handle = std::ptr::null_mut();
+            if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+                return false;
+            }
+            let mut elevation = TokenElevation { token_is_elevated: 0 };
+            let mut ret_len: u32 = 0;
+            let ok = GetTokenInformation(
+                token,
+                TOKEN_ELEVATION_CLASS,
+                &mut elevation as *mut _ as *mut std::ffi::c_void,
+                size_of::<TokenElevation>() as u32,
+                &mut ret_len,
+            );
+            CloseHandle(token);
+            ok != 0 && elevation.token_is_elevated != 0
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Best-effort: euid == 0 is root; everything else is unprivileged.
+        // Linux/macOS users typically run mosaicvpn unelevated and TUN
+        // there isn't bundled, so this branch is largely informational.
+        unsafe { libc_geteuid() == 0 }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+extern "C" {
+    #[link_name = "geteuid"]
+    fn libc_geteuid() -> u32;
+}
+
+/// restart_as_admin re-launches the GUI with administrator privileges
+/// via the standard "runas" Shell verb on Windows. The current
+/// instance is told to exit so the user only sees one window after
+/// the UAC prompt is accepted.
+///
+/// On non-Windows the call is a no-op that returns Err so the renderer
+/// can keep its UX consistent.
+#[tauri::command]
+fn restart_as_admin(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        let exe = std::env::current_exe()
+            .map_err(|e| format!("current_exe: {e}"))?;
+        let exe_w: Vec<u16> = exe.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+        let verb_w: Vec<u16> = std::ffi::OsStr::new("runas")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        type Handle = *mut std::ffi::c_void;
+        #[repr(C)]
+        struct ShellExecuteInfoW {
+            cb_size: u32,
+            mask: u32,
+            hwnd: Handle,
+            lp_verb: *const u16,
+            lp_file: *const u16,
+            lp_parameters: *const u16,
+            lp_directory: *const u16,
+            n_show: i32,
+            h_inst_app: Handle,
+            lp_id_list: *mut std::ffi::c_void,
+            lp_class: *const u16,
+            h_key_class: Handle,
+            dw_hot_key: u32,
+            h_icon_or_monitor: Handle,
+            h_process: Handle,
+        }
+        extern "system" {
+            fn ShellExecuteExW(p: *mut ShellExecuteInfoW) -> i32;
+        }
+        const SW_SHOWNORMAL: i32 = 1;
+        const SEE_MASK_NOCLOSEPROCESS: u32 = 0x40;
+        let mut info = ShellExecuteInfoW {
+            cb_size: std::mem::size_of::<ShellExecuteInfoW>() as u32,
+            mask: SEE_MASK_NOCLOSEPROCESS,
+            hwnd: std::ptr::null_mut(),
+            lp_verb: verb_w.as_ptr(),
+            lp_file: exe_w.as_ptr(),
+            lp_parameters: std::ptr::null(),
+            lp_directory: std::ptr::null(),
+            n_show: SW_SHOWNORMAL,
+            h_inst_app: std::ptr::null_mut(),
+            lp_id_list: std::ptr::null_mut(),
+            lp_class: std::ptr::null(),
+            h_key_class: std::ptr::null_mut(),
+            dw_hot_key: 0,
+            h_icon_or_monitor: std::ptr::null_mut(),
+            h_process: std::ptr::null_mut(),
+        };
+        let ok = unsafe { ShellExecuteExW(&mut info) };
+        if ok == 0 {
+            return Err("ShellExecuteExW returned 0 — UAC prompt was likely denied".into());
+        }
+        // Tell the bundled daemon to die first so the new elevated
+        // instance can grab the single-instance lock cleanly.
+        app.state::<DaemonProcess>().shutdown();
+        app.exit(0);
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        Err("administrator elevation is only implemented on Windows".into())
+    }
 }
 
 #[tauri::command]
@@ -215,7 +363,12 @@ fn main() {
     let daemon = DaemonProcess::new();
     tauri::Builder::default()
         .manage(daemon)
-        .invoke_handler(tauri::generate_handler![daemon_endpoint])
+        .invoke_handler(tauri::generate_handler![
+            daemon_endpoint,
+            is_admin,
+            restart_as_admin,
+            tray_popup_toggle,
+        ])
         .setup(|app| {
             // In release builds we ship mosaicd alongside the GUI and
             // launch it ourselves; in dev builds the binary is absent
@@ -261,13 +414,28 @@ fn main() {
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,
                         button_state: MouseButtonState::Up,
+                        position,
                         ..
                     } = event
                     {
-                        focus_main(tray.app_handle());
+                        toggle_tray_popup(tray.app_handle(), position);
                     }
                 })
                 .build(app)?;
+
+            // Wire the tray-popup window's blur event to auto-hide.
+            // The window is declared in tauri.conf.json so it's
+            // already constructed by the time setup() runs.
+            if let Some(popup) = app.get_webview_window("tray-popup") {
+                let popup_for_listener: WebviewWindow = popup.clone();
+                popup.on_window_event(move |ev| {
+                    if let WindowEvent::Focused(false) = ev {
+                        // Blur → hide. The user can re-open by
+                        // clicking the tray icon again.
+                        let _ = popup_for_listener.hide();
+                    }
+                });
+            }
 
             Ok(())
         })
@@ -298,4 +466,64 @@ fn focus_main(app: &tauri::AppHandle) {
         let _ = w.unminimize();
         let _ = w.set_focus();
     }
+}
+
+/// toggle_tray_popup shows or hides the dedicated frameless tray
+/// popup window, anchoring it near the supplied screen-space position
+/// (typically the cursor / tray icon location). The popup loads the
+/// renderer at `#/tray` and behaves as a focusable but non-taskbar
+/// utility window — losing focus hides it again so the tray feels
+/// native (see the `blur` listener registered in setup()).
+fn toggle_tray_popup(app: &tauri::AppHandle, click_pos: tauri::PhysicalPosition<f64>) {
+    let Some(w) = app.get_webview_window("tray-popup") else {
+        // Should never happen: the popup is declared in tauri.conf.json
+        // and instantiated at startup. Fall back to the main window so
+        // the user still gets *some* response from a tray click.
+        focus_main(app);
+        return;
+    };
+    let visible = w.is_visible().unwrap_or(false);
+    if visible {
+        let _ = w.hide();
+        return;
+    }
+    // Anchor: by default Windows reports the tray-icon click position
+    // in physical pixels. Convert to logical via the popup's own scale
+    // factor (good enough for primary monitor) and offset so the popup
+    // floats above the cursor with a small gap. The y-offset assumes
+    // a bottom-anchored taskbar; on side / top taskbars the popup
+    // simply opens above the click which is also acceptable.
+    let scale = w.scale_factor().unwrap_or(1.0);
+    let size = w.outer_size().ok();
+    let popup_w = size.map(|s| s.width as f64).unwrap_or(360.0);
+    let popup_h = size.map(|s| s.height as f64).unwrap_or(500.0);
+    let mut x = click_pos.x - popup_w / 2.0;
+    let mut y = click_pos.y - popup_h - 12.0;
+    if y < 0.0 {
+        y = click_pos.y + 24.0;
+    }
+    if x < 8.0 {
+        x = 8.0;
+    }
+    let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
+    let _ = w.show();
+    let _ = w.set_focus();
+    let _ = scale;
+}
+
+/// tray_popup_toggle is the renderer-callable wrapper around
+/// toggle_tray_popup. The popup itself uses it for "Quit", "Show
+/// main window" links so the user can pop the popup closed cleanly.
+#[tauri::command]
+fn tray_popup_toggle(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("tray-popup") {
+        let visible = w.is_visible().unwrap_or(false);
+        if visible {
+            w.hide().map_err(|e| e.to_string())?;
+        } else {
+            w.show().map_err(|e| e.to_string())?;
+            let _ = w.set_focus();
+        }
+    }
+    Ok(())
 }

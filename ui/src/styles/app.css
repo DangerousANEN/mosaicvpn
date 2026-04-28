@@ -636,3 +636,91 @@
   color: var(--copper);
   text-transform: uppercase;
 }
+
+/*
+ * Admin-elevation modal + tray-popup window. The modal lives over
+ * Folio whenever the user toggles tunnel_mode → tun without admin
+ * privileges; the tray-popup shell strips the main TOC chrome so
+ * the same renderer can be loaded into the small frameless system
+ * tray window.
+ */
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 18, 14, 0.36);
+  display: grid;
+  place-items: center;
+  z-index: 50;
+  animation: modal-fade 140ms ease-out;
+}
+@keyframes modal-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.modal {
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  padding: 28px 32px 24px;
+  width: 480px;
+  max-width: calc(100% - 48px);
+  font-family: inherit;
+  color: var(--ink);
+}
+.modal-eyebrow {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+.modal-title {
+  font-family: inherit;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  line-height: 1.2;
+  margin-bottom: 12px;
+  color: var(--ink);
+}
+.modal-title i {
+  font-style: italic;
+  color: var(--copper);
+}
+.modal-body {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-2, var(--ink));
+  margin: 0 0 22px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* Tray-popup shell — frameless 360x500 window. Strip the desktop
+   chrome that .app-shell normally provides (Marginalia, TOC nav)
+   and let the Tray screen fill the entire window. */
+.app-shell.tray-popup-shell {
+  display: block;
+  grid-template-columns: none;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--paper);
+}
+.app-shell.tray-popup-shell .tray-frame {
+  height: 100vh;
+  width: 100vw;
+  margin: 0;
+  padding: 0;
+}
+.app-shell.tray-popup-shell .popup {
+  height: 100vh;
+  width: 100vw;
+  margin: 0;
+  border: none;
+  box-shadow: none;
+}

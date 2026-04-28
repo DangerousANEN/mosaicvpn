@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Mosaic",
         "width": 1200,
         "height": 760,
@@ -21,6 +22,21 @@
         "fullscreen": false,
         "decorations": true,
         "center": true
+      },
+      {
+        "label": "tray-popup",
+        "url": "index.html#/tray",
+        "title": "Mosaic Tray",
+        "width": 360,
+        "height": 500,
+        "resizable": false,
+        "decorations": false,
+        "transparent": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "focus": false,
+        "shadow": true
       }
     ],
     "security": {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import type { Prefs } from "../api/types";
+import { isAdmin, restartAsAdmin } from "../api/tauri";
 
 /**
  * Folio — the book of preferences. Mirrors docs/mockups/settings.html.
@@ -86,6 +87,26 @@ export function Folio(): JSX.Element {
     setDraft({ ...draft, [k]: v });
   };
 
+  // Admin gate: if the user flips tunnel_mode → "tun" while running
+  // unelevated, ask before applying. The probe is async so we keep
+  // the click handler local; if the user backs out we revert the
+  // local draft (no daemon round-trip yet because Save hasn't run).
+  const [adminModal, setAdminModal] = useState(false);
+  const onChangeTunnelMode = async (v: string) => {
+    if (!draft) return;
+    if (v === "tun" && draft.tunnel_mode !== "tun") {
+      const elevated = await isAdmin();
+      if (!elevated) {
+        // Don't apply the change. The draft stays on whatever the
+        // current mode is (proxy by default), and the admin gate
+        // modal explains what the user has to do.
+        setAdminModal(true);
+        return;
+      }
+    }
+    update("tunnel_mode", v);
+  };
+
   if (!draft || !loaded) {
     return (
       <div className="folio-frame">
@@ -162,7 +183,7 @@ export function Folio(): JSX.Element {
                     { v: "tun", lab: "TUN · system-wide" },
                     { v: "proxy", lab: "SOCKS / HTTP only" },
                   ]}
-                  onChange={(v) => update("tunnel_mode", v)}
+                  onChange={(v) => void onChangeTunnelMode(v)}
                 />
               </Opt>
               <Opt
@@ -318,6 +339,61 @@ export function Folio(): JSX.Element {
           ) : null}
         </div>
       </section>
+
+      {adminModal ? (
+        <AdminGateModal
+          onCancel={() => setAdminModal(false)}
+          onElevate={async () => {
+            try {
+              await restartAsAdmin();
+              // restart_as_admin asks Tauri to exit; if that returned
+              // synchronously the UAC prompt was likely denied, so
+              // we just close the modal — the draft remains "proxy".
+              setAdminModal(false);
+            } catch (e) {
+              setErr((e as Error).message);
+              setAdminModal(false);
+            }
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function AdminGateModal({
+  onCancel,
+  onElevate,
+}: {
+  onCancel: () => void;
+  onElevate: () => void;
+}): JSX.Element {
+  return (
+    <div className="modal-scrim" onClick={onCancel}>
+      <div
+        className="modal admin-gate"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
+        <div className="modal-eyebrow">Folio · plate i · sub-section</div>
+        <div className="modal-title">
+          TUN mode requires <i>administrator privileges</i>
+        </div>
+        <p className="modal-body">
+          Mosaic must run elevated to install the Wintun virtual adapter
+          and intercept system-wide traffic. SOCKS / HTTP proxy mode does
+          not require elevation and remains available without restart.
+        </p>
+        <div className="modal-actions">
+          <button type="button" className="btn ghost" onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="button" className="btn primary" onClick={onElevate}>
+            Restart as administrator
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
