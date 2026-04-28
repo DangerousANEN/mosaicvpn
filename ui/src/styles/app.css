@@ -422,56 +422,64 @@
 .worldmap-pin.you {
   pointer-events: none;
 }
-/* Teardrop pin body — cream paper with an ink stroke by default,
-   filled with copper when active, hovered or open. */
+/* Active teardrop — copper fill all the way through, paper-coloured
+   inner dot. Reference: docs/screenshots/atlas-pins.png. */
 .worldmap-pin .pin-tear {
-  fill: var(--paper);
-  stroke: var(--ink);
-  stroke-width: 1.4;
+  fill: var(--copper);
+  stroke: var(--copper);
+  stroke-width: 1;
   vector-effect: non-scaling-stroke;
   transition: fill 0.12s, stroke 0.12s;
 }
 .worldmap-pin .pin-eye {
+  fill: var(--paper);
+  transition: fill 0.12s;
+}
+
+/* Idle pin — outline diamond + thin dashed stem to the geo-anchor.
+   Reads like an ink-on-paper bookmark next to the country. */
+.worldmap-pin .pin-diamond {
+  fill: var(--paper);
+  stroke: var(--ink);
+  stroke-width: 1.1;
+  vector-effect: non-scaling-stroke;
+  transition: fill 0.12s, stroke 0.12s;
+}
+.worldmap-pin .pin-stem {
+  stroke: var(--ink);
+  stroke-width: 0.8;
+  stroke-dasharray: 1.5 1.5;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.65;
+}
+.worldmap-pin .pin-multi-dot {
   fill: var(--ink);
   transition: fill 0.12s;
 }
-.worldmap-pin .halo {
-  fill: var(--ink);
-  opacity: 0.10;
-  transition: r 0.18s ease-out, opacity 0.18s;
-  /* Halo sits behind the teardrop's centre of mass, not its apex. */
-  transform: translateY(-11px);
-}
-.worldmap-pin.hov .pin-tear,
-.worldmap-pin.open .pin-tear {
+
+/* Hover / popover-open: idle diamonds darken to copper so they read
+   as "armed" without breaking silhouette. */
+.worldmap-pin.hov .pin-diamond,
+.worldmap-pin.open .pin-diamond {
   fill: var(--copper);
   stroke: var(--copper);
 }
-.worldmap-pin.hov .pin-eye,
-.worldmap-pin.open .pin-eye {
+.worldmap-pin.hov .pin-multi-dot,
+.worldmap-pin.open .pin-multi-dot {
   fill: var(--paper);
 }
-.worldmap-pin.hov .halo,
-.worldmap-pin.open .halo {
-  fill: var(--copper);
-  opacity: 0.22;
-}
-.worldmap-pin.cur .pin-tear {
-  fill: var(--copper);
+.worldmap-pin.hov .pin-stem,
+.worldmap-pin.open .pin-stem {
   stroke: var(--copper);
+  opacity: 0.9;
 }
-.worldmap-pin.cur .pin-eye {
-  fill: var(--paper);
-}
-.worldmap-pin.cur .halo {
-  fill: var(--copper);
-  opacity: 0.20;
-}
-/* The "you" pin keeps the old simple dot+halo styling — no teardrop. */
+
+/* "you" — small ink dot, no halo; the italic "vous" label is an
+   HTML overlay so it can use the page font. */
 .worldmap-pin.you .dot {
   fill: var(--ink);
   stroke: var(--paper);
-  stroke-width: 1.2;
+  stroke-width: 1;
 }
 .worldmap-pin.you .halo {
   fill: var(--ink);
@@ -526,10 +534,63 @@
 .worldmap-arc {
   fill: none;
   stroke: var(--copper);
-  stroke-width: 1.2;
-  stroke-dasharray: 4 3;
-  opacity: 0.7;
+  stroke-width: 1.6;
+  opacity: 0.85;
   vector-effect: non-scaling-stroke;
+}
+.worldmap-link {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 0.6;
+  stroke-dasharray: 2 2;
+  opacity: 0.32;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Per-pin label boxes — "City · ms". HTML overlay anchored at the
+   pin's projected (x,y), then offset upward so the box floats over
+   the diamond rather than under it. The active label uses the
+   reference design's filled copper variant. */
+.worldmap-label {
+  position: absolute;
+  pointer-events: auto;
+  z-index: 4;
+  transform: translate(-50%, calc(-100% - 28px));
+  background: var(--ink);
+  color: var(--paper);
+  padding: 3px 8px 4px;
+  font-family: "Atlas Serif", Georgia, serif;
+  font-size: 12px;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  user-select: none;
+  transition: background 0.12s, color 0.12s, transform 0.12s;
+}
+.worldmap-label.clickable {
+  cursor: pointer;
+}
+.worldmap-label:hover {
+  background: var(--copper);
+}
+.worldmap-label.cur {
+  background: var(--copper);
+  color: var(--paper);
+  font-weight: 600;
+}
+
+/* "vous" label — italic ink, no box, sits to the right of the dot. */
+.worldmap-you-label {
+  position: absolute;
+  z-index: 4;
+  transform: translate(8px, calc(-100% - 6px));
+  font-family: "Atlas Serif", Georgia, serif;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--ink);
+  pointer-events: none;
+  user-select: none;
 }
 /* Multi-host pin popover — sits above the clicked pin, listing every
    host inside the merged group with a per-host Connect button. The

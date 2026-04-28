@@ -227,6 +227,21 @@ export function WorldMap({
           viewBox={`${MAP_VB.x} ${MAP_VB.y} ${MAP_VB.w} ${MAP_VB.h}`}
           preserveAspectRatio="none"
         >
+          {/* Idle connection lines: thin dashed paper-tone curves
+              from "you" to every non-active pin. Drawn first so the
+              copper arc to the active pin paints on top. */}
+          {pins.map((p, i) => {
+            if (p.active) return null;
+            const mx = (YOU.x + p.x) / 2;
+            const my = Math.min(YOU.y, p.y) - 28;
+            return (
+              <path
+                key={`link-${p.group.key}-${i}`}
+                className="worldmap-link"
+                d={`M ${YOU.x} ${YOU.y} Q ${mx} ${my} ${p.x} ${p.y}`}
+              />
+            );
+          })}
           {activePin ? (
             <path
               className="worldmap-arc"
@@ -238,27 +253,63 @@ export function WorldMap({
           {pins.map((p, i) => {
             const isOpen = openIdx === i;
             const isHov = i === hoverIdx;
-            const haloR = p.active ? 14 : isHov || isOpen ? 13 : 0;
             const cls = `worldmap-pin ${p.active ? "cur" : ""} ${
               isHov ? "hov" : ""
             } ${isOpen ? "open" : ""} ${onPinClick ? "clickable" : ""}`;
             const multi = p.group.members.length > 1;
+            // Apex sits at (0,0) — i.e. the geographic anchor.
+            // Active pin: copper teardrop dropping from y=-22 to apex.
+            // Idle pin: small outline diamond floating at y=-13, with a
+            // thin stem connecting it down to the geo-anchor at y=0.
+            // Both are drawn anchored so resizing the map keeps the
+            // pointing tip on the country.
             return (
-              <g key={p.group.key} className={cls} transform={`translate(${p.x},${p.y})`}>
-                {haloR > 0 ? <circle r={haloR} className="halo" /> : null}
-                {/* Teardrop pin shape — apex at (0,0) so it points
-                    exactly at the projected (lat, lon). Cubic curves
-                    keep the silhouette crisp at any rendered size. */}
-                <path
-                  className="pin-tear"
-                  d="M 0 0 C -7 -10, -7 -22, 0 -22 C 7 -22, 7 -10, 0 0 Z"
-                />
-                {/* Inner dot, copper for active / multi-host marker. */}
-                <circle cy={-15} r={multi ? 3 : 2} className="pin-eye" />
-                {/* Invisible hit target — bigger than the dot so the
-                    pin is easy to hover and click. */}
+              <g
+                key={p.group.key}
+                className={cls}
+                transform={`translate(${p.x},${p.y})`}
+              >
+                {p.active ? (
+                  <>
+                    {/* Active: filled copper teardrop, white inner dot. */}
+                    <path
+                      className="pin-tear"
+                      d="M 0 0 C -8 -11, -8 -24, 0 -24 C 8 -24, 8 -11, 0 0 Z"
+                    />
+                    <circle cy={-16} r={3} className="pin-eye" />
+                  </>
+                ) : (
+                  <>
+                    {/* Idle: thin dashed stem + diamond outline. */}
+                    <line
+                      x1={0}
+                      y1={0}
+                      x2={0}
+                      y2={-7}
+                      className="pin-stem"
+                    />
+                    {/* Diamond, ~7vb radius, centred at y=-13. The two
+                        polylines (transparent fill, ink stroke) form a
+                        crisp 1px outline at any zoom thanks to
+                        non-scaling-stroke. */}
+                    <path
+                      className="pin-diamond"
+                      d="M 0 -20 L 7 -13 L 0 -6 L -7 -13 Z"
+                    />
+                    {/* Multi-host marker: small dot inside the diamond. */}
+                    {multi ? (
+                      <circle
+                        cy={-13}
+                        r={1.6}
+                        className="pin-multi-dot"
+                      />
+                    ) : null}
+                  </>
+                )}
+                {/* Invisible hit target — bigger than the visible mark
+                    so hover + click stay easy on small renderings. */}
                 <circle
-                  cy={-11}
+                  cy={-13}
                   r={16}
                   fill="transparent"
                   style={onPinClick ? { cursor: "pointer" } : undefined}
@@ -280,12 +331,66 @@ export function WorldMap({
               </g>
             );
           })}
-          <g className="worldmap-pin you" transform={`translate(${YOU.x},${YOU.y})`}>
-            <circle r={3.5} className="dot" />
-            <circle r={7} className="halo" />
+          {/* "vous" indicator — small ink dot, italic label is rendered
+              as an HTML overlay below so it picks up the app font. */}
+          <g
+            className="worldmap-pin you"
+            transform={`translate(${YOU.x},${YOU.y})`}
+          >
+            <circle r={2.5} className="dot" />
           </g>
         </svg>
       ) : null}
+
+      {/* Per-pin label boxes — "City · ms". Rendered as HTML so the
+          label uses the same serif as the rest of the marginalia and
+          stays crisp regardless of how the SVG is scaled. The active
+          pin's label gets the copper fill from the reference design. */}
+      {pins.map((p, i) => {
+        const ms = p.primaryMs !== undefined ? p.primaryMs : null;
+        const city = p.group.primary.city || p.group.host;
+        const label = ms !== null ? `${city} · ${ms}` : city;
+        const cls = `worldmap-label ${p.active ? "cur" : ""} ${
+          onPinClick ? "clickable" : ""
+        }`;
+        return (
+          <div
+            key={`lab-${p.group.key}-${i}`}
+            className={cls}
+            style={{
+              left: `${((p.x - MAP_VB.x) / MAP_VB.w) * 100}%`,
+              top: `${((p.y - MAP_VB.y) / MAP_VB.h) * 100}%`,
+            }}
+            onMouseEnter={() => setHoverIdx(i)}
+            onMouseLeave={() =>
+              setHoverIdx((h) => (h === i ? null : h))
+            }
+            onClick={(e) => {
+              if (!onPinClick) return;
+              e.stopPropagation();
+              if (p.group.members.length > 1) {
+                setOpenIdx((o) => (o === i ? null : i));
+              } else {
+                setOpenIdx(null);
+                onPinClick(p.group.primary.id);
+              }
+            }}
+          >
+            {label}
+          </div>
+        );
+      })}
+
+      {/* "vous" label, italic + ink, anchored to YOU. */}
+      <div
+        className="worldmap-you-label"
+        style={{
+          left: `${((YOU.x - MAP_VB.x) / MAP_VB.w) * 100}%`,
+          top: `${((YOU.y - MAP_VB.y) / MAP_VB.h) * 100}%`,
+        }}
+      >
+        vous
+      </div>
 
       {hover ? (
         <div
