@@ -363,6 +363,12 @@
   inset: 0;
   display: grid;
   place-items: center;
+  /* Same beige tone as the world's land fill so the letterbox
+     bands around the aspect-locked stage paint as one continuous
+     background. Without this the page background showed through
+     above and below the stage, and any tooltip/popover that
+     extended past the stage clip looked "ripped off". */
+  background: var(--worldmap-bg, #d8c8a8);
   overflow: hidden;
 }
 /* Aspect-locked stage. Native simple-world-map sub-viewBox is
@@ -421,20 +427,6 @@
 .worldmap-pin.you {
   pointer-events: none;
 }
-/* Active teardrop — copper fill all the way through, paper-coloured
-   inner dot. Reference: docs/screenshots/atlas-pins.png. */
-.worldmap-pin .pin-tear {
-  fill: var(--copper);
-  stroke: var(--copper);
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
-  transition: fill 0.12s, stroke 0.12s;
-}
-.worldmap-pin .pin-eye {
-  fill: var(--paper);
-  transition: fill 0.12s;
-}
-
 /* Idle pin — outline diamond + thin dashed stem to the geo-anchor.
    Reads like an ink-on-paper bookmark next to the country. */
 .worldmap-pin .pin-diamond {
@@ -456,12 +448,13 @@
   transition: fill 0.12s;
 }
 
-/* Hover / popover-open: idle diamonds darken to copper so they read
-   as "armed" without breaking silhouette. */
+/* Hover / popover-open: idle diamonds turn ink-grey (filled) so the
+   user can tell "I'm pointing at this" but it still reads
+   different from the orange active state. */
 .worldmap-pin.hov .pin-diamond,
 .worldmap-pin.open .pin-diamond {
-  fill: var(--copper);
-  stroke: var(--copper);
+  fill: var(--ink);
+  stroke: var(--ink);
 }
 .worldmap-pin.hov .pin-multi-dot,
 .worldmap-pin.open .pin-multi-dot {
@@ -469,8 +462,24 @@
 }
 .worldmap-pin.hov .pin-stem,
 .worldmap-pin.open .pin-stem {
-  stroke: var(--copper);
+  stroke: var(--ink);
   opacity: 0.9;
+}
+
+/* Active connection: orange diamond. Same silhouette as the idle
+   marker so the user can match the active server back to its
+   row in Pool / Servers; the colour change is what identifies it
+   as "the tunnel is here". */
+.worldmap-pin.cur .pin-diamond {
+  fill: var(--copper);
+  stroke: var(--copper);
+}
+.worldmap-pin.cur .pin-multi-dot {
+  fill: var(--paper);
+}
+.worldmap-pin.cur .pin-stem {
+  stroke: var(--copper);
+  opacity: 1;
 }
 
 /* "you" — small ink dot, no halo; the italic "vous" label is an

@@ -204,6 +204,11 @@ export function WorldMap({
 }: WorldMapProps): JSX.Element {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [openIdx, setOpenIdx] = useState<number | null>(null);
+  // The current zoom level reported by react-zoom-pan-pinch. Drives
+  // (a) inverse-scale on every pin so a 12× zoom doesn't blow the
+  // diamonds up to half the screen, and (b) the country/host pin
+  // toggle below.
+  const [scale, setScale] = useState(1);
   const groups = groupServers(servers);
   // Cluster countries first (a 1 000-server pool collapses from
   // hundreds of teardrops to ~30 country pins); pass through host
@@ -219,11 +224,19 @@ export function WorldMap({
       countryPins.push(pinForCluster(wp, activeServerId));
     }
   }
-  const hostPins = mergeNearbyHostPins(rawHosts);
+  // Below ~1.8× zoom we hide the per-host diamonds entirely so a
+  // 1 000-server feed reads as ~30 country pins instead of "каша";
+  // host diamonds reappear automatically once the user zooms past
+  // that threshold (or just clicks a country to drill into it).
+  const hostPins = scale >= 1.8 ? mergeNearbyHostPins(rawHosts) : [];
   // Order: country pins first (drawn behind), host pins on top so an
   // individually labelled city remains clickable when it overlaps a
   // country centroid.
   const pins: PinPos[] = [...countryPins, ...hostPins];
+  // Inverse zoom for SVG/HTML markers — keeps pins a constant
+  // on-screen size as the user zooms in. Floor at 0.4 so the
+  // 12× max zoom still shows readable diamonds.
+  const pinScale = Math.max(0.4, 1 / scale);
   const activePin = pins.find((p) => p.active);
   // Suppress the hover tooltip whenever a popover is open — they live
   // in the same on-screen real estate and would otherwise overlap.
@@ -261,23 +274,31 @@ export function WorldMap({
           inside the visible stage. */}
       <TransformWrapper
         minScale={1}
-        maxScale={6}
+        maxScale={12}
         doubleClick={{ mode: "reset" }}
         limitToBounds={true}
         centerOnInit={true}
-        // wheel.step controls the per-tick zoom delta for both
-        // mouse-wheel and pinch gestures. rc24 used 0.15 which made
-        // a single notch of an MX Master scroll the map straight
-        // from 1× to ~5×; user feedback was "слишком крупный шаг".
-        // 0.05 gives roughly twenty notches across the full
-        // 1×-6× range, which feels closer to Google Maps.
-        wheel={{ step: 0.05 }}
-        // smoothStep also affects pinch zoom on touchpads.
+        // rc25 set step=0.05 but the user reported the wheel
+        // gesture felt identical to the rc24 0.15 step. Reason:
+        // react-zoom-pan-pinch picks `smoothStep` for the per-event
+        // delta when smooth-scroll is active (default), and that
+        // value defaulted to 0.001 × raw deltaY — dwarfing the
+        // `step` value on a high-DPI mouse. We lower BOTH so a
+        // single notch on the user's MX-style wheel produces a
+        // ~3 % zoom change instead of jumping straight from 1× to
+        // 5×. With the new maxScale=12 there's enough headroom
+        // for the planned hierarchical drill-down (continent →
+        // country → city → server) to feel like a real map.
+        wheel={{ step: 0.03 }}
         pinch={{ step: 5 }}
-        // velocityDisabled removes the "fling" inertia after pan,
-        // which on a map with a hard limit feels more like a bounce
-        // than smooth motion.
         panning={{ velocityDisabled: true }}
+        onTransform={(_ref: unknown, state: { scale: number }) => {
+          // Track the current scale so pin sizes can be inverted
+          // (constant on-screen size regardless of zoom) and so we
+          // can swap country pins out for individual host pins as
+          // the user zooms in past ~2×.
+          setScale(state.scale);
+        }}
       >
         <TransformComponent
           wrapperStyle={{
@@ -384,46 +405,38 @@ export function WorldMap({
               <g
                 key={key}
                 className={cls}
-                transform={`translate(${p.x},${p.y})`}
+                transform={`translate(${p.x},${p.y}) scale(${pinScale})`}
               >
-                {p.active ? (
-                  <>
-                    {/* Active: filled copper teardrop, white inner dot. */}
-                    <path
-                      className="pin-tear"
-                      d="M 0 0 C -10 -14, -10 -30, 0 -30 C 10 -30, 10 -14, 0 0 Z"
-                    />
-                    <circle cy={-20} r={4} className="pin-eye" />
-                  </>
-                ) : (
-                  <>
-                    {/* Idle: thin dashed stem + diamond outline. */}
-                    <line
-                      x1={0}
-                      y1={0}
-                      x2={0}
-                      y2={-6}
-                      className="pin-stem"
-                    />
-                    {/* Diamond, ~10vb horiz radius, centred at y=-16.
-                        Larger than rc22 so it reads cleanly at the
-                        default map zoom (rc23 user feedback). The path
-                        is non-scaling-stroke so the outline stays a
-                        crisp ~1 px line at any zoom. */}
-                    <path
-                      className="pin-diamond"
-                      d="M 0 -26 L 10 -16 L 0 -6 L -10 -16 Z"
-                    />
-                    {/* Multi-host marker: small dot inside the diamond. */}
-                    {multi ? (
-                      <circle
-                        cy={-16}
-                        r={2.2}
-                        className="pin-multi-dot"
-                      />
-                    ) : null}
-                  </>
-                )}
+                {/* Idle: thin dashed stem + diamond outline.
+                    Active: same diamond filled with the copper
+                    accent so the user can tell at a glance which
+                    server the tunnel is currently routed through —
+                    the rc25 teardrop made the active marker look
+                    like a different category of object than the
+                    idle ones, which the user explicitly disliked.
+                    Hover stays grey (CSS handles the colour swap
+                    via .worldmap-pin.hov), so the three states are
+                    visually distinguishable: idle = paper, hover =
+                    grey, active = orange. */}
+                <line
+                  x1={0}
+                  y1={0}
+                  x2={0}
+                  y2={-6}
+                  className="pin-stem"
+                />
+                <path
+                  className="pin-diamond"
+                  d="M 0 -26 L 10 -16 L 0 -6 L -10 -16 Z"
+                />
+                {/* Multi-host marker: small dot inside the diamond. */}
+                {multi ? (
+                  <circle
+                    cy={-16}
+                    r={2.2}
+                    className="pin-multi-dot"
+                  />
+                ) : null}
                 {/* Invisible hit target — bigger than the visible mark
                     so hover + click stay easy on small renderings. */}
                 <circle

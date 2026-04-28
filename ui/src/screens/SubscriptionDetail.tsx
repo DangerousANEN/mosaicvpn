@@ -130,7 +130,7 @@ export function SubscriptionDetail({
             </button>{" "}
             {subscription.name || hostFrom(subscription.url)} <i>—</i> stations
           </div>
-          <div className="pool-mast-sub mono">
+          <div className="pool-mast-sub mono" title={subscription.url}>
             {redactedURL(subscription.url)} · {own.length} servers
           </div>
         </div>

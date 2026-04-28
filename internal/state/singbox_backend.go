@@ -596,6 +596,15 @@ func BuildSingBoxConfig(server proto.Server, prefs store.Prefs, socksPort, httpP
 			"server":   "local",
 		},
 	}
+	// Default DNS strategy: hand every captured DNS query to the
+	// local resolver (8.8.8.8 over direct outbound) so the chicken-
+	// and-egg of "DoH-via-proxy needs proxy needs DoH-via-proxy" can
+	// never bite. The rc25 build set `final: remote-doh` here, which
+	// meant a flaky proxy session left every captured query (Chrome
+	// hits 30+ per page) sitting on a TLS handshake that was itself
+	// being routed through the half-up proxy. Symptom on the user's
+	// rc25 install: "Не удалось найти IP-адрес сервера 2ip.io".
+	dnsFinal := "local"
 	cfg := map[string]any{
 		"log": map[string]any{
 			"level":     "warn",
@@ -604,7 +613,7 @@ func BuildSingBoxConfig(server proto.Server, prefs store.Prefs, socksPort, httpP
 		"dns": map[string]any{
 			"servers":           dnsServers,
 			"rules":             dnsRules,
-			"final":             "remote-doh",
+			"final":             dnsFinal,
 			"strategy":          "ipv4_only",
 			"independent_cache": true,
 		},
@@ -617,8 +626,21 @@ func BuildSingBoxConfig(server proto.Server, prefs store.Prefs, socksPort, httpP
 		},
 		"route": map[string]any{
 			"final": "proxy",
+			// auto_detect_interface lets sing-box's `direct`
+			// outbound escape its own auto_route capture by
+			// binding the underlying physical interface; without
+			// this the local 8.8.8.8 resolver on the rc25 config
+			// can route into TUN and loop, which is the same
+			// failure mode the missing dns block produced in rc24.
+			"auto_detect_interface": true,
 			"rules": []any{
+				// All UDP/TCP DNS traffic captured by TUN gets
+				// handed to sing-box's internal DNS resolver.
 				map[string]any{"protocol": "dns", "outbound": "dns-out"},
+				// Belt-and-braces: anything destined for
+				// port 53 (e.g. apps that bypass the system
+				// resolver) also gets coerced into dns-out.
+				map[string]any{"port": []any{53}, "outbound": "dns-out"},
 			},
 		},
 	}

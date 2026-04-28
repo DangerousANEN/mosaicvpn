@@ -91,35 +91,36 @@ export function Pool({
     }
   };
 
-  const onEdit = async (sub: Subscription) => {
-    // Cheap inline editor — the rc24 user request was just "add an
-    // Edit button"; full modal can come later if needed. window.prompt
-    // is intentionally synchronous so we don't need to manage a separate
-    // modal-state tree across the gazetteer.
-    const newName = window.prompt(
-      "Subscription name (blank = keep current):",
-      sub.name ?? "",
-    );
-    if (newName === null) return; // user cancelled
-    const newURL = window.prompt(
-      "Subscription URL (blank = keep current):",
-      sub.url,
-    );
-    if (newURL === null) return;
-    const trimmedName = newName.trim();
-    const trimmedURL = newURL.trim();
-    const nameChanged = trimmedName !== "" && trimmedName !== (sub.name ?? "");
-    const urlChanged = trimmedURL !== "" && trimmedURL !== sub.url;
-    if (!nameChanged && !urlChanged) return;
+  // editingSub drives the in-app Edit modal. rc25 used window.prompt
+  // for editing, which the user dismissed as "не в стиле приложения,
+  // а в стиле браузера"; the modal below sits inside the Pool frame
+  // and reuses .btn / .add-input typography so the visual identity
+  // matches the rest of Atlas.
+  const [editingSub, setEditingSub] = useState<Subscription | null>(null);
+  const onEdit = (sub: Subscription) => {
+    setEditingSub(sub);
+  };
+  const onEditSave = async (
+    sub: Subscription,
+    nextName: string,
+    nextURL: string,
+  ) => {
+    const nameChanged = nextName !== (sub.name ?? "");
+    const urlChanged = nextURL !== sub.url && nextURL !== "";
+    if (!nameChanged && !urlChanged) {
+      setEditingSub(null);
+      return;
+    }
     setBusy(`edit:${sub.id}`);
     setErr(null);
     try {
       await api.updateSubscription(
         sub.id,
-        nameChanged ? trimmedName : undefined,
-        urlChanged ? trimmedURL : undefined,
+        nameChanged ? nextName : undefined,
+        urlChanged ? nextURL : undefined,
       );
       await reload();
+      setEditingSub(null);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -192,6 +193,15 @@ export function Pool({
           </article>
         ) : null}
       </section>
+
+      {editingSub ? (
+        <SubscriptionEditModal
+          sub={editingSub}
+          onCancel={() => setEditingSub(null)}
+          onSave={(name, url) => onEditSave(editingSub, name, url)}
+          busy={busy === `edit:${editingSub.id}`}
+        />
+      ) : null}
 
       <form className="add-row" onSubmit={onAdd}>
         <span className="add-lab">
@@ -543,3 +553,88 @@ function toRomanLower(n: number): string {
   }
   return out;
 }
+
+/**
+ * SubscriptionEditModal — in-app modal for renaming / repointing a
+ * subscription. Replaces rc25's pair of window.prompt() dialogs
+ * which the user reported as "в стиле браузера, а не приложения".
+ *
+ * The modal is intentionally lightweight: a centred panel with two
+ * inputs, Cancel / Save buttons and an Esc-to-dismiss / Enter-to-
+ * submit binding. Repointing the URL triggers an auto-refetch on the
+ * backend (PATCH /v1/subscriptions/{id}); renaming alone does not.
+ */
+function SubscriptionEditModal({
+  sub,
+  onCancel,
+  onSave,
+  busy,
+}: {
+  sub: Subscription;
+  onCancel: () => void;
+  onSave: (name: string, url: string) => void;
+  busy: boolean;
+}): JSX.Element {
+  const [name, setName] = useState<string>(sub.name ?? "");
+  const [url, setUrl] = useState<string>(sub.url);
+  const trimmedName = name.trim();
+  const trimmedURL = url.trim();
+  const dirty =
+    trimmedName !== (sub.name ?? "") ||
+    (trimmedURL !== sub.url && trimmedURL !== "");
+  const submit = (e?: FormEvent) => {
+    e?.preventDefault();
+    if (!dirty || busy) return;
+    onSave(trimmedName, trimmedURL);
+  };
+  return (
+    <div className="modal-scrim" onClick={onCancel}>
+      <form
+        className="modal-panel"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={submit}
+      >
+        <div className="modal-title">
+          Edit subscription <i>—</i>{" "}
+          <span className="mono">{sub.id.slice(0, 8)}</span>
+        </div>
+        <label className="modal-field">
+          <span className="modal-lab">Name</span>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="(optional)"
+            autoFocus
+          />
+        </label>
+        <label className="modal-field">
+          <span className="modal-lab">URL</span>
+          <input
+            type="text"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://…"
+          />
+        </label>
+        <div className="modal-hint italic-mute">
+          Changing the URL will refetch the subscription. Renaming
+          alone keeps the existing server list and probe history.
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn ghost" onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="btn primary"
+            disabled={!dirty || busy}
+          >
+            {busy ? "Saving…" : "Save changes"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+

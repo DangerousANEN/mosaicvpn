@@ -38,6 +38,15 @@
   color: var(--ink-mute);
   font-weight: 600;
   margin-top: 6px;
+  /* Long subscription URLs (e.g. cloud-hosted feeds with signed
+     query strings) used to overflow the masthead and push the
+     Test-all buttons off-screen on the SubscriptionDetail view.
+     Clip with ellipsis and surface the full URL via the title
+     attribute the renderer already sets. */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .pool-mast-right {
   font-family: "Atlas Serif", Georgia, serif;
@@ -539,3 +548,78 @@
   text-align: center;
   padding: 24px 8px;
 }
+
+/*
+ * In-app modal — used by Pool 's subscription Edit flow (rc26).
+ * Replaces window.prompt() pair which clashed with the rest of the
+ * Atlas/Pool look. Scrim ink-shaded; panel paper-coloured with a
+ * 1 px ink border. Stays centred via flex placeitems on the scrim.
+ */
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 16, 12, 0.45);
+  display: grid;
+  place-items: center;
+  z-index: 100;
+}
+.modal-panel {
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  padding: 22px 26px 18px;
+  width: min(560px, calc(100vw - 80px));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.18);
+  font-family: "Atlas Serif", Georgia, serif;
+}
+.modal-title {
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 10px;
+}
+.modal-title i {
+  color: var(--copper);
+  font-style: italic;
+}
+.modal-field {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  align-items: center;
+  gap: 12px;
+}
+.modal-lab {
+  font-size: 10.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  font-weight: 600;
+}
+.modal-field input {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--ink);
+  padding: 6px 4px;
+  color: var(--ink);
+  outline: none;
+}
+.modal-field input:focus {
+  border-bottom-color: var(--copper);
+}
+.modal-hint {
+  font-size: 11px;
+  color: var(--ink-mute);
+  font-style: italic;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
