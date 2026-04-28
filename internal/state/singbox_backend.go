@@ -96,7 +96,7 @@ func (b *SingBoxBackend) Stats() (uint64, uint64, int) {
 }
 
 // Start implements Backend.
-func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, _ store.Prefs, _ []proto.Rule) error {
+func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, prefs store.Prefs, _ []proto.Rule) error {
 	b.mu.Lock()
 	if b.cmd != nil {
 		b.mu.Unlock()
@@ -127,7 +127,18 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, _ store
 		return errors.New("could not bind a free loopback port for sing-box proxies")
 	}
 
-	cfg, err := BuildSingBoxConfig(server, socksPort, httpPort, clashPort)
+	if prefs.TunnelMode == "tun" {
+		// Stage wintun.dll alongside the data dir so sing-box's
+		// LoadLibrary search picks it up. We only block Connect on a
+		// missing DLL when the user actually asked for TUN — in proxy
+		// mode wintun is irrelevant.
+		if err := EnsureWintunDLL(b.dataDir); err != nil {
+			b.mu.Unlock()
+			return fmt.Errorf("tun:wintun_missing: %w", err)
+		}
+	}
+
+	cfg, err := BuildSingBoxConfig(server, prefs, socksPort, httpPort, clashPort)
 	if err != nil {
 		b.mu.Unlock()
 		return fmt.Errorf("build sing-box config: %w", err)
@@ -448,33 +459,46 @@ func readTail(path string, n int) string {
 // document with a SOCKS and HTTP inbound on loopback and a single
 // proxy outbound. When clashPort > 0 the config also enables sing-box's
 // embedded clash API on "127.0.0.1:<clashPort>" so the daemon can poll
-// /connections for live byte counters. Exposed for tests.
-func BuildSingBoxConfig(server proto.Server, socksPort, httpPort, clashPort int) ([]byte, error) {
+// /connections for live byte counters.
+//
+// When prefs.TunnelMode == "tun" the function additionally generates a
+// `tun` inbound (interface_name=mosaic0, inet4_address=172.19.0.1/30,
+// auto_route, strict_route, mtu=1500). The TUN stack defaults to
+// gVisor unless prefs.TunStack overrides it. Loopback SOCKS / HTTP
+// inbounds remain present so the existing UI-side proxy verifier and
+// browser passthrough still work in TUN mode.
+//
+// Exposed for tests.
+func BuildSingBoxConfig(server proto.Server, prefs store.Prefs, socksPort, httpPort, clashPort int) ([]byte, error) {
 	out, err := outboundFor(server)
 	if err != nil {
 		return nil, err
+	}
+	inbounds := []any{
+		map[string]any{
+			"type":        "socks",
+			"tag":         "socks-in",
+			"listen":      "127.0.0.1",
+			"listen_port": socksPort,
+			"sniff":       true,
+		},
+		map[string]any{
+			"type":        "http",
+			"tag":         "http-in",
+			"listen":      "127.0.0.1",
+			"listen_port": httpPort,
+			"sniff":       true,
+		},
+	}
+	if prefs.TunnelMode == "tun" {
+		inbounds = append(inbounds, tunInbound(prefs))
 	}
 	cfg := map[string]any{
 		"log": map[string]any{
 			"level":     "warn",
 			"timestamp": true,
 		},
-		"inbounds": []any{
-			map[string]any{
-				"type":        "socks",
-				"tag":         "socks-in",
-				"listen":      "127.0.0.1",
-				"listen_port": socksPort,
-				"sniff":       true,
-			},
-			map[string]any{
-				"type":        "http",
-				"tag":         "http-in",
-				"listen":      "127.0.0.1",
-				"listen_port": httpPort,
-				"sniff":       true,
-			},
-		},
+		"inbounds": inbounds,
 		"outbounds": []any{
 			out,
 			map[string]any{"type": "direct", "tag": "direct"},
@@ -498,6 +522,39 @@ func BuildSingBoxConfig(server proto.Server, socksPort, httpPort, clashPort int)
 		}
 	}
 	return json.MarshalIndent(cfg, "", "  ")
+}
+
+// tunInbound returns a sing-box `tun` inbound block configured for
+// system-wide capture on Windows via Wintun. The stack is resolved
+// from prefs.TunStack with a gVisor fallback — gVisor needs no
+// elevated kernel-level routing primitives beyond the wintun adapter
+// itself, which makes it the safest default. `auto_route` programs
+// the OS routing table to send all v4/v6 traffic through the adapter,
+// and `strict_route` forbids leaks if the daemon dies mid-session.
+func tunInbound(prefs store.Prefs) map[string]any {
+	stack := prefs.TunStack
+	switch stack {
+	case "system", "gvisor", "mixed":
+	default:
+		stack = "gvisor"
+	}
+	mtu := prefs.MTU
+	if mtu <= 0 {
+		mtu = 1500
+	}
+	return map[string]any{
+		"type":           "tun",
+		"tag":            "tun-in",
+		"interface_name": "mosaic0",
+		"inet4_address":  "172.19.0.1/30",
+		"inet6_address":  "fd00:cafe::1/126",
+		"mtu":            mtu,
+		"auto_route":     true,
+		"strict_route":   true,
+		"stack":          stack,
+		"sniff":          true,
+		"endpoint_independent_nat": true,
+	}
 }
 
 // outboundFor builds the sing-box outbound block matching the server's

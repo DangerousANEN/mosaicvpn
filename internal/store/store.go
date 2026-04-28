@@ -35,6 +35,7 @@ type State struct {
 // Prefs holds user-configurable behaviour of the daemon.
 type Prefs struct {
 	TunnelMode      string `json:"tunnel_mode"` // "tun" | "proxy"
+	TunStack        string `json:"tun_stack"`   // "gvisor" | "system" | "mixed"
 	SocksAddr       string `json:"socks_addr"`
 	HTTPAddr        string `json:"http_addr"`
 	MTU             int    `json:"mtu"`
@@ -64,8 +65,12 @@ func DefaultPrefs() Prefs {
 		// wintun bundle and admin elevation that not every box has.
 		// Users who want TUN flip the toggle in Settings; we'll only
 		// nudge them when wintun is actually staged.
-		TunnelMode:    "proxy",
-		SocksAddr:     "127.0.0.1:1080",
+		TunnelMode: "proxy",
+		// gVisor stack works without driver-mode kernel routing and
+		// is the cheapest TUN backend on Windows; we default here so
+		// the Folio dropdown always renders a selected option.
+		TunStack:  "gvisor",
+		SocksAddr: "127.0.0.1:1080",
 		HTTPAddr:      "127.0.0.1:1081",
 		MTU:           1420,
 		KillSwitch:    true,
@@ -124,6 +129,11 @@ func Open(path string) (*Store, error) {
 	// Backfill defaults for new fields.
 	if s.state.Prefs.SocksAddr == "" {
 		s.state.Prefs = DefaultPrefs()
+	}
+	// Older store.json (rc≤20) lacks Prefs.TunStack — backfill so the
+	// Folio dropdown renders a selected option after upgrade.
+	if s.state.Prefs.TunStack == "" {
+		s.state.Prefs.TunStack = "gvisor"
 	}
 	return s, nil
 }

@@ -36,12 +36,80 @@ impl DaemonProcess {
     }
 
     fn shutdown(&self) {
+        // Phase 1: ask the daemon to gracefully disconnect first.
+        // sing-box (especially in TUN mode) needs a real shutdown
+        // signal to remove the wintun adapter and clean up the routing
+        // table; if we just SIGKILL mosaicd via the Job Object, those
+        // routes leak and the user can be left without working
+        // connectivity until reboot. The HTTP call is short-fused
+        // (~1.5 s total) so a wedged daemon doesn't stall app exit.
+        graceful_disconnect_best_effort(std::time::Duration::from_millis(1500));
+
         let mut slot = self.0.lock().expect("daemon mutex poisoned");
         if let Some(mut child) = slot.take() {
             let _ = child.kill();
             let _ = child.wait();
         }
     }
+}
+
+/// graceful_disconnect_best_effort reads the daemon lockfile and
+/// fires a `POST /v1/disconnect` over plain TCP (loopback, bearer
+/// auth) so sing-box has a chance to tear down its TUN inbound and
+/// route table before the Job Object kills the entire process tree.
+/// All errors are silently swallowed — the next step in shutdown is
+/// to kill the daemon anyway.
+fn graceful_disconnect_best_effort(budget: std::time::Duration) {
+    let Some(dir) = data_dir() else { return };
+    let lock = dir.join("daemon.lock");
+    let raw = match std::fs::read(&lock) {
+        Ok(b) if !b.is_empty() => b,
+        _ => return,
+    };
+    let endpoint: DaemonEndpoint = match serde_json::from_slice(&raw) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    let host = if endpoint.host.is_empty() { "127.0.0.1" } else { endpoint.host.as_str() };
+    let addr_str = format!("{}:{}", host, endpoint.port);
+    let addrs: Vec<std::net::SocketAddr> = match std::net::ToSocketAddrs::to_socket_addrs(&addr_str) {
+        Ok(it) => it.collect(),
+        Err(_) => return,
+    };
+    for addr in addrs {
+        if try_disconnect_via_socket(addr, &endpoint.token, budget).is_ok() {
+            return;
+        }
+    }
+}
+
+fn try_disconnect_via_socket(
+    addr: std::net::SocketAddr,
+    token: &str,
+    budget: std::time::Duration,
+) -> std::io::Result<()> {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+
+    let mut stream = TcpStream::connect_timeout(&addr, budget)?;
+    let _ = stream.set_read_timeout(Some(budget));
+    let _ = stream.set_write_timeout(Some(budget));
+    let request = format!(
+        "POST /v1/disconnect HTTP/1.1\r\n\
+         Host: {host}\r\n\
+         Authorization: Bearer {token}\r\n\
+         Content-Length: 0\r\n\
+         Connection: close\r\n\
+         \r\n",
+        host = addr,
+        token = token,
+    );
+    stream.write_all(request.as_bytes())?;
+    // Drain the response so the daemon's writer doesn't see an RST
+    // mid-handler. We don't actually parse it.
+    let mut buf = [0u8; 1024];
+    let _ = stream.read(&mut buf);
+    Ok(())
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

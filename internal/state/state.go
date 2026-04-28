@@ -118,10 +118,22 @@ func (m *Manager) Subscribe() (<-chan proto.Status, func()) {
 
 // Connect starts the backend against the supplied server. If the manager
 // is already connected, it will disconnect first.
+//
+// When the user has selected TUN tunnel mode but the daemon process is
+// not running with administrator privileges, Connect refuses early
+// with a recognisable error string. The renderer matches on the
+// "tun:elevation_required" prefix to surface the rc18 admin-gate
+// modal — without this guard sing-box would start, fail to install
+// the wintun adapter, and exit a few seconds later with an opaque
+// "operation not permitted" buried in singbox.err.log.
 func (m *Manager) Connect(ctx context.Context, serverID string) error {
 	server, ok := m.store.FindServer(serverID)
 	if !ok {
 		return fmt.Errorf("server %q not found", serverID)
+	}
+	prefsSnap := m.store.Snapshot().Prefs
+	if prefsSnap.TunnelMode == "tun" && !IsElevated() {
+		return errors.New("tun:elevation_required: TUN tunnel mode requires administrator privileges; restart Mosaic as administrator or switch to Proxy mode in Folio → Network")
 	}
 	m.mu.Lock()
 	if m.st.State == proto.StateConnecting {

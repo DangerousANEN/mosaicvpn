@@ -22,6 +22,7 @@ import (
 
 	"github.com/DangerousANEN/mosaicvpn/internal/geoip"
 	"github.com/DangerousANEN/mosaicvpn/internal/logx"
+	"github.com/DangerousANEN/mosaicvpn/internal/paths"
 	"github.com/DangerousANEN/mosaicvpn/internal/proto"
 	"github.com/DangerousANEN/mosaicvpn/internal/state"
 	"github.com/DangerousANEN/mosaicvpn/internal/store"
@@ -106,6 +107,7 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /v1/servers", s.handleListServers)
 	s.mux.HandleFunc("POST /v1/servers/{id}/test", s.handleTestServer)
+	s.mux.HandleFunc("POST /v1/servers/{id}/url-test", s.handleURLTestServer)
 	s.mux.HandleFunc("POST /v1/servers/test-all", s.handleTestAll)
 
 	s.mux.HandleFunc("GET /v1/rules", s.handleListRules)
@@ -349,6 +351,98 @@ func resolveServerGeo(ctx context.Context, st *store.Store, srv proto.Server) {
 	}
 }
 
+// resolveServerGeoBatch resolves geo metadata for every server in
+// targets that doesn't already have lat/lon, using ip-api.com's batch
+// endpoint in chunks of 100. The country-name hint (IsoFromName)
+// still wins over a disagreeing GeoIP result so a "DE-VLESS" server
+// hosted on a US-owned ASN still drops at the German centroid. On a
+// 1 000-server subscription this is ~10 batch HTTP calls, well within
+// the free-tier 15 req/min budget.
+func resolveServerGeoBatch(ctx context.Context, st *store.Store, targets []proto.Server) {
+	type pending struct {
+		srv  proto.Server
+		hint string
+	}
+	queue := make([]pending, 0, len(targets))
+	hosts := make([]string, 0, len(targets))
+	// Re-snap servers so we see ResolvedIP that phase-1 just wrote;
+	// without this the batch lookup would target the bare hostname,
+	// re-paying the DNS round-trip we already spent.
+	snap := st.Snapshot()
+	byID := map[string]proto.Server{}
+	for _, sv := range snap.Servers {
+		byID[sv.ID] = sv
+	}
+	for _, sv := range targets {
+		fresh, ok := byID[sv.ID]
+		if !ok {
+			fresh = sv
+		}
+		if fresh.Lat != 0 || fresh.Lon != 0 {
+			continue
+		}
+		hint := geoip.IsoFromName(fresh.Name)
+		host := fresh.ResolvedIP
+		if host == "" {
+			host = fresh.Address
+		}
+		queue = append(queue, pending{srv: fresh, hint: hint})
+		hosts = append(hosts, host)
+	}
+	if len(queue) == 0 {
+		return
+	}
+	const chunkSize = 100
+	for start := 0; start < len(queue); start += chunkSize {
+		end := start + chunkSize
+		if end > len(queue) {
+			end = len(queue)
+		}
+		results, err := geoip.LookupBatch(ctx, hosts[start:end])
+		if err != nil {
+			logx.Warn("geoip batch failed", "err", err, "from", start, "to", end)
+			// Fall back to per-host single lookups for this chunk —
+			// slower, but at least the user doesn't lose every pin
+			// when one batch call hiccups.
+			for i := start; i < end; i++ {
+				p := queue[i]
+				geo, lerr := geoip.Lookup(ctx, hosts[i])
+				if lerr != nil {
+					applyGeoHint(st, p.srv, p.hint, geoip.Result{}, false)
+					continue
+				}
+				applyGeoHint(st, p.srv, p.hint, geo, true)
+			}
+			continue
+		}
+		for i, r := range results {
+			p := queue[start+i]
+			ok := r.Err == "" && (r.Result.Lat != 0 || r.Result.Lon != 0 || r.Result.Country != "")
+			applyGeoHint(st, p.srv, p.hint, r.Result, ok)
+		}
+	}
+}
+
+// applyGeoHint persists the best of (ip-api result, country-name hint)
+// onto the server, mirroring the priority used by resolveServerGeo.
+func applyGeoHint(st *store.Store, srv proto.Server, hint string, geo geoip.Result, geoOK bool) {
+	switch {
+	case geoOK && hint != "" && geo.Country == hint:
+		_ = st.RecordServerGeo(srv.ID, geo.City, geo.Country, geo.Lat, geo.Lon)
+	case hint != "":
+		c, ok := geoip.CountryCentroid[hint]
+		if !ok {
+			if geoOK {
+				_ = st.RecordServerGeo(srv.ID, geo.City, geo.Country, geo.Lat, geo.Lon)
+			}
+			return
+		}
+		_ = st.RecordServerGeo(srv.ID, "", hint, c[0], c[1])
+	case geoOK:
+		_ = st.RecordServerGeo(srv.ID, geo.City, geo.Country, geo.Lat, geo.Lon)
+	}
+}
+
 // handleTestServer probes a single server identified by path id and
 // returns the updated server record.
 func (s *Server) handleTestServer(w http.ResponseWriter, r *http.Request) {
@@ -385,9 +479,35 @@ func (s *Server) handleTestServer(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, updated)
 }
 
+// handleURLTestServer runs a true VPN-access probe by spinning up an
+// ephemeral sing-box, opening a SOCKS port against the requested
+// server's outbound, and fetching https://www.gstatic.com/generate_204
+// through it. A 204 result is positive proof that the server actually
+// proxies clean HTTPS traffic — unlike the TCP probe which only
+// confirms the remote listener answered. Refuses while a real Connect
+// session is active so two sing-boxes don't fight for ports.
+func (s *Server) handleURLTestServer(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	srv, ok := s.store.FindServer(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "server not found")
+		return
+	}
+	if s.mgr.Status().State == proto.StateConnected {
+		writeError(w, http.StatusConflict, "url-test unavailable while connected; disconnect first")
+		return
+	}
+	dataDir := paths.DataDir()
+	res := state.URLTestServer(r.Context(), state.LocateSingBox(), dataDir, srv, 12*time.Second)
+	writeJSON(w, http.StatusOK, res)
+}
+
 // handleTestAll probes every server (or all servers under a single
 // subscription if subscription_id is provided) in parallel and returns
-// the refreshed list.
+// the refreshed list. GeoIP resolution uses ip-api.com's /batch
+// endpoint (up to 100 entries per request) so 1 000-server
+// subscriptions don't burn through the per-IP rate limit; per-server
+// TCP probes still run in parallel.
 func (s *Server) handleTestAll(w http.ResponseWriter, r *http.Request) {
 	subID := r.URL.Query().Get("subscription_id")
 	snap := s.store.Snapshot()
@@ -401,6 +521,9 @@ func (s *Server) handleTestAll(w http.ResponseWriter, r *http.Request) {
 	if connected {
 		logx.Warn("test-all while connected: DNS lookups skipped to avoid poisoning ResolvedIP via tunnel")
 	}
+	// Phase 1: DNS resolve + TCP probe in parallel. The batch GeoIP
+	// pass that follows wants ResolvedIP populated, so this round must
+	// finish first.
 	const concurrency = 16
 	sem := make(chan struct{}, concurrency)
 	done := make(chan struct{}, len(targets))
@@ -420,13 +543,15 @@ func (s *Server) handleTestAll(w http.ResponseWriter, r *http.Request) {
 			}
 			ms, errMsg := probeServer(r.Context(), sv.Address, sv.Port, dialIP, 4*time.Second)
 			_ = s.store.RecordServerProbe(sv.ID, ms, errMsg)
-			if !connected {
-				resolveServerGeo(r.Context(), s.store, sv)
-			}
 		}()
 	}
 	for range targets {
 		<-done
+	}
+	// Phase 2: batch GeoIP. Skip while connected so we don't accidentally
+	// resolve through the live tunnel.
+	if !connected {
+		resolveServerGeoBatch(r.Context(), s.store, targets)
 	}
 	out := s.store.Snapshot().Servers
 	if subID != "" {

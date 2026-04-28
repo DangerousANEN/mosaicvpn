@@ -109,6 +109,30 @@ export function Pool({
     }
   };
 
+  const onUrlTest = async (serverID: string) => {
+    setBusy(`url:${serverID}`);
+    setErr(null);
+    try {
+      const r = await api.urlTestServer(serverID);
+      if (r.error) {
+        setErr(`Verify ${shortServerLabel(serverID)}: ${r.error}`);
+      } else {
+        setErr(
+          `Verify ${shortServerLabel(serverID)}: HTTP ${r.status} in ${r.rtt_ms}ms`,
+        );
+      }
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const shortServerLabel = (id: string): string => {
+    const s = servers.find((sv) => sv.id === id);
+    return s ? s.name : id.slice(0, 8);
+  };
+
   const onConnect = async (serverID: string) => {
     setBusy(`conn:${serverID}`);
     setErr(null);
@@ -172,6 +196,7 @@ export function Pool({
             onDelete={() => onDelete(sub.id, sub.name)}
             onTestAll={() => onTestAll(sub.id)}
             onTestOne={onTestOne}
+            onUrlTest={onUrlTest}
             onConnect={onConnect}
             refreshing={busy === `refresh:${sub.id}`}
             deleting={busy === `del:${sub.id}`}
@@ -236,6 +261,7 @@ function PoolCard({
   onDelete,
   onTestAll,
   onTestOne,
+  onUrlTest,
   onConnect,
   refreshing,
   deleting,
@@ -252,6 +278,7 @@ function PoolCard({
   onDelete: () => void;
   onTestAll: () => void;
   onTestOne: (id: string) => void;
+  onUrlTest: (id: string) => void;
   onConnect: (id: string) => void;
   refreshing: boolean;
   deleting: boolean;
@@ -413,8 +440,18 @@ function PoolCard({
                           className="btn ghost xs"
                           onClick={() => onTestOne(s.id)}
                           disabled={testingOne || testing}
+                          title="TCP probe — confirms remote port answers"
                         >
                           Test
+                        </button>
+                        <button
+                          type="button"
+                          className="btn ghost xs"
+                          onClick={() => onUrlTest(s.id)}
+                          disabled={busy === `url:${s.id}` || testing}
+                          title="URL test — fetches generate_204 through this proxy to prove real internet access"
+                        >
+                          {busy === `url:${s.id}` ? "…" : "Verify"}
                         </button>
                         <button
                           type="button"

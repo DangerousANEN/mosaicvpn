@@ -70,6 +70,28 @@ jobs:
           Copy-Item $exe.FullName "ui/src-tauri/binaries/sing-box-x86_64-pc-windows-msvc.exe"
           Get-ChildItem ui/src-tauri/binaries
 
+      - name: bundle wintun.dll for TUN inbound
+        shell: pwsh
+        env:
+          WINTUN_VERSION: 0.14.1
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:WINTUN_VERSION
+          $tmp = Join-Path $env:RUNNER_TEMP "wintun"
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          $zip = Join-Path $tmp "wintun.zip"
+          $url = "https://www.wintun.net/builds/wintun-$version.zip"
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+          Expand-Archive -Path $zip -DestinationPath $tmp -Force
+          $dll = Get-ChildItem -Recurse -Path $tmp -Filter "wintun.dll" |
+            Where-Object { $_.FullName -like "*amd64*" } |
+            Select-Object -First 1
+          if (-not $dll) { throw "amd64/wintun.dll not found inside wintun-$version.zip" }
+          New-Item -ItemType Directory -Force -Path ui/src-tauri/binaries | Out-Null
+          Copy-Item $dll.FullName "ui/src-tauri/binaries/wintun.dll"
+          Get-ChildItem ui/src-tauri/binaries
+
       - name: install renderer deps
         working-directory: ui
         run: npm ci

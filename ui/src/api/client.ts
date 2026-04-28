@@ -75,6 +75,15 @@ export const api = {
   listServers: async () => arr(await request<Server[]>("GET", "/v1/servers")),
   testServer: (id: string) =>
     request<Server>("POST", `/v1/servers/${id}/test`),
+  // urlTestServer spins up an ephemeral sing-box against the requested
+  // server and fetches a 204 endpoint through it — this proves the
+  // proxy actually delivers internet, unlike the TCP probe that only
+  // confirms the remote port answers. Returns rtt_ms / status / error.
+  urlTestServer: (id: string) =>
+    request<{ rtt_ms: number; status: number; error?: string }>(
+      "POST",
+      `/v1/servers/${id}/url-test`,
+    ),
   testAllServers: async (subscriptionId?: string) =>
     arr(
       await request<Server[]>(
