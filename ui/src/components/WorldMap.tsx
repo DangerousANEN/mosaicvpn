@@ -15,10 +15,13 @@
  * keeps every pin glued to its country.
  *
  * Pins are *host* pins — multiple servers sharing the same resolved
- * IP (or the same lat/lon to ~0.5°) collapse into a single dot so a
- * datacenter exposing three protocols doesn't draw three overlapping
- * pins. Hovering a pin reveals a tooltip with the host, location and
- * member protocols; clicking it connects to the fastest member.
+ * IP (or the same lat/lon to ~0.5°) collapse into a single teardrop
+ * marker so a datacenter exposing three protocols doesn't draw three
+ * overlapping pins. Hovering reveals a tooltip with the host,
+ * location and member protocols. Clicking a single-host pin connects
+ * directly; clicking a multi-host pin opens a popover with one
+ * Connect button per member protocol so the user picks the variant
+ * they want.
  */
 
 import { useState } from "react";
@@ -33,8 +36,10 @@ interface WorldMapProps {
   activeServerId?: string;
   /** Optional caption shown in the top-right corner (e.g. current bearing). */
   bearing?: string;
-  /** Click handler invoked with the server id of a pin's primary
-   *  member. Omit to render non-clickable pins (hover still works). */
+  /** Connect handler invoked with the chosen server id. Single-host
+   *  pins call this directly on click; multi-host pins call it from
+   *  the popover. Omit to render non-clickable pins (hover still
+   *  works). */
   onPinClick?: (serverId: string) => void;
 }
 
@@ -72,18 +77,24 @@ function project(lat: number, lon: number): { x: number; y: number } {
 const YOU = project(20, 0);
 
 /**
- * Merge two groups whose pins land within ~0.5° of each other. This
- * is mostly cosmetic — when ip-api.com returns slightly different
- * lat/lon for two different IPs in the same datacenter we still want
- * one dot, not two stacked. Members of merged groups are concatenated
- * and the merged group inherits the better latency.
+ * Pins within MERGE_RADIUS viewBox-units of each other collapse into
+ * one teardrop. With LON_SCALE=2.414 px/° this is roughly ~5° of
+ * longitude — the user explicitly asked for more aggressive merging
+ * than rc12's ~0.5° so adjacent datacenters in the same metro lump
+ * into a single marker and the map stays legible. Members of merged
+ * groups are concatenated and the merged group inherits the better
+ * latency.
  */
+const MERGE_RADIUS = 12;
+
 function mergeNearbyPins(pins: PinPos[]): PinPos[] {
   if (pins.length < 2) return pins;
   const out: PinPos[] = [];
   for (const p of pins) {
     const near = out.find(
-      (o) => Math.abs(o.x - p.x) < 5 && Math.abs(o.y - p.y) < 5,
+      (o) =>
+        Math.abs(o.x - p.x) < MERGE_RADIUS &&
+        Math.abs(o.y - p.y) < MERGE_RADIUS,
     );
     if (!near) {
       out.push({ ...p, group: { ...p.group, members: [...p.group.members] } });
@@ -142,6 +153,7 @@ export function WorldMap({
   onPinClick,
 }: WorldMapProps): JSX.Element {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [openIdx, setOpenIdx] = useState<number | null>(null);
   const groups = groupServers(servers);
   const raw: PinPos[] = [];
   for (const g of groups) {
@@ -150,7 +162,10 @@ export function WorldMap({
   }
   const pins = mergeNearbyPins(raw);
   const activePin = pins.find((p) => p.active);
-  const hover = hoverIdx !== null ? pins[hoverIdx] : null;
+  // Suppress the hover tooltip whenever a popover is open — they live
+  // in the same on-screen real estate and would otherwise overlap.
+  const hover = openIdx === null && hoverIdx !== null ? pins[hoverIdx] : null;
+  const open = openIdx !== null ? pins[openIdx] ?? null : null;
 
   // Graticule lines in the same map coordinates: equator, tropics &
   // arctic/antarctic circles for horizontals; longitude steps every
@@ -216,27 +231,45 @@ export function WorldMap({
             />
           ) : null}
           {pins.map((p, i) => {
-            const r = p.active ? 6 : i === hoverIdx ? 7 : 5;
-            const haloR = p.active ? 12 : i === hoverIdx ? 11 : 0;
+            const isOpen = openIdx === i;
+            const isHov = i === hoverIdx;
+            const haloR = p.active ? 14 : isHov || isOpen ? 13 : 0;
             const cls = `worldmap-pin ${p.active ? "cur" : ""} ${
-              i === hoverIdx ? "hov" : ""
-            } ${onPinClick ? "clickable" : ""}`;
+              isHov ? "hov" : ""
+            } ${isOpen ? "open" : ""} ${onPinClick ? "clickable" : ""}`;
+            const multi = p.group.members.length > 1;
             return (
               <g key={p.group.key} className={cls} transform={`translate(${p.x},${p.y})`}>
                 {haloR > 0 ? <circle r={haloR} className="halo" /> : null}
-                <circle r={r} className="dot" />
+                {/* Teardrop pin shape — apex at (0,0) so it points
+                    exactly at the projected (lat, lon). Cubic curves
+                    keep the silhouette crisp at any rendered size. */}
+                <path
+                  className="pin-tear"
+                  d="M 0 0 C -7 -10, -7 -22, 0 -22 C 7 -22, 7 -10, 0 0 Z"
+                />
+                {/* Inner dot, copper for active / multi-host marker. */}
+                <circle cy={-15} r={multi ? 3 : 2} className="pin-eye" />
                 {/* Invisible hit target — bigger than the dot so the
                     pin is easy to hover and click. */}
                 <circle
-                  r={14}
+                  cy={-11}
+                  r={16}
                   fill="transparent"
                   style={onPinClick ? { cursor: "pointer" } : undefined}
                   onMouseEnter={() => setHoverIdx(i)}
                   onMouseLeave={() =>
                     setHoverIdx((h) => (h === i ? null : h))
                   }
-                  onClick={() => {
-                    if (onPinClick) onPinClick(p.group.primary.id);
+                  onClick={(e) => {
+                    if (!onPinClick) return;
+                    e.stopPropagation();
+                    if (multi) {
+                      setOpenIdx((o) => (o === i ? null : i));
+                    } else {
+                      setOpenIdx(null);
+                      onPinClick(p.group.primary.id);
+                    }
                   }}
                 />
               </g>
@@ -270,9 +303,68 @@ export function WorldMap({
             <div className="tip-ms mono">best {hover.primaryMs}ms</div>
           ) : null}
           {onPinClick ? (
-            <div className="tip-cta mono">click to connect</div>
+            <div className="tip-cta mono">
+              {hover.group.members.length > 1
+                ? "click to choose"
+                : "click to connect"}
+            </div>
           ) : null}
         </div>
+      ) : null}
+
+      {open ? (
+        <>
+          <div
+            className="worldmap-popover-scrim"
+            onClick={() => setOpenIdx(null)}
+          />
+          <div
+            className="worldmap-popover"
+            style={{
+              left: `${((open.x - MAP_VB.x) / MAP_VB.w) * 100}%`,
+              top: `${((open.y - MAP_VB.y) / MAP_VB.h) * 100}%`,
+            }}
+          >
+            <div className="pop-head">
+              <div className="pop-host mono">{open.group.host}</div>
+              {locText(open.group.primary) ? (
+                <div className="pop-loc">{locText(open.group.primary)}</div>
+              ) : null}
+            </div>
+            <ul className="pop-list">
+              {open.group.members.map((m) => {
+                const ms =
+                  m.last_test_ms !== undefined && m.last_test_ms > 0
+                    ? `${m.last_test_ms}ms`
+                    : m.last_test_error
+                      ? "err"
+                      : "—";
+                const isActive = m.id === activeServerId;
+                return (
+                  <li key={m.id} className={isActive ? "is-active" : ""}>
+                    <span className="pop-proto mono">
+                      {m.protocol}:{m.port}
+                    </span>
+                    <span className="pop-ms mono">{ms}</span>
+                    <button
+                      type="button"
+                      className="pop-go mono"
+                      disabled={!onPinClick || isActive}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!onPinClick) return;
+                        setOpenIdx(null);
+                        onPinClick(m.id);
+                      }}
+                    >
+                      {isActive ? "current" : "connect"}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </>
       ) : null}
 
       {bearing ? <div className="worldmap-bearing">{bearing}</div> : null}

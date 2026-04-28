@@ -406,33 +406,52 @@
 .worldmap-pin.you {
   pointer-events: none;
 }
-.worldmap-pin .dot {
+/* Teardrop pin body — cream paper with an ink stroke by default,
+   filled with copper when active, hovered or open. */
+.worldmap-pin .pin-tear {
   fill: var(--paper);
   stroke: var(--ink);
   stroke-width: 1.4;
-  transition: r 0.12s ease-out, fill 0.12s, stroke 0.12s;
+  vector-effect: non-scaling-stroke;
+  transition: fill 0.12s, stroke 0.12s;
+}
+.worldmap-pin .pin-eye {
+  fill: var(--ink);
+  transition: fill 0.12s;
 }
 .worldmap-pin .halo {
   fill: var(--ink);
   opacity: 0.10;
   transition: r 0.18s ease-out, opacity 0.18s;
+  /* Halo sits behind the teardrop's centre of mass, not its apex. */
+  transform: translateY(-11px);
 }
-.worldmap-pin.hov .dot {
+.worldmap-pin.hov .pin-tear,
+.worldmap-pin.open .pin-tear {
   fill: var(--copper);
   stroke: var(--copper);
 }
-.worldmap-pin.hov .halo {
+.worldmap-pin.hov .pin-eye,
+.worldmap-pin.open .pin-eye {
+  fill: var(--paper);
+}
+.worldmap-pin.hov .halo,
+.worldmap-pin.open .halo {
   fill: var(--copper);
   opacity: 0.22;
 }
-.worldmap-pin.cur .dot {
+.worldmap-pin.cur .pin-tear {
   fill: var(--copper);
   stroke: var(--copper);
 }
+.worldmap-pin.cur .pin-eye {
+  fill: var(--paper);
+}
 .worldmap-pin.cur .halo {
   fill: var(--copper);
-  opacity: 0.18;
+  opacity: 0.20;
 }
+/* The "you" pin keeps the old simple dot+halo styling — no teardrop. */
 .worldmap-pin.you .dot {
   fill: var(--ink);
   stroke: var(--paper);
@@ -441,6 +460,7 @@
 .worldmap-pin.you .halo {
   fill: var(--ink);
   opacity: 0.14;
+  transform: none;
 }
 .worldmap-tooltip {
   position: absolute;
@@ -494,6 +514,101 @@
   stroke-dasharray: 4 3;
   opacity: 0.7;
   vector-effect: non-scaling-stroke;
+}
+/* Multi-host pin popover — sits above the clicked pin, listing every
+   host inside the merged group with a per-host Connect button. The
+   scrim swallows clicks outside the popover so the user can dismiss
+   it without accidentally opening another pin. */
+.worldmap-popover-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  cursor: default;
+}
+.worldmap-popover {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 22px));
+  z-index: 7;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  padding: 8px 10px 10px;
+  font-family: "Atlas Serif", Georgia, serif;
+  font-size: 12px;
+  color: var(--ink);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+  min-width: 220px;
+  max-width: 320px;
+}
+.worldmap-popover .pop-head {
+  margin-bottom: 6px;
+  border-bottom: 1px dashed var(--ink-mute);
+  padding-bottom: 4px;
+}
+.worldmap-popover .pop-host {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+.worldmap-popover .pop-loc {
+  font-style: italic;
+  color: var(--copper);
+  font-size: 12px;
+  margin-top: 1px;
+}
+.worldmap-popover .pop-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.worldmap-popover .pop-list li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 2px 0;
+}
+.worldmap-popover .pop-list li.is-active {
+  color: var(--copper);
+}
+.worldmap-popover .pop-proto {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.worldmap-popover .pop-ms {
+  font-size: 10px;
+  color: var(--ink-mute);
+  letter-spacing: 0.04em;
+}
+.worldmap-popover .pop-list li.is-active .pop-ms {
+  color: var(--copper);
+}
+.worldmap-popover .pop-go {
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.worldmap-popover .pop-go:hover:not(:disabled) {
+  background: var(--ink);
+  color: var(--paper);
+}
+.worldmap-popover .pop-go:disabled {
+  border-color: var(--ink-mute);
+  color: var(--ink-mute);
+  cursor: default;
+}
+.worldmap-popover .pop-list li.is-active .pop-go:disabled {
+  border-color: var(--copper);
+  color: var(--copper);
 }
 .worldmap-bearing {
   position: absolute;
