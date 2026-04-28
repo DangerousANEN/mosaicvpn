@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api } from "../api/client";
 import type { Server, Subscription } from "../api/types";
 import { locText } from "../components/locText";
+import { groupServers } from "../components/serverGroup";
 
 /**
  * Pool — the gazetteer of subscriptions. Mirrors docs/mockups/subs.html.
@@ -363,63 +364,76 @@ function PoolCard({
 
         {expanded && servers.length > 0 ? (
           <div className="pool-stations">
-            {servers.map((s) => {
-              const testingOne = busy === `testone:${s.id}`;
-              const connectingOne = busy === `conn:${s.id}`;
-              return (
-                <div
-                  key={s.id}
-                  className={`station ${
-                    s.id === activeServerId ? "cur" : ""
-                  }`}
-                >
-                  <span className="name">{s.name}</span>
-                  <span className="addr mono">
-                    {s.address}:{s.port}
-                  </span>
-                  {locText(s) ? (
-                    <span className="loc" title="resolved location">
-                      {locText(s)}
-                    </span>
+            {groupServers(servers).map((g) => (
+              <div
+                key={g.key}
+                className={`host-group ${
+                  g.members.some((m) => m.id === activeServerId) ? "cur" : ""
+                }`}
+              >
+                <div className="host-head">
+                  <span className="host-addr mono">{g.host}</span>
+                  {locText(g.primary) ? (
+                    <span className="host-loc">{locText(g.primary)}</span>
                   ) : null}
-                  <span className="proto mono">{s.protocol}</span>
-                  <span
-                    className="ms mono"
-                    title={s.last_test_error || undefined}
-                  >
-                    {testingOne
-                      ? "…"
-                      : (s.last_test_ms ?? 0) > 0
-                        ? `${s.last_test_ms}ms`
-                        : (s.last_test_ms ?? 0) < 0
-                          ? "fail"
-                          : "—"}
-                  </span>
-                  <span className="station-actions">
-                    <button
-                      type="button"
-                      className="btn ghost xs"
-                      onClick={() => onTestOne(s.id)}
-                      disabled={testingOne || testing}
-                    >
-                      Test
-                    </button>
-                    <button
-                      type="button"
-                      className="btn primary xs"
-                      onClick={() => onConnect(s.id)}
-                      disabled={connectingOne}
-                    >
-                      {connectingOne
-                        ? "…"
-                        : s.id === activeServerId
-                          ? "Active"
-                          : "Connect"}
-                    </button>
+                  <span className="host-meta mono">
+                    {g.members.length}{" "}
+                    {g.members.length === 1 ? "protocol" : "protocols"}
+                    {g.bestMs !== null ? ` · best ${g.bestMs}ms` : ""}
                   </span>
                 </div>
-              );
-            })}
+                {g.members.map((s) => {
+                  const testingOne = busy === `testone:${s.id}`;
+                  const connectingOne = busy === `conn:${s.id}`;
+                  return (
+                    <div
+                      key={s.id}
+                      className={`station ${
+                        s.id === activeServerId ? "cur" : ""
+                      }`}
+                    >
+                      <span className="name">{s.name}</span>
+                      <span className="addr mono">:{s.port}</span>
+                      <span className="proto mono">{s.protocol}</span>
+                      <span
+                        className="ms mono"
+                        title={s.last_test_error || undefined}
+                      >
+                        {testingOne
+                          ? "…"
+                          : (s.last_test_ms ?? 0) > 0
+                            ? `${s.last_test_ms}ms`
+                            : (s.last_test_ms ?? 0) < 0
+                              ? "fail"
+                              : "—"}
+                      </span>
+                      <span className="station-actions">
+                        <button
+                          type="button"
+                          className="btn ghost xs"
+                          onClick={() => onTestOne(s.id)}
+                          disabled={testingOne || testing}
+                        >
+                          Test
+                        </button>
+                        <button
+                          type="button"
+                          className="btn primary xs"
+                          onClick={() => onConnect(s.id)}
+                          disabled={connectingOne}
+                        >
+                          {connectingOne
+                            ? "…"
+                            : s.id === activeServerId
+                              ? "Active"
+                              : "Connect"}
+                        </button>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
           </div>
         ) : null}
       </div>

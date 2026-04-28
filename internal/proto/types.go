@@ -53,6 +53,12 @@ type Server struct {
 	// lookup against Address; zero means "not resolved yet".
 	Lat float64 `json:"lat,omitempty"`
 	Lon float64 `json:"lon,omitempty"`
+	// ResolvedIP is the IP that Address resolved to during the most
+	// recent probe. For Address values that are already IPs it equals
+	// Address; for hostnames it is the first A/AAAA record seen.
+	// Used by the UI to group multiple protocol entries that point at
+	// the same physical host.
+	ResolvedIP string `json:"resolved_ip,omitempty"`
 	Raw map[string]any `json:"raw,omitempty"`
 }
 

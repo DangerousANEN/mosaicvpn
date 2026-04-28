@@ -301,6 +301,23 @@ func (s *Store) RecordServerGeo(id, city, country string, lat, lon float64) erro
 	})
 }
 
+// RecordServerResolved stores the IP that the server's hostname most
+// recently resolved to. An empty ip leaves the field unchanged.
+func (s *Store) RecordServerResolved(id, ip string) error {
+	if ip == "" {
+		return nil
+	}
+	return s.Update(func(st *State) error {
+		for i := range st.Servers {
+			if st.Servers[i].ID == id {
+				st.Servers[i].ResolvedIP = ip
+				return nil
+			}
+		}
+		return fmt.Errorf("server %q not found", id)
+	})
+}
+
 // SetLastServer remembers which server was most recently chosen.
 func (s *Store) SetLastServer(id string) error {
 	return s.Update(func(st *State) error {

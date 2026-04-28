@@ -399,10 +399,31 @@
   pointer-events: none;
   overflow: visible;
 }
+.worldmap-pin {
+  pointer-events: auto;
+  transition: transform 0.12s ease-out;
+}
+.worldmap-pin.you {
+  pointer-events: none;
+}
 .worldmap-pin .dot {
   fill: var(--paper);
   stroke: var(--ink);
-  stroke-width: 1;
+  stroke-width: 1.4;
+  transition: r 0.12s ease-out, fill 0.12s, stroke 0.12s;
+}
+.worldmap-pin .halo {
+  fill: var(--ink);
+  opacity: 0.10;
+  transition: r 0.18s ease-out, opacity 0.18s;
+}
+.worldmap-pin.hov .dot {
+  fill: var(--copper);
+  stroke: var(--copper);
+}
+.worldmap-pin.hov .halo {
+  fill: var(--copper);
+  opacity: 0.22;
 }
 .worldmap-pin.cur .dot {
   fill: var(--copper);
@@ -420,6 +441,51 @@
 .worldmap-pin.you .halo {
   fill: var(--ink);
   opacity: 0.14;
+}
+.worldmap-tooltip {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 14px));
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  padding: 6px 10px 7px;
+  pointer-events: none;
+  font-family: "Atlas Serif", Georgia, serif;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--ink);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
+  white-space: nowrap;
+  z-index: 5;
+}
+.worldmap-tooltip .tip-host {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+.worldmap-tooltip .tip-loc {
+  font-style: italic;
+  color: var(--copper);
+  font-size: 12px;
+}
+.worldmap-tooltip .tip-protos {
+  font-size: 10px;
+  color: var(--ink-2);
+  margin-top: 2px;
+  letter-spacing: 0.02em;
+}
+.worldmap-tooltip .tip-ms {
+  font-size: 10px;
+  color: var(--copper);
+  margin-top: 2px;
+  letter-spacing: 0.04em;
+}
+.worldmap-tooltip .tip-cta {
+  font-size: 9px;
+  color: var(--ink-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  margin-top: 3px;
 }
 .worldmap-arc {
   fill: none;

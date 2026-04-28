@@ -273,6 +273,40 @@ func probeServer(ctx context.Context, addr string, port int, timeout time.Durati
 	return rtt, ""
 }
 
+// resolveServerGeo computes the best-guess geographic metadata for
+// srv and persists it through st. The priority is:
+//
+//  1. If the server name contains an ISO-2 country prefix (e.g.
+//     "DE-VLESS-WS"), trust that for Country and place the pin at the
+//     country centroid — ip-api.com is then only used to refine
+//     the city / lat / lon when its country agrees.
+//  2. Otherwise fall back to ip-api.com unconditionally.
+//
+// Already-populated lat/lon are not overwritten — once a server has
+// coordinates we keep them across re-tests.
+func resolveServerGeo(ctx context.Context, st *store.Store, srv proto.Server) {
+	if srv.Lat != 0 || srv.Lon != 0 {
+		return
+	}
+	hint := geoip.IsoFromName(srv.Name)
+	geo, err := geoip.Lookup(ctx, srv.Address)
+	switch {
+	case err == nil && hint != "" && geo.Country == hint:
+		// Both agree → use the precise lat/lon from ip-api.
+		_ = st.RecordServerGeo(srv.ID, geo.City, geo.Country, geo.Lat, geo.Lon)
+	case hint != "":
+		// Hint wins. Drop a centroid pin so the map shows the right
+		// country even if ip-api.com pointed at the ASN owner.
+		c, ok := geoip.CountryCentroid[hint]
+		if !ok {
+			return
+		}
+		_ = st.RecordServerGeo(srv.ID, "", hint, c[0], c[1])
+	case err == nil:
+		_ = st.RecordServerGeo(srv.ID, geo.City, geo.Country, geo.Lat, geo.Lon)
+	}
+}
+
 // handleTestServer probes a single server identified by path id and
 // returns the updated server record.
 func (s *Server) handleTestServer(w http.ResponseWriter, r *http.Request) {
@@ -287,11 +321,10 @@ func (s *Server) handleTestServer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if srv.Lat == 0 && srv.Lon == 0 {
-		if geo, err := geoip.Lookup(r.Context(), srv.Address); err == nil {
-			_ = s.store.RecordServerGeo(id, geo.City, geo.Country, geo.Lat, geo.Lon)
-		}
+	if ip := geoip.ResolveHost(r.Context(), srv.Address); ip != "" {
+		_ = s.store.RecordServerResolved(id, ip)
 	}
+	resolveServerGeo(r.Context(), s.store, srv)
 	updated, _ := s.store.FindServer(id)
 	writeJSON(w, http.StatusOK, updated)
 }
@@ -318,11 +351,10 @@ func (s *Server) handleTestAll(w http.ResponseWriter, r *http.Request) {
 			defer func() { <-sem; done <- struct{}{} }()
 			ms, errMsg := probeServer(r.Context(), sv.Address, sv.Port, 4*time.Second)
 			_ = s.store.RecordServerProbe(sv.ID, ms, errMsg)
-			if sv.Lat == 0 && sv.Lon == 0 {
-				if geo, err := geoip.Lookup(r.Context(), sv.Address); err == nil {
-					_ = s.store.RecordServerGeo(sv.ID, geo.City, geo.Country, geo.Lat, geo.Lon)
-				}
+			if ip := geoip.ResolveHost(r.Context(), sv.Address); ip != "" {
+				_ = s.store.RecordServerResolved(sv.ID, ip)
 			}
+			resolveServerGeo(r.Context(), s.store, sv)
 		}()
 	}
 	for range targets {

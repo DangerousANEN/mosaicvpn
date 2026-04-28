@@ -45,6 +45,10 @@ export interface Server {
   last_test_at?: string;
   lat?: number;
   lon?: number;
+  /** IP that `address` resolved to during the most recent probe.
+   *  Used by the UI to group multi-protocol entries pointing at the
+   *  same physical host. */
+  resolved_ip?: string;
 }
 
 export interface Subscription {

@@ -177,6 +177,18 @@ export function Main({ status }: { status: Status }): JSX.Element {
           <WorldMap
             servers={servers}
             activeServerId={status.server?.id}
+            onPinClick={async (id) => {
+              if (busy) return;
+              setBusy(true);
+              setErr(null);
+              try {
+                await api.connect(id);
+              } catch (e) {
+                setErr((e as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
           />
         </div>
       </section>
