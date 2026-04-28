@@ -54,6 +54,11 @@ type Manager struct {
 	version  string
 	pid      int
 	started  time.Time
+	// myLocation is populated once by mosaicd's startup IP-geo
+	// lookup (see cmd/mosaicd/main.go). Folded into every Status
+	// snapshot so the renderer can plant the "vous" pin on the
+	// user's actual continent.
+	myLocation *proto.GeoLocation
 }
 
 // New constructs a Manager around an existing store and backend.
@@ -91,7 +96,21 @@ func (m *Manager) Status() proto.Status {
 			st.ProxySOCKS, st.ProxyHTTP = p.Proxies()
 		}
 	}
+	if m.myLocation != nil {
+		// Copy so callers can't mutate the canonical struct.
+		loc := *m.myLocation
+		st.MyLocation = &loc
+	}
 	return st
+}
+
+// SetMyLocation publishes the user's resolved geo position. Called
+// once by mosaicd's startup goroutine after the ip-api lookup
+// succeeds; safe to call again later if a re-resolve is added.
+func (m *Manager) SetMyLocation(loc *proto.GeoLocation) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.myLocation = loc
 }
 
 // Subscribe returns a buffered channel that receives every Status update.

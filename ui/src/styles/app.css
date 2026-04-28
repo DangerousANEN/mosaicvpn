@@ -642,10 +642,17 @@
   font-size: 12px;
   font-weight: 600;
   line-height: 1.2;
-  pointer-events: none;
+  pointer-events: auto;
   user-select: none;
   white-space: nowrap;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+}
+.worldmap-you-label.clickable {
+  cursor: pointer;
+}
+.worldmap-tooltip.vous-tip {
+  z-index: 6;
+  pointer-events: auto;
 }
 .worldmap-you-label::before {
   content: "";

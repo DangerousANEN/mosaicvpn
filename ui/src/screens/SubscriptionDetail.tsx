@@ -158,6 +158,7 @@ export function SubscriptionDetail({
 
       {banner ? <div className="pool-error">{banner}</div> : null}
 
+      <div className="sub-detail-scroll">
       <table className="sub-detail-table">
         <thead>
           <tr>
@@ -237,6 +238,7 @@ export function SubscriptionDetail({
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

@@ -10,10 +10,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -80,6 +82,13 @@ func run(dataDirOverride string) error {
 		backend = state.NewMockBackend()
 	}
 	mgr := state.New(store, backend, Version)
+
+	// Best-effort: resolve the user's public-IP location once at
+	// startup so the renderer can plant the "vous" pin on the
+	// correct continent. Failures (no internet at boot, ip-api
+	// rate-limiting, captive portal, etc.) leave Status.MyLocation
+	// nil and the renderer falls back to its hardcoded default.
+	go resolveMyLocation(mgr)
 
 	apiSrv := api.NewServer(store, mgr, nil)
 
@@ -164,4 +173,64 @@ func run(dataDirOverride string) error {
 	_ = mgr.Disconnect(shutdownCtx)
 	_ = shutdown(shutdownCtx)
 	return nil
+}
+
+// resolveMyLocation does a one-shot ip-api.com lookup for the user's
+// public-IP geolocation. Result is published to the manager so every
+// subsequent /v1/status snapshot carries Status.MyLocation. We do not
+// persist this — re-resolved on every daemon start so a user moving
+// laptops between countries doesn't end up with a stale "vous" pin.
+//
+// Failure modes (no internet, ip-api rate limit, DNS hijack returning
+// a 200 with junk body, captive portal) are silently ignored; the
+// renderer already has a default-fallback path.
+func resolveMyLocation(mgr *state.Manager) {
+	// Generous overall budget but a tight per-attempt timeout so a
+	// flaky resolver can't block the daemon's startup banner for
+	// the full window. Three attempts spaced ~5 s apart cover the
+	// "wifi just connected, DHCP still settling" boot case.
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			time.Sleep(5 * time.Second)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+			"http://ip-api.com/json/?fields=status,country,city,lat,lon,query", nil)
+		if err != nil {
+			cancel()
+			continue
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			cancel()
+			continue
+		}
+		var body struct {
+			Status  string  `json:"status"`
+			Country string  `json:"country"`
+			City    string  `json:"city"`
+			Lat     float64 `json:"lat"`
+			Lon     float64 `json:"lon"`
+			Query   string  `json:"query"`
+		}
+		dec := json.NewDecoder(resp.Body)
+		decErr := dec.Decode(&body)
+		_ = resp.Body.Close()
+		cancel()
+		if decErr != nil || body.Status != "success" {
+			continue
+		}
+		mgr.SetMyLocation(&proto.GeoLocation{
+			Lat:     body.Lat,
+			Lon:     body.Lon,
+			City:    body.City,
+			Country: body.Country,
+			IP:      body.Query,
+		})
+		logx.Info("resolved user location",
+			"city", body.City, "country", body.Country,
+			"lat", body.Lat, "lon", body.Lon)
+		return
+	}
+	logx.Warn("failed to resolve user IP location; vous pin will use fallback")
 }

@@ -100,6 +100,17 @@ export interface Status {
   daemon_pid: number;
   proxy_socks?: string;
   proxy_http?: string;
+  /** User's approximate location, resolved by mosaicd at startup
+   *  via ip-api.com on the public IP. Drives the "vous" pin. */
+  my_location?: GeoLocation;
+}
+
+export interface GeoLocation {
+  lat: number;
+  lon: number;
+  city?: string;
+  country?: string;
+  ip?: string;
 }
 
 export interface Prefs {

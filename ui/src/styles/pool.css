@@ -505,11 +505,33 @@
  * .pool-mast styling for the header so the visual continuity with
  * Pool stays intact.
  */
+/* Scroll wrapper around the SubscriptionDetail table. Long server
+   "names" (sometimes a full URL with signed query string) used to
+   blow the row width past the viewport, pushing the Actions column
+   off-screen and forcing a body-level horizontal scroll. Confining
+   the overflow to this wrapper keeps the page chrome stable and
+   gives the user a clean horizontal scrollbar limited to the
+   table area. */
+.sub-detail-scroll {
+  overflow-x: auto;
+  overflow-y: visible;
+  width: 100%;
+  max-width: 100%;
+}
 .sub-detail-table {
   width: 100%;
+  min-width: 720px;
   border-collapse: collapse;
   margin-top: 12px;
   font-size: 12px;
+}
+/* Force the Name column to wrap any URL/long token instead of
+   stretching the row. JetBrains-mono tokens with no spaces would
+   otherwise refuse to break and re-overflow the wrapper. */
+.sub-detail-table td:first-child {
+  max-width: 320px;
+  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 .sub-detail-table th,
 .sub-detail-table td {

@@ -190,6 +190,7 @@ export function Main({ status }: { status: Status }): JSX.Element {
           <WorldMap
             servers={servers}
             activeServerId={status.server?.id}
+            myLocation={status.my_location}
             onPinClick={async (id) => {
               if (busy) return;
               setBusy(true);

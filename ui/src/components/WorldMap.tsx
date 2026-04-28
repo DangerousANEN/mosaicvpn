@@ -27,7 +27,7 @@
 import { useState, type MouseEvent as ReactMouseEvent } from "react";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import worldUrl from "../assets/world.svg";
-import type { Server } from "../api/types";
+import type { Server, GeoLocation } from "../api/types";
 import { cityToLatLon } from "./cityCoords";
 import { groupServers, type ServerGroup } from "./serverGroup";
 import {
@@ -47,6 +47,10 @@ interface WorldMapProps {
    *  the popover. Omit to render non-clickable pins (hover still
    *  works). */
   onPinClick?: (serverId: string) => void;
+  /** User's resolved IP-geo location (from /v1/status). When
+   *  provided, drives the position of the "vous" pin instead of
+   *  the (lon=0, lat=20°N) fallback. */
+  myLocation?: GeoLocation;
 }
 
 interface HostPinPos {
@@ -89,10 +93,11 @@ function project(lat: number, lon: number): { x: number; y: number } {
   };
 }
 
-// "You" pin sits roughly where Earth's median land mass lives — lon=0,
-// lat=20°N, the same bias the previous (500, 290) hardcode aimed at on
-// the old 1000×500 grid. Stays inside the new viewBox.
-const YOU = project(20, 0);
+// Fallback "vous" anchor used until mosaicd's IP-geo lookup
+// resolves Status.MyLocation. Sits roughly where Earth's median
+// land mass lives — lon=0, lat=20°N. Replaced live by
+// myLocation prop once the daemon publishes a real coordinate.
+const YOU_FALLBACK = project(20, 0);
 
 /**
  * Pins within MERGE_RADIUS viewBox-units of each other collapse into
@@ -201,9 +206,16 @@ export function WorldMap({
   activeServerId,
   bearing,
   onPinClick,
+  myLocation,
 }: WorldMapProps): JSX.Element {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [openIdx, setOpenIdx] = useState<number | null>(null);
+  const [vousOpen, setVousOpen] = useState(false);
+  // Live "vous" anchor: real public-IP geolocation if the daemon
+  // resolved one, else the fallback off the West African coast.
+  const YOU = myLocation
+    ? project(myLocation.lat, myLocation.lon)
+    : YOU_FALLBACK;
   // The current zoom level reported by react-zoom-pan-pinch. Drives
   // (a) inverse-scale on every pin so a 12× zoom doesn't blow the
   // diamonds up to half the screen, and (b) the country/host pin
@@ -498,6 +510,13 @@ export function WorldMap({
             style={{
               left: `${((p.x - MAP_VB.x) / MAP_VB.w) * 100}%`,
               top: `${((p.y - MAP_VB.y) / MAP_VB.h) * 100}%`,
+              // Inverse-scale so labels stay a constant on-screen
+              // size as the user zooms in (rc26 only inverse-
+              // scaled the SVG diamonds, leaving HTML labels to
+              // grow comically large past 4x). Keeps the
+              // existing "below the pin" offset baseline (rc23).
+              transform: `translate(-50%, 12px) scale(${pinScale})`,
+              transformOrigin: "center top",
             }}
             onMouseEnter={() => setHoverIdx(i)}
             onMouseLeave={() =>
@@ -510,16 +529,54 @@ export function WorldMap({
         );
       })}
 
-      {/* "vous" label, italic + ink, anchored to YOU. */}
+      {/* "vous" label, italic + ink, anchored to YOU. Clickable
+          since rc27: opens a small popover identifying the marker
+          as the user's IP-geo location. */}
       <div
-        className="worldmap-you-label"
+        className="worldmap-you-label clickable"
         style={{
           left: `${((YOU.x - MAP_VB.x) / MAP_VB.w) * 100}%`,
           top: `${((YOU.y - MAP_VB.y) / MAP_VB.h) * 100}%`,
         }}
+        onClick={(e) => {
+          e.stopPropagation();
+          setVousOpen((v) => !v);
+        }}
       >
         vous
       </div>
+
+      {vousOpen ? (
+        <div
+          className="worldmap-tooltip vous-tip"
+          style={{
+            left: `${((YOU.x - MAP_VB.x) / MAP_VB.w) * 100}%`,
+            top: `${((YOU.y - MAP_VB.y) / MAP_VB.h) * 100}%`,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="tip-host">It’s your location.</div>
+          {myLocation ? (
+            <>
+              {(myLocation.city || myLocation.country) ? (
+                <div className="tip-loc">
+                  {[myLocation.city, myLocation.country]
+                    .filter(Boolean)
+                    .join(", ")}
+                </div>
+              ) : null}
+              <div className="tip-ms mono">
+                {myLocation.lat.toFixed(2)},{" "}
+                {myLocation.lon.toFixed(2)}
+              </div>
+            </>
+          ) : (
+            <div className="tip-loc italic-mute">
+              resolving via ip-api…
+            </div>
+          )}
+        </div>
+      ) : null}
 
       {hover ? (
         <div

@@ -165,6 +165,26 @@ type Status struct {
 	// when the backend is the mock or no proxy listener is active.
 	ProxySOCKS string `json:"proxy_socks,omitempty"`
 	ProxyHTTP  string `json:"proxy_http,omitempty"`
+
+	// MyLocation is the user's approximate geo position, resolved
+	// once at daemon startup via ip-api.com on the user's public IP.
+	// Used by the renderer to plant the "vous" pin at a sensible
+	// place on the world map instead of a hardcoded fallback near
+	// the West African coast (rc26 dropped one there which the user
+	// flagged as "vous отмечает неправильно моё местоположение").
+	// Nil while the lookup is still in flight or if it failed
+	// (no internet at boot, ip-api rate limit, etc.).
+	MyLocation *GeoLocation `json:"my_location,omitempty"`
+}
+
+// GeoLocation is a coarse public-IP-to-coordinates mapping. Source:
+// ip-api.com's free /json endpoint, called once at daemon startup.
+type GeoLocation struct {
+	Lat     float64 `json:"lat"`
+	Lon     float64 `json:"lon"`
+	City    string  `json:"city,omitempty"`
+	Country string  `json:"country,omitempty"`
+	IP      string  `json:"ip,omitempty"`
 }
 
 // ConnectRequest tells the daemon to bring up a server.
