@@ -63,8 +63,15 @@ func run(dataDirOverride string) error {
 		return fmt.Errorf("open store: %w", err)
 	}
 
-	mb := state.NewMockBackend()
-	mgr := state.New(store, mb, Version)
+	var backend state.Backend
+	if bin := state.LocateSingBox(); bin != "" {
+		logx.Info("sing-box backend enabled", "bin", bin)
+		backend = state.NewSingBoxBackend(bin, dataDir)
+	} else {
+		logx.Warn("sing-box not found next to mosaicd or on PATH; falling back to mock backend (Connect will pretend to work but no proxy is opened)")
+		backend = state.NewMockBackend()
+	}
+	mgr := state.New(store, backend, Version)
 
 	apiSrv := api.NewServer(store, mgr, nil)
 

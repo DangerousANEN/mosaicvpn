@@ -42,7 +42,9 @@ export interface Server {
   subscription_id: string;
   last_test_ms?: number;
   last_test_error?: string;
-  last_tested?: string;
+  last_test_at?: string;
+  lat?: number;
+  lon?: number;
 }
 
 export interface Subscription {
@@ -92,6 +94,8 @@ export interface Status {
   agent_connected: boolean;
   daemon_version: string;
   daemon_pid: number;
+  proxy_socks?: string;
+  proxy_http?: string;
 }
 
 export interface Prefs {

@@ -57,9 +57,24 @@ export function WorldMap({
 }: WorldMapProps): JSX.Element {
   const pins: PinPos[] = [];
   for (const srv of servers) {
-    const coords = cityToLatLon(srv.city, srv.country, srv.address);
-    if (!coords) continue;
-    const { x, y } = project(coords.lat, coords.lon);
+    let lat: number | undefined;
+    let lon: number | undefined;
+    if (
+      typeof srv.lat === "number" &&
+      typeof srv.lon === "number" &&
+      (srv.lat !== 0 || srv.lon !== 0)
+    ) {
+      lat = srv.lat;
+      lon = srv.lon;
+    } else {
+      const coords = cityToLatLon(srv.city, srv.country, srv.address);
+      if (coords) {
+        lat = coords.lat;
+        lon = coords.lon;
+      }
+    }
+    if (lat === undefined || lon === undefined) continue;
+    const { x, y } = project(lat, lon);
     pins.push({
       x,
       y,
@@ -69,6 +84,7 @@ export function WorldMap({
     });
   }
   const placed = dedupePins(pins);
+  const activePin = placed.find((p) => p.active);
 
   return (
     <div className="worldmap">
@@ -93,6 +109,14 @@ export function WorldMap({
           viewBox="0 0 1000 500"
           preserveAspectRatio="none"
         >
+          {activePin ? (
+            <path
+              className="worldmap-arc"
+              d={`M 500 290 Q ${(500 + activePin.x) / 2} ${
+                Math.min(290, activePin.y) - 60
+              } ${activePin.x} ${activePin.y}`}
+            />
+          ) : null}
           {placed.map((p, i) => (
             <g
               key={i}
@@ -103,6 +127,10 @@ export function WorldMap({
               {p.active ? <circle r={9} className="halo" /> : null}
             </g>
           ))}
+          <g className="worldmap-pin you" transform={`translate(500,290)`}>
+            <circle r={3.5} className="dot" />
+            <circle r={7} className="halo" />
+          </g>
         </svg>
       ) : null}
 

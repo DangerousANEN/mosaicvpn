@@ -49,7 +49,11 @@ type Server struct {
 	LastTestMS    int            `json:"last_test_ms,omitempty"`
 	LastTestError string         `json:"last_test_error,omitempty"`
 	LastTestAt    time.Time      `json:"last_test_at,omitempty"`
-	Raw           map[string]any `json:"raw,omitempty"`
+	// Lat/Lon are decimal degrees (WGS84). Populated from a GeoIP
+	// lookup against Address; zero means "not resolved yet".
+	Lat float64 `json:"lat,omitempty"`
+	Lon float64 `json:"lon,omitempty"`
+	Raw map[string]any `json:"raw,omitempty"`
 }
 
 // Format identifies a subscription payload format.
@@ -150,6 +154,11 @@ type Status struct {
 	AgentConnected bool      `json:"agent_connected"`
 	DaemonVersion  string    `json:"daemon_version"`
 	DaemonPID      int       `json:"daemon_pid"`
+	// ProxySOCKS / ProxyHTTP are the loopback listeners exposed by the
+	// active backend (e.g. "127.0.0.1:2080" / "127.0.0.1:2081"). Empty
+	// when the backend is the mock or no proxy listener is active.
+	ProxySOCKS string `json:"proxy_socks,omitempty"`
+	ProxyHTTP  string `json:"proxy_http,omitempty"`
 }
 
 // ConnectRequest tells the daemon to bring up a server.

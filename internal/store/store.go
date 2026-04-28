@@ -275,6 +275,32 @@ func (s *Store) RecordServerProbe(id string, ms int, errMsg string) error {
 	})
 }
 
+// RecordServerGeo updates the geographic metadata of a server. Call
+// with city/country/lat/lon resolved by an external GeoIP lookup; an
+// empty string or zero value leaves the field unchanged so partial
+// updates are safe.
+func (s *Store) RecordServerGeo(id, city, country string, lat, lon float64) error {
+	return s.Update(func(st *State) error {
+		for i := range st.Servers {
+			if st.Servers[i].ID != id {
+				continue
+			}
+			if city != "" {
+				st.Servers[i].City = city
+			}
+			if country != "" {
+				st.Servers[i].Country = country
+			}
+			if lat != 0 || lon != 0 {
+				st.Servers[i].Lat = lat
+				st.Servers[i].Lon = lon
+			}
+			return nil
+		}
+		return fmt.Errorf("server %q not found", id)
+	})
+}
+
 // SetLastServer remembers which server was most recently chosen.
 func (s *Store) SetLastServer(id string) error {
 	return s.Update(func(st *State) error {

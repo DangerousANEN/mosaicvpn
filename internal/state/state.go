@@ -35,6 +35,14 @@ type Backend interface {
 	Stats() (bytesIn, bytesOut uint64, latencyMS int)
 }
 
+// ProxyListener-aware backends expose loopback proxy endpoints (SOCKS
+// and HTTP) once Start has succeeded. Backends that do not actually
+// open ports (e.g. MockBackend) simply do not implement this and Status
+// will report empty proxy fields.
+type ProxyListener interface {
+	Proxies() (socks, http string)
+}
+
 // Manager owns the connection state and is safe for concurrent use.
 type Manager struct {
 	mu       sync.Mutex
@@ -79,6 +87,9 @@ func (m *Manager) Status() proto.Status {
 		st.BytesIn = in
 		st.BytesOut = out
 		st.LatencyMS = lat
+		if p, ok := m.backend.(ProxyListener); ok {
+			st.ProxySOCKS, st.ProxyHTTP = p.Proxies()
+		}
 	}
 	return st
 }

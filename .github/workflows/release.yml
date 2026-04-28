@@ -50,6 +50,26 @@ jobs:
           go build -ldflags="-s -w" -o ui/src-tauri/binaries/mosaicd-x86_64-pc-windows-msvc.exe ./cmd/mosaicd
           go build -ldflags="-s -w" -o bin/mosaic.exe ./cmd/mosaic
 
+      - name: bundle sing-box sidecar
+        shell: pwsh
+        env:
+          SINGBOX_VERSION: 1.10.7
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:SINGBOX_VERSION
+          $tmp = Join-Path $env:RUNNER_TEMP "sing-box"
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          $zip = Join-Path $tmp "sing-box.zip"
+          $url = "https://github.com/SagerNet/sing-box/releases/download/v$version/sing-box-$version-windows-amd64.zip"
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+          Expand-Archive -Path $zip -DestinationPath $tmp -Force
+          $exe = Get-ChildItem -Recurse -Path $tmp -Filter "sing-box.exe" | Select-Object -First 1
+          if (-not $exe) { throw "sing-box.exe not found inside the release zip" }
+          New-Item -ItemType Directory -Force -Path ui/src-tauri/binaries | Out-Null
+          Copy-Item $exe.FullName "ui/src-tauri/binaries/sing-box-x86_64-pc-windows-msvc.exe"
+          Get-ChildItem ui/src-tauri/binaries
+
       - name: install renderer deps
         working-directory: ui
         run: npm ci

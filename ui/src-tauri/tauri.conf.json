@@ -38,7 +38,8 @@
       "icons/icon.ico"
     ],
     "externalBin": [
-      "binaries/mosaicd"
+      "binaries/mosaicd",
+      "binaries/sing-box"
     ],
     "windows": {
       "nsis": {

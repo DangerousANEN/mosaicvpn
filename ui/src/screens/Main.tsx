@@ -131,6 +131,21 @@ export function Main({ status }: { status: Status }): JSX.Element {
             {err}
           </div>
         ) : null}
+        {status.state === "connected" && status.proxy_socks ? (
+          <div
+            className="mono"
+            style={{
+              marginTop: 10,
+              fontSize: 11.5,
+              color: "var(--ink-2)",
+              letterSpacing: "0.04em",
+            }}
+            title="Point your system / browser proxy at one of these"
+          >
+            SOCKS · {status.proxy_socks}
+            {status.proxy_http ? `   ·   HTTP · ${status.proxy_http}` : ""}
+          </div>
+        ) : null}
       </section>
 
       <section className="map-wrap">

@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pupspochta-cpu/mosaicvpn/internal/geoip"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/logx"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/state"
@@ -286,6 +287,11 @@ func (s *Server) handleTestServer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if srv.Lat == 0 && srv.Lon == 0 {
+		if geo, err := geoip.Lookup(r.Context(), srv.Address); err == nil {
+			_ = s.store.RecordServerGeo(id, geo.City, geo.Country, geo.Lat, geo.Lon)
+		}
+	}
 	updated, _ := s.store.FindServer(id)
 	writeJSON(w, http.StatusOK, updated)
 }
@@ -312,6 +318,11 @@ func (s *Server) handleTestAll(w http.ResponseWriter, r *http.Request) {
 			defer func() { <-sem; done <- struct{}{} }()
 			ms, errMsg := probeServer(r.Context(), sv.Address, sv.Port, 4*time.Second)
 			_ = s.store.RecordServerProbe(sv.ID, ms, errMsg)
+			if sv.Lat == 0 && sv.Lon == 0 {
+				if geo, err := geoip.Lookup(r.Context(), sv.Address); err == nil {
+					_ = s.store.RecordServerGeo(sv.ID, geo.City, geo.Country, geo.Lat, geo.Lon)
+				}
+			}
 		}()
 	}
 	for range targets {
