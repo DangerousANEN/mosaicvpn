@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,8 +25,18 @@ import (
 // SingBoxBackend drives a bundled sing-box executable as a child
 // process. It writes a config file derived from the chosen server,
 // launches sing-box, waits for the loopback SOCKS port to come up, and
-// kills the process on Stop. Bytes counters are not yet wired up — the
-// manager will report zeros until the clash-api glue lands.
+// kills the process on Stop.
+//
+// While sing-box is running the backend also runs two pollers:
+//   - clashAPIPoll: hits the embedded clash API's /connections every
+//     second to keep BytesIn/BytesOut fresh for the Atlas screen.
+//   - latencyPoll: re-probes the connected server's TCP endpoint
+//     every 5 s and stores the round-trip in LatencyMS so the user
+//     sees a live latency reading instead of a frozen 0.
+//
+// Both pollers are best-effort — if the clash API isn't ready or the
+// remote endpoint is unreachable the previous values are kept and a
+// debug log is emitted.
 type SingBoxBackend struct {
 	mu      sync.Mutex
 	binary  string // resolved path to sing-box.exe
@@ -35,6 +47,7 @@ type SingBoxBackend struct {
 	doneCh    chan struct{}
 	socks     string
 	http      string
+	clashAPI  string // "127.0.0.1:<port>", empty if disabled
 	bytesIn   atomic.Uint64
 	bytesOut  atomic.Uint64
 	latencyMS atomic.Int32
@@ -102,16 +115,19 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, _ store
 		return fmt.Errorf("sing-box binary %q: %w", bin, err)
 	}
 
-	// Pick free SOCKS / HTTP loopback ports. Default to 2080/2081 but
-	// fall back to ephemeral if those are taken.
+	// Pick free SOCKS / HTTP / clash-api loopback ports. Defaults are
+	// 2080 / 2081 / 9090 (the sing-box documented default for clash
+	// API) but each falls back to an ephemeral port if the default is
+	// already taken on the host.
 	socksPort := pickPort(2080)
 	httpPort := pickPort(2081)
+	clashPort := pickPort(9090)
 	if socksPort == 0 || httpPort == 0 {
 		b.mu.Unlock()
 		return errors.New("could not bind a free loopback port for sing-box proxies")
 	}
 
-	cfg, err := BuildSingBoxConfig(server, socksPort, httpPort)
+	cfg, err := BuildSingBoxConfig(server, socksPort, httpPort, clashPort)
 	if err != nil {
 		b.mu.Unlock()
 		return fmt.Errorf("build sing-box config: %w", err)
@@ -148,10 +164,16 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, _ store
 	b.doneCh = make(chan struct{})
 	b.socks = fmt.Sprintf("127.0.0.1:%d", socksPort)
 	b.http = fmt.Sprintf("127.0.0.1:%d", httpPort)
+	if clashPort > 0 {
+		b.clashAPI = fmt.Sprintf("127.0.0.1:%d", clashPort)
+	} else {
+		b.clashAPI = ""
+	}
 	b.bytesIn.Store(0)
 	b.bytesOut.Store(0)
 	b.latencyMS.Store(0)
 	doneCh := b.doneCh
+	clashEndpoint := b.clashAPI
 	b.mu.Unlock()
 
 	go func() {
@@ -181,7 +203,132 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, _ store
 		}
 		return fmt.Errorf("sing-box did not start: %w", err)
 	}
+
+	// Spin up the metric pollers. Both run for the lifetime of cctx;
+	// Stop() cancels cctx which kicks both goroutines out of their
+	// select.
+	go b.clashAPIPoll(cctx, clashEndpoint)
+	go b.latencyPoll(cctx, server)
+
 	return nil
+}
+
+// clashAPIPoll hits sing-box's embedded clash API and refreshes
+// bytesIn/bytesOut once a second. The /connections endpoint returns
+// monotonic totals (downloadTotal / uploadTotal) so we just store them
+// directly. Errors are logged at debug level only — a clash poll
+// failure must not bring down the connection.
+func (b *SingBoxBackend) clashAPIPoll(ctx context.Context, endpoint string) {
+	if endpoint == "" {
+		return
+	}
+	client := &http.Client{Timeout: 800 * time.Millisecond}
+	url := fmt.Sprintf("http://%s/connections", endpoint)
+	// First few attempts may race the daemon's bootstrap. Back off in
+	// 200 ms steps until either ctx fires or we get a 200.
+	warm := time.NewTicker(200 * time.Millisecond)
+	defer warm.Stop()
+	warmDeadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(warmDeadline) {
+		if ctx.Err() != nil {
+			return
+		}
+		if b.fetchClashTotals(ctx, client, url) {
+			break
+		}
+		select {
+		case <-warm.C:
+		case <-ctx.Done():
+			return
+		}
+	}
+	t := time.NewTicker(1 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			b.fetchClashTotals(ctx, client, url)
+		}
+	}
+}
+
+func (b *SingBoxBackend) fetchClashTotals(ctx context.Context, client *http.Client, url string) bool {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return false
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		logx.Debug("clash-api poll failed", "err", err)
+		return false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return false
+	}
+	var payload struct {
+		DownloadTotal uint64 `json:"downloadTotal"`
+		UploadTotal   uint64 `json:"uploadTotal"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		logx.Debug("clash-api decode failed", "err", err)
+		return false
+	}
+	b.bytesIn.Store(payload.DownloadTotal)
+	b.bytesOut.Store(payload.UploadTotal)
+	return true
+}
+
+// latencyPoll re-probes the connected server's TCP endpoint every 5 s
+// and stores the round-trip in latencyMS. Uses ResolvedIP if available
+// (set by api.handleTestServer / handleTestAll) so the dial bypasses
+// any system-DNS hijack the way rc13 fixed it for Test all.
+func (b *SingBoxBackend) latencyPoll(ctx context.Context, server proto.Server) {
+	if server.Port <= 0 {
+		return
+	}
+	host := server.ResolvedIP
+	if host == "" {
+		host = server.Address
+	}
+	if host == "" {
+		return
+	}
+	target := net.JoinHostPort(host, strconv.Itoa(server.Port))
+	probe := func() {
+		dialer := net.Dialer{Timeout: 3 * time.Second}
+		cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		t0 := time.Now()
+		conn, err := dialer.DialContext(cctx, "tcp", target)
+		if err != nil {
+			logx.Debug("active latency probe failed", "target", target, "err", err)
+			return
+		}
+		elapsed := time.Since(t0)
+		_ = conn.Close()
+		us := elapsed.Microseconds()
+		ms := int32((us + 500) / 1000)
+		if ms < 1 {
+			ms = 1
+		}
+		b.latencyMS.Store(ms)
+	}
+	// Probe once immediately so the UI doesn't sit on 0 for 5 s.
+	probe()
+	t := time.NewTicker(5 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			probe()
+		}
+	}
 }
 
 // Stop implements Backend.
@@ -194,6 +341,10 @@ func (b *SingBoxBackend) Stop(_ context.Context) error {
 	b.doneCh = nil
 	b.socks = ""
 	b.http = ""
+	b.clashAPI = ""
+	b.bytesIn.Store(0)
+	b.bytesOut.Store(0)
+	b.latencyMS.Store(0)
 	b.mu.Unlock()
 	if cancel == nil {
 		return nil
@@ -261,8 +412,10 @@ func readTail(path string, n int) string {
 
 // BuildSingBoxConfig translates a Mosaic Server into a sing-box config
 // document with a SOCKS and HTTP inbound on loopback and a single
-// proxy outbound. Exposed for tests.
-func BuildSingBoxConfig(server proto.Server, socksPort, httpPort int) ([]byte, error) {
+// proxy outbound. When clashPort > 0 the config also enables sing-box's
+// embedded clash API on "127.0.0.1:<clashPort>" so the daemon can poll
+// /connections for live byte counters. Exposed for tests.
+func BuildSingBoxConfig(server proto.Server, socksPort, httpPort, clashPort int) ([]byte, error) {
 	out, err := outboundFor(server)
 	if err != nil {
 		return nil, err
@@ -300,6 +453,15 @@ func BuildSingBoxConfig(server proto.Server, socksPort, httpPort int) ([]byte, e
 				map[string]any{"protocol": "dns", "outbound": "dns-out"},
 			},
 		},
+	}
+	if clashPort > 0 {
+		cfg["experimental"] = map[string]any{
+			"clash_api": map[string]any{
+				"external_controller": fmt.Sprintf("127.0.0.1:%d", clashPort),
+				// No secret — only loopback can hit it; mosaicd is the
+				// only consumer.
+			},
+		}
 	}
 	return json.MarshalIndent(cfg, "", "  ")
 }

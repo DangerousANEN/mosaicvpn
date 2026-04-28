@@ -277,7 +277,12 @@ function labelFor(state: Status["state"]): string {
   }
 }
 
+// fmtBytes renders a byte count with a unit, or an em dash when there's
+// no traffic yet — distinguishes "not implemented / not connected" from
+// "0 B sent so far". The clash-api poller fills these in once the user
+// actually connects.
 function fmtBytes(n: number): string {
+  if (!n || n <= 0) return "—";
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(2)} MB`;
