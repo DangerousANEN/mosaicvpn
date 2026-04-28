@@ -107,6 +107,8 @@ export interface Prefs {
   tun_stack: string;
   kill_switch: boolean;
   allow_lan: boolean;
+  share_lan: boolean;
+  share_addr: string;
   dns_proxied: string;
   dns_direct: string;
   auto_connect: boolean;

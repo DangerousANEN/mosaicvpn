@@ -474,18 +474,26 @@ func BuildSingBoxConfig(server proto.Server, prefs store.Prefs, socksPort, httpP
 	if err != nil {
 		return nil, err
 	}
+	// LAN share toggle: when prefs.ShareLAN is true, bind the SOCKS
+	// and HTTP inbounds on 0.0.0.0 so devices on the same Wi-Fi can
+	// route through Mosaic by pointing their proxy at <host-LAN-IP>:port.
+	// We never expose loopback-only services (clash API, daemon HTTP).
+	listen := "127.0.0.1"
+	if prefs.ShareLAN {
+		listen = "0.0.0.0"
+	}
 	inbounds := []any{
 		map[string]any{
 			"type":        "socks",
 			"tag":         "socks-in",
-			"listen":      "127.0.0.1",
+			"listen":      listen,
 			"listen_port": socksPort,
 			"sniff":       true,
 		},
 		map[string]any{
 			"type":        "http",
 			"tag":         "http-in",
-			"listen":      "127.0.0.1",
+			"listen":      listen,
 			"listen_port": httpPort,
 			"sniff":       true,
 		},

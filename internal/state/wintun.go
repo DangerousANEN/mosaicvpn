@@ -1,11 +1,11 @@
 package state
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/DangerousANEN/mosaicvpn/internal/logx"
 )
@@ -16,12 +16,16 @@ import (
 // wintun.dll under the install root via bundle.resources; this helper
 // is the bridge from the install dir to the daemon's runtime dir.
 //
-// Search order:
+// Search order (verified against the rc21 NSIS installer layout —
+// tauri 2 just preserves bundle.resources paths verbatim relative to
+// the install root):
 //
 //  1. dataDir already has a wintun.dll → no-op.
-//  2. Same directory as the running mosaicd executable.
-//  3. resources/_up_/binaries/wintun.dll (Tauri 2 NSIS resource layout).
-//  4. resources/binaries/wintun.dll (alternate Tauri 2 layout).
+//  2. <install>/binaries/wintun.dll (matches bundle.resources entry).
+//  3. <install>/wintun.dll (legacy / sidecar layout).
+//  4. <install>/resources/binaries/wintun.dll (older Tauri 1 layout).
+//  5. <install>/resources/_up_/binaries/wintun.dll (when src path
+//     traversed upward — kept defensively).
 //
 // Returns nil on success or when wintun is genuinely not bundled — the
 // caller is expected to surface a clear "TUN unavailable: wintun.dll
@@ -38,11 +42,13 @@ func EnsureWintunDLL(dataDir string) error {
 	}
 	exeDir := filepath.Dir(exe)
 	candidates := []string{
+		filepath.Join(exeDir, "binaries", "wintun.dll"),
 		filepath.Join(exeDir, "wintun.dll"),
-		filepath.Join(exeDir, "resources", "_up_", "binaries", "wintun.dll"),
 		filepath.Join(exeDir, "resources", "binaries", "wintun.dll"),
-		filepath.Join(exeDir, "..", "resources", "_up_", "binaries", "wintun.dll"),
+		filepath.Join(exeDir, "resources", "_up_", "binaries", "wintun.dll"),
+		filepath.Join(exeDir, "..", "binaries", "wintun.dll"),
 		filepath.Join(exeDir, "..", "resources", "binaries", "wintun.dll"),
+		filepath.Join(exeDir, "..", "resources", "_up_", "binaries", "wintun.dll"),
 	}
 	for _, src := range candidates {
 		if _, err := os.Stat(src); err != nil {
@@ -55,7 +61,10 @@ func EnsureWintunDLL(dataDir string) error {
 		logx.Info("staged wintun.dll for sing-box TUN", "src", src, "dst", target)
 		return nil
 	}
-	return errors.New("wintun.dll not bundled; reinstall Mosaic to enable TUN mode")
+	return fmt.Errorf(
+		"wintun.dll not bundled; reinstall Mosaic to enable TUN mode (looked in: %s)",
+		strings.Join(candidates, ", "),
+	)
 }
 
 func copyFile(src, dst string) error {

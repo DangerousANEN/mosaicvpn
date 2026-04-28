@@ -200,6 +200,15 @@ export function Folio(): JSX.Element {
                   onChange={(v) => update("tun_stack", v)}
                 />
               </Opt>
+              <Opt
+                name="Share proxy on LAN"
+                desc="Bind SOCKS / HTTP inbounds on 0.0.0.0 so other devices on the same network can route through Mosaic. Off → loopback only."
+              >
+                <Switch
+                  value={draft.share_lan}
+                  onChange={(v) => update("share_lan", v)}
+                />
+              </Opt>
             </Chapter>
           ) : null}
 

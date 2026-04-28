@@ -24,11 +24,16 @@
  * they want.
  */
 
-import { useState } from "react";
+import { useState, type MouseEvent as ReactMouseEvent } from "react";
 import worldUrl from "../assets/world.svg";
 import type { Server } from "../api/types";
 import { cityToLatLon } from "./cityCoords";
 import { groupServers, type ServerGroup } from "./serverGroup";
+import {
+  clusterByCountry,
+  type CountryCluster,
+  type WorldPin,
+} from "./countryCluster";
 import { locText } from "./locText";
 
 interface WorldMapProps {
@@ -43,13 +48,25 @@ interface WorldMapProps {
   onPinClick?: (serverId: string) => void;
 }
 
-interface PinPos {
+interface HostPinPos {
+  kind: "host";
   x: number;
   y: number;
   group: ServerGroup;
   active: boolean;
   primaryMs?: number;
 }
+
+interface CountryPinPos {
+  kind: "country";
+  x: number;
+  y: number;
+  cluster: CountryCluster;
+  active: boolean;
+  primaryMs?: number;
+}
+
+type PinPos = HostPinPos | CountryPinPos;
 
 // world.svg's native viewBox. Both the world image and the pin layer
 // use it so coordinates are directly comparable.
@@ -87,9 +104,9 @@ const YOU = project(20, 0);
  */
 const MERGE_RADIUS = 12;
 
-function mergeNearbyPins(pins: PinPos[]): PinPos[] {
+function mergeNearbyHostPins(pins: HostPinPos[]): HostPinPos[] {
   if (pins.length < 2) return pins;
-  const out: PinPos[] = [];
+  const out: HostPinPos[] = [];
   for (const p of pins) {
     const near = out.find(
       (o) =>
@@ -113,7 +130,20 @@ function mergeNearbyPins(pins: PinPos[]): PinPos[] {
   return out;
 }
 
-function pinForGroup(g: ServerGroup, activeServerId?: string): PinPos | null {
+/** Centroid-based label for a country pin. ISO + count + best ms. */
+function countryLabel(c: CountryCluster): string {
+  const ms = c.bestMs !== null && c.bestMs > 0 ? ` · ${c.bestMs}ms` : "";
+  return `${c.iso} · ${c.totalServers}${ms}`;
+}
+
+/** Pin's primary city (or host) label, used for host pins. */
+function hostLabel(p: HostPinPos): string {
+  const ms = p.primaryMs !== undefined ? ` · ${p.primaryMs}` : "";
+  const city = p.group.primary.city || p.group.host;
+  return `${city}${ms}`;
+}
+
+function pinForGroup(g: ServerGroup, activeServerId?: string): HostPinPos | null {
   // Try the primary member first, then any member with coordinates.
   for (const srv of [g.primary, ...g.members]) {
     let lat: number | undefined;
@@ -135,6 +165,7 @@ function pinForGroup(g: ServerGroup, activeServerId?: string): PinPos | null {
     if (lat === undefined || lon === undefined) continue;
     const { x, y } = project(lat, lon);
     return {
+      kind: "host",
       x,
       y,
       group: g,
@@ -146,6 +177,24 @@ function pinForGroup(g: ServerGroup, activeServerId?: string): PinPos | null {
   return null;
 }
 
+function pinForCluster(
+  c: CountryCluster,
+  activeServerId?: string,
+): CountryPinPos {
+  const { x, y } = project(c.lat, c.lon);
+  const active = c.members.some((g) =>
+    g.members.some((m) => m.id === activeServerId),
+  );
+  return {
+    kind: "country",
+    x,
+    y,
+    cluster: c,
+    active,
+    primaryMs: c.bestMs !== null && c.bestMs > 0 ? c.bestMs : undefined,
+  };
+}
+
 export function WorldMap({
   servers,
   activeServerId,
@@ -155,12 +204,25 @@ export function WorldMap({
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [openIdx, setOpenIdx] = useState<number | null>(null);
   const groups = groupServers(servers);
-  const raw: PinPos[] = [];
-  for (const g of groups) {
-    const p = pinForGroup(g, activeServerId);
-    if (p) raw.push(p);
+  // Cluster countries first (a 1 000-server pool collapses from
+  // hundreds of teardrops to ~30 country pins); pass through host
+  // pins for low-population countries.
+  const worldPins: WorldPin[] = clusterByCountry(groups);
+  const rawHosts: HostPinPos[] = [];
+  const countryPins: CountryPinPos[] = [];
+  for (const wp of worldPins) {
+    if (wp.kind === "host") {
+      const p = pinForGroup(wp.group, activeServerId);
+      if (p) rawHosts.push(p);
+    } else {
+      countryPins.push(pinForCluster(wp, activeServerId));
+    }
   }
-  const pins = mergeNearbyPins(raw);
+  const hostPins = mergeNearbyHostPins(rawHosts);
+  // Order: country pins first (drawn behind), host pins on top so an
+  // individually labelled city remains clickable when it overlaps a
+  // country centroid.
+  const pins: PinPos[] = [...countryPins, ...hostPins];
   const activePin = pins.find((p) => p.active);
   // Suppress the hover tooltip whenever a popover is open — they live
   // in the same on-screen real estate and would otherwise overlap.
@@ -234,9 +296,10 @@ export function WorldMap({
             if (p.active) return null;
             const mx = (YOU.x + p.x) / 2;
             const my = Math.min(YOU.y, p.y) - 28;
+            const key = p.kind === "host" ? p.group.key : `cc-${p.cluster.iso}`;
             return (
               <path
-                key={`link-${p.group.key}-${i}`}
+                key={`link-${key}-${i}`}
                 className="worldmap-link"
                 d={`M ${YOU.x} ${YOU.y} Q ${mx} ${my} ${p.x} ${p.y}`}
               />
@@ -253,19 +316,30 @@ export function WorldMap({
           {pins.map((p, i) => {
             const isOpen = openIdx === i;
             const isHov = i === hoverIdx;
+            const isCountry = p.kind === "country";
             const cls = `worldmap-pin ${p.active ? "cur" : ""} ${
               isHov ? "hov" : ""
-            } ${isOpen ? "open" : ""} ${onPinClick ? "clickable" : ""}`;
-            const multi = p.group.members.length > 1;
-            // Apex sits at (0,0) — i.e. the geographic anchor.
-            // Active pin: copper teardrop dropping from y=-22 to apex.
-            // Idle pin: small outline diamond floating at y=-13, with a
-            // thin stem connecting it down to the geo-anchor at y=0.
-            // Both are drawn anchored so resizing the map keeps the
-            // pointing tip on the country.
+            } ${isOpen ? "open" : ""} ${onPinClick ? "clickable" : ""} ${
+              isCountry ? "is-country" : ""
+            }`;
+            const multi = p.kind === "host"
+              ? p.group.members.length > 1
+              : true;
+            const key =
+              p.kind === "host" ? p.group.key : `cc-${p.cluster.iso}`;
+            const onPinClickHandler = (e: ReactMouseEvent) => {
+              if (!onPinClick) return;
+              e.stopPropagation();
+              if (multi) {
+                setOpenIdx((o) => (o === i ? null : i));
+              } else if (p.kind === "host") {
+                setOpenIdx(null);
+                onPinClick(p.group.primary.id);
+              }
+            };
             return (
               <g
-                key={p.group.key}
+                key={key}
                 className={cls}
                 transform={`translate(${p.x},${p.y})`}
               >
@@ -317,16 +391,7 @@ export function WorldMap({
                   onMouseLeave={() =>
                     setHoverIdx((h) => (h === i ? null : h))
                   }
-                  onClick={(e) => {
-                    if (!onPinClick) return;
-                    e.stopPropagation();
-                    if (multi) {
-                      setOpenIdx((o) => (o === i ? null : i));
-                    } else {
-                      setOpenIdx(null);
-                      onPinClick(p.group.primary.id);
-                    }
-                  }}
+                  onClick={onPinClickHandler}
                 />
               </g>
             );
@@ -342,20 +407,36 @@ export function WorldMap({
         </svg>
       ) : null}
 
-      {/* Per-pin label boxes — "City · ms". Rendered as HTML so the
+      {/* Per-pin label boxes — "City · ms" for host pins, "<ISO> · N
+          servers" for country clusters. Rendered as HTML so the
           label uses the same serif as the rest of the marginalia and
           stays crisp regardless of how the SVG is scaled. The active
           pin's label gets the copper fill from the reference design. */}
       {pins.map((p, i) => {
-        const ms = p.primaryMs !== undefined ? p.primaryMs : null;
-        const city = p.group.primary.city || p.group.host;
-        const label = ms !== null ? `${city} · ${ms}` : city;
+        const label =
+          p.kind === "host" ? hostLabel(p) : countryLabel(p.cluster);
+        const key =
+          p.kind === "host" ? `lab-${p.group.key}-${i}` : `lab-cc-${p.cluster.iso}-${i}`;
         const cls = `worldmap-label ${p.active ? "cur" : ""} ${
           onPinClick ? "clickable" : ""
-        }`;
+        } ${p.kind === "country" ? "is-country" : ""}`;
+        const onLabelClick = (e: ReactMouseEvent) => {
+          if (!onPinClick) return;
+          e.stopPropagation();
+          if (p.kind === "country") {
+            setOpenIdx((o) => (o === i ? null : i));
+            return;
+          }
+          if (p.group.members.length > 1) {
+            setOpenIdx((o) => (o === i ? null : i));
+          } else {
+            setOpenIdx(null);
+            onPinClick(p.group.primary.id);
+          }
+        };
         return (
           <div
-            key={`lab-${p.group.key}-${i}`}
+            key={key}
             className={cls}
             style={{
               left: `${((p.x - MAP_VB.x) / MAP_VB.w) * 100}%`,
@@ -365,16 +446,7 @@ export function WorldMap({
             onMouseLeave={() =>
               setHoverIdx((h) => (h === i ? null : h))
             }
-            onClick={(e) => {
-              if (!onPinClick) return;
-              e.stopPropagation();
-              if (p.group.members.length > 1) {
-                setOpenIdx((o) => (o === i ? null : i));
-              } else {
-                setOpenIdx(null);
-                onPinClick(p.group.primary.id);
-              }
-            }}
+            onClick={onLabelClick}
           >
             {label}
           </div>
@@ -400,25 +472,43 @@ export function WorldMap({
             top: `${((hover.y - MAP_VB.y) / MAP_VB.h) * 100}%`,
           }}
         >
-          <div className="tip-host mono">{hover.group.host}</div>
-          {locText(hover.group.primary) ? (
-            <div className="tip-loc">{locText(hover.group.primary)}</div>
-          ) : null}
-          <div className="tip-protos mono">
-            {hover.group.members
-              .map((m) => `${m.protocol}:${m.port}`)
-              .join(" · ")}
-          </div>
-          {hover.primaryMs !== undefined ? (
-            <div className="tip-ms mono">best {hover.primaryMs}ms</div>
-          ) : null}
-          {onPinClick ? (
-            <div className="tip-cta mono">
-              {hover.group.members.length > 1
-                ? "click to choose"
-                : "click to connect"}
-            </div>
-          ) : null}
+          {hover.kind === "host" ? (
+            <>
+              <div className="tip-host mono">{hover.group.host}</div>
+              {locText(hover.group.primary) ? (
+                <div className="tip-loc">{locText(hover.group.primary)}</div>
+              ) : null}
+              <div className="tip-protos mono">
+                {hover.group.members
+                  .map((m) => `${m.protocol}:${m.port}`)
+                  .join(" · ")}
+              </div>
+              {hover.primaryMs !== undefined ? (
+                <div className="tip-ms mono">best {hover.primaryMs}ms</div>
+              ) : null}
+              {onPinClick ? (
+                <div className="tip-cta mono">
+                  {hover.group.members.length > 1
+                    ? "click to choose"
+                    : "click to connect"}
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <div className="tip-host mono">{hover.cluster.iso}</div>
+              <div className="tip-loc">
+                {hover.cluster.members.length} cities ·{" "}
+                {hover.cluster.totalServers} servers
+              </div>
+              {hover.primaryMs !== undefined ? (
+                <div className="tip-ms mono">best {hover.primaryMs}ms</div>
+              ) : null}
+              {onPinClick ? (
+                <div className="tip-cta mono">click to choose</div>
+              ) : null}
+            </>
+          )}
         </div>
       ) : null}
 
@@ -435,44 +525,94 @@ export function WorldMap({
               top: `${((open.y - MAP_VB.y) / MAP_VB.h) * 100}%`,
             }}
           >
-            <div className="pop-head">
-              <div className="pop-host mono">{open.group.host}</div>
-              {locText(open.group.primary) ? (
-                <div className="pop-loc">{locText(open.group.primary)}</div>
-              ) : null}
-            </div>
-            <ul className="pop-list">
-              {open.group.members.map((m) => {
-                const ms =
-                  m.last_test_ms !== undefined && m.last_test_ms > 0
-                    ? `${m.last_test_ms}ms`
-                    : m.last_test_error
-                      ? "err"
-                      : "—";
-                const isActive = m.id === activeServerId;
-                return (
-                  <li key={m.id} className={isActive ? "is-active" : ""}>
-                    <span className="pop-proto mono">
-                      {m.protocol}:{m.port}
-                    </span>
-                    <span className="pop-ms mono">{ms}</span>
-                    <button
-                      type="button"
-                      className="pop-go mono"
-                      disabled={!onPinClick || isActive}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!onPinClick) return;
-                        setOpenIdx(null);
-                        onPinClick(m.id);
-                      }}
-                    >
-                      {isActive ? "current" : "connect"}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+            {open.kind === "host" ? (
+              <>
+                <div className="pop-head">
+                  <div className="pop-host mono">{open.group.host}</div>
+                  {locText(open.group.primary) ? (
+                    <div className="pop-loc">{locText(open.group.primary)}</div>
+                  ) : null}
+                </div>
+                <ul className="pop-list">
+                  {open.group.members.map((m) => {
+                    const ms =
+                      m.last_test_ms !== undefined && m.last_test_ms > 0
+                        ? `${m.last_test_ms}ms`
+                        : m.last_test_error
+                          ? "err"
+                          : "—";
+                    const isActive = m.id === activeServerId;
+                    return (
+                      <li key={m.id} className={isActive ? "is-active" : ""}>
+                        <span className="pop-proto mono">
+                          {m.protocol}:{m.port}
+                        </span>
+                        <span className="pop-ms mono">{ms}</span>
+                        <button
+                          type="button"
+                          className="pop-go mono"
+                          disabled={!onPinClick || isActive}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!onPinClick) return;
+                            setOpenIdx(null);
+                            onPinClick(m.id);
+                          }}
+                        >
+                          {isActive ? "current" : "connect"}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            ) : (
+              <>
+                <div className="pop-head">
+                  <div className="pop-host mono">
+                    {open.cluster.iso} · {open.cluster.members.length} cities
+                  </div>
+                  <div className="pop-loc">
+                    {open.cluster.totalServers} servers
+                  </div>
+                </div>
+                <ul className="pop-list">
+                  {open.cluster.members.slice(0, 12).map((g) => {
+                    const best = g.bestMs;
+                    const ms =
+                      best !== null && best > 0 ? `${best}ms` : "—";
+                    const city = g.primary.city || g.host;
+                    const isActive = g.members.some(
+                      (m) => m.id === activeServerId,
+                    );
+                    return (
+                      <li key={g.key} className={isActive ? "is-active" : ""}>
+                        <span className="pop-proto mono">{city}</span>
+                        <span className="pop-ms mono">{ms}</span>
+                        <button
+                          type="button"
+                          className="pop-go mono"
+                          disabled={!onPinClick || isActive}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!onPinClick) return;
+                            setOpenIdx(null);
+                            onPinClick(g.primary.id);
+                          }}
+                        >
+                          {isActive ? "current" : "connect"}
+                        </button>
+                      </li>
+                    );
+                  })}
+                  {open.cluster.members.length > 12 ? (
+                    <li className="pop-more">
+                      + {open.cluster.members.length - 12} more cities
+                    </li>
+                  ) : null}
+                </ul>
+              </>
+            )}
           </div>
         </>
       ) : null}

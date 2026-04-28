@@ -16,16 +16,26 @@ export function Main({ status }: { status: Status }): JSX.Element {
 
   useEffect(() => {
     let cancelled = false;
-    api
-      .listServers()
-      .then((s) => {
-        if (!cancelled) setServers(s);
-      })
-      .catch((e: Error) => {
-        if (!cancelled) setErr(e.message);
-      });
+    // Initial fetch + 5 s poll so the world-map pin set, latency
+    // labels and "fastest" sidebar refresh without forcing the user
+    // to navigate away and back. Cheap (one GET per cycle) and the
+    // poll pauses while the tab is hidden via document.hidden gating.
+    const tick = () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      api
+        .listServers()
+        .then((s) => {
+          if (!cancelled) setServers(s);
+        })
+        .catch((e: Error) => {
+          if (!cancelled) setErr(e.message);
+        });
+    };
+    tick();
+    const id = window.setInterval(tick, 5000);
     return () => {
       cancelled = true;
+      window.clearInterval(id);
     };
   }, []);
 

@@ -550,47 +550,100 @@
 /* Per-pin label boxes — "City · ms". HTML overlay anchored at the
    pin's projected (x,y), then offset upward so the box floats over
    the diamond rather than under it. The active label uses the
-   reference design's filled copper variant. */
+   reference design's filled copper variant; idle uses paper-on-ink
+   with a small inline diamond marker so the row reads as a single
+   `[◇ City · 38]` ticket. */
 .worldmap-label {
   position: absolute;
   pointer-events: auto;
   z-index: 4;
   transform: translate(-50%, calc(-100% - 28px));
-  background: var(--ink);
-  color: var(--paper);
-  padding: 3px 8px 4px;
+  background: var(--paper);
+  color: var(--ink);
+  padding: 3px 8px 4px 22px;
   font-family: "Atlas Serif", Georgia, serif;
   font-size: 12px;
   line-height: 1.2;
   letter-spacing: 0.01em;
   white-space: nowrap;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--ink);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16);
   user-select: none;
-  transition: background 0.12s, color 0.12s, transform 0.12s;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+/* Inline diamond marker in front of each label. Drawn as a 6px
+   square rotated 45° via CSS so it scales with label font and never
+   loses crispness even on HiDPI. */
+.worldmap-label::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  transform: translateY(-50%) rotate(45deg);
 }
 .worldmap-label.clickable {
   cursor: pointer;
 }
 .worldmap-label:hover {
   background: var(--copper);
+  color: var(--paper);
+  border-color: var(--copper);
+}
+.worldmap-label:hover::before {
+  background: var(--paper);
+  border-color: var(--paper);
 }
 .worldmap-label.cur {
   background: var(--copper);
   color: var(--paper);
   font-weight: 600;
+  border-color: var(--copper);
+}
+.worldmap-label.cur::before {
+  background: var(--paper);
+  border-color: var(--paper);
+}
+/* Country-cluster pin: bolder text, slight letterspacing on the ISO
+   prefix so a single `RU · 84 · 38ms` reads like a country header. */
+.worldmap-label.is-country {
+  letter-spacing: 0.04em;
+  font-variant: small-caps;
+  font-weight: 600;
 }
 
-/* "vous" label — italic ink, no box, sits to the right of the dot. */
+/* "vous" label — same rectangle treatment as a regular pin, just
+   italic and anchored next to the YOU dot rather than above. */
 .worldmap-you-label {
   position: absolute;
   z-index: 4;
-  transform: translate(8px, calc(-100% - 6px));
+  transform: translate(-50%, calc(-100% - 18px));
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  padding: 3px 8px 4px 22px;
   font-family: "Atlas Serif", Georgia, serif;
   font-style: italic;
-  font-size: 13px;
-  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.2;
   pointer-events: none;
   user-select: none;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16);
+}
+.worldmap-you-label::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  transform: translateY(-50%) rotate(45deg);
 }
 /* Multi-host pin popover — sits above the clicked pin, listing every
    host inside the merged group with a per-host Connect button. The

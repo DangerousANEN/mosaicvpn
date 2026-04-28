@@ -38,6 +38,16 @@ export function Pool({
 
   useEffect(() => {
     void reload();
+    // Poll every 5 s so latency cells and Test-all progress refresh
+    // without the user having to navigate away and back. The reload
+    // call is idempotent and cheap (two GETs); we skip while the
+    // window is hidden to avoid burning bandwidth in the background.
+    const id = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      void reload();
+    }, 5000);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const onAdd = async (e: FormEvent) => {
