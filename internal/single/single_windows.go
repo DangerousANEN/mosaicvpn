@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"syscall"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -16,14 +15,17 @@ import (
 // than per-session.
 const MutexName = `Global\Mosaic.daemon`
 
-// windowsLock holds the named mutex AND an OS file lock on the lockfile.
-// Either alone would be sufficient; together they're robust to crashes.
+// windowsLock holds the named mutex that enforces single-instance
+// semantics on Windows. We deliberately do NOT also call LockFileEx on
+// the lockfile: an exclusive byte-range lock makes the file unreadable
+// from other processes (incl. the GUI's daemon_endpoint, the CLI, and
+// even Get-Content), and the named mutex alone is sufficient because
+// the kernel releases the mutex when the holding process dies.
 type windowsLock struct {
 	mutex windows.Handle
-	file  *os.File
 }
 
-func platformAcquire(f *os.File) (platformLock, error) {
+func platformAcquire(_ *os.File) (platformLock, error) {
 	name, err := windows.UTF16PtrFromString(MutexName)
 	if err != nil {
 		return nil, err
@@ -41,33 +43,12 @@ func platformAcquire(f *os.File) (platformLock, error) {
 		return nil, createErr
 	}
 
-	// Lock the lockfile with LockFileEx (exclusive, non-blocking).
-	overlapped := windows.Overlapped{}
-	if err := windows.LockFileEx(
-		windows.Handle(f.Fd()),
-		windows.LOCKFILE_EXCLUSIVE_LOCK|windows.LOCKFILE_FAIL_IMMEDIATELY,
-		0, ^uint32(0), ^uint32(0), &overlapped,
-	); err != nil {
-		windows.CloseHandle(h)
-		// ERROR_LOCK_VIOLATION (0x21) means another process is holding it.
-		var errno syscall.Errno
-		if errors.As(err, &errno) && uintptr(errno) == 0x21 {
-			return nil, ErrAlreadyRunning
-		}
-		return nil, err
-	}
-
-	return &windowsLock{mutex: h, file: f}, nil
+	return &windowsLock{mutex: h}, nil
 }
 
 func (l *windowsLock) release() error {
-	overlapped := windows.Overlapped{}
-	_ = windows.UnlockFileEx(windows.Handle(l.file.Fd()), 0, ^uint32(0), ^uint32(0), &overlapped)
 	if l.mutex != 0 {
 		windows.CloseHandle(l.mutex)
 	}
 	return nil
 }
-
-// keep unsafe imported for future expansion (handle inheritance).
-var _ = unsafe.Pointer(nil)

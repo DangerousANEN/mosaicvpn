@@ -90,9 +90,17 @@ func run(dataDirOverride string) error {
 	lock, prev, err := single.Acquire(paths.LockFile(dataDir), endpoint)
 	if err != nil {
 		_ = shutdown(context.Background())
-		if errors.Is(err, single.ErrAlreadyRunning) && prev != nil {
-			return fmt.Errorf("another daemon is already running on %s:%d (pid %d)",
-				prev.Host, prev.Port, prev.PID)
+		if errors.Is(err, single.ErrAlreadyRunning) {
+			// prev may be empty when the previous instance held a
+			// different lockfile (e.g. a stale dev-mode mosaicd
+			// holding the same global mutex but writing into a
+			// different MOSAIC_DATA_DIR). Avoid a misleading ":0
+			// (pid 0)" in that case.
+			if prev != nil && prev.Port != 0 && prev.PID != 0 {
+				return fmt.Errorf("another daemon is already running on %s:%d (pid %d)",
+					prev.Host, prev.Port, prev.PID)
+			}
+			return fmt.Errorf("another mosaic daemon is already running (single-instance lock held by another process); stop it via 'Get-Process mosaicd | Stop-Process' on Windows or 'pkill mosaicd' on Unix")
 		}
 		return fmt.Errorf("acquire lock: %w", err)
 	}
