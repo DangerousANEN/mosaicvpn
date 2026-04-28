@@ -1,9 +1,18 @@
 /**
- * WorldMap renders the equirectangular world outline (CC BY-SA
- * simple-world-map, mirrored under docs/mockups/world.svg) plus a
- * graticule and per-host pins. Pins are positioned in pixel space on
- * a 1000×500 viewBox so they line up with the world.svg and graticule
- * regardless of the rendered size.
+ * WorldMap renders the world outline (flekschas/simple-world-map,
+ * MIT, mirrored under ui/src/assets/world.svg) plus a graticule and
+ * per-host pins. The map's native viewBox is
+ * `30.767 241.591 784.077 458.627` and its projection is approximately
+ * — but not exactly — equirectangular. We fit the projection
+ * empirically against ~6 country centroids (see project()), which
+ * lines up Brazil, Egypt, India, Iceland, Madagascar and South Africa
+ * to within a few pixels of their actual mainland.
+ *
+ * Both the world image and the pin layer share that viewBox and use
+ * `preserveAspectRatio="none"` so they stretch identically across the
+ * container — ditto for the graticule. Stretching breaks geographic
+ * accuracy slightly when the container aspect drifts from 1.71:1, but
+ * keeps every pin glued to its country.
  *
  * Pins are *host* pins — multiple servers sharing the same resolved
  * IP (or the same lat/lon to ~0.5°) collapse into a single dot so a
@@ -37,12 +46,30 @@ interface PinPos {
   primaryMs?: number;
 }
 
-// Equirectangular projection: lon -180..180 → x 0..1000, lat 90..-90 → y 0..500.
+// world.svg's native viewBox. Both the world image and the pin layer
+// use it so coordinates are directly comparable.
+const MAP_VB = { x: 30.767, y: 241.591, w: 784.077, h: 458.627 } as const;
+
+// Empirical fit of the simple-world-map projection: linear in lon/lat
+// with constants regressed against the bbox centroids of 6 country
+// paths in the source SVG (br, eg, in, is, mg, za). Residuals stay
+// under ~10 px on a 784×459 canvas, well under one pin diameter.
+const LON_OFFSET = 409.7;
+const LON_SCALE = 2.414;
+const LAT_OFFSET = 530.8;
+const LAT_SCALE = 2.787;
+
 function project(lat: number, lon: number): { x: number; y: number } {
-  const x = ((lon + 180) / 360) * 1000;
-  const y = ((90 - lat) / 180) * 500;
-  return { x, y };
+  return {
+    x: LON_OFFSET + LON_SCALE * lon,
+    y: LAT_OFFSET - LAT_SCALE * lat,
+  };
 }
+
+// "You" pin sits roughly where Earth's median land mass lives — lon=0,
+// lat=20°N, the same bias the previous (500, 290) hardcode aimed at on
+// the old 1000×500 grid. Stays inside the new viewBox.
+const YOU = project(20, 0);
 
 /**
  * Merge two groups whose pins land within ~0.5° of each other. This
@@ -125,34 +152,66 @@ export function WorldMap({
   const activePin = pins.find((p) => p.active);
   const hover = hoverIdx !== null ? pins[hoverIdx] : null;
 
+  // Graticule lines in the same map coordinates: equator, tropics &
+  // arctic/antarctic circles for horizontals; longitude steps every
+  // 30° for verticals. We clip to the visible viewBox so high-latitude
+  // verticals don't paint outside the world outline.
+  const clipL = MAP_VB.x;
+  const clipR = MAP_VB.x + MAP_VB.w;
+  const clipT = MAP_VB.y;
+  const clipB = MAP_VB.y + MAP_VB.h;
+  const horizontals = [-66.5, -45, -23.5, 23.5, 45, 66.5]
+    .map((lat) => project(lat, 0).y)
+    .filter((y) => y > clipT && y < clipB);
+  const equatorY = project(0, 0).y;
+  const verticals = [-150, -120, -90, -60, -30, 30, 60, 90, 120, 150]
+    .map((lon) => project(0, lon).x)
+    .filter((x) => x > clipL && x < clipR);
+  const meridianX = project(0, 0).x;
+
   return (
     <div className="worldmap">
-      <img className="worldmap-img" src={worldUrl} alt="" aria-hidden="true" />
+      <svg
+        className="worldmap-img"
+        viewBox={`${MAP_VB.x} ${MAP_VB.y} ${MAP_VB.w} ${MAP_VB.h}`}
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <image
+          href={worldUrl}
+          x={MAP_VB.x}
+          y={MAP_VB.y}
+          width={MAP_VB.w}
+          height={MAP_VB.h}
+          preserveAspectRatio="none"
+        />
+      </svg>
       <svg
         className="worldmap-grat"
-        viewBox="0 0 1000 500"
+        viewBox={`${MAP_VB.x} ${MAP_VB.y} ${MAP_VB.w} ${MAP_VB.h}`}
         preserveAspectRatio="none"
       >
-        <line className="eq" x1={0} y1={250} x2={1000} y2={250} />
-        {[62, 125, 187, 312, 375, 437].map((y) => (
-          <line key={`h${y}`} x1={0} y1={y} x2={1000} y2={y} />
+        <line className="eq" x1={clipL} y1={equatorY} x2={clipR} y2={equatorY} />
+        <line className="eq" x1={meridianX} y1={clipT} x2={meridianX} y2={clipB} />
+        {horizontals.map((y) => (
+          <line key={`h${y.toFixed(1)}`} x1={clipL} y1={y} x2={clipR} y2={y} />
         ))}
-        {[125, 250, 375, 500, 625, 750, 875].map((x) => (
-          <line key={`v${x}`} x1={x} y1={0} x2={x} y2={500} />
+        {verticals.map((x) => (
+          <line key={`v${x.toFixed(1)}`} x1={x} y1={clipT} x2={x} y2={clipB} />
         ))}
       </svg>
 
       {pins.length > 0 ? (
         <svg
           className="worldmap-pins"
-          viewBox="0 0 1000 500"
+          viewBox={`${MAP_VB.x} ${MAP_VB.y} ${MAP_VB.w} ${MAP_VB.h}`}
           preserveAspectRatio="none"
         >
           {activePin ? (
             <path
               className="worldmap-arc"
-              d={`M 500 290 Q ${(500 + activePin.x) / 2} ${
-                Math.min(290, activePin.y) - 60
+              d={`M ${YOU.x} ${YOU.y} Q ${(YOU.x + activePin.x) / 2} ${
+                Math.min(YOU.y, activePin.y) - 60
               } ${activePin.x} ${activePin.y}`}
             />
           ) : null}
@@ -183,7 +242,7 @@ export function WorldMap({
               </g>
             );
           })}
-          <g className="worldmap-pin you" transform={`translate(500,290)`}>
+          <g className="worldmap-pin you" transform={`translate(${YOU.x},${YOU.y})`}>
             <circle r={3.5} className="dot" />
             <circle r={7} className="halo" />
           </g>
@@ -194,8 +253,8 @@ export function WorldMap({
         <div
           className="worldmap-tooltip"
           style={{
-            left: `${(hover.x / 1000) * 100}%`,
-            top: `${(hover.y / 500) * 100}%`,
+            left: `${((hover.x - MAP_VB.x) / MAP_VB.w) * 100}%`,
+            top: `${((hover.y - MAP_VB.y) / MAP_VB.h) * 100}%`,
           }}
         >
           <div className="tip-host mono">{hover.group.host}</div>
