@@ -11,10 +11,46 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
+
+// directClient is a package-private HTTP client used for ip-api.com
+// lookups. It explicitly bypasses HTTP_PROXY / system proxy and dials
+// names through DirectResolver — same reasoning as the api package's
+// directHTTPClient: even if the user has an active VPN tunnel
+// configured to proxy everything, our own GeoIP probes must hit the
+// public internet directly or they'll loop back through sing-box.
+var (
+	directClientOnce sync.Once
+	directClient     *http.Client
+)
+
+func httpClient() *http.Client {
+	directClientOnce.Do(func() {
+		dialer := &net.Dialer{
+			Timeout:   5 * time.Second,
+			KeepAlive: 30 * time.Second,
+			Resolver:  DirectResolver(),
+		}
+		directClient = &http.Client{
+			Timeout: 8 * time.Second,
+			Transport: &http.Transport{
+				Proxy:                 nil,
+				DialContext:           dialer.DialContext,
+				ForceAttemptHTTP2:     true,
+				MaxIdleConns:          8,
+				IdleConnTimeout:       60 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+			},
+		}
+	})
+	return directClient
+}
 
 // Result is the subset of ip-api.com's JSON response we care about.
 type Result struct {
@@ -53,7 +89,7 @@ func Lookup(ctx context.Context, host string) (Result, error) {
 		return Result{}, err
 	}
 	req.Header.Set("User-Agent", "mosaicvpn/0.1 (geoip lookup)")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient().Do(req)
 	if err != nil {
 		return Result{}, err
 	}

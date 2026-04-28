@@ -60,7 +60,11 @@ type Prefs struct {
 // DefaultPrefs returns the prefs Mosaic ships with on a fresh install.
 func DefaultPrefs() Prefs {
 	return Prefs{
-		TunnelMode:    "tun",
+		// Default to proxy mode on first launch — TUN requires a
+		// wintun bundle and admin elevation that not every box has.
+		// Users who want TUN flip the toggle in Settings; we'll only
+		// nudge them when wintun is actually staged.
+		TunnelMode:    "proxy",
 		SocksAddr:     "127.0.0.1:1080",
 		HTTPAddr:      "127.0.0.1:1081",
 		MTU:           1420,

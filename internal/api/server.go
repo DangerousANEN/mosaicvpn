@@ -46,7 +46,7 @@ type Server struct {
 // NewServer constructs an API server.
 func NewServer(s *store.Store, mgr *state.Manager, fetcher Fetcher) *Server {
 	if fetcher == nil {
-		fetcher = HTTPFetcher(http.DefaultClient)
+		fetcher = HTTPFetcher(directHTTPClient(30 * time.Second))
 	}
 	srv := &Server{
 		store:   s,
@@ -702,10 +702,44 @@ func newToken() string {
 	return hex.EncodeToString(b[:])
 }
 
+// directHTTPClient builds an HTTP client that explicitly bypasses any
+// system / environment proxy and resolves names through the same
+// public-DNS resolvers as geoip.ResolveHost (1.1.1.1 → 8.8.8.8 →
+// system fallback). This is what mosaicd uses to fetch subscriptions:
+// reaching a sub.txt URL must NOT route through sing-box's loopback
+// SOCKS at 127.0.0.1:2080 even when an active VPN tunnel is up, and
+// must NOT depend on whatever the OS thinks 'sub.example.com' resolves
+// to (the same system-DNS hijack rc13 worked around for probes).
+func directHTTPClient(timeout time.Duration) *http.Client {
+	dialer := &net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+		Resolver:  geoip.DirectResolver(),
+	}
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			// Explicitly nil — do NOT honour HTTP_PROXY / HTTPS_PROXY
+			// env vars or the Windows system proxy. Otherwise mosaicd
+			// can end up sending its own subscription fetches through
+			// the sing-box loopback SOCKS we're supposedly proxying for.
+			Proxy:                 nil,
+			DialContext:           dialer.DialContext,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          16,
+			IdleConnTimeout:       60 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
+}
+
 // HTTPFetcher returns a Fetcher that uses the supplied HTTP client.
+// Pass nil to get a sensible direct-out-to-the-internet client — see
+// directHTTPClient for why DefaultClient is the wrong default.
 func HTTPFetcher(client *http.Client) Fetcher {
 	if client == nil {
-		client = http.DefaultClient
+		client = directHTTPClient(30 * time.Second)
 	}
 	return func(ctx context.Context, url string) ([]byte, string, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)

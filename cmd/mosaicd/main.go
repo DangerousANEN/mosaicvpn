@@ -119,6 +119,32 @@ func run(dataDirOverride string) error {
 		"api", fmt.Sprintf("http://%s:%d", host, port),
 	)
 
+	// Auto-connect to the last server the user picked, if Prefs.AutoConnect
+	// is on and we still have it. This is best-effort: failures are logged
+	// and the daemon proceeds in the disconnected state so the user can pick
+	// something else from the UI.
+	go func() {
+		snap := store.Snapshot()
+		if !snap.Prefs.AutoConnect || snap.LastServerID == "" {
+			return
+		}
+		// Wait briefly so the API + frontend have a chance to come up
+		// before we flip the manager into 'connecting'. The UI then sees
+		// the transition exactly as if the user had clicked Connect.
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(750 * time.Millisecond):
+		}
+		cctx, ccancel := context.WithTimeout(ctx, 30*time.Second)
+		defer ccancel()
+		if err := mgr.Connect(cctx, snap.LastServerID); err != nil {
+			logx.Warn("auto-connect to last server failed", "server_id", snap.LastServerID, "err", err)
+			return
+		}
+		logx.Info("auto-connected to last server", "server_id", snap.LastServerID)
+	}()
+
 	// Wait for SIGINT/SIGTERM.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)

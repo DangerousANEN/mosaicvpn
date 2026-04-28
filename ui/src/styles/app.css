@@ -361,6 +361,22 @@
 .worldmap {
   position: absolute;
   inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+/* Aspect-locked stage. Native simple-world-map sub-viewBox is
+   784.077 x 458.627 (~1.71:1). Locking aspect-ratio + max-* lets
+   the stage scale to the largest rect that fits in .map without
+   ever stretching the world image. inset/position now apply to
+   THIS, not .worldmap, so all the absolute children (svg layers,
+   tooltip, popover) inherit the same coordinate space. */
+.worldmap-stage {
+  position: relative;
+  aspect-ratio: 784 / 459;
+  max-width: 100%;
+  max-height: 100%;
+  width: 100%;
 }
 .worldmap-img {
   position: absolute;

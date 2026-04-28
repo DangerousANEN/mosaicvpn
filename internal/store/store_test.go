@@ -20,8 +20,8 @@ func newStore(t *testing.T) *store.Store {
 func TestDefaultPrefs(t *testing.T) {
 	s := newStore(t)
 	snap := s.Snapshot()
-	if snap.Prefs.TunnelMode != "tun" {
-		t.Fatalf("expected default tunnel mode tun, got %q", snap.Prefs.TunnelMode)
+	if snap.Prefs.TunnelMode != "proxy" {
+		t.Fatalf("expected default tunnel mode proxy, got %q", snap.Prefs.TunnelMode)
 	}
 	if !snap.Prefs.KillSwitch {
 		t.Fatal("expected kill-switch on by default")

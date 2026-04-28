@@ -206,11 +206,24 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, _ store
 
 	// Spin up the metric pollers. Both run for the lifetime of cctx;
 	// Stop() cancels cctx which kicks both goroutines out of their
-	// select.
+	// select. Logged so users hunting "why is Atlas frozen" can
+	// confirm the clash API is wired up at all without grepping the
+	// generated config.
+	logx.Info("sing-box backend metric pollers starting",
+		"clash_api", clashEndpoint,
+		"latency_target", net.JoinHostPort(firstNonEmpty(server.ResolvedIP, server.Address), strconv.Itoa(server.Port)),
+	)
 	go b.clashAPIPoll(cctx, clashEndpoint)
 	go b.latencyPoll(cctx, server)
 
 	return nil
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 // clashAPIPoll hits sing-box's embedded clash API and refreshes
@@ -222,18 +235,33 @@ func (b *SingBoxBackend) clashAPIPoll(ctx context.Context, endpoint string) {
 	if endpoint == "" {
 		return
 	}
-	client := &http.Client{Timeout: 800 * time.Millisecond}
+	// 127.0.0.1 only — but still pin Proxy:nil so HTTP_PROXY env
+	// vars on the user's machine never accidentally redirect this to
+	// sing-box's own loopback SOCKS, which would deadlock the metric
+	// channel against the very tunnel it's measuring.
+	client := &http.Client{
+		Timeout: 800 * time.Millisecond,
+		Transport: &http.Transport{
+			Proxy: nil,
+			DialContext: (&net.Dialer{
+				Timeout: 500 * time.Millisecond,
+			}).DialContext,
+		},
+	}
 	url := fmt.Sprintf("http://%s/connections", endpoint)
 	// First few attempts may race the daemon's bootstrap. Back off in
 	// 200 ms steps until either ctx fires or we get a 200.
 	warm := time.NewTicker(200 * time.Millisecond)
 	defer warm.Stop()
 	warmDeadline := time.Now().Add(5 * time.Second)
+	gotFirst := false
 	for time.Now().Before(warmDeadline) {
 		if ctx.Err() != nil {
 			return
 		}
 		if b.fetchClashTotals(ctx, client, url) {
+			gotFirst = true
+			logx.Info("clash-api online", "endpoint", endpoint)
 			break
 		}
 		select {
@@ -241,6 +269,12 @@ func (b *SingBoxBackend) clashAPIPoll(ctx context.Context, endpoint string) {
 		case <-ctx.Done():
 			return
 		}
+	}
+	if !gotFirst {
+		// Don't return — fall through into the steady-state ticker so
+		// the poller keeps trying even if sing-box took longer than
+		// 5 s to start serving /connections.
+		logx.Warn("clash-api warm-up exceeded 5s; continuing to poll", "endpoint", endpoint)
 	}
 	t := time.NewTicker(1 * time.Second)
 	defer t.Stop()

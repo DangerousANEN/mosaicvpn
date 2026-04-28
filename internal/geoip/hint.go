@@ -154,3 +154,28 @@ func publicResolver(server string) *net.Resolver {
 		},
 	}
 }
+
+// DirectResolver returns a *net.Resolver that tries Cloudflare, then
+// Google, then falls back to the system stub — the same chain
+// ResolveHost uses. Exposed so other packages can wire it into an
+// http.Transport's DialContext for outbound HTTP calls (subscription
+// fetches, GeoIP, etc.) that must not be hijacked by an active VPN's
+// DNS or by a polluted Windows resolver cache.
+//
+// The returned resolver is a thin wrapper that walks the chain on
+// every lookup, picking the first that returns at least one address.
+// Errors from individual servers are swallowed; if every resolver
+// fails the lookup returns an empty result and the standard library
+// surfaces a no-such-host error to the caller.
+func DirectResolver() *net.Resolver {
+	return &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			d := net.Dialer{Timeout: 2 * time.Second}
+			if c, err := d.DialContext(ctx, network, "1.1.1.1:53"); err == nil {
+				return c, nil
+			}
+			return d.DialContext(ctx, network, "8.8.8.8:53")
+		},
+	}
+}

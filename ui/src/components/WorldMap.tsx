@@ -186,6 +186,11 @@ export function WorldMap({
 
   return (
     <div className="worldmap">
+      {/* The aspect-locked stage. Holds the world image, graticule,
+          pin overlay, tooltip and popover. Centered inside the parent
+          .map pane so the world never gets stretched horizontally —
+          letterboxing instead when the parent isn't 1.71:1. */}
+      <div className="worldmap-stage">
       <svg
         className="worldmap-img"
         viewBox={`${MAP_VB.x} ${MAP_VB.y} ${MAP_VB.w} ${MAP_VB.h}`}
@@ -368,6 +373,7 @@ export function WorldMap({
       ) : null}
 
       {bearing ? <div className="worldmap-bearing">{bearing}</div> : null}
+      </div>
     </div>
   );
 }
