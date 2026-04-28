@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -1006,11 +1007,20 @@ func directHTTPClient(timeout time.Duration) *http.Client {
 // HTTPFetcher returns a Fetcher that uses the supplied HTTP client.
 // Pass nil to get a sensible direct-out-to-the-internet client — see
 // directHTTPClient for why DefaultClient is the wrong default.
+//
+// rc28 — also accepts `data:` URLs (RFC 2397) so the renderer's
+// drag-and-drop importer can feed local files straight through
+// addSubscription without needing a separate upload endpoint. The
+// scheme is detected up-front; only base64 data URLs are supported
+// — that's what the renderer always emits.
 func HTTPFetcher(client *http.Client) Fetcher {
 	if client == nil {
 		client = directHTTPClient(30 * time.Second)
 	}
 	return func(ctx context.Context, url string) ([]byte, string, error) {
+		if strings.HasPrefix(url, "data:") {
+			return decodeDataURL(url)
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			return nil, "", err
@@ -1030,6 +1040,33 @@ func HTTPFetcher(client *http.Client) Fetcher {
 		}
 		return body, resp.Header.Get("Content-Type"), nil
 	}
+}
+
+// decodeDataURL parses a `data:[<mime>][;base64],<payload>` URL and
+// returns the decoded bytes plus the declared MIME type. The
+// renderer's drag-and-drop import path always emits base64 — we
+// reject the URL-encoded variant for simplicity since nothing in
+// the app needs it.
+func decodeDataURL(url string) ([]byte, string, error) {
+	rest := strings.TrimPrefix(url, "data:")
+	comma := strings.IndexByte(rest, ',')
+	if comma < 0 {
+		return nil, "", fmt.Errorf("data url: missing comma")
+	}
+	meta := rest[:comma]
+	payload := rest[comma+1:]
+	if !strings.Contains(meta, "base64") {
+		return nil, "", fmt.Errorf("data url: only base64 payloads supported")
+	}
+	mime := strings.SplitN(meta, ";", 2)[0]
+	if mime == "" {
+		mime = "application/octet-stream"
+	}
+	decoded, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil {
+		return nil, "", fmt.Errorf("data url: %w", err)
+	}
+	return decoded, mime, nil
 }
 
 func readAllLimited(r interface{ Read(p []byte) (int, error) }, max int64) ([]byte, error) {

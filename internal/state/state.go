@@ -59,6 +59,14 @@ type Manager struct {
 	// snapshot so the renderer can plant the "vous" pin on the
 	// user's actual continent.
 	myLocation *proto.GeoLocation
+	// metricsCancel stops the per-second goroutine that re-emits a
+	// live Status with fresh bytes_in / bytes_out / latency_ms folded
+	// in. Started in Connect after a successful transition to
+	// StateConnected and cancelled in Disconnect (or on the next
+	// Connect, since reconnects implicitly disconnect first). nil
+	// while there's no live tunnel — the metrics goroutine only
+	// matters while we're actually moving bytes.
+	metricsCancel context.CancelFunc
 }
 
 // New constructs a Manager around an existing store and backend.
@@ -223,12 +231,74 @@ func (m *Manager) Connect(ctx context.Context, serverID string) error {
 		DaemonVersion: m.st.DaemonVersion,
 		DaemonPID:     m.st.DaemonPID,
 	})
+	// Start the live-metrics ticker. Cancels any previous instance
+	// (defensive — Disconnect already cancels, but a reconnect could
+	// race with the previous goroutine on slow shutdown).
+	if m.metricsCancel != nil {
+		m.metricsCancel()
+	}
+	mctx, mcancel := context.WithCancel(context.Background())
+	m.metricsCancel = mcancel
+	go m.runMetricsTicker(mctx)
 	m.mu.Unlock()
 
 	if err := m.store.SetLastServer(serverID); err != nil {
 		logx.Warn("could not persist last server", "err", err)
 	}
 	return nil
+}
+
+// runMetricsTicker re-broadcasts a Status snapshot every second
+// while a tunnel is up. The renderer's SSE stream then drives live
+// updates on the Atlas latency / bytes fields without forcing the
+// user to F5 — fixes the rc26-era "metrics frozen until refresh"
+// report. Pure broadcast; does not mutate m.st (which is reserved
+// for state-machine transitions).
+func (m *Manager) runMetricsTicker(ctx context.Context) {
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			m.publishLive()
+		}
+	}
+}
+
+// publishLive computes the same status shape Status() returns
+// (with backend stats + my-location folded in) and broadcasts it
+// to every subscriber without changing the cached state-machine
+// snapshot. Safe to call from any goroutine.
+func (m *Manager) publishLive() {
+	m.mu.Lock()
+	if m.st.State != proto.StateConnected {
+		m.mu.Unlock()
+		return
+	}
+	snap := m.st
+	if m.backend != nil {
+		in, out, lat := m.backend.Stats()
+		snap.BytesIn = in
+		snap.BytesOut = out
+		snap.LatencyMS = lat
+		if p, ok := m.backend.(ProxyListener); ok {
+			snap.ProxySOCKS, snap.ProxyHTTP = p.Proxies()
+		}
+	}
+	if m.myLocation != nil {
+		loc := *m.myLocation
+		snap.MyLocation = &loc
+	}
+	subs := append([]chan proto.Status(nil), m.subs...)
+	m.mu.Unlock()
+	for _, ch := range subs {
+		select {
+		case ch <- snap:
+		default:
+		}
+	}
 }
 
 // Disconnect stops the backend and returns to disconnected state.
@@ -241,6 +311,10 @@ func (m *Manager) Disconnect(ctx context.Context) error {
 	if m.cancel != nil {
 		m.cancel()
 		m.cancel = nil
+	}
+	if m.metricsCancel != nil {
+		m.metricsCancel()
+		m.metricsCancel = nil
 	}
 	m.mu.Unlock()
 

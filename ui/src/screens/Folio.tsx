@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../api/client";
-import type { Prefs, Status } from "../api/types";
+import type { Prefs, Status, Subscription } from "../api/types";
 import { isAdmin, restartAsAdmin } from "../api/tauri";
+import { useTheme } from "../hooks/useTheme";
 
 /**
  * Folio — the book of preferences. Mirrors docs/mockups/settings.html.
@@ -13,7 +14,13 @@ import { isAdmin, restartAsAdmin } from "../api/tauri";
  * daemon doesn't yet have — those will land when proto.Prefs grows.
  */
 
-type ChapterId = "network" | "privacy" | "dns" | "autostart" | "mcp";
+type ChapterId =
+  | "network"
+  | "privacy"
+  | "dns"
+  | "autostart"
+  | "mcp"
+  | "appearance";
 
 const CHAPTERS: { id: ChapterId; num: string; title: string; sub: string }[] = [
   { id: "network", num: "i", title: "Network", sub: "tunnel mode & stack" },
@@ -30,6 +37,12 @@ const CHAPTERS: { id: ChapterId; num: string; title: string; sub: string }[] = [
     num: "v",
     title: "Agent & MCP",
     sub: "letting an AI control Mosaic",
+  },
+  {
+    id: "appearance",
+    num: "vi",
+    title: "Appearance & backup",
+    sub: "theme, export & import",
   },
 ];
 
@@ -385,6 +398,10 @@ export function Folio({ status }: { status?: Status | null }): JSX.Element {
               </Opt>
             </Chapter>
           ) : null}
+
+          {chapter === "appearance" ? (
+            <AppearanceChapter />
+          ) : null}
         </div>
       </section>
 
@@ -572,5 +589,173 @@ function Text({
       placeholder={placeholder}
       disabled={disabled}
     />
+  );
+}
+
+/* ---------- rc28 — Appearance & backup chapter ---------- */
+
+/** AppearanceChapter — light/dark toggle plus export/import of the
+ *  user's full Mosaic config (subscriptions, rules, prefs) as a
+ *  single JSON file. The export is a hand-written shape rather than
+ *  a passthrough of any single API call so we can version it
+ *  independently of the daemon's wire format. */
+function AppearanceChapter(): JSX.Element {
+  const theme = useTheme();
+  const [busy, setBusy] = useState<"export" | "import" | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  const onExport = async () => {
+    setBusy("export");
+    setErr(null);
+    setInfo(null);
+    try {
+      const [subs, rules, prefs] = await Promise.all([
+        api.listSubscriptions(),
+        api.listRules(),
+        api.getPrefs(),
+      ]);
+      const blob = new Blob(
+        [
+          JSON.stringify(
+            {
+              kind: "mosaic-export",
+              version: 1,
+              exported_at: new Date().toISOString(),
+              subscriptions: subs,
+              rules,
+              prefs,
+            },
+            null,
+            2,
+          ),
+        ],
+        { type: "application/json" },
+      );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `mosaic-config-${new Date()
+        .toISOString()
+        .slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setInfo(`Exported ${subs.length} subscription(s), ${rules.length} rule(s).`);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onImportFile = async (file: File) => {
+    setBusy("import");
+    setErr(null);
+    setInfo(null);
+    try {
+      const text = await file.text();
+      const j = JSON.parse(text) as {
+        kind?: string;
+        version?: number;
+        subscriptions?: Subscription[];
+        prefs?: Prefs;
+      };
+      if (j.kind !== "mosaic-export") {
+        throw new Error("not a mosaic-export file");
+      }
+      let added = 0;
+      for (const s of j.subscriptions ?? []) {
+        if (!s.url) continue;
+        try {
+          await api.addSubscription(s.url, s.name);
+          added++;
+        } catch {
+          /* duplicate URLs / malformed entries — keep going */
+        }
+      }
+      if (j.prefs) {
+        try {
+          await api.setPrefs(j.prefs);
+        } catch {
+          /* daemon Prefs shape may have evolved — non-fatal */
+        }
+      }
+      setInfo(`Imported ${added} subscription(s).`);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(null);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  return (
+    <Chapter
+      num="vi"
+      title="Appearance & backup"
+      desc="theme + JSON export / import of your full Mosaic config"
+    >
+      <Opt
+        name="Theme"
+        desc="Dark theme inverts paper / ink while keeping the copper accent."
+      >
+        <Seg
+          value={theme.mode}
+          options={[
+            { v: "light", lab: "LIGHT" },
+            { v: "dark", lab: "DARK" },
+          ]}
+          onChange={(v) => theme.set(v === "dark" ? "dark" : "light")}
+        />
+      </Opt>
+      <Opt
+        name="Export config"
+        desc="Saves subscriptions, rules and preferences as a single JSON file you can stash next to your other backups."
+      >
+        <button
+          type="button"
+          className="btn primary"
+          onClick={() => void onExport()}
+          disabled={busy !== null}
+        >
+          {busy === "export" ? "Exporting…" : "Export JSON"}
+        </button>
+      </Opt>
+      <Opt
+        name="Import config"
+        desc="Loads a previous export. Subscriptions are added (duplicates skipped). Prefs overwrite the current values; rules are kept."
+      >
+        <input
+          ref={fileRef}
+          type="file"
+          accept="application/json,.json"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void onImportFile(f);
+          }}
+        />
+        <button
+          type="button"
+          className="btn ghost"
+          onClick={() => fileRef.current?.click()}
+          disabled={busy !== null}
+        >
+          {busy === "import" ? "Importing…" : "Import JSON"}
+        </button>
+      </Opt>
+      {err ? <div className="modal-err">{err}</div> : null}
+      {info ? (
+        <div
+          className="mono"
+          style={{ color: "var(--copper)", fontSize: 11, marginTop: 6 }}
+        >
+          {info}
+        </div>
+      ) : null}
+    </Chapter>
   );
 }

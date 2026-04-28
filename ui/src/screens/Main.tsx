@@ -1,18 +1,68 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import type { Server, Status } from "../api/types";
+import type { Server, Status, Subscription } from "../api/types";
 import { StatusSquare } from "../components/StatusSquare";
 import { WorldMap } from "../components/WorldMap";
 import { locText } from "../components/locText";
+import {
+  getFavorites,
+  getHistory,
+  getNotes,
+  recordConnect,
+  setFavorite,
+} from "../utils/localStore";
 
 /**
  * Main — the home screen, equivalent to docs/mockups/main.html.
  * Three columns: status panel · world map · routing register excerpt.
+ *
+ * rc28 — adds:
+ *   - subscription filter chips above the map (4.5)
+ *   - auto-pick fastest one-click button (C)
+ *   - kill-switch visual indicator (R) folded into the metric
  */
-export function Main({ status }: { status: Status }): JSX.Element {
+interface MainProps {
+  status: Status;
+  /** Optional connect handler from App so the global Space/1-9
+   *  hotkeys share the same flow as in-screen clicks (history is
+   *  recorded in one place). When omitted the screen falls back to
+   *  api.connect directly. */
+  onConnectId?: (id: string) => Promise<void> | void;
+}
+
+// Lowercase Roman numerals for the subscription filter chips. We
+// keep the chip glyph short ("i", "ii", "iii"…) so 4-5 chips fit in
+// the eyebrow without wrapping; the full subscription name lives in
+// the chip's title= tooltip.
+function toRomanLower(n: number): string {
+  const map: [number, string][] = [
+    [10, "x"],
+    [9, "ix"],
+    [5, "v"],
+    [4, "iv"],
+    [1, "i"],
+  ];
+  let out = "";
+  for (const [v, sym] of map) {
+    while (n >= v) {
+      out += sym;
+      n -= v;
+    }
+  }
+  return out;
+}
+
+export function Main({ status, onConnectId }: MainProps): JSX.Element {
   const [servers, setServers] = useState<Server[]>([]);
+  const [subs, setSubs] = useState<Subscription[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [subFilter, setSubFilter] = useState<string | null>(null);
+  // Favorites + history live in localStorage; we mirror them in
+  // state so the register re-orders without forcing a remount.
+  const [favs, setFavs] = useState<Set<string>>(() => getFavorites());
+  const history = useMemo(() => getHistory(), [favs]); // re-read on toggle
+  const notes = useMemo(() => getNotes(), [favs]);
 
   useEffect(() => {
     let cancelled = false;
@@ -39,12 +89,67 @@ export function Main({ status }: { status: Status }): JSX.Element {
     };
   }, []);
 
+  // Subscription roster powers the filter chips above the map.
+  // Refreshed on mount; rare-enough that polling isn't worth it.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .listSubscriptions()
+      .then((s) => {
+        if (!cancelled) setSubs(s);
+      })
+      .catch(() => {
+        /* errors surfaced via the existing err channel */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const filtered = useMemo(() => {
+    if (!subFilter) return servers;
+    return servers.filter((s) => s.subscription_id === subFilter);
+  }, [servers, subFilter]);
+
+  // The Routing register sort folds in (a) starred favorites first,
+  // (b) recently-connected stations next, (c) fastest probed last —
+  // so the list reads as "your usual stations, then the rest". Each
+  // bucket is internally sorted by latency. Servers with no probe
+  // and no history fall off the end (slice(0, 6)) so the register
+  // doesn't overflow the 3-column frame.
   const fastest = useMemo(() => {
-    return [...servers]
-      .filter((s) => (s.last_test_ms ?? 0) > 0)
-      .sort((a, b) => (a.last_test_ms ?? 0) - (b.last_test_ms ?? 0))
+    const now = Date.now();
+    const score = (s: Server): number => {
+      const ms = (s.last_test_ms ?? 0) > 0 ? s.last_test_ms ?? 9999 : 9999;
+      const last = history[s.id] ?? 0;
+      // Favorites and recent connects pull a server toward the top.
+      // Bucket gaps are larger than any latency contribution so the
+      // ordering is stable: fav > recent > everything else.
+      let bucket = 200_000;
+      if (favs.has(s.id)) bucket = 0;
+      else if (last > 0) bucket = 100_000 - Math.min(99_000, (now - last) / 1000);
+      return bucket + ms;
+    };
+    return [...filtered]
+      .filter((s) => (s.last_test_ms ?? 0) > 0 || favs.has(s.id) || (history[s.id] ?? 0) > 0)
+      .sort((a, b) => score(a) - score(b))
       .slice(0, 6);
-  }, [servers]);
+  }, [filtered, favs, history]);
+
+  const fastestAll = useMemo(() => {
+    return [...filtered]
+      .filter((s) => (s.last_test_ms ?? 0) > 0)
+      .sort((a, b) => (a.last_test_ms ?? 0) - (b.last_test_ms ?? 0));
+  }, [filtered]);
+
+  const callConnect = async (id: string) => {
+    if (onConnectId) {
+      await onConnectId(id);
+    } else {
+      await api.connect(id);
+      recordConnect(id);
+    }
+  };
 
   const onToggle = async () => {
     setBusy(true);
@@ -53,15 +158,31 @@ export function Main({ status }: { status: Status }): JSX.Element {
       if (status.state === "connected" || status.state === "connecting") {
         await api.disconnect();
       } else if (status.server) {
-        await api.connect(status.server.id);
+        await callConnect(status.server.id);
       } else if (servers.length > 0) {
         // Empty string asks the daemon to reuse LastServerID (persisted
         // across restarts). Falls back to the first available server
         // only when the user has never connected before.
-        await api.connect("");
+        await callConnect("");
       } else {
         setErr("no servers configured");
       }
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onAutoFastest = async () => {
+    if (fastestAll.length === 0) {
+      setErr("no probed servers — Test all in Pool first");
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      await callConnect(fastestAll[0].id);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -133,7 +254,8 @@ export function Main({ status }: { status: Status }): JSX.Element {
           <Metric lab="Mode" val={status.tunnel_mode || "proxy"} />
           <Metric
             lab="Kill-switch"
-            val={status.kill_switch ? "on" : "off"}
+            val={status.kill_switch ? "armed" : "off"}
+            armed={status.kill_switch}
           />
         </div>
 
@@ -151,6 +273,18 @@ export function Main({ status }: { status: Status }): JSX.Element {
               : status.state === "connecting"
                 ? "Cancel"
                 : "Engage tunnel »"}
+        </button>
+        <button
+          type="button"
+          className="auto-fastest"
+          onClick={onAutoFastest}
+          disabled={busy || fastestAll.length === 0 || status.state === "connected"}
+          title="Connect to the lowest-latency station from your latest probe results"
+        >
+          ⚡ Auto-pick fastest
+          {fastestAll.length > 0 && fastestAll[0].last_test_ms ? (
+            <span className="mono"> · {fastestAll[0].last_test_ms}ms</span>
+          ) : null}
         </button>
         {err ? (
           <div
@@ -177,18 +311,44 @@ export function Main({ status }: { status: Status }): JSX.Element {
         ) : null}
       </section>
 
-      <section className="map-wrap">
+      <section className={`map-wrap ${status.kill_switch ? "armed" : ""}`}>
         <div className="map-eyebrow">
           <span>
-            Plate IV · Routes in service · {servers.length} stations
+            Plate IV · Routes in service · {filtered.length} stations
+            {subFilter && subs.find((s) => s.id === subFilter)
+              ? ` · ${subs.find((s) => s.id === subFilter)?.name ?? ""}`
+              : ""}
           </span>
           <span style={{ color: "var(--copper)" }}>
             {status.server ? `${status.server.name} · current bearing` : ""}
           </span>
         </div>
+        {subs.length > 0 ? (
+          <div className="sub-chips" role="tablist" aria-label="Subscription filter">
+            <button
+              type="button"
+              className={`sub-chip ${subFilter === null ? "cur" : ""}`}
+              onClick={() => setSubFilter(null)}
+              title="Show every subscription"
+            >
+              All
+            </button>
+            {subs.map((s, i) => (
+              <button
+                key={s.id}
+                type="button"
+                className={`sub-chip ${subFilter === s.id ? "cur" : ""}`}
+                onClick={() => setSubFilter(s.id)}
+                title={s.name || s.url || s.id}
+              >
+                {toRomanLower(i + 1)}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div className="map">
           <WorldMap
-            servers={servers}
+            servers={filtered}
             activeServerId={status.server?.id}
             myLocation={status.my_location}
             onPinClick={async (id) => {
@@ -196,7 +356,7 @@ export function Main({ status }: { status: Status }): JSX.Element {
               setBusy(true);
               setErr(null);
               try {
-                await api.connect(id);
+                await callConnect(id);
               } catch (e) {
                 setErr((e as Error).message);
               } finally {
@@ -216,41 +376,63 @@ export function Main({ status }: { status: Status }): JSX.Element {
           </p>
         ) : (
           fastest.map((s, i) => (
-            <button
-              type="button"
+            <div
               key={s.id}
               className={`row ${status.server?.id === s.id ? "cur" : ""}`}
-              onClick={async () => {
-                if (busy) return;
-                setBusy(true);
-                setErr(null);
-                try {
-                  await api.connect(s.id);
-                } catch (e) {
-                  setErr((e as Error).message);
-                } finally {
-                  setBusy(false);
-                }
-              }}
-              disabled={busy}
-              title="Connect to this station"
             >
-              <span className="num">{toRoman(i + 1)}</span>
-              <div>
-                <div className="city">{s.name}</div>
-                <div className="proto">
-                  {s.protocol}
-                  {locText(s) ? (
-                    <span className="loc-inline"> · {locText(s)}</span>
-                  ) : null}
+              <button
+                type="button"
+                className={`fav-btn ${favs.has(s.id) ? "on" : ""}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const next = setFavorite(s.id, !favs.has(s.id));
+                  setFavs(new Set(next));
+                }}
+                title={favs.has(s.id) ? "Unstar" : "Star · pins to top of register"}
+                aria-label="Toggle favorite"
+              >
+                {favs.has(s.id) ? "★" : "☆"}
+              </button>
+              <button
+                type="button"
+                className="row-body"
+                onClick={async () => {
+                  if (busy) return;
+                  setBusy(true);
+                  setErr(null);
+                  try {
+                    await callConnect(s.id);
+                  } catch (e) {
+                    setErr((e as Error).message);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                disabled={busy}
+                title="Connect to this station"
+              >
+                <span className="num">{toRoman(i + 1)}</span>
+                <div>
+                  <div className="city">{s.name}</div>
+                  <div className="proto">
+                    {s.protocol}
+                    {locText(s) ? (
+                      <span className="loc-inline"> · {locText(s)}</span>
+                    ) : null}
+                    {notes[s.id] ? (
+                      <span className="loc-inline italic-mute">
+                        {" "}· {notes[s.id]}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-              <span className="ms">
-                {s.last_test_ms && s.last_test_ms > 0
-                  ? `${s.last_test_ms} ms`
-                  : "—"}
-              </span>
-            </button>
+                <span className="ms">
+                  {s.last_test_ms && s.last_test_ms > 0
+                    ? `${s.last_test_ms} ms`
+                    : "—"}
+                </span>
+              </button>
+            </div>
           ))
         )}
       </section>
@@ -262,13 +444,15 @@ function Metric({
   lab,
   val,
   unit,
+  armed,
 }: {
   lab: string;
   val: string | number;
   unit?: string;
+  armed?: boolean;
 }): JSX.Element {
   return (
-    <div className="metric">
+    <div className={`metric ${armed ? "armed" : ""}`}>
       <div className="lab">{lab}</div>
       <div className="val">
         {val}

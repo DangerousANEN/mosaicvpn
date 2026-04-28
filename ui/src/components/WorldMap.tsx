@@ -14,28 +14,47 @@
  * accuracy slightly when the container aspect drifts from 1.71:1, but
  * keeps every pin glued to its country.
  *
- * Pins are *host* pins — multiple servers sharing the same resolved
- * IP (or the same lat/lon to ~0.5°) collapse into a single teardrop
- * marker so a datacenter exposing three protocols doesn't draw three
- * overlapping pins. Hovering reveals a tooltip with the host,
- * location and member protocols. Clicking a single-host pin connects
- * directly; clicking a multi-host pin opens a popover with one
- * Connect button per member protocol so the user picks the variant
- * they want.
+ * rc28 — Adaptive clustering. Pins now collapse based on their
+ * on-screen pixel distance at the current zoom (see
+ * ./adaptiveCluster.ts). A single isolated server stays a single
+ * diamond; 50 servers in the same metro area lump into one cluster
+ * pin with a count badge. Clicking a multi-member cluster animates
+ * the zoom & pan to its bbox via TransformWrapper.setTransform; once
+ * zoomed in, the cluster dissolves emergently into individual pins
+ * because the merge threshold is now smaller in viewBox units.
+ *
+ * rc28 — Map full-bleed. The wrapper no longer aspect-ratio-locks
+ * the stage; the map fills the parent .map container and the world
+ * image is centered with object-fit/contain via `preserveAspectRatio`
+ * on the SVG. Beige background covers the full container so panning
+ * past the world outline reveals the same fill, not white bands.
+ *
+ * rc28 — Subscription filter. The optional `subscriptionFilter` prop
+ * narrows the rendered server set to a single subscription so the
+ * filter chips above the map are wired through one prop instead of
+ * having WorldMap walk the prefs.
  */
 
-import { useState, type MouseEvent as ReactMouseEvent } from "react";
-import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
+import {
+  TransformComponent,
+  TransformWrapper,
+  type ReactZoomPanPinchRef,
+} from "react-zoom-pan-pinch";
 import worldUrl from "../assets/world.svg";
 import type { Server, GeoLocation } from "../api/types";
-import { cityToLatLon } from "./cityCoords";
-import { groupServers, type ServerGroup } from "./serverGroup";
-import {
-  clusterByCountry,
-  type CountryCluster,
-  type WorldPin,
-} from "./countryCluster";
 import { locText } from "./locText";
+import {
+  clusterAtScale,
+  resolveGroups,
+  type AdaptiveCluster,
+} from "./adaptiveCluster";
 
 interface WorldMapProps {
   servers: Server[];
@@ -51,27 +70,10 @@ interface WorldMapProps {
    *  provided, drives the position of the "vous" pin instead of
    *  the (lon=0, lat=20°N) fallback. */
   myLocation?: GeoLocation;
+  /** When set, only servers belonging to the subscription with this
+   *  ID are rendered. Drives the rc28 filter chips above the map. */
+  subscriptionFilter?: string | null;
 }
-
-interface HostPinPos {
-  kind: "host";
-  x: number;
-  y: number;
-  group: ServerGroup;
-  active: boolean;
-  primaryMs?: number;
-}
-
-interface CountryPinPos {
-  kind: "country";
-  x: number;
-  y: number;
-  cluster: CountryCluster;
-  active: boolean;
-  primaryMs?: number;
-}
-
-type PinPos = HostPinPos | CountryPinPos;
 
 // world.svg's native viewBox. Both the world image and the pin layer
 // use it so coordinates are directly comparable.
@@ -99,106 +101,17 @@ function project(lat: number, lon: number): { x: number; y: number } {
 // myLocation prop once the daemon publishes a real coordinate.
 const YOU_FALLBACK = project(20, 0);
 
-/**
- * Pins within MERGE_RADIUS viewBox-units of each other collapse into
- * one teardrop. With LON_SCALE=2.414 px/° this is roughly ~5° of
- * longitude — the user explicitly asked for more aggressive merging
- * than rc12's ~0.5° so adjacent datacenters in the same metro lump
- * into a single marker and the map stays legible. Members of merged
- * groups are concatenated and the merged group inherits the better
- * latency.
- */
-const MERGE_RADIUS = 12;
-
-function mergeNearbyHostPins(pins: HostPinPos[]): HostPinPos[] {
-  if (pins.length < 2) return pins;
-  const out: HostPinPos[] = [];
-  for (const p of pins) {
-    const near = out.find(
-      (o) =>
-        Math.abs(o.x - p.x) < MERGE_RADIUS &&
-        Math.abs(o.y - p.y) < MERGE_RADIUS,
-    );
-    if (!near) {
-      out.push({ ...p, group: { ...p.group, members: [...p.group.members] } });
-      continue;
-    }
-    near.group.members.push(...p.group.members);
-    if (p.active) near.active = true;
-    if (
-      p.primaryMs !== undefined &&
-      (near.primaryMs === undefined || p.primaryMs < near.primaryMs)
-    ) {
-      near.primaryMs = p.primaryMs;
-      near.group.primary = p.group.primary;
-    }
+/** Cluster-aware label string. Single pin → city · ms;
+ *  multi-member cluster → "{N} servers · best {ms}". */
+function clusterLabel(c: AdaptiveCluster): string {
+  if (c.members.length === 1) {
+    const g = c.members[0].group;
+    const ms = c.bestMs !== null && c.bestMs > 0 ? ` · ${c.bestMs}ms` : "";
+    const city = g.primary.city || g.host;
+    return `${city}${ms}`;
   }
-  return out;
-}
-
-/** Centroid-based label for a country pin. ISO + count + best ms. */
-function countryLabel(c: CountryCluster): string {
   const ms = c.bestMs !== null && c.bestMs > 0 ? ` · ${c.bestMs}ms` : "";
-  return `${c.iso} · ${c.totalServers}${ms}`;
-}
-
-/** Pin's primary city (or host) label, used for host pins. */
-function hostLabel(p: HostPinPos): string {
-  const ms = p.primaryMs !== undefined ? ` · ${p.primaryMs}` : "";
-  const city = p.group.primary.city || p.group.host;
-  return `${city}${ms}`;
-}
-
-function pinForGroup(g: ServerGroup, activeServerId?: string): HostPinPos | null {
-  // Try the primary member first, then any member with coordinates.
-  for (const srv of [g.primary, ...g.members]) {
-    let lat: number | undefined;
-    let lon: number | undefined;
-    if (
-      typeof srv.lat === "number" &&
-      typeof srv.lon === "number" &&
-      (srv.lat !== 0 || srv.lon !== 0)
-    ) {
-      lat = srv.lat;
-      lon = srv.lon;
-    } else {
-      const coords = cityToLatLon(srv.city, srv.country, srv.address);
-      if (coords) {
-        lat = coords.lat;
-        lon = coords.lon;
-      }
-    }
-    if (lat === undefined || lon === undefined) continue;
-    const { x, y } = project(lat, lon);
-    return {
-      kind: "host",
-      x,
-      y,
-      group: g,
-      active: g.members.some((m) => m.id === activeServerId),
-      primaryMs:
-        g.bestMs !== null && g.bestMs > 0 ? g.bestMs : undefined,
-    };
-  }
-  return null;
-}
-
-function pinForCluster(
-  c: CountryCluster,
-  activeServerId?: string,
-): CountryPinPos {
-  const { x, y } = project(c.lat, c.lon);
-  const active = c.members.some((g) =>
-    g.members.some((m) => m.id === activeServerId),
-  );
-  return {
-    kind: "country",
-    x,
-    y,
-    cluster: c,
-    active,
-    primaryMs: c.bestMs !== null && c.bestMs > 0 ? c.bestMs : undefined,
-  };
+  return `${c.totalServers} servers${ms}`;
 }
 
 export function WorldMap({
@@ -207,53 +120,98 @@ export function WorldMap({
   bearing,
   onPinClick,
   myLocation,
+  subscriptionFilter,
 }: WorldMapProps): JSX.Element {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [openIdx, setOpenIdx] = useState<number | null>(null);
   const [vousOpen, setVousOpen] = useState(false);
+  const [scale, setScale] = useState(1);
+  // Stage pixel size, captured via ResizeObserver. Adaptive
+  // clustering needs real pixel dimensions to compute viewport
+  // distance between projected pins. Falls back to a sensible
+  // default until the observer fires once.
+  const [stageSize, setStageSize] = useState({ w: 800, h: 460 });
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const transformRef = useRef<ReactZoomPanPinchRef | null>(null);
+
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const e of entries) {
+        setStageSize({ w: e.contentRect.width, h: e.contentRect.height });
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // Live "vous" anchor: real public-IP geolocation if the daemon
   // resolved one, else the fallback off the West African coast.
   const YOU = myLocation
     ? project(myLocation.lat, myLocation.lon)
     : YOU_FALLBACK;
-  // The current zoom level reported by react-zoom-pan-pinch. Drives
-  // (a) inverse-scale on every pin so a 12× zoom doesn't blow the
-  // diamonds up to half the screen, and (b) the country/host pin
-  // toggle below.
-  const [scale, setScale] = useState(1);
-  const groups = groupServers(servers);
-  // Cluster countries first (a 1 000-server pool collapses from
-  // hundreds of teardrops to ~30 country pins); pass through host
-  // pins for low-population countries.
-  const worldPins: WorldPin[] = clusterByCountry(groups);
-  const rawHosts: HostPinPos[] = [];
-  const countryPins: CountryPinPos[] = [];
-  for (const wp of worldPins) {
-    if (wp.kind === "host") {
-      const p = pinForGroup(wp.group, activeServerId);
-      if (p) rawHosts.push(p);
-    } else {
-      countryPins.push(pinForCluster(wp, activeServerId));
-    }
-  }
-  // Below ~1.8× zoom we hide the per-host diamonds entirely so a
-  // 1 000-server feed reads as ~30 country pins instead of "каша";
-  // host diamonds reappear automatically once the user zooms past
-  // that threshold (or just clicks a country to drill into it).
-  const hostPins = scale >= 1.8 ? mergeNearbyHostPins(rawHosts) : [];
-  // Order: country pins first (drawn behind), host pins on top so an
-  // individually labelled city remains clickable when it overlaps a
-  // country centroid.
-  const pins: PinPos[] = [...countryPins, ...hostPins];
+
+  const filtered = useMemo(() => {
+    if (!subscriptionFilter) return servers;
+    return servers.filter((s) => s.subscription_id === subscriptionFilter);
+  }, [servers, subscriptionFilter]);
+
+  // Project every server group to viewBox coordinates once. Only
+  // re-runs when the underlying server set or active selection
+  // changes — clustering at the current zoom is much cheaper.
+  const { resolved, activeKey } = useMemo(
+    () => resolveGroups(filtered, activeServerId),
+    [filtered, activeServerId],
+  );
+
+  // Re-cluster whenever the resolved-group set, zoom, or stage
+  // pixel size change. Adaptive clustering is O(N²) on the merge
+  // step but N is bounded by group count (≤ a few thousand even
+  // for 1000-server pools after grouping by host).
+  const clusters = useMemo(
+    () =>
+      clusterAtScale(resolved, scale, stageSize.w, stageSize.h, activeKey),
+    [resolved, scale, stageSize.w, stageSize.h, activeKey],
+  );
+
   // Inverse zoom for SVG/HTML markers — keeps pins a constant
   // on-screen size as the user zooms in. Floor at 0.4 so the
   // 12× max zoom still shows readable diamonds.
   const pinScale = Math.max(0.4, 1 / scale);
-  const activePin = pins.find((p) => p.active);
-  // Suppress the hover tooltip whenever a popover is open — they live
-  // in the same on-screen real estate and would otherwise overlap.
-  const hover = openIdx === null && hoverIdx !== null ? pins[hoverIdx] : null;
-  const open = openIdx !== null ? pins[openIdx] ?? null : null;
+  const activePin = clusters.find((c) => c.active);
+  // Suppress the hover tooltip whenever a popover is open.
+  const hover = openIdx === null && hoverIdx !== null ? clusters[hoverIdx] : null;
+  const open = openIdx !== null ? clusters[openIdx] ?? null : null;
+
+  // Drill-down: animate the transform wrapper to the bbox of the
+  // tapped cluster. We translate viewBox coordinates → percent of
+  // the stage size, then to pixel offsets the wrapper expects, and
+  // pad ~10 % so the cluster doesn't sit flush against the edge.
+  const drillToCluster = (c: AdaptiveCluster) => {
+    const wrapper = transformRef.current;
+    if (!wrapper) return;
+    const padX = (c.bbox.maxX - c.bbox.minX) * 0.2 + 8;
+    const padY = (c.bbox.maxY - c.bbox.minY) * 0.2 + 8;
+    const minX = c.bbox.minX - padX;
+    const maxX = c.bbox.maxX + padX;
+    const minY = c.bbox.minY - padY;
+    const maxY = c.bbox.maxY + padY;
+    // viewBox-units → fraction of total viewBox span, → fraction of
+    // stage pixels at scale=1.
+    const fracW = (maxX - minX) / MAP_VB.w;
+    const fracH = (maxY - minY) / MAP_VB.h;
+    const targetScale = Math.min(
+      12,
+      Math.max(scale + 0.5, 1 / Math.max(fracW, fracH, 0.0001) * 0.85),
+    );
+    // Cluster centroid in stage-pixel coordinates at the new scale.
+    const cx = (c.vbX - MAP_VB.x) / MAP_VB.w;
+    const cy = (c.vbY - MAP_VB.y) / MAP_VB.h;
+    const tx = stageSize.w / 2 - cx * stageSize.w * targetScale;
+    const ty = stageSize.h / 2 - cy * stageSize.h * targetScale;
+    wrapper.setTransform(tx, ty, targetScale, 350, "easeOutCubic");
+  };
 
   // Graticule lines in the same map coordinates: equator, tropics &
   // arctic/antarctic circles for horizontals; longitude steps every
@@ -274,41 +232,25 @@ export function WorldMap({
 
   return (
     <div className="worldmap">
-      {/* The aspect-locked stage. Holds the world image, graticule,
-          pin overlay, tooltip and popover. Centered inside the parent
-          .map pane so the world never gets stretched horizontally —
-          letterboxing instead when the parent isn't 1.71:1. */}
-      <div className="worldmap-stage">
-      {/* Pan + pinch wrapper. minScale=1 keeps the world fitted as the
-          neutral state; users can zoom in up to 6x for dense regions
-          and pan with click-drag. doubleClick.mode="reset" gives a
-          quick way back to fit-view. limitToBounds keeps panning
-          inside the visible stage. */}
+      {/* Full-bleed stage. Holds the world image, graticule, pin
+          overlay, tooltip and popover. Beige fill covers the entire
+          container so panning past the world image reveals the same
+          colour rather than the page background. The world.svg <image>
+          uses preserveAspectRatio="xMidYMid meet" so it never
+          stretches; the pin layer stays glued to the same projection
+          regardless of container aspect. */}
+      <div className="worldmap-stage" ref={stageRef}>
       <TransformWrapper
+        ref={transformRef}
         minScale={1}
         maxScale={12}
         doubleClick={{ mode: "reset" }}
         limitToBounds={true}
         centerOnInit={true}
-        // rc25 set step=0.05 but the user reported the wheel
-        // gesture felt identical to the rc24 0.15 step. Reason:
-        // react-zoom-pan-pinch picks `smoothStep` for the per-event
-        // delta when smooth-scroll is active (default), and that
-        // value defaulted to 0.001 × raw deltaY — dwarfing the
-        // `step` value on a high-DPI mouse. We lower BOTH so a
-        // single notch on the user's MX-style wheel produces a
-        // ~3 % zoom change instead of jumping straight from 1× to
-        // 5×. With the new maxScale=12 there's enough headroom
-        // for the planned hierarchical drill-down (continent →
-        // country → city → server) to feel like a real map.
         wheel={{ step: 0.03 }}
         pinch={{ step: 5 }}
         panning={{ velocityDisabled: true }}
         onTransform={(_ref: unknown, state: { scale: number }) => {
-          // Track the current scale so pin sizes can be inverted
-          // (constant on-screen size regardless of zoom) and so we
-          // can swap country pins out for individual host pins as
-          // the user zooms in past ~2×.
           setScale(state.scale);
         }}
       >
@@ -316,10 +258,6 @@ export function WorldMap({
           wrapperStyle={{
             width: "100%",
             height: "100%",
-            // Same beige tone as the map's land fill so when the
-            // user pans toward an edge the gap between map and
-            // the stage's clipped frame doesn't reveal a different
-            // background colour (the rc24 "ugly borders" report).
             background: "var(--worldmap-bg, #d8c8a8)",
             overflow: "hidden",
           }}
@@ -332,7 +270,7 @@ export function WorldMap({
       <svg
         className="worldmap-img"
         viewBox={`${MAP_VB.x} ${MAP_VB.y} ${MAP_VB.w} ${MAP_VB.h}`}
-        preserveAspectRatio="none"
+        preserveAspectRatio="xMidYMid meet"
         aria-hidden="true"
       >
         <image
@@ -341,13 +279,13 @@ export function WorldMap({
           y={MAP_VB.y}
           width={MAP_VB.w}
           height={MAP_VB.h}
-          preserveAspectRatio="none"
+          preserveAspectRatio="xMidYMid meet"
         />
       </svg>
       <svg
         className="worldmap-grat"
         viewBox={`${MAP_VB.x} ${MAP_VB.y} ${MAP_VB.w} ${MAP_VB.h}`}
-        preserveAspectRatio="none"
+        preserveAspectRatio="xMidYMid meet"
       >
         <line className="eq" x1={clipL} y1={equatorY} x2={clipR} y2={equatorY} />
         <line className="eq" x1={meridianX} y1={clipT} x2={meridianX} y2={clipB} />
@@ -359,101 +297,118 @@ export function WorldMap({
         ))}
       </svg>
 
-      {pins.length > 0 ? (
+      {clusters.length > 0 ? (
         <svg
           className="worldmap-pins"
           viewBox={`${MAP_VB.x} ${MAP_VB.y} ${MAP_VB.w} ${MAP_VB.h}`}
-          preserveAspectRatio="none"
+          preserveAspectRatio="xMidYMid meet"
         >
           {/* Idle connection lines: thin dashed paper-tone curves
               from "you" to every non-active pin. Drawn first so the
               copper arc to the active pin paints on top. */}
-          {pins.map((p, i) => {
+          {clusters.map((p, i) => {
             if (p.active) return null;
-            const mx = (YOU.x + p.x) / 2;
-            const my = Math.min(YOU.y, p.y) - 28;
-            const key = p.kind === "host" ? p.group.key : `cc-${p.cluster.iso}`;
+            const mx = (YOU.x + p.vbX) / 2;
+            const my = Math.min(YOU.y, p.vbY) - 28;
             return (
               <path
-                key={`link-${key}-${i}`}
+                key={`link-${p.key}-${i}`}
                 className="worldmap-link"
-                d={`M ${YOU.x} ${YOU.y} Q ${mx} ${my} ${p.x} ${p.y}`}
+                d={`M ${YOU.x} ${YOU.y} Q ${mx} ${my} ${p.vbX} ${p.vbY}`}
               />
             );
           })}
           {activePin ? (
             <path
               className="worldmap-arc"
-              d={`M ${YOU.x} ${YOU.y} Q ${(YOU.x + activePin.x) / 2} ${
-                Math.min(YOU.y, activePin.y) - 60
-              } ${activePin.x} ${activePin.y}`}
+              d={`M ${YOU.x} ${YOU.y} Q ${(YOU.x + activePin.vbX) / 2} ${
+                Math.min(YOU.y, activePin.vbY) - 60
+              } ${activePin.vbX} ${activePin.vbY}`}
             />
           ) : null}
-          {pins.map((p, i) => {
+          {clusters.map((p, i) => {
             const isOpen = openIdx === i;
             const isHov = i === hoverIdx;
-            const isCountry = p.kind === "country";
+            const isCluster = p.members.length > 1;
             const cls = `worldmap-pin ${p.active ? "cur" : ""} ${
               isHov ? "hov" : ""
             } ${isOpen ? "open" : ""} ${onPinClick ? "clickable" : ""} ${
-              isCountry ? "is-country" : ""
+              isCluster ? "is-cluster" : ""
             }`;
-            const multi = p.kind === "host"
-              ? p.group.members.length > 1
-              : true;
-            const key =
-              p.kind === "host" ? p.group.key : `cc-${p.cluster.iso}`;
             const onPinClickHandler = (e: ReactMouseEvent) => {
               if (!onPinClick) return;
               e.stopPropagation();
-              if (multi) {
+              if (isCluster) {
+                // Drill-down: animate zoom+pan onto the cluster's
+                // bbox. Re-clustering at the new scale is automatic
+                // (it falls out of the scale-dependent useMemo).
+                drillToCluster(p);
+                return;
+              }
+              const g = p.members[0].group;
+              if (g.members.length > 1) {
+                // Single host with multiple protocol entries — open
+                // the picker popover so the user chooses which one.
                 setOpenIdx((o) => (o === i ? null : i));
-              } else if (p.kind === "host") {
+              } else {
                 setOpenIdx(null);
-                onPinClick(p.group.primary.id);
+                onPinClick(g.primary.id);
               }
             };
+            // Cluster radius scales with sqrt of member count so a
+            // 100-server cluster doesn't dwarf a 5-server one.
+            const clusterR = isCluster
+              ? Math.min(28, 10 + Math.sqrt(p.totalServers) * 1.6)
+              : 0;
             return (
               <g
-                key={key}
+                key={p.key}
                 className={cls}
-                transform={`translate(${p.x},${p.y}) scale(${pinScale})`}
+                transform={`translate(${p.vbX},${p.vbY}) scale(${pinScale})`}
               >
-                {/* Idle: thin dashed stem + diamond outline.
-                    Active: same diamond filled with the copper
-                    accent so the user can tell at a glance which
-                    server the tunnel is currently routed through —
-                    the rc25 teardrop made the active marker look
-                    like a different category of object than the
-                    idle ones, which the user explicitly disliked.
-                    Hover stays grey (CSS handles the colour swap
-                    via .worldmap-pin.hov), so the three states are
-                    visually distinguishable: idle = paper, hover =
-                    grey, active = orange. */}
-                <line
-                  x1={0}
-                  y1={0}
-                  x2={0}
-                  y2={-6}
-                  className="pin-stem"
-                />
-                <path
-                  className="pin-diamond"
-                  d="M 0 -26 L 10 -16 L 0 -6 L -10 -16 Z"
-                />
-                {/* Multi-host marker: small dot inside the diamond. */}
-                {multi ? (
-                  <circle
-                    cy={-16}
-                    r={2.2}
-                    className="pin-multi-dot"
-                  />
-                ) : null}
-                {/* Invisible hit target — bigger than the visible mark
-                    so hover + click stay easy on small renderings. */}
+                {isCluster ? (
+                  <>
+                    <circle
+                      className="pin-cluster"
+                      cy={-16}
+                      r={clusterR}
+                    />
+                    <text
+                      className="pin-cluster-count mono"
+                      x={0}
+                      y={-16}
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      fontSize={Math.max(8, clusterR * 0.62)}
+                    >
+                      {p.totalServers}
+                    </text>
+                  </>
+                ) : (
+                  <>
+                    <line
+                      x1={0}
+                      y1={0}
+                      x2={0}
+                      y2={-6}
+                      className="pin-stem"
+                    />
+                    <path
+                      className="pin-diamond"
+                      d="M 0 -26 L 10 -16 L 0 -6 L -10 -16 Z"
+                    />
+                    {p.members[0].group.members.length > 1 ? (
+                      <circle
+                        cy={-16}
+                        r={2.2}
+                        className="pin-multi-dot"
+                      />
+                    ) : null}
+                  </>
+                )}
                 <circle
                   cy={-16}
-                  r={20}
+                  r={Math.max(20, clusterR + 4)}
                   fill="transparent"
                   style={onPinClick ? { cursor: "pointer" } : undefined}
                   onMouseEnter={() => setHoverIdx(i)}
@@ -465,8 +420,6 @@ export function WorldMap({
               </g>
             );
           })}
-          {/* "vous" indicator — small ink dot, italic label is rendered
-              as an HTML overlay below so it picks up the app font. */}
           <g
             className="worldmap-pin you"
             transform={`translate(${YOU.x},${YOU.y})`}
@@ -476,45 +429,34 @@ export function WorldMap({
         </svg>
       ) : null}
 
-      {/* Per-pin label boxes — "City · ms" for host pins, "<ISO> · N
-          servers" for country clusters. Rendered as HTML so the
-          label uses the same serif as the rest of the marginalia and
-          stays crisp regardless of how the SVG is scaled. The active
-          pin's label gets the copper fill from the reference design. */}
-      {pins.map((p, i) => {
-        const label =
-          p.kind === "host" ? hostLabel(p) : countryLabel(p.cluster);
-        const key =
-          p.kind === "host" ? `lab-${p.group.key}-${i}` : `lab-cc-${p.cluster.iso}-${i}`;
+      {clusters.map((p, i) => {
+        const label = clusterLabel(p);
+        const isCluster = p.members.length > 1;
         const cls = `worldmap-label ${p.active ? "cur" : ""} ${
           onPinClick ? "clickable" : ""
-        } ${p.kind === "country" ? "is-country" : ""}`;
+        } ${isCluster ? "is-cluster" : ""}`;
         const onLabelClick = (e: ReactMouseEvent) => {
           if (!onPinClick) return;
           e.stopPropagation();
-          if (p.kind === "country") {
-            setOpenIdx((o) => (o === i ? null : i));
+          if (isCluster) {
+            drillToCluster(p);
             return;
           }
-          if (p.group.members.length > 1) {
+          const g = p.members[0].group;
+          if (g.members.length > 1) {
             setOpenIdx((o) => (o === i ? null : i));
           } else {
             setOpenIdx(null);
-            onPinClick(p.group.primary.id);
+            onPinClick(g.primary.id);
           }
         };
         return (
           <div
-            key={key}
+            key={`lab-${p.key}-${i}`}
             className={cls}
             style={{
-              left: `${((p.x - MAP_VB.x) / MAP_VB.w) * 100}%`,
-              top: `${((p.y - MAP_VB.y) / MAP_VB.h) * 100}%`,
-              // Inverse-scale so labels stay a constant on-screen
-              // size as the user zooms in (rc26 only inverse-
-              // scaled the SVG diamonds, leaving HTML labels to
-              // grow comically large past 4x). Keeps the
-              // existing "below the pin" offset baseline (rc23).
+              left: `${((p.vbX - MAP_VB.x) / MAP_VB.w) * 100}%`,
+              top: `${((p.vbY - MAP_VB.y) / MAP_VB.h) * 100}%`,
               transform: `translate(-50%, 12px) scale(${pinScale})`,
               transformOrigin: "center top",
             }}
@@ -529,9 +471,6 @@ export function WorldMap({
         );
       })}
 
-      {/* "vous" label, italic + ink, anchored to YOU. Clickable
-          since rc27: opens a small popover identifying the marker
-          as the user's IP-geo location. */}
       <div
         className="worldmap-you-label clickable"
         style={{
@@ -582,27 +521,29 @@ export function WorldMap({
         <div
           className="worldmap-tooltip"
           style={{
-            left: `${((hover.x - MAP_VB.x) / MAP_VB.w) * 100}%`,
-            top: `${((hover.y - MAP_VB.y) / MAP_VB.h) * 100}%`,
+            left: `${((hover.vbX - MAP_VB.x) / MAP_VB.w) * 100}%`,
+            top: `${((hover.vbY - MAP_VB.y) / MAP_VB.h) * 100}%`,
           }}
         >
-          {hover.kind === "host" ? (
+          {hover.members.length === 1 ? (
             <>
-              <div className="tip-host mono">{hover.group.host}</div>
-              {locText(hover.group.primary) ? (
-                <div className="tip-loc">{locText(hover.group.primary)}</div>
+              <div className="tip-host mono">{hover.members[0].group.host}</div>
+              {locText(hover.members[0].group.primary) ? (
+                <div className="tip-loc">
+                  {locText(hover.members[0].group.primary)}
+                </div>
               ) : null}
               <div className="tip-protos mono">
-                {hover.group.members
+                {hover.members[0].group.members
                   .map((m) => `${m.protocol}:${m.port}`)
                   .join(" · ")}
               </div>
-              {hover.primaryMs !== undefined ? (
-                <div className="tip-ms mono">best {hover.primaryMs}ms</div>
+              {hover.bestMs !== null && hover.bestMs > 0 ? (
+                <div className="tip-ms mono">best {hover.bestMs}ms</div>
               ) : null}
               {onPinClick ? (
                 <div className="tip-cta mono">
-                  {hover.group.members.length > 1
+                  {hover.members[0].group.members.length > 1
                     ? "click to choose"
                     : "click to connect"}
                 </div>
@@ -610,23 +551,21 @@ export function WorldMap({
             </>
           ) : (
             <>
-              <div className="tip-host mono">{hover.cluster.iso}</div>
-              <div className="tip-loc">
-                {hover.cluster.members.length} cities ·{" "}
-                {hover.cluster.totalServers} servers
+              <div className="tip-host mono">
+                {hover.totalServers} servers · {hover.members.length} hosts
               </div>
-              {hover.primaryMs !== undefined ? (
-                <div className="tip-ms mono">best {hover.primaryMs}ms</div>
+              {hover.bestMs !== null && hover.bestMs > 0 ? (
+                <div className="tip-ms mono">best {hover.bestMs}ms</div>
               ) : null}
               {onPinClick ? (
-                <div className="tip-cta mono">click to choose</div>
+                <div className="tip-cta mono">click to drill in</div>
               ) : null}
             </>
           )}
         </div>
       ) : null}
 
-      {open ? (
+      {open && open.members.length === 1 && open.members[0].group.members.length > 1 ? (
         <>
           <div
             className="worldmap-popover-scrim"
@@ -635,98 +574,50 @@ export function WorldMap({
           <div
             className="worldmap-popover"
             style={{
-              left: `${((open.x - MAP_VB.x) / MAP_VB.w) * 100}%`,
-              top: `${((open.y - MAP_VB.y) / MAP_VB.h) * 100}%`,
+              left: `${((open.vbX - MAP_VB.x) / MAP_VB.w) * 100}%`,
+              top: `${((open.vbY - MAP_VB.y) / MAP_VB.h) * 100}%`,
             }}
           >
-            {open.kind === "host" ? (
-              <>
-                <div className="pop-head">
-                  <div className="pop-host mono">{open.group.host}</div>
-                  {locText(open.group.primary) ? (
-                    <div className="pop-loc">{locText(open.group.primary)}</div>
-                  ) : null}
+            <div className="pop-head">
+              <div className="pop-host mono">{open.members[0].group.host}</div>
+              {locText(open.members[0].group.primary) ? (
+                <div className="pop-loc">
+                  {locText(open.members[0].group.primary)}
                 </div>
-                <ul className="pop-list">
-                  {open.group.members.map((m) => {
-                    const ms =
-                      m.last_test_ms !== undefined && m.last_test_ms > 0
-                        ? `${m.last_test_ms}ms`
-                        : m.last_test_error
-                          ? "err"
-                          : "—";
-                    const isActive = m.id === activeServerId;
-                    return (
-                      <li key={m.id} className={isActive ? "is-active" : ""}>
-                        <span className="pop-proto mono">
-                          {m.protocol}:{m.port}
-                        </span>
-                        <span className="pop-ms mono">{ms}</span>
-                        <button
-                          type="button"
-                          className="pop-go mono"
-                          disabled={!onPinClick || isActive}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (!onPinClick) return;
-                            setOpenIdx(null);
-                            onPinClick(m.id);
-                          }}
-                        >
-                          {isActive ? "current" : "connect"}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </>
-            ) : (
-              <>
-                <div className="pop-head">
-                  <div className="pop-host mono">
-                    {open.cluster.iso} · {open.cluster.members.length} cities
-                  </div>
-                  <div className="pop-loc">
-                    {open.cluster.totalServers} servers
-                  </div>
-                </div>
-                <ul className="pop-list">
-                  {open.cluster.members.slice(0, 12).map((g) => {
-                    const best = g.bestMs;
-                    const ms =
-                      best !== null && best > 0 ? `${best}ms` : "—";
-                    const city = g.primary.city || g.host;
-                    const isActive = g.members.some(
-                      (m) => m.id === activeServerId,
-                    );
-                    return (
-                      <li key={g.key} className={isActive ? "is-active" : ""}>
-                        <span className="pop-proto mono">{city}</span>
-                        <span className="pop-ms mono">{ms}</span>
-                        <button
-                          type="button"
-                          className="pop-go mono"
-                          disabled={!onPinClick || isActive}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (!onPinClick) return;
-                            setOpenIdx(null);
-                            onPinClick(g.primary.id);
-                          }}
-                        >
-                          {isActive ? "current" : "connect"}
-                        </button>
-                      </li>
-                    );
-                  })}
-                  {open.cluster.members.length > 12 ? (
-                    <li className="pop-more">
-                      + {open.cluster.members.length - 12} more cities
-                    </li>
-                  ) : null}
-                </ul>
-              </>
-            )}
+              ) : null}
+            </div>
+            <ul className="pop-list">
+              {open.members[0].group.members.map((m) => {
+                const ms =
+                  m.last_test_ms !== undefined && m.last_test_ms > 0
+                    ? `${m.last_test_ms}ms`
+                    : m.last_test_error
+                      ? "err"
+                      : "—";
+                const isActive = m.id === activeServerId;
+                return (
+                  <li key={m.id} className={isActive ? "is-active" : ""}>
+                    <span className="pop-proto mono">
+                      {m.protocol}:{m.port}
+                    </span>
+                    <span className="pop-ms mono">{ms}</span>
+                    <button
+                      type="button"
+                      className="pop-go mono"
+                      disabled={!onPinClick || isActive}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!onPinClick) return;
+                        setOpenIdx(null);
+                        onPinClick(m.id);
+                      }}
+                    >
+                      {isActive ? "current" : "connect"}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         </>
       ) : null}

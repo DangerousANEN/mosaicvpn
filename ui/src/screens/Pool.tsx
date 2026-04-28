@@ -54,9 +54,17 @@ export function Pool({
     setBusy("add");
     setErr(null);
     try {
-      await api.addSubscription(url.trim());
+      const sub = await api.addSubscription(url.trim());
       setUrl("");
       await reload();
+      // rc28 — auto Test all on add. The user reported that the
+      // probe step was easy to forget after pasting a fresh
+      // subscription, leaving the world map populated with greyed-
+      // out pins. Fire-and-forget: errors surface in the per-row
+      // state, the Pool listing refreshes via its own poll.
+      void api.testAllServers(sub.id).catch(() => {
+        /* per-server errors land on the Server.last_test_error field */
+      });
     } catch (e) {
       setErr((e as Error).message);
     } finally {

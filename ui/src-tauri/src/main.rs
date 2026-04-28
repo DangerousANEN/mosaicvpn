@@ -631,6 +631,22 @@ fn main() {
                 });
             }
 
+            // rc28 (W) — close-to-tray. Pressing the X on the main
+            // window minimises Mosaic to the tray icon instead of
+            // killing the daemon. The tray "Quit Mosaic" menu item
+            // remains the only way to actually exit, which matches
+            // the user's mental model of "VPN is always running, the
+            // window is just one view onto it".
+            if let Some(main_w) = app.get_webview_window("main") {
+                let main_for_listener: WebviewWindow = main_w.clone();
+                main_w.on_window_event(move |ev| {
+                    if let WindowEvent::CloseRequested { api, .. } = ev {
+                        api.prevent_close();
+                        let _ = main_for_listener.hide();
+                    }
+                });
+            }
+
             Ok(())
         })
         .build(tauri::generate_context!())

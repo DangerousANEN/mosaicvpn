@@ -1,8 +1,17 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { Subscription } from "../api/types";
 import { useLiveServers } from "../hooks/useLiveServers";
 import { locText } from "../components/locText";
+import { Sparkline } from "../components/Sparkline";
+import {
+  getFavorites,
+  setFavorite,
+  getNotes,
+  setNote,
+  getLatencySeries,
+  recordLatency,
+} from "../utils/localStore";
 
 /**
  * SubscriptionDetail — full-screen drill-down for a single
@@ -11,6 +20,10 @@ import { locText } from "../components/locText";
  * expanding, so the user gets a dedicated page with the entire
  * server table (name / city / country / protocol / RTT / Connect)
  * instead of a cramped inline list.
+ *
+ * rc28 — adds favorite stars (G), per-server notes (T), and a 20-
+ * sample latency sparkline (H). All three live entirely in
+ * localStorage; the daemon doesn't need to know about them.
  *
  * Polling lives in `useLiveServers` so RTT / dead counts refresh
  * every 5 s without the user re-navigating.
@@ -29,11 +42,38 @@ export function SubscriptionDetail({
   const { servers, error: liveErr, reload } = useLiveServers();
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [favs, setFavs] = useState<Set<string>>(() => getFavorites());
+  const [notes, setNotes] = useState<Record<string, string>>(() => getNotes());
+  // Sparkline history is kept in localStorage; we mirror it into
+  // state so a probe-result update re-renders the cell without a
+  // full table reload.
+  const [seriesTick, setSeriesTick] = useState(0);
 
   const own = useMemo(
     () => servers.filter((s) => s.subscription_id === subscription.id),
     [servers, subscription.id],
   );
+
+  // Whenever a probe lands on a fresh last_test_ms value, fold it
+  // into the per-server latency history. We track "last recorded ms"
+  // per server in a ref so we don't re-record the same probe on
+  // every 5 s poll cycle.
+  const lastSeenMs = useRef<Record<string, number>>({});
+  useEffect(() => {
+    let touched = false;
+    for (const s of own) {
+      const ms = s.last_test_ms ?? 0;
+      const seen = lastSeenMs.current[s.id];
+      if (seen === ms) continue;
+      lastSeenMs.current[s.id] = ms;
+      // Skip 0 / undefined so we don't pollute the series with the
+      // initial "never probed" sentinel.
+      if (ms === 0 || s.last_test_ms === undefined) continue;
+      recordLatency(s.id, ms);
+      touched = true;
+    }
+    if (touched) setSeriesTick((t) => t + 1);
+  }, [own]);
 
   const onTestOne = async (id: string) => {
     setBusy(`test:${id}`);
@@ -78,13 +118,6 @@ export function SubscriptionDetail({
     }
   };
 
-  // onTestAllURL spins an ephemeral sing-box per server (serialised on
-  // the daemon side via urlTestMu) and walks the entire subscription.
-  // Each pass takes ~3-5 s; we surface progress ("Verifying X / N…")
-  // in the button so a 1 000-server feed doesn't look hung. Errors
-  // collected per server land in the banner as a short summary; the
-  // full per-server result still shows next to the row Verify button
-  // when the user runs it individually.
   const onTestAllURL = async () => {
     if (own.length === 0) return;
     setBusy("url-all:0");
@@ -116,6 +149,16 @@ export function SubscriptionDetail({
     } finally {
       setBusy(null);
     }
+  };
+
+  const onToggleFav = (id: string) => {
+    const next = setFavorite(id, !favs.has(id));
+    setFavs(new Set(next));
+  };
+
+  const onChangeNote = (id: string, text: string) => {
+    const next = setNote(id, text);
+    setNotes({ ...next });
   };
 
   const banner = err ?? liveErr;
@@ -162,19 +205,22 @@ export function SubscriptionDetail({
       <table className="sub-detail-table">
         <thead>
           <tr>
+            <th aria-label="favorite" />
             <th>Name</th>
             <th>City</th>
             <th>Country</th>
             <th>Proto</th>
             <th className="num">Port</th>
             <th className="num">RTT</th>
+            <th>Trend</th>
+            <th>Note</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody>
           {own.length === 0 ? (
             <tr>
-              <td colSpan={7} className="empty italic-mute">
+              <td colSpan={10} className="empty italic-mute">
                 — no servers yet, refresh the subscription —
               </td>
             </tr>
@@ -184,8 +230,22 @@ export function SubscriptionDetail({
             const dead = (ms ?? 0) < 0;
             const live = (ms ?? 0) > 0 && !s.last_test_error;
             const isActive = s.id === activeServerId;
+            const fav = favs.has(s.id);
+            const series = getLatencySeries(s.id);
+            void seriesTick; // re-render trigger
             return (
               <tr key={s.id} className={isActive ? "cur" : ""}>
+                <td className="num">
+                  <button
+                    type="button"
+                    className={`fav-btn ${fav ? "on" : ""}`}
+                    onClick={() => onToggleFav(s.id)}
+                    title={fav ? "Unfavorite" : "Favorite"}
+                    aria-label={fav ? "Remove from favorites" : "Add to favorites"}
+                  >
+                    {fav ? "★" : "☆"}
+                  </button>
+                </td>
                 <td>{s.name}</td>
                 <td>{s.city || "—"}</td>
                 <td>{s.country || locText(s) || "—"}</td>
@@ -200,6 +260,25 @@ export function SubscriptionDetail({
                     : live
                       ? `${ms}ms`
                       : "—"}
+                </td>
+                <td>
+                  {series.length > 1 ? (
+                    <Sparkline data={series} width={80} height={20} />
+                  ) : (
+                    <span className="italic-mute" style={{ fontSize: 11 }}>
+                      —
+                    </span>
+                  )}
+                </td>
+                <td>
+                  <input
+                    type="text"
+                    className="note-input"
+                    value={notes[s.id] ?? ""}
+                    onChange={(e) => onChangeNote(s.id, e.target.value)}
+                    placeholder="…"
+                    title="Personal label / note for this server"
+                  />
                 </td>
                 <td className="actions">
                   <button
