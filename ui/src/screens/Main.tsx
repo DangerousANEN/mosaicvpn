@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { Server, Status } from "../api/types";
 import { StatusSquare } from "../components/StatusSquare";
+import { WorldMap } from "../components/WorldMap";
 
 /**
  * Main — the home screen, equivalent to docs/mockups/main.html.
@@ -142,7 +143,10 @@ export function Main({ status }: { status: Status }): JSX.Element {
           </span>
         </div>
         <div className="map">
-          <Graticule />
+          <WorldMap
+            servers={servers}
+            activeServerId={status.server?.id}
+          />
         </div>
       </section>
 
@@ -150,15 +154,29 @@ export function Main({ status }: { status: Status }): JSX.Element {
         <h4>Routing register</h4>
         {fastest.length === 0 ? (
           <p className="mono" style={{ color: "var(--ink-mute)" }}>
-            No latency data yet. Run <code>mosaic test</code> from the CLI.
+            No latency data yet. Open <em>Pool</em> and click <b>Test all</b>
+            {" "}to probe stations.
           </p>
         ) : (
           fastest.map((s, i) => (
-            <div
+            <button
+              type="button"
               key={s.id}
-              className={`row ${
-                status.server?.id === s.id ? "cur" : ""
-              }`}
+              className={`row ${status.server?.id === s.id ? "cur" : ""}`}
+              onClick={async () => {
+                if (busy) return;
+                setBusy(true);
+                setErr(null);
+                try {
+                  await api.connect(s.id);
+                } catch (e) {
+                  setErr((e as Error).message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              disabled={busy}
+              title="Connect to this station"
             >
               <span className="num">{toRoman(i + 1)}</span>
               <div>
@@ -170,7 +188,7 @@ export function Main({ status }: { status: Status }): JSX.Element {
                   ? `${s.last_test_ms} ms`
                   : "—"}
               </span>
-            </div>
+            </button>
           ))
         )}
       </section>
@@ -195,33 +213,6 @@ function Metric({
         {unit ? <span className="unit">{unit}</span> : null}
       </div>
     </div>
-  );
-}
-
-function Graticule(): JSX.Element {
-  // 8 horizontal + 7 vertical grid lines mirroring the mockup.
-  const horiz = [62, 125, 187, 250, 312, 375, 437];
-  const vert = [125, 250, 375, 500, 625, 750, 875];
-  return (
-    <svg
-      className="grat full"
-      viewBox="0 0 1000 500"
-      preserveAspectRatio="none"
-    >
-      {horiz.map((y) => (
-        <line
-          key={`h${y}`}
-          className={y === 250 ? "eq" : ""}
-          x1={0}
-          y1={y}
-          x2={1000}
-          y2={y}
-        />
-      ))}
-      {vert.map((x) => (
-        <line key={`v${x}`} x1={x} y1={0} x2={x} y2={500} />
-      ))}
-    </svg>
   );
 }
 

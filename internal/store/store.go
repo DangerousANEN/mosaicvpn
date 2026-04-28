@@ -258,6 +258,23 @@ func (s *Store) FindServer(id string) (proto.Server, bool) {
 	return proto.Server{}, false
 }
 
+// RecordServerProbe stores the result of a TCP probe against a server.
+// Pass ms<0 to record a failure with the given error message; pass ms>=0
+// with errMsg=="" for a success.
+func (s *Store) RecordServerProbe(id string, ms int, errMsg string) error {
+	return s.Update(func(st *State) error {
+		for i := range st.Servers {
+			if st.Servers[i].ID == id {
+				st.Servers[i].LastTestMS = ms
+				st.Servers[i].LastTestError = errMsg
+				st.Servers[i].LastTestAt = time.Now().UTC()
+				return nil
+			}
+		}
+		return fmt.Errorf("server %q not found", id)
+	})
+}
+
 // SetLastServer remembers which server was most recently chosen.
 func (s *Store) SetLastServer(id string) error {
 	return s.Update(func(st *State) error {

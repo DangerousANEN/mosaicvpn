@@ -104,6 +104,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /v1/subscriptions/{id}", s.handleDeleteSub)
 
 	s.mux.HandleFunc("GET /v1/servers", s.handleListServers)
+	s.mux.HandleFunc("POST /v1/servers/{id}/test", s.handleTestServer)
+	s.mux.HandleFunc("POST /v1/servers/test-all", s.handleTestAll)
 
 	s.mux.HandleFunc("GET /v1/rules", s.handleListRules)
 	s.mux.HandleFunc("POST /v1/rules", s.handleAddRule)
@@ -244,6 +246,88 @@ func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
 	if out == nil {
 		// JSON-encode an empty slice as `[]` rather than `null` so the
 		// renderer can iterate it unconditionally.
+		out = []proto.Server{}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// probeServer performs a TCP dial to addr:port and returns the round-trip
+// time in milliseconds, or a negative number plus an error message on
+// failure.
+func probeServer(ctx context.Context, addr string, port int, timeout time.Duration) (int, string) {
+	dialer := net.Dialer{Timeout: timeout}
+	target := fmt.Sprintf("%s:%d", addr, port)
+	t0 := time.Now()
+	cctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	conn, err := dialer.DialContext(cctx, "tcp", target)
+	if err != nil {
+		return -1, err.Error()
+	}
+	rtt := int(time.Since(t0).Milliseconds())
+	if rtt < 1 {
+		rtt = 1
+	}
+	_ = conn.Close()
+	return rtt, ""
+}
+
+// handleTestServer probes a single server identified by path id and
+// returns the updated server record.
+func (s *Server) handleTestServer(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	srv, ok := s.store.FindServer(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "server not found")
+		return
+	}
+	ms, errMsg := probeServer(r.Context(), srv.Address, srv.Port, 5*time.Second)
+	if err := s.store.RecordServerProbe(id, ms, errMsg); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	updated, _ := s.store.FindServer(id)
+	writeJSON(w, http.StatusOK, updated)
+}
+
+// handleTestAll probes every server (or all servers under a single
+// subscription if subscription_id is provided) in parallel and returns
+// the refreshed list.
+func (s *Server) handleTestAll(w http.ResponseWriter, r *http.Request) {
+	subID := r.URL.Query().Get("subscription_id")
+	snap := s.store.Snapshot()
+	targets := make([]proto.Server, 0, len(snap.Servers))
+	for _, sv := range snap.Servers {
+		if subID == "" || sv.SubscriptionID == subID {
+			targets = append(targets, sv)
+		}
+	}
+	const concurrency = 16
+	sem := make(chan struct{}, concurrency)
+	done := make(chan struct{}, len(targets))
+	for _, sv := range targets {
+		sv := sv
+		sem <- struct{}{}
+		go func() {
+			defer func() { <-sem; done <- struct{}{} }()
+			ms, errMsg := probeServer(r.Context(), sv.Address, sv.Port, 4*time.Second)
+			_ = s.store.RecordServerProbe(sv.ID, ms, errMsg)
+		}()
+	}
+	for range targets {
+		<-done
+	}
+	out := s.store.Snapshot().Servers
+	if subID != "" {
+		filtered := out[:0]
+		for _, sv := range out {
+			if sv.SubscriptionID == subID {
+				filtered = append(filtered, sv)
+			}
+		}
+		out = filtered
+	}
+	if out == nil {
 		out = []proto.Server{}
 	}
 	writeJSON(w, http.StatusOK, out)

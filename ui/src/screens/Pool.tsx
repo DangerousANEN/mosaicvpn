@@ -81,6 +81,45 @@ export function Pool({
     }
   };
 
+  const onTestAll = async (subID: string) => {
+    setBusy(`test:${subID}`);
+    setErr(null);
+    try {
+      await api.testAllServers(subID);
+      await reload();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onTestOne = async (serverID: string) => {
+    setBusy(`testone:${serverID}`);
+    setErr(null);
+    try {
+      await api.testServer(serverID);
+      await reload();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onConnect = async (serverID: string) => {
+    setBusy(`conn:${serverID}`);
+    setErr(null);
+    try {
+      await api.connect(serverID);
+      await reload();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const totals = useMemo(() => {
     const live = servers.filter(
       (s) => (s.last_test_ms ?? 0) > 0 && !s.last_test_error,
@@ -123,13 +162,18 @@ export function Pool({
             servers={servers.filter((s) => s.subscription_id === sub.id)}
             activeServerId={activeServerId}
             expanded={!!expanded[sub.id]}
+            busy={busy}
             onToggleExpand={() =>
               setExpanded((prev) => ({ ...prev, [sub.id]: !prev[sub.id] }))
             }
             onRefresh={() => onRefresh(sub.id)}
             onDelete={() => onDelete(sub.id, sub.name)}
+            onTestAll={() => onTestAll(sub.id)}
+            onTestOne={onTestOne}
+            onConnect={onConnect}
             refreshing={busy === `refresh:${sub.id}`}
             deleting={busy === `del:${sub.id}`}
+            testing={busy === `test:${sub.id}`}
           />
         ))}
         {subs.length === 0 ? (
@@ -184,22 +228,32 @@ function PoolCard({
   servers,
   activeServerId,
   expanded,
+  busy,
   onToggleExpand,
   onRefresh,
   onDelete,
+  onTestAll,
+  onTestOne,
+  onConnect,
   refreshing,
   deleting,
+  testing,
 }: {
   num: string;
   sub: Subscription;
   servers: Server[];
   activeServerId?: string;
   expanded: boolean;
+  busy: string | null;
   onToggleExpand: () => void;
   onRefresh: () => void;
   onDelete: () => void;
+  onTestAll: () => void;
+  onTestOne: (id: string) => void;
+  onConnect: (id: string) => void;
   refreshing: boolean;
   deleting: boolean;
+  testing: boolean;
 }): JSX.Element {
   const isCur = servers.some((s) => s.id === activeServerId);
   const live = servers.filter(
@@ -275,9 +329,17 @@ function PoolCard({
           <button
             className="btn ghost"
             onClick={onRefresh}
-            disabled={refreshing || deleting}
+            disabled={refreshing || deleting || testing}
           >
             {refreshing ? "Refreshing…" : "Refresh now"}
+          </button>
+          <button
+            className="btn ghost"
+            onClick={onTestAll}
+            disabled={refreshing || deleting || testing || servers.length === 0}
+            title="TCP-probe every station to measure reachability"
+          >
+            {testing ? "Testing…" : "Test all"}
           </button>
           <button
             className="btn ghost"
@@ -289,7 +351,7 @@ function PoolCard({
           <button
             className="btn ghost danger"
             onClick={onDelete}
-            disabled={refreshing || deleting}
+            disabled={refreshing || deleting || testing}
           >
             {deleting ? "Removing…" : "Delete"}
           </button>
@@ -300,27 +362,58 @@ function PoolCard({
 
         {expanded && servers.length > 0 ? (
           <div className="pool-stations">
-            {servers.map((s) => (
-              <div
-                key={s.id}
-                className={`station ${
-                  s.id === activeServerId ? "cur" : ""
-                }`}
-              >
-                <span className="city">{s.city || s.name}</span>
-                <span className="addr mono">
-                  {s.address}:{s.port}
-                </span>
-                <span className="proto mono">{s.protocol}</span>
-                <span className="ms mono">
-                  {(s.last_test_ms ?? 0) > 0
-                    ? `${s.last_test_ms}ms`
-                    : (s.last_test_ms ?? 0) < 0
-                      ? "fail"
-                      : "—"}
-                </span>
-              </div>
-            ))}
+            {servers.map((s) => {
+              const testingOne = busy === `testone:${s.id}`;
+              const connectingOne = busy === `conn:${s.id}`;
+              return (
+                <div
+                  key={s.id}
+                  className={`station ${
+                    s.id === activeServerId ? "cur" : ""
+                  }`}
+                >
+                  <span className="city">{s.city || s.name}</span>
+                  <span className="addr mono">
+                    {s.address}:{s.port}
+                  </span>
+                  <span className="proto mono">{s.protocol}</span>
+                  <span
+                    className="ms mono"
+                    title={s.last_test_error || undefined}
+                  >
+                    {testingOne
+                      ? "…"
+                      : (s.last_test_ms ?? 0) > 0
+                        ? `${s.last_test_ms}ms`
+                        : (s.last_test_ms ?? 0) < 0
+                          ? "fail"
+                          : "—"}
+                  </span>
+                  <span className="station-actions">
+                    <button
+                      type="button"
+                      className="btn ghost xs"
+                      onClick={() => onTestOne(s.id)}
+                      disabled={testingOne || testing}
+                    >
+                      Test
+                    </button>
+                    <button
+                      type="button"
+                      className="btn primary xs"
+                      onClick={() => onConnect(s.id)}
+                      disabled={connectingOne}
+                    >
+                      {connectingOne
+                        ? "…"
+                        : s.id === activeServerId
+                          ? "Active"
+                          : "Connect"}
+                    </button>
+                  </span>
+                </div>
+              );
+            })}
           </div>
         ) : null}
       </div>

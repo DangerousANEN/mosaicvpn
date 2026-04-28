@@ -190,8 +190,26 @@
   column-gap: 8px;
   align-items: baseline;
   padding: 9px 0;
+  border: none;
   border-bottom: 1px solid var(--rule);
   font-size: 12.5px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 0;
+}
+.row:hover {
+  background: rgba(31, 28, 24, 0.04);
+}
+.row:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.row.cur {
+  background: rgba(184, 92, 44, 0.08);
 }
 .row .num {
   font-family: "Atlas Serif", Georgia, serif;
@@ -328,5 +346,74 @@
   font-size: 11px;
   color: var(--ink-mute);
   letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/*
+ * WorldMap — equirectangular world background + graticule + per-server
+ * pins. Rendered by ui/src/components/WorldMap.tsx.
+ */
+.worldmap {
+  position: absolute;
+  inset: 0;
+}
+.worldmap-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  opacity: 0.5;
+  /*
+   * world.svg ships with a dark fill on a transparent background, which
+   * reads correctly as inked land masses on the cream paper. No filter
+   * needed.
+   */
+}
+.worldmap-grat {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.worldmap-grat line {
+  stroke: var(--ink);
+  stroke-width: 0.4;
+  opacity: 0.10;
+}
+.worldmap-grat line.eq {
+  opacity: 0.22;
+  stroke-dasharray: 1.5 2.5;
+}
+.worldmap-pins {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.worldmap-pin .dot {
+  fill: var(--paper);
+  stroke: var(--ink);
+  stroke-width: 1;
+}
+.worldmap-pin.cur .dot {
+  fill: var(--copper);
+  stroke: var(--copper);
+}
+.worldmap-pin.cur .halo {
+  fill: var(--copper);
+  opacity: 0.18;
+}
+.worldmap-bearing {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--copper);
   text-transform: uppercase;
 }

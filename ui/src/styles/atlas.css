@@ -49,6 +49,34 @@ body {
   line-height: 1.5;
 }
 
+/*
+ * Scrollbars — the default Windows/WebView2 scrollbars look like raw OS
+ * widgets and break the gazetteer aesthetic; restyle them to match the
+ * Atlas palette across every scrollable region.
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule-strong) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--rule-strong);
+  border: 2px solid var(--paper);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-2);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 body {
   background:
     radial-gradient(1200px 600px at 20% 0%, rgba(184, 92, 44, 0.05), transparent 50%),

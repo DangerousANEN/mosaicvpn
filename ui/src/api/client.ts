@@ -73,6 +73,17 @@ export const api = {
   // lists; coerce to a real array so callers can spread/iterate
   // unconditionally.
   listServers: async () => arr(await request<Server[]>("GET", "/v1/servers")),
+  testServer: (id: string) =>
+    request<Server>("POST", `/v1/servers/${id}/test`),
+  testAllServers: async (subscriptionId?: string) =>
+    arr(
+      await request<Server[]>(
+        "POST",
+        subscriptionId
+          ? `/v1/servers/test-all?subscription_id=${encodeURIComponent(subscriptionId)}`
+          : "/v1/servers/test-all",
+      ),
+    ),
 
   listSubscriptions: async () =>
     arr(await request<Subscription[]>("GET", "/v1/subscriptions")),

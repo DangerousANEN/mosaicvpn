@@ -43,9 +43,13 @@ type Server struct {
 	Country        string         `json:"country,omitempty"`
 	Tag            string         `json:"tag,omitempty"`
 	SubscriptionID string         `json:"subscription_id"`
-	LastTestMS     int            `json:"last_test_ms,omitempty"`
-	LastTestAt     time.Time      `json:"last_test_at,omitempty"`
-	Raw            map[string]any `json:"raw,omitempty"`
+	// LastTestMS is the round-trip time of the most recent probe, in
+	// milliseconds. A negative value means the probe failed; LastTestError
+	// then carries the reason. Zero means the server has never been probed.
+	LastTestMS    int            `json:"last_test_ms,omitempty"`
+	LastTestError string         `json:"last_test_error,omitempty"`
+	LastTestAt    time.Time      `json:"last_test_at,omitempty"`
+	Raw           map[string]any `json:"raw,omitempty"`
 }
 
 // Format identifies a subscription payload format.
