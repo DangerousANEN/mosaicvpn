@@ -93,9 +93,29 @@ fn data_dir() -> Option<PathBuf> {
 fn daemon_endpoint() -> Result<DaemonEndpoint, String> {
     let dir = data_dir().ok_or_else(|| "could not determine data dir".to_string())?;
     let lock = dir.join("daemon.lock");
-    let raw = std::fs::read(&lock).map_err(|e| format!("read {}: {}", lock.display(), e))?;
-    serde_json::from_slice::<DaemonEndpoint>(&raw)
-        .map_err(|e| format!("decode lockfile: {}", e))
+
+    // The bundled mosaicd is launched concurrently with the GUI in
+    // setup(); on a fresh install the renderer often calls this
+    // command before mosaicd has had a chance to bind its port and
+    // write the lockfile. Poll for ~6s before giving up so the splash
+    // screen sees the endpoint as soon as it's ready.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(6);
+    let mut last_err: Option<String> = None;
+    loop {
+        match std::fs::read(&lock) {
+            Ok(raw) if !raw.is_empty() => {
+                return serde_json::from_slice::<DaemonEndpoint>(&raw)
+                    .map_err(|e| format!("decode lockfile {}: {}", lock.display(), e));
+            }
+            Ok(_) => last_err = Some(format!("empty lockfile at {}", lock.display())),
+            Err(e) => last_err = Some(format!("read {}: {}", lock.display(), e)),
+        }
+        if std::time::Instant::now() >= deadline {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(150));
+    }
+    Err(last_err.unwrap_or_else(|| format!("timed out waiting for {}", lock.display())))
 }
 
 /// resolve_runtime_data_dir returns the directory the daemon should
@@ -144,13 +164,33 @@ fn locate_bundled_mosaicd(app: &tauri::AppHandle) -> Option<PathBuf> {
 /// spawn_bundled_daemon launches the bundled mosaicd as a child process.
 /// On dev builds the binary is usually missing — in that case we silently
 /// skip and assume the developer has run `scripts/dev.sh` separately.
+/// stdout/stderr are redirected to mosaicd.{out,err}.log inside the data
+/// dir so failures are diagnosable from a fresh install.
 fn spawn_bundled_daemon(app: &tauri::AppHandle) -> Option<Child> {
     let exe = locate_bundled_mosaicd(app)?;
-    let _ = resolve_runtime_data_dir(app);
+    let data_dir = resolve_runtime_data_dir(app)?;
+
+    let stdout_log = match std::fs::File::create(data_dir.join("mosaicd.out.log")) {
+        Ok(f) => f,
+        Err(err) => {
+            eprintln!("mosaic-ui: cannot create mosaicd.out.log: {err}");
+            return None;
+        }
+    };
+    let stderr_log = match std::fs::File::create(data_dir.join("mosaicd.err.log")) {
+        Ok(f) => f,
+        Err(err) => {
+            eprintln!("mosaic-ui: cannot create mosaicd.err.log: {err}");
+            return None;
+        }
+    };
+
     let mut cmd = Command::new(&exe);
-    if let Ok(d) = std::env::var("MOSAIC_DATA_DIR") {
-        cmd.env("MOSAIC_DATA_DIR", d);
-    }
+    cmd.arg("-v");
+    cmd.env("MOSAIC_DATA_DIR", &data_dir);
+    cmd.stdout(stdout_log);
+    cmd.stderr(stderr_log);
+    cmd.current_dir(&data_dir);
     #[cfg(windows)]
     {
         // Suppress the console window that would otherwise flash when
@@ -160,7 +200,10 @@ fn spawn_bundled_daemon(app: &tauri::AppHandle) -> Option<Child> {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     match cmd.spawn() {
-        Ok(child) => Some(child),
+        Ok(child) => {
+            eprintln!("mosaic-ui: spawned mosaicd pid {} from {exe:?} (data_dir={data_dir:?})", child.id());
+            Some(child)
+        }
         Err(err) => {
             eprintln!("mosaic-ui: failed to spawn bundled mosaicd at {exe:?}: {err}");
             None
