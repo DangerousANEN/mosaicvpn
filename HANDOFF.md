@@ -6,7 +6,10 @@
 > code; it captures everything the previous agent learned so you don't
 > have to re-discover it.
 
-Last updated: rc12 shipped. Currently blocked on six known bugs (see §6).
+Last updated: rc20 shipped. Twelve user-reported bugs from rc16 are
+addressed across rc17–rc20; the only deferred items are real TUN
+support (#2) and the README redesign with screenshots (#12). See §6
+for current state of each.
 
 ---
 
@@ -14,13 +17,18 @@ Last updated: rc12 shipped. Currently blocked on six known bugs (see §6).
 
 - GitHub: <https://github.com/DangerousANEN/mosaicvpn>
 - Default branch: `main`
-- Live tags so far: `v0.1.0-rc2` … `v0.1.0-rc12` (each tag triggers a
+- Live tags: `v0.1.0-rc2` … `v0.1.0-rc20` (each tag triggers a
   Windows build via `.github/workflows/release.yml` and uploads
   `Mosaic_0.1.0_x64-setup.exe` as an artifact).
-- Open PRs: PR #1 = rc12 → main (devin/1777375850-rc12-grouping). User
-  hasn't merged yet; the rc12 build was tagged from the branch tip
-  before the PR landed.
-- Old per-rc feature branches were cleaned up; only `main` remains.
+- **None of the rc PRs have been merged by the user yet.** Every rc
+  release was tagged from a feature branch directly. Open PRs at the
+  time of writing: #1 (rc12 grouping), #2 (HANDOFF), #3 (rc13),
+  #4 (rc14), #5 (rc15), #6 (rc16), #7 (rc17), #8 (rc18), #9 (rc19),
+  #10 (rc20). They are stacked: each branched off the previous one,
+  so the user must merge in numeric order or accept GitHub's
+  rebase-on-merge conflicts.
+- Branch naming has been `devin/<timestamp>-<topic>` since rc13. The
+  rc20 branch is `devin/1777383000-rc20-shutdown-fix`.
 - Module path: `github.com/DangerousANEN/mosaicvpn`. As of rc20 the
   Go module path matches the GitHub org; previous tags (rc≤19) used a
   legacy `pupspochta-cpu/mosaicvpn` path inherited from the initial
@@ -120,29 +128,150 @@ HANDOFF.md         this file
 
 ## 5. What's done / not done
 
-### Done as of rc12
+### Done as of rc20
 
-- Daemon: HTTP API surface, single-instance enforcement, lockfile w/
-  bearer token, store with atomic writes, subscription parsers (4
-  formats), state machine, mock backend, sing-box backend.
-- Sing-box backend (`internal/state/singbox_backend.go`) supports:
-  VLESS + TLS / Reality + ws/grpc/xhttp transports, Hysteria2 with
-  optional `obfs=salamander`, Shadowsocks (all sing-box AEAD ciphers).
-  Naive and AmneziaWG return errors. Trojan / VMess parsed but NOT
-  wired into config gen.
-- TCP latency probes via `POST /v1/servers/{id}/test` and
-  `POST /v1/servers/test-all` (16-way concurrent).
-- GeoIP via `ip-api.com` (free, 45 req/min). Cached lat/lon in store.
-- rc12: ResolveHost (DNS lookup to ResolvedIP), IsoFromName (ISO-2
-  from server display name), CountryCentroid fallback, host grouping
-  in Pool + WorldMap, clickable pins with hover tooltip, "you" pin
-  at center, copper arc to active.
-- Frontend: full Atlas-styled UI (Main / Pool / Settings / Splash),
-  ErrorBoundary, working scrollbars, location separated from name
-  (rc11), per-host grouping (rc12).
-- CI: tag-triggered Windows build, ships installer with sing-box
-  bundled. Icons regenerated rc10 with Lanczos + unsharp.
-- Documentation: bilingual README, this handoff file.
+**rc12 baseline:** daemon (HTTP API, single-instance lock, atomic
+store, four subscription parsers, state machine, mock + sing-box
+backends), sing-box config gen for VLESS/Hysteria2/Shadowsocks (Trojan
+and VMess parsed but not wired), TCP latency probes, GeoIP via
+ip-api.com with disk cache, host grouping in Pool/WorldMap with
+clickable pins + "you" pin + copper arc, full Atlas-styled UI,
+tag-triggered Windows release CI.
+
+**rc13 — DNS / latency hijack fixes (`internal/api/server.go`,
+`internal/geoip/hint.go`):**
+- `probeServer` now resolves through 1.1.1.1 directly and dials the
+  resolved IP, bypassing any system DNS hijack or transparent proxy.
+  RTT is measured in microseconds (rc12 floor of 1ms produced fake
+  "everything is 1ms" results).
+- Debug log per probe with target / `RemoteAddr` / RTT, plus a warn
+  when the dialled remote looks loopback / RFC1918 (catches future
+  hijack regressions).
+- `parseNaive` defaults port=443 when the URL omits it (fixed
+  `np.zxc1x1.ru` host-grouping).
+- Both `Test` API handlers skip `ResolveHost` / `resolveServerGeo`
+  while `state == connected` so the active tunnel can't poison
+  `ResolvedIP` for other hosts (fixed DE pin landing on VPS1).
+
+**rc14 — map projection (`ui/src/components/WorldMap.tsx`,
+`ui/src/styles/app.css`):**
+- world.svg is now rendered as inline `<svg>` with its own viewBox
+  `30.767 241.591 784.077 458.627`, `preserveAspectRatio="meet"`
+  (rc17 changed from "none"). Pins live inside the same viewBox.
+- Equirectangular projection fitted empirically to six country
+  centroids (br, eg, in, is, mg, za) — residuals <10px.
+- Latitude / longitude grid recomputed in the new system, clipped
+  to the viewBox.
+
+**rc15 — pin rendering & multi-host popover
+(`ui/src/components/WorldMap.tsx`):**
+- Pins replaced with teardrop SVG paths anchored at apex over the
+  geo-point. Inner dot, with multi-host groups getting a slightly
+  larger marker.
+- Merge radius for nearby pins bumped from ~5px (rc12) to ~12 vb
+  units / ~5° longitude.
+- Multi-host pins show an Atlas-styled popover on click listing
+  every member with `protocol:port  ms  [Connect]` rows; the active
+  member is shown as `current` (disabled, copper).
+
+**rc16 — clash-api stats & Atlas metrics
+(`internal/state/singbox_backend.go`):**
+- sing-box config gains `experimental.clash_api.external_controller`
+  on a dedicated loopback port (preferred 9090, falls back to
+  ephemeral) without a secret. Bound to 127.0.0.1 only.
+- Two pollers run for the lifetime of a session:
+  - `clashAPIPoll`: GET `/connections` once per second →
+    `downloadTotal` / `uploadTotal` → `Status.bytes_in/_out`. 5s
+    warm-up at 200ms cadence so the UI has data immediately.
+  - `latencyPoll`: TCP probe of `ResolvedIP:Port` every 5s, RTT in
+    microseconds, ResolvedIP via DNS-bypass.
+- Both best-effort: errors logged at debug, previous value retained,
+  connection unaffected. `Stop()` resets all three counters.
+- UI: `fmtBytes(0)` renders "—" instead of "0 B" so Atlas doesn't
+  look frozen pre-warm-up.
+
+**rc17 — six fixes from user's 12-bug docket:**
+- **#1 subscription proxy bypass** (`internal/api/server.go`,
+  `internal/geoip/hint.go`): subscription fetch now uses an HTTP
+  client with `Proxy: nil` and the bypass `DirectResolver` chain
+  (1.1.1.1 → 8.8.8.8 → system fallback). It will succeed even when
+  the active tunnel would otherwise loop the request through
+  127.0.0.1:2080.
+- **#3 default to proxy mode** (`internal/store/store.go`): default
+  `Prefs.TunnelMode` flipped from `"tun"` to `"proxy"` for safe
+  out-of-box (TUN requires admin + wintun.dll).
+- **#5 horizontal map stretch** (`ui/src/styles/app.css`): map
+  rendered inside an aspect-locked stage (784/459) with letterbox.
+- **#6 last-server auto-reconnect** (`cmd/mosaicd/main.go`): on
+  startup, if `Prefs.AutoConnect` is on and `LastServerID` is set,
+  spawn a goroutine that connects after a 750ms warm-up. Best-effort,
+  logs failures, daemon proceeds disconnected on error.
+- **#10 user-supplied .ico** replaced everywhere (Tauri bundle, tray,
+  splash). Original at
+  `/home/ubuntu/attachments/2625912e-c90b-4cd1-b138-b42081076e23/ChatGPT+Image+Apr+28+2026+05_19_53+PM.ico`
+  in dev VM (256×256, 70KB).
+- **#11 clash-api diagnostics** (`SingBoxBackend`): logs
+  `clash-api online {endpoint}` on first successful poll or
+  `clash-api warm-up exceeded 5s` on timeout. Lets the user attach
+  one log line if Atlas metrics still show "—".
+
+**rc18 — admin gate, tray popup, agent skill:**
+- **#4 TUN admin gate** (`ui/src-tauri/src/main.rs`,
+  `ui/src/screens/Folio.tsx`, `ui/src/api/tauri.ts`): two new Tauri
+  commands `is_admin` (Windows: `GetTokenInformation` with
+  `TokenElevation`; Unix: `geteuid() == 0`) and `restart_as_admin`
+  (Windows: `ShellExecuteExW` verb=runas, kills the bundled daemon
+  first; non-Windows: error). When the user flips Folio → Network →
+  Tunnel mode → TUN while unelevated, an Atlas-styled modal opens:
+  "TUN requires administrator privileges" with Cancel / Restart-as-
+  administrator buttons. Cancel reverts to proxy. Already elevated
+  → modal never appears.
+- **#9 tray popup** (`ui/src-tauri/src/main.rs`,
+  `ui/src-tauri/tauri.conf.json`, `ui/src/App.tsx`): dedicated
+  `tray-popup` window — frameless 360×500, `alwaysOnTop`,
+  `skipTaskbar`, hidden by default, loads `index.html#/tray`. Tray
+  left-click toggles visible/hidden via `toggle_tray_popup`,
+  positioned just above the click point (fallback below if it would
+  go off-screen). Blur listener auto-hides. Right-click tray menu
+  unchanged: Show window / Hide window / sep / Quit Mosaic. The
+  "Tray" tab in the main window is gone — it lives only behind the
+  tray icon now. App.tsx detects `#/tray` and renders a slim shell
+  (no Marginalia / TOC).
+- **#8 agent skill** (`.agents/skills/mosaicvpn-dev/SKILL.md`):
+  build commands, PR/tag conventions, test subscription URL,
+  must-bypass-proxy invariant, file-by-file map.
+
+**rc19 — pin redesign per user reference image
+(`ui/src/components/WorldMap.tsx`, `ui/src/styles/app.css`):**
+- Idle pins: outline diamond ~7vb radius + thin dashed stem to the
+  geo-anchor.
+- Active pin: copper teardrop with paper inner dot.
+- "vous" marker: small ink dot + italic "vous" label, no box.
+- Per-pin label boxes "City · ms" (paper text on ink, copper + bold
+  for the active pin). Hover swaps both pin and label to copper.
+- Connection lines: thin dashed paper curves from "vous" to every
+  idle pin, drawn first; thick solid copper arc to the active pin
+  drawn on top.
+- Multi-host markers: small ink dot inside the diamond.
+
+**rc20 — atomic process-tree shutdown + module rename:**
+- **Job Object** (`ui/src-tauri/src/main.rs`, `mod job`): a single
+  anonymous Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` is
+  created on first spawn. `mosaicd` is assigned to it, sing-box
+  inherits the job from its parent (Win 8+ default). When the UI
+  exits — clean OR hard (taskkill, OS shutdown, crash) — Windows
+  closes the only handle to the job, the kernel terminates every
+  assigned process. Solves "singboxes pile up after each launch".
+- **Stale sing-box reaper** (`cmd/mosaicd/reap_windows.go`): at
+  daemon startup, queries `wmic process where name='sing-box.exe'`,
+  filters by command-line containing our `MOSAIC_DATA_DIR` /
+  `singbox-current.json` path, and force-kills matches via
+  `taskkill /T /F`. Handles upgrades from rc≤19 where stale
+  sing-boxes are still around. No-op on non-Windows (`reap_other.go`).
+- **Module path rename** `pupspochta-cpu/mosaicvpn → DangerousANEN/mosaicvpn`
+  across every `.go`, `go.mod`, `go.sum`. Sed-and-rebuild; no
+  functional change. Stack traces and `go install` paths now match
+  the GitHub URL.
 
 ### Not done — known holes
 
@@ -163,11 +292,57 @@ HANDOFF.md         this file
 | MCP server | NOT STARTED | `internal/mcp/` (doesn't exist) |
 | Subscription auto-refresh | field exists, no timer | `cmd/mosaicd/main.go` |
 
-## 6. Known bugs (rc12 user feedback) — START HERE
+## 6. Known bugs — current state
 
-These are the active blockers. **Read each carefully — there are
-hypotheses and pointers, but the previous agent did NOT verify the
-fixes; do your own investigation before believing my guesses.**
+### 6a. Original rc12 docket — all FIXED in rc13–rc16
+
+The six bugs that originally lived here (latency hijack 1–2ms,
+naive port=0 grouping, DE-via-VPS1 grouping, map projection,
+Atlas metrics blank, pin shape + multi-host popover) are all
+addressed. See §5 entries for rc13/14/15/16 for what was changed
+and where.
+
+### 6b. User's 12-point docket after rc16 — current state
+
+Numbering matches the user's original list (sent in Russian).
+
+| # | Bug | Status | Where |
+|---|---|---|---|
+| 1 | Subscription parser tries to go through proxy at 127.0.0.1:2080 even when the URL is reachable directly | **FIXED rc17** | `internal/api/server.go` (Proxy: nil + DirectResolver), `internal/geoip/hint.go` |
+| 2 | TUN doesn't work even with administrator privileges | **NOT FIXED** — only the gating + UAC restart from rc18 ship; real TUN backend (wintun.dll bundle, sing-box `tun` inbound, route table) still pending | `internal/state/singbox_backend.go` config gen, `ui/src-tauri/tauri.conf.json` for wintun bundling, `cmd/mosaicd/main.go` for elevation detection |
+| 3 | Default to proxy mode, not TUN, on first launch | **FIXED rc17** | `internal/store/store.go` |
+| 4 | Pretty Atlas-styled prompt + "Restart as admin" button when a non-elevated user tries to enable TUN | **FIXED rc18** | `ui/src/screens/Folio.tsx` (`AdminGateModal`), `ui/src-tauri/src/main.rs` (`is_admin`, `restart_as_admin`) |
+| 5 | Map stretched horizontally | **FIXED rc17** | `ui/src/styles/app.css` aspect-lock stage |
+| 6 | Remember last server and auto-reconnect on launch / restart | **FIXED rc17** | `cmd/mosaicd/main.go` startup goroutine |
+| 7 | Pretty pin design — make pins look hand-drawn / map-themed | **FIXED rc19** per user reference image (idle outline diamond + dashed stem, active copper teardrop, "vous" italic label, dashed paper / solid copper connection lines, per-pin "City · ms" labels) | `ui/src/components/WorldMap.tsx`, `ui/src/styles/app.css` |
+| 8 | Agent skill for working with this repo | **FIXED rc18** | `.agents/skills/mosaicvpn-dev/SKILL.md` |
+| 9 | Tray tab → tray icon popup window | **FIXED rc18** — frameless 360×500 popup window toggled by tray left-click; main-window "Tray" tab removed | `ui/src-tauri/src/main.rs` (`toggle_tray_popup`), `tauri.conf.json` (popup window), `ui/src/App.tsx` (slim shell at `#/tray`) |
+| 10 | Replace icon with user-supplied .ico | **FIXED rc17** | `ui/src-tauri/icons/`, Tauri bundle |
+| 11 | Atlas still doesn't show latency / down / up after rc16 | **DIAGNOSTICS ADDED rc17** — clash-api online / warm-up logs in `mosaicd.err.log`. If user reports the metrics still blank in rc17+, ask for that log line: it tells you whether the poller failed to bind, whether sing-box rejected the clash-api block, or whether sing-box itself never started | `internal/state/singbox_backend.go` |
+| 12 | README redesign with screenshots / images | **NOT FIXED** — deferred until UI is locked. Should now be possible after rc20 since pin design / tray / admin-gate are stable | `README.md`, `README.ru.md` |
+
+### 6c. Bug reported during rc20 cycle — FIXED in rc20
+
+User: "singbox and mosaicd don't always close when I quit, multiple
+singboxes can pile up". Fixed via Job Object on the UI side and
+stale-process reaper at daemon startup. See §5 → rc20 for details.
+
+### 6d. Stale-but-untouched holes (next agent: triage)
+
+- Map pin geometry on the *original* `world.svg` (rc14/19 pins live
+  inside the inline SVG with their own viewBox; if anything looks
+  off it's the projection coefficients in `WorldMap.tsx`, not the
+  rendering layer).
+- Naive port-0 grouping is fixed in rc13 (`parseNaive` defaults to
+  443) but the underlying naive backend in sing-box config gen
+  still returns "naive proxy not yet supported by bundled
+  sing-box" — see §7 of the original §5 hole table below.
+
+### 6.1–6.6 (historical, kept for forensics)
+
+Below is the original rc12 bug docket and the previous agent's
+hypotheses. All six are fixed by rc13–rc16 (see §5 / §6a) but the
+analysis is preserved in case the symptoms ever return.
 
 ### 6.1. Map pin geometry vs. world.svg is misaligned
 
@@ -387,24 +562,75 @@ published, only tags.
 
 ## 10. Recommended next sprints
 
-The previous agent's plan (you can deviate, but it's the framing that
-was discussed with the user):
+Plan as of rc20 (you can deviate, this is the framing the previous
+agent discussed with the user):
 
-| RC | Theme | Effort |
+| RC | Theme | Status |
 |---|---|---|
-| rc12 | host grouping + clickable pins + GeoIP fix | DONE — but see §6 bugs |
-| rc13a | Fix the six rc12 bugs in §6 | half day |
-| rc13b | Real TUN backend (wintun.dll, UAC, sing-box tun inbound) | 1 day |
-| rc14 | Kill-switch (WFP rules) + bytes via clash-api | 1 day |
-| rc15 | mosaicd as Windows service so TUN doesn't UAC each Connect | 1 day |
-| rc16 | Naive support (bundle naive.exe), Trojan/VMess in sing-box config | 0.5 day |
-| rc17 | Routing rules UI | 1 day |
-| rc18 | Auto-update + code signing | 1 day |
-| later | MCP server, AmneziaWG bundling, recents in tray | — |
+| rc12 | host grouping + clickable pins + GeoIP fix | DONE |
+| rc13 | DNS / latency hijack fixes (probe + naive port + skip-resolve-while-connected) | DONE |
+| rc14 | Map projection (inline SVG + fitted equirect) | DONE |
+| rc15 | Pin teardrops + multi-host popover | DONE |
+| rc16 | clash-api stats + Atlas metrics | DONE |
+| rc17 | sub-fetch bypass, default proxy, autoreconnect, icon, map letterbox | DONE |
+| rc18 | TUN admin gate, tray popup, agent skill | DONE |
+| rc19 | Pin redesign per user reference (idle diamond / active teardrop / vous / labels) | DONE |
+| rc20 | Job Object atomic shutdown + stale-singbox reaper + module rename | DONE |
+| **rc21** | **Real TUN backend** (wintun.dll bundle, UAC-aware sing-box `tun` inbound, route table) | NEXT — see notes |
+| rc22 | Kill-switch (WFP rules) | 1 day |
+| rc23 | mosaicd as Windows service so TUN doesn't UAC each Connect | 1 day |
+| rc24 | Naive support (bundle naive.exe), Trojan/VMess in sing-box config | 0.5 day |
+| rc25 | Routing rules UI | 1 day |
+| rc26 | Auto-update + code signing | 1 day |
+| later | README redesign with screenshots, MCP server, AmneziaWG bundling, recents in tray | — |
 
-**My strong suggestion:** start with rc13a (fix §6 bugs) before
-touching TUN. The user will not be able to evaluate TUN if they can't
-trust that the map / latencies / grouping are correct.
+### Notes on rc21 (TUN backend)
+
+The user has explicitly said "TUN doesn't work even with admin
+privileges". The rc18 admin gate prevents non-elevated users from
+even trying, but elevation alone is necessary, not sufficient. To
+actually make TUN work:
+
+1. **Bundle wintun.dll.** Add `wintun-amd64.dll` (and arm64 if you
+   want to be future-proof) under `ui/src-tauri/binaries/` so the
+   installer drops it next to mosaicd. sing-box loads wintun from
+   the working directory by default.
+2. **Generate a `tun` inbound** in `BuildSingBoxConfig` when
+   `Status.tunnel_mode == "tun"`. Inbound type `"tun"` needs:
+   `interface_name`, `inet4_address` (e.g. `172.19.0.1/30`), `mtu`
+   (1500), `auto_route: true`, `strict_route: true`. See the
+   sing-box wiki for the full schema.
+3. **Pick a TUN stack.** sing-box exposes `gvisor` / `system` /
+   `mixed`. `Prefs.tun_stack` exists in store but is currently
+   ignored. `gvisor` is the lowest privilege requirement; `system`
+   is fastest but needs a real-NIC bind. Default to `gvisor` until
+   proven otherwise.
+4. **Probe TUN readiness at startup.** If `tunnel_mode == "tun"`
+   but the daemon is not elevated, refuse Connect with a clear
+   error. The UI already gates the toggle in rc18; the daemon
+   should also refuse so a stale prefs file can't surprise the
+   user.
+5. **Handle MOSAIC_DATA_DIR with TUN.** sing-box writes its own
+   state (geoip cache, etc.) into the working directory. Our
+   `cmd.Dir = b.dataDir` is fine; just verify nothing in the TUN
+   inbound conflicts.
+6. **Disable TUN from the popup tray window** as well as Folio so
+   the user can flip it from anywhere.
+
+The user runs Windows on `F:\aProgramms\Mosaic\` — they will need
+to reinstall to pick up wintun.dll the first time. Make sure the
+installer doesn't strip the DLL.
+
+### What is **NOT** the next thing to do
+
+- Don't touch the README until the user explicitly asks. They
+  deferred #12 until UI lockdown; rc20 plus a TUN release should
+  be enough lockdown to revisit.
+- Don't refactor the WorldMap, Folio, or styles. The user has
+  reviewed rc19 visuals and approved the direction.
+- Don't add a fourth subscription parser variant. The four formats
+  (sing-box, Clash, v2ray-b64, SIP008) cover everything they've
+  shown us.
 
 ## 11. Useful one-shot snippets for the next agent
 
@@ -441,13 +667,41 @@ Get-Content "$env:APPDATA\com.mosaicvpn.ui\daemon\store.json"
 
 ## 12. What to message the user with first
 
+The user is Russian. Reply in Russian, terse and technical. They
+have explicitly granted "максимум автономно" — implement and ship
+without per-PR confirmations. Only block on big architectural
+decisions or when you genuinely cannot make progress.
+
 Suggested opening (translate to Russian):
 
-> "Прочитал HANDOFF, картина понятна. Сначала фикшу шесть багов rc12
-> из §6 (карта, лагающие пинги, группировка, метрики Atlas), потом
-> возьмусь за TUN. Прежде чем коммитить — короткий план: …"
+> "Прочитал HANDOFF, картина понятна. rc20 закрыл shutdown-баг
+> (singbox/mosaicd больше не копятся — Job Object + reaper). Из 12
+> пунктов твоего докета остались два: рабочий TUN (rc21) и README
+> с картинками (rc26+). Беру TUN, план: …"
 
-Then list which of the six bugs you'll attack first and why. Don't
-start TUN until rc12 issues are resolved.
+Then a 3-5 line plan for rc21 listing what you'll touch (wintun.dll
+bundle in `ui/src-tauri/binaries`, `tun` inbound generation in
+`BuildSingBoxConfig`, daemon-side admin check, `tun_stack` plumbed
+through). Confirm before bundling wintun if you can't find a clean
+license-compatible build.
 
-— previous agent, signing off.
+### Things the previous agent learned the hard way
+
+- The rc PR stack is intentional. Don't try to rebase it onto main
+  yourself — the user merges in numeric order.
+- `go test ./...` must be run after every Go change. If
+  `TestSubscribeReceivesEvents` or another `internal/state` test
+  fails as a flake on CI (TempDir cleanup race), retry the run via
+  `POST .../actions/runs/<id>/rerun-failed-jobs`. Don't modify the
+  test.
+- Tauri CLI on Linux falls over on Rust `<1.85` (the `time` crate
+  pulls `edition2024`). The Windows CI runner ships current Rust,
+  so just trust CI rather than fighting local builds.
+- Always download the artifact zip from the latest run and attach
+  the `Mosaic_0.1.0_x64-setup.exe` to your `message_user`. The user
+  doesn't browse GitHub Actions.
+- Don't merge your own PRs. Don't amend. Don't force-push to main.
+  These are explicit constraints from the user.
+
+— rc20 agent, signing off.
+— rc12 agent, signing off (original handoff preserved above).
