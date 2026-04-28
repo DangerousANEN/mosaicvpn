@@ -107,6 +107,14 @@ func IsoFromName(name string) string {
 // ResolveHost returns the first usable IP that host resolves to. host
 // can already be an IP literal in which case it is returned verbatim.
 // On error or empty host, returns an empty string.
+//
+// Lookups go through a custom Go resolver that dials a public DNS
+// (1.1.1.1, then 8.8.8.8) directly, ignoring the system resolver. On
+// Windows the system resolver can be silently hijacked by an active
+// VPN/proxy tunnel — every hostname collapses to 127.0.0.1 or a tunnel
+// exit, which is one of the suspected causes of bogus 1–2ms latency
+// readings (the dial then terminates on a local listener). System DNS
+// is used as a last resort if both public servers are unreachable.
 func ResolveHost(ctx context.Context, host string) string {
 	host = strings.TrimSpace(host)
 	if host == "" {
@@ -117,18 +125,32 @@ func ResolveHost(ctx context.Context, host string) string {
 	}
 	cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	r := net.Resolver{}
-	addrs, err := r.LookupIPAddr(cctx, host)
-	if err != nil || len(addrs) == 0 {
-		return ""
-	}
-	// Prefer IPv4 — easier to read, more likely to have a clean
-	// GeoIP entry, and matches what most users see in their
-	// subscription URLs.
-	for _, a := range addrs {
-		if v4 := a.IP.To4(); v4 != nil {
-			return v4.String()
+	for _, r := range []*net.Resolver{publicResolver("1.1.1.1:53"), publicResolver("8.8.8.8:53"), {}} {
+		addrs, err := r.LookupIPAddr(cctx, host)
+		if err != nil || len(addrs) == 0 {
+			continue
 		}
+		// Prefer IPv4 — easier to read, more likely to have a clean
+		// GeoIP entry, and matches what most users see in their
+		// subscription URLs.
+		for _, a := range addrs {
+			if v4 := a.IP.To4(); v4 != nil {
+				return v4.String()
+			}
+		}
+		return addrs[0].IP.String()
 	}
-	return addrs[0].IP.String()
+	return ""
+}
+
+// publicResolver builds a Go-only resolver that forwards every query
+// to the given DNS server (e.g. "1.1.1.1:53"), bypassing the OS stub.
+func publicResolver(server string) *net.Resolver {
+	d := net.Dialer{Timeout: 2 * time.Second}
+	return &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return d.DialContext(ctx, network, server)
+		},
+	}
 }

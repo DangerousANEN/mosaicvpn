@@ -125,3 +125,29 @@ func TestUnknownFormat(t *testing.T) {
 		t.Fatal("expected error for non-subscription payload")
 	}
 }
+
+// Subscriptions in the wild often omit :port for naive entries (the
+// user's real sub.txt does this for `np.zxc1x1.ru`). We must NOT keep
+// port=0 — probeServer rejects it, ResolvedIP never gets set, and the
+// host-grouping flow can't merge it with its sibling VLESS entry.
+func TestParseNaiveDefaultPort(t *testing.T) {
+	body := "naive+https://user:pass@np.example.com#Naive%20VPS"
+	enc := base64.StdEncoding.EncodeToString([]byte(body))
+	res, err := subs.Parse("sub-naive", []byte(enc))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(res.Servers) != 1 {
+		t.Fatalf("expected 1 server, got %d", len(res.Servers))
+	}
+	srv := res.Servers[0]
+	if srv.Protocol != proto.ProtoNaive {
+		t.Fatalf("expected naive proto, got %s", srv.Protocol)
+	}
+	if srv.Address != "np.example.com" {
+		t.Fatalf("expected host np.example.com, got %q", srv.Address)
+	}
+	if srv.Port != 443 {
+		t.Fatalf("expected default port 443, got %d", srv.Port)
+	}
+}

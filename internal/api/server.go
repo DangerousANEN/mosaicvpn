@@ -255,22 +255,64 @@ func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
 // probeServer performs a TCP dial to addr:port and returns the round-trip
 // time in milliseconds, or a negative number plus an error message on
 // failure.
-func probeServer(ctx context.Context, addr string, port int, timeout time.Duration) (int, string) {
+//
+// If dialIP is non-empty, the TCP dial is sent to dialIP:port directly
+// instead of resolving addr — this bypasses the local system resolver,
+// which on Windows is the most common reason latencies collapse to
+// 1–2ms (the resolver returns 127.0.0.1 / a tunnel-exit IP, and the
+// dial terminates locally).
+//
+// Sub-millisecond RTTs are reported with their true microsecond value
+// formatted as ms (rounded), and never floored to 1 — a real 0.4ms
+// reading is itself a strong signal that the dial never left the host.
+func probeServer(ctx context.Context, addr string, port int, dialIP string, timeout time.Duration) (int, string) {
+	if port <= 0 {
+		return -1, "invalid port"
+	}
+	dialHost := dialIP
+	if dialHost == "" {
+		dialHost = addr
+	}
+	target := net.JoinHostPort(dialHost, fmt.Sprint(port))
 	dialer := net.Dialer{Timeout: timeout}
-	target := fmt.Sprintf("%s:%d", addr, port)
-	t0 := time.Now()
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	t0 := time.Now()
 	conn, err := dialer.DialContext(cctx, "tcp", target)
 	if err != nil {
+		logx.Debug("probe dial failed", "addr", addr, "port", port, "dial_ip", dialIP, "err", err)
 		return -1, err.Error()
 	}
-	rtt := int(time.Since(t0).Milliseconds())
+	elapsed := time.Since(t0)
+	remote := conn.RemoteAddr().String()
+	_ = conn.Close()
+	us := elapsed.Microseconds()
+	rtt := int((us + 500) / 1000)
 	if rtt < 1 {
 		rtt = 1
 	}
-	_ = conn.Close()
+	logx.Debug("probe ok", "addr", addr, "port", port, "dial_ip", dialIP, "remote", remote, "rtt_us", us, "rtt_ms", rtt)
+	if suspiciousRemote(remote) {
+		logx.Warn("probe remote looks local/hijacked", "addr", addr, "port", port, "remote", remote, "rtt_us", us)
+	}
 	return rtt, ""
+}
+
+// suspiciousRemote reports whether the remote endpoint of a probe is a
+// loopback or RFC1918 address — a strong hint that the system DNS
+// resolved the target to a local interface, or that an active tunnel
+// is rewriting destinations to its own exit. We only log a warning;
+// the latency reading is still returned because the dial did succeed.
+func suspiciousRemote(remote string) bool {
+	host, _, err := net.SplitHostPort(remote)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified()
 }
 
 // resolveServerGeo computes the best-guess geographic metadata for
@@ -316,15 +358,29 @@ func (s *Server) handleTestServer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "server not found")
 		return
 	}
-	ms, errMsg := probeServer(r.Context(), srv.Address, srv.Port, 5*time.Second)
+	connected := s.mgr.Status().State == proto.StateConnected
+	// Resolve first so the probe dial bypasses the system resolver
+	// (which on Windows can be hijacked by an active tunnel and is the
+	// suspected root cause of 1–2ms readings on every server). Skip
+	// while connected — any DNS lookup right now would go through the
+	// tunnel and poison ResolvedIP with a tunnel-exit IP.
+	dialIP := ""
+	if !connected {
+		if ip := geoip.ResolveHost(r.Context(), srv.Address); ip != "" {
+			_ = s.store.RecordServerResolved(id, ip)
+			dialIP = ip
+		}
+	} else {
+		dialIP = srv.ResolvedIP
+	}
+	ms, errMsg := probeServer(r.Context(), srv.Address, srv.Port, dialIP, 5*time.Second)
 	if err := s.store.RecordServerProbe(id, ms, errMsg); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if ip := geoip.ResolveHost(r.Context(), srv.Address); ip != "" {
-		_ = s.store.RecordServerResolved(id, ip)
+	if !connected {
+		resolveServerGeo(r.Context(), s.store, srv)
 	}
-	resolveServerGeo(r.Context(), s.store, srv)
 	updated, _ := s.store.FindServer(id)
 	writeJSON(w, http.StatusOK, updated)
 }
@@ -341,6 +397,10 @@ func (s *Server) handleTestAll(w http.ResponseWriter, r *http.Request) {
 			targets = append(targets, sv)
 		}
 	}
+	connected := s.mgr.Status().State == proto.StateConnected
+	if connected {
+		logx.Warn("test-all while connected: DNS lookups skipped to avoid poisoning ResolvedIP via tunnel")
+	}
 	const concurrency = 16
 	sem := make(chan struct{}, concurrency)
 	done := make(chan struct{}, len(targets))
@@ -349,12 +409,20 @@ func (s *Server) handleTestAll(w http.ResponseWriter, r *http.Request) {
 		sem <- struct{}{}
 		go func() {
 			defer func() { <-sem; done <- struct{}{} }()
-			ms, errMsg := probeServer(r.Context(), sv.Address, sv.Port, 4*time.Second)
-			_ = s.store.RecordServerProbe(sv.ID, ms, errMsg)
-			if ip := geoip.ResolveHost(r.Context(), sv.Address); ip != "" {
-				_ = s.store.RecordServerResolved(sv.ID, ip)
+			dialIP := ""
+			if !connected {
+				if ip := geoip.ResolveHost(r.Context(), sv.Address); ip != "" {
+					_ = s.store.RecordServerResolved(sv.ID, ip)
+					dialIP = ip
+				}
+			} else {
+				dialIP = sv.ResolvedIP
 			}
-			resolveServerGeo(r.Context(), s.store, sv)
+			ms, errMsg := probeServer(r.Context(), sv.Address, sv.Port, dialIP, 4*time.Second)
+			_ = s.store.RecordServerProbe(sv.ID, ms, errMsg)
+			if !connected {
+				resolveServerGeo(r.Context(), s.store, sv)
+			}
 		}()
 	}
 	for range targets {

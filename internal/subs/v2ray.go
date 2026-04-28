@@ -226,13 +226,21 @@ func parseHysteria2(subID, raw string) (proto.Server, error) {
 }
 
 func parseNaive(subID, raw string) (proto.Server, error) {
-	// naive+https://user:pass@host:port?...
+	// naive+https://user:pass@host[:port]?...
 	body := strings.TrimPrefix(raw, "naive+")
 	u, err := url.Parse(body)
 	if err != nil {
 		return proto.Server{}, err
 	}
 	host, port := hostPort(u)
+	if port == 0 {
+		// Subscriptions in the wild often omit :port for naive entries
+		// (the user's main case: `naive+https://u:p@np.zxc1x1.ru?...`).
+		// Default to 443 for both naive+https and naive+quic so the
+		// probe / grouping flow has a real port to work with instead of
+		// failing fast on `dial tcp …:0`.
+		port = 443
+	}
 	user := u.User.Username()
 	pass, _ := u.User.Password()
 	name := decodeFragment(u.Fragment, fmt.Sprintf("naive://%s:%d", host, port))
