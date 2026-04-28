@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import type { Server, Status } from "../api/types";
 import { StatusSquare } from "../components/StatusSquare";
 import { WorldMap } from "../components/WorldMap";
+import { locText } from "../components/locText";
 
 /**
  * Main — the home screen, equivalent to docs/mockups/main.html.
@@ -75,6 +76,21 @@ export function Main({ status }: { status: Status }): JSX.Element {
         <div className="station-name">
           {status.server ? status.server.name : "—"}
         </div>
+        {status.server && locText(status.server) ? (
+          <div
+            className="mono"
+            style={{
+              marginTop: -4,
+              marginBottom: 4,
+              fontSize: 11,
+              color: "var(--copper)",
+              fontStyle: "italic",
+              letterSpacing: "0.04em",
+            }}
+          >
+            ⤷ {locText(status.server)}
+          </div>
+        ) : null}
         <div className="mono" style={{ marginBottom: 4 }}>
           {status.server
             ? `${status.server.address}:${status.server.port}`
@@ -195,8 +211,13 @@ export function Main({ status }: { status: Status }): JSX.Element {
             >
               <span className="num">{toRoman(i + 1)}</span>
               <div>
-                <div className="city">{s.city || s.name}</div>
-                <div className="proto">{s.protocol}</div>
+                <div className="city">{s.name}</div>
+                <div className="proto">
+                  {s.protocol}
+                  {locText(s) ? (
+                    <span className="loc-inline"> · {locText(s)}</span>
+                  ) : null}
+                </div>
               </div>
               <span className="ms">
                 {s.last_test_ms && s.last_test_ms > 0

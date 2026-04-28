@@ -239,6 +239,11 @@
 .row.cur {
   background: rgba(184, 92, 44, 0.05);
 }
+.row .loc-inline {
+  color: var(--copper);
+  font-style: italic;
+  opacity: 0.85;
+}
 .row.cur .city {
   color: var(--copper);
   font-style: italic;

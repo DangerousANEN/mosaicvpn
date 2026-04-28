@@ -285,7 +285,7 @@
 }
 .station {
   display: grid;
-  grid-template-columns: 1fr auto auto auto auto;
+  grid-template-columns: minmax(120px, 1fr) auto auto auto auto auto;
   column-gap: 12px;
   align-items: baseline;
   padding: 4px 0;
@@ -295,14 +295,27 @@
 .station:last-child {
   border-bottom: 0;
 }
-.station .city {
+.station .name {
   font-family: "Atlas Serif", Georgia, serif;
   font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.station .loc {
+  font-family: "Atlas Serif", Georgia, serif;
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--copper);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
 }
 .station.cur {
   background: rgba(184, 92, 44, 0.05);
 }
-.station.cur .city {
+.station.cur .name {
   color: var(--copper);
   font-style: italic;
 }

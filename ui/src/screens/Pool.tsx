@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api } from "../api/client";
 import type { Server, Subscription } from "../api/types";
+import { locText } from "../components/locText";
 
 /**
  * Pool — the gazetteer of subscriptions. Mirrors docs/mockups/subs.html.
@@ -304,7 +305,7 @@ function PoolCard({
           <Cell
             lab="Best"
             val={best ? String(best.last_test_ms ?? "—") : "—"}
-            small={best ? `ms · ${best.city || best.name}` : ""}
+            small={best ? `ms · ${best.name}` : ""}
             emphasized={!!best}
           />
         </div>
@@ -372,10 +373,15 @@ function PoolCard({
                     s.id === activeServerId ? "cur" : ""
                   }`}
                 >
-                  <span className="city">{s.city || s.name}</span>
+                  <span className="name">{s.name}</span>
                   <span className="addr mono">
                     {s.address}:{s.port}
                   </span>
+                  {locText(s) ? (
+                    <span className="loc" title="resolved location">
+                      {locText(s)}
+                    </span>
+                  ) : null}
                   <span className="proto mono">{s.protocol}</span>
                   <span
                     className="ms mono"

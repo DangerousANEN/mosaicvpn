@@ -1,279 +1,279 @@
-
 # Mosaic
 
-A multi-protocol VPN client for Windows that an AI agent can drive end-to-end.
+A modular, gazetteer-styled VPN client for Windows.
 
-> **Status — Phase 1 of 4.** This repository currently contains the daemon
-> + CLI scaffold with a *mocked* tunnel. The full sing-box / AmneziaWG
-> integration, the Tauri GUI, and the Windows installer land in subsequent
-> phases. The HTTP API surface, single-instance behaviour, store layout,
-> rule engine, subscription parsers, and CLI shape are already production-
-> quality and won't change shape when Phase 2 plugs in the real backend.
+Mosaic combines a Go daemon (`mosaicd`), a bundled
+[sing-box](https://github.com/SagerNet/sing-box) engine, and a Tauri /
+React GUI (`mosaic-ui`) into a single desktop installer. Subscriptions
+are imported from any sing-box / Clash / v2ray / SIP008 source, every
+station is GeoIP-resolved and pinned on a real world map, and Connect
+opens a local SOCKS / HTTP proxy you can plug into your browser or
+system settings.
 
-## What's in the box
+> 🇷🇺 [Russian translation — README.ru.md](./README.ru.md)
 
-```
-cmd/
-  mosaicd/      → background daemon (HTTP API, state machine, store)
-  mosaic/       → CLI client, identical capabilities to the GUI/MCP
-internal/
-  api/          → daemon HTTP API (bearer-token auth on loopback)
-  apiclient/    → Go client used by the CLI and (later) MCP
-  logx/         → structured slog wrapper
-  paths/        → cross-platform data-directory resolver
-  proto/        → API and storage types (single source of truth)
-  rules/        → routing rule-engine: domain, IP-CIDR, GeoSite, GeoIP,
-                  process, port, AND/OR logic
-  single/       → single-instance enforcement (named mutex on Windows,
-                  flock on Unix, lockfile carrying token + endpoint)
-  state/        → connection state machine + Backend interface
-                  (mock backend ships in Phase 1; sing-box in Phase 2)
-  store/        → on-disk JSON store (atomic writes)
-  subs/         → subscription parsers: sing-box, Clash YAML,
-                  v2ray base64 (vless/vmess/ss/hy2/naive), SIP008
-docs/mockups/   → Atlas-aesthetic UI mockups (cream paper, copper accent)
-```
+---
 
-Roadmap:
+## Highlights
 
-| Phase | Scope |
-|------:|-------|
-| 1 (this) | Daemon + CLI + parsers + state machine + tests |
-| 2 | Real sing-box engine, AmneziaWG, Wintun TUN, kill-switch, MCP |
-| 3 | Tauri + React GUI implementing the 5 Atlas screens |
-| 4 | MSI/MSIX installer, Windows service registration, code signing |
+- **Multi-protocol** — VLESS (+TLS / Reality, ws / grpc / xhttp), Hysteria2,
+  Shadowsocks. Naive and AmneziaWG are on the roadmap.
+- **Real sing-box backend** — `Connect` actually opens a local proxy on
+  `127.0.0.1:2080` (SOCKS) and `127.0.0.1:2081` (HTTP). No mock, no fake
+  state.
+- **Atlas-style UI** — cream paper, copper accents, Atlas Serif &
+  JetBrains Mono. Built on a real equirectangular world map with
+  per-station pins.
+- **Automatic GeoIP** — every station is resolved through ip-api.com
+  during *Test all* and cached in the local store, so the world map
+  shows accurate locations even when subscriptions don't expose
+  city / country metadata.
+- **Subscription engine** — auto-detects sing-box JSON, Clash YAML, v2ray
+  base64 (`vless://`, `vmess://`, `ss://`, `hysteria2://`, `naive+https://`),
+  and SIP008.
+- **Single-instance daemon** — global named mutex on Windows + lockfile
+  carrying the loopback endpoint and bearer token. CLI, GUI and future
+  MCP clients all attach to the same `mosaicd`.
+- **Routing rule engine** — domain / IP-CIDR / GeoSite / GeoIP /
+  process / port matching with AND/OR logic. (UI pass coming in a
+  later RC.)
+- **Local-only API** — `mosaicd` listens on `127.0.0.1:<random>` with a
+  bearer token written into the lockfile. Nothing on the network can
+  reach the daemon.
+
+---
+
+## Install
+
+### Pre-built (Windows 10 / 11)
+
+Grab the latest installer from the
+[Releases](https://github.com/DangerousANEN/mosaicvpn/releases) page
+(`Mosaic_<version>_x64-setup.exe`) and run it. The installer ships
+`mosaic-ui.exe`, `mosaicd.exe`, and `sing-box.exe` under the install
+directory you choose.
+
+The installer is unsigned for now — Windows SmartScreen will warn the
+first time you run it. *More info → Run anyway*. Code signing is
+tracked on the roadmap.
+
+### Quick start
+
+1. Launch **Mosaic** from the Start menu.
+2. Open **Pool**, paste a subscription URL, click **Add**.
+3. Click **Test all** on the subscription card. Latency is probed via
+   TCP and the daemon resolves each server's IP through ip-api.com so
+   pins land in the right place on the map.
+4. Click **Connect** on a station. The proxy listeners surface under the
+   **Engage tunnel** button: `SOCKS · 127.0.0.1:2080  ·  HTTP · 127.0.0.1:2081`.
+5. Point your browser, system proxy, or any tool that speaks SOCKS5 at
+   that address. Verify with `curl --socks5 127.0.0.1:2080 https://ifconfig.me`.
+
+### Uninstall
+
+`Settings → Apps → Mosaic → Uninstall`. The user data dir at
+`%APPDATA%\com.mosaicvpn.ui\daemon` survives uninstalls so you keep
+your subscriptions and probes; delete it manually for a clean slate.
+
+---
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  mosaicd (Windows service / foreground)                      │
-│  ┌─────────────┐  ┌─────────────┐  ┌──────────────────────┐  │
-│  │ state.Mgr   │  │ store.Store │  │ subs.Parser          │  │
-│  │ (sm + sub)  │  │ (atomic)    │  │ (4 formats)          │  │
-│  └──────┬──────┘  └──────┬──────┘  └──────────────────────┘  │
-│         │                │                                    │
-│  ┌──────▼────────────────▼────────────────────────────────┐  │
-│  │ api.Server   GET/POST /v1/* on 127.0.0.1:random        │  │
-│  │              Bearer token written into lockfile         │  │
-│  └────────────┬─────────────────────────────────────┬─────┘  │
-│  ┌────────────▼───┐  ┌────────────┐  ┌──────────────▼─────┐  │
-│  │ Backend iface  │  │ Wintun TUN │  │ MCP server         │  │
-│  │ ──────────────│  │  (P2)      │  │  (P2)              │  │
-│  │ MockBackend P1│  └────────────┘  └────────────────────┘  │
-│  │ SingboxBack P2│                                            │
-│  └───────────────┘                                            │
-└────────────┬─────────────────────────────────────────────────┘
-             │ HTTP + Bearer token
-   ┌─────────┴──────────┐──────────────┬─────────────────┐
-   │ Tauri GUI (P3)     │ mosaic CLI   │ Coding agent    │
-   │ React + WebView2   │ (cobra)      │ via MCP / CLI   │
-   └────────────────────┴──────────────┴─────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  mosaic-ui  (Tauri + React webview, system tray, splash)        │
+│             ── HTTP + Bearer token over 127.0.0.1:<random> ──    │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │  mosaicd  (Go daemon, single instance per host)            │ │
+│  │   • api.Server     /v1/{status,connect,subs,servers,...}   │ │
+│  │   • state.Manager  state machine + Backend interface       │ │
+│  │   • subs.Parser    sing-box / Clash / v2ray-b64 / SIP008   │ │
+│  │   • store.Store    atomic JSON state on disk               │ │
+│  │   • single.Lock    named mutex + lockfile w/ token         │ │
+│  │   • geoip          ip-api.com lookup, lat/lon cache        │ │
+│  └────────────────────┬───────────────────────────────────────┘ │
+│                       │ spawns + watches                          │
+│  ┌────────────────────▼───────────────────────────────────────┐ │
+│  │  sing-box.exe  (bundled v1.10.x, real proxy engine)        │ │
+│  │   • generated config.json per Connect                       │ │
+│  │   • SOCKS  127.0.0.1:2080                                   │ │
+│  │   • HTTP   127.0.0.1:2081                                   │ │
+│  └────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### Single-instance enforcement
+### Why three processes
 
-The daemon refuses to start a second copy via three layered mechanisms:
+- **`sing-box`** is the actual proxy engine. Mosaic does not reimplement
+  VLESS or Hysteria2 — it generates a sing-box config and supervises
+  the process. Crashes in sing-box do not bring down the daemon.
+- **`mosaicd`** owns persistent state (subscriptions, servers, probe
+  results, prefs, rules), a single source of truth via an HTTP API.
+  Multiple clients (the GUI, the CLI, future MCP integrations) all
+  drive it through the same API.
+- **`mosaic-ui`** is the renderer. It does not write directly to disk
+  and has no proxy code itself — it's strictly a view over the daemon.
 
-1. **Platform lock on the lockfile** — `flock` on Unix, `LockFileEx` on
-   Windows. The OS releases the lock automatically on crash.
-2. **Named mutex `Global\Mosaic.daemon`** on Windows for system-wide
-   uniqueness across user sessions.
-3. **Lockfile contents** include the listening host, port, bearer token,
-   PID, and version. Clients (CLI, GUI, MCP) read this file to discover
-   *the* running daemon — there can only be one.
+### Data directory
 
-If a second `mosaicd` is launched, it fails fast with the address of the
-first instance:
+`%APPDATA%\com.mosaicvpn.ui\daemon\` contains:
 
-```
-$ mosaicd
-mosaicd: another daemon is already running on 127.0.0.1:43479 (pid 29590)
-```
-
-### Subscription parsing
-
-`internal/subs` accepts a raw payload and auto-detects the format:
-
-| Format | Detection |
+| File | Purpose |
 |---|---|
-| `singbox` | JSON, contains `"outbounds"` |
-| `clash` | YAML, contains `proxies:` |
-| `v2ray-base64` | base64 or plain list of `vless://`, `vmess://`, `ss://`, `hysteria2://`, `naive+https://` |
-| `sip008` | JSON, contains `"servers"` (Shadowsocks-only) |
+| `daemon.lock` | JSON: host, port, bearer token, pid, version, started |
+| `mosaicd.{out,err}.log` | structured logs from `mosaicd` |
+| `singbox-current.json` | live sing-box config — useful for debugging |
+| `singbox.{out,err}.log` | logs from the sing-box child process |
+| `store.json` | subscriptions, servers, rules, prefs, last-server |
 
-All formats normalise into a single `proto.Server` shape with a stable,
-deterministic `ID` (SHA-1 of subscription + protocol + address + port +
-secret bits). That means re-fetching a subscription does not invalidate
-existing rules that target a server by ID.
+The lockfile is **not** exclusively locked on Windows since rc6 — any
+client can read it.
 
-### State machine
+---
 
-`internal/state.Manager` owns the connection lifecycle:
+## Building from source
 
-```
-disconnected ─▶ connecting ─▶ connected
-                     │            │
-                     ▼            ▼
-                  error      disconnected
-                     ▲            ▲
-                     └────────────┘
-```
+### Prerequisites
 
-The manager is the only thing allowed to mutate `Status`. API handlers,
-the CLI, and the eventual MCP server all read snapshots and observe
-transitions through `Subscribe()` (used by the SSE `/v1/events` stream).
+- Go ≥ 1.23
+- Node ≥ 20 + npm
+- Rust ≥ 1.80 (for Tauri)
+- A copy of `sing-box.exe` v1.10+ on PATH **or** placed next to
+  `mosaicd` after `go build`. Without it, `Connect` falls back to a
+  noisy mock backend.
 
-### Routing rule engine
+### One-shot dev
 
-`internal/rules.Engine` evaluates a `Flow` against an ordered list of
-`proto.Rule`s; the first rule whose `Match` clause fires wins. A `Match`
-supports:
-
-- `domain` (exact), `domain_suffix`, `domain_keyword`
-- `ip_cidr` (IPv4 + IPv6)
-- `process` (executable name)
-- `port` (single value or `lo-hi` ranges)
-- `geosite` (categories — needs a `GeoSiteResolver`)
-- `geoip` (country codes — needs a `GeoIPResolver`)
-- `logic`: `and` (default) or `or`
-
-The resolvers are pluggable interfaces; Phase 1 leaves them `nil` (so
-`geosite`/`geoip` conditions never fire), Phase 2 wires in real GeoSite
-and MaxMind data files.
-
-## Quickstart (development)
-
-The fastest way to bring the whole stack up locally — daemon, CLI, and
-the Tauri GUI — is the dev runner:
-
-```bash
-# macOS / Linux
-scripts/dev.sh
-
-# Windows (PowerShell 7+)
-pwsh scripts/dev.ps1
+```sh
+# Linux / macOS
+./scripts/dev.sh
 ```
 
-What it does:
-
-1. Builds `mosaicd` and `mosaic` into `./bin/`.
-2. Sets `MOSAIC_DATA_DIR=./.mosaic-dev` and exports it for both the
-   daemon and the Tauri shell, so they share one data directory and
-   the GUI can find the daemon's lockfile regardless of host defaults.
-3. Starts `mosaicd` in the background, waits for `daemon.lock` to appear,
-   then runs `npm run tauri dev` in `ui/`.
-4. On Ctrl-C the daemon is stopped cleanly.
-
-Pass `--no-ui` to run only the daemon (handy for poking the API with
-the CLI), or `--reset` to wipe the dev sandbox before starting.
-
-### "daemon offline / Start mosaicd and reload"
-
-If the GUI shows that splash even though `mosaicd` is running, it almost
-always means the GUI is looking at a different `daemon.lock` than the
-one the daemon wrote. Either:
-
-- Set `MOSAIC_DATA_DIR` to the same absolute path in both shells before
-  launching the daemon and the GUI, or
-- Use `scripts/dev.sh` / `scripts/dev.ps1`, which does that for you.
-
-(The daemon's CORS middleware also has to be present for the webview's
-`fetch()` to succeed; this is built-in as of the Phase 3e wiring.)
-
-## Build
-
-Requires Go 1.22+.
-
-```bash
-git clone https://github.com/pupspochta-cpu/mosaicvpn.git
-cd mosaic
-go build ./...
+```pwsh
+# Windows
+.\scripts\dev.ps1
 ```
 
-Cross-compile for Windows (also exercised in CI):
+These build `mosaicd`, build the renderer, place sing-box next to the
+daemon, and launch the Tauri dev shell pointed at the local daemon.
 
-```bash
-GOOS=windows GOARCH=amd64 go build -o bin/mosaicd.exe ./cmd/mosaicd
-GOOS=windows GOARCH=amd64 go build -o bin/mosaic.exe   ./cmd/mosaic
-```
+### Manual
 
-## Run
-
-Run the daemon (this terminal stays attached):
-
-```bash
-mosaicd
-```
-
-Talk to it from another terminal:
-
-```bash
-mosaic status
-mosaic sub add  https://provider.example/sub.txt --name "My Provider"
-mosaic servers
-mosaic connect tokyo
-mosaic disconnect
-mosaic prefs show
-mosaic prefs set --kill-switch=false --tunnel=proxy
-mosaic diag --json
-```
-
-Override the data directory (handy for sandboxing or tests):
-
-```bash
-mosaicd  -data-dir /tmp/mosaic-data
-mosaic   --data-dir /tmp/mosaic-data status
-```
-
-Default data locations:
-
-| OS | Path |
-|---|---|
-| Windows | `%ProgramData%\Mosaic` |
-| macOS | `~/Library/Application Support/Mosaic` |
-| Linux | `$XDG_DATA_HOME/mosaic` or `~/.local/share/mosaic` |
-
-## Test
-
-```bash
+```sh
 go test ./...
-go test -race ./...
+go build -o bin/mosaicd ./cmd/mosaicd
+go build -o bin/mosaic ./cmd/mosaic
+
+cd ui
+npm ci
+npm run build
+npm run tauri dev      # for a dev window
+npm run tauri build    # for a Windows installer
 ```
 
-Phase 1 unit tests cover:
+### Repository layout
 
-- `internal/single` — acquire / release / second-instance rejection
-- `internal/subs` — sing-box, Clash, v2ray-base64, SIP008 parsers, ID
-  determinism, unknown-format handling
-- `internal/store` — defaults, persistence round-trip, dedupe by URL,
-  rule lifecycle
-- `internal/rules` — domain suffix / keyword / exact, port ranges,
-  IP-CIDR, AND/OR logic, GeoSite/GeoIP via fake resolvers, disabled rules
-- `internal/state` — initial state, connect / disconnect, error path,
-  subscriber events, last-server persistence
-- `internal/api` — auth middleware, subscription lifecycle (add/refresh/
-  delete), rule reorder, prefs round-trip, connect-via-CLI
-
-End-to-end smoke (manual, but easily scripted):
-
-```bash
-mosaicd  -data-dir /tmp/mosaic-data &
-echo 'vless://abc@1.2.3.4:443?security=reality#Tokyo' | base64 > /tmp/sub.txt
-python3 -m http.server 8765 --directory /tmp &
-mosaic --data-dir /tmp/mosaic-data sub add http://127.0.0.1:8765/sub.txt
-mosaic --data-dir /tmp/mosaic-data connect Tokyo
-mosaic --data-dir /tmp/mosaic-data status      # state: connected
-mosaic --data-dir /tmp/mosaic-data disconnect
+```
+cmd/
+  mosaicd/         background daemon (HTTP API, state machine, store)
+  mosaic/          CLI client; identical capabilities to the GUI
+internal/
+  api/             daemon HTTP API (bearer-token auth on loopback)
+  apiclient/       Go client used by the CLI and (later) MCP
+  geoip/           ip-api.com client
+  logx/            structured slog wrapper
+  paths/           cross-platform data-directory resolver
+  proto/           API and storage types (single source of truth)
+  rules/           routing rule engine
+  single/          single-instance enforcement
+  state/           connection state machine + Backend interface
+                   (MockBackend, SingBoxBackend)
+  store/           on-disk JSON store (atomic writes)
+  subs/            subscription parsers (4 formats)
+ui/
+  src/             React renderer
+  src-tauri/       Rust shell that spawns mosaicd + sing-box
+docs/
+  mockups/         original Atlas-aesthetic UI references
 ```
 
-## Design system (mockups)
+---
 
-The visual direction lives at `docs/mockups/` (Atlas: cream paper, copper
-accent, cartographic main view, no generic UI components). The Tauri GUI
-in Phase 3 will implement these screens 1:1 against the API documented
-above.
+## Supported protocols
 
-## Licence
+| Protocol | Status | Notes |
+|---|---|---|
+| VLESS | ✅ | TLS + Reality + ws / grpc / xhttp transports |
+| Hysteria2 | ✅ | Optional `obfs=salamander` |
+| Shadowsocks | ✅ | All AEAD ciphers sing-box ships |
+| Trojan | partial | Parsed; not yet wired into sing-box config gen |
+| VMess | partial | Parsed; not yet wired into sing-box config gen |
+| Naive | ❌ | sing-box has no native client; bundling planned |
+| AmneziaWG | ❌ | Userland WireGuard; bundling planned |
 
-TBD — will be set to MIT or Apache-2.0 before the first tagged release.
+---
+
+## API surface
+
+The daemon's HTTP API is documented inline in
+[`internal/api/server.go`](internal/api/server.go). Highlights:
+
+```
+GET    /v1/status                  current connection + proxy listeners
+POST   /v1/connect                 { server_id }
+POST   /v1/disconnect
+
+GET    /v1/subscriptions
+POST   /v1/subscriptions           { url, name? }
+POST   /v1/subscriptions/{id}/refresh
+DELETE /v1/subscriptions/{id}
+
+GET    /v1/servers
+POST   /v1/servers/{id}/test       single TCP probe + GeoIP
+POST   /v1/servers/test-all        parallel batch probe + GeoIP
+
+GET    /v1/rules
+POST   /v1/rules
+DELETE /v1/rules/{id}
+POST   /v1/rules:reorder
+
+GET    /v1/prefs
+PUT    /v1/prefs
+
+GET    /v1/diag                    structured diagnostic dump
+GET    /v1/events                  Server-Sent Events stream
+```
+
+Every request requires `Authorization: Bearer <token>` where `<token>`
+is read from `daemon.lock`. The daemon refuses any non-loopback origin.
+
+---
+
+## Roadmap
+
+| Phase | Scope | Status |
+|---|---|---|
+| 1 | Daemon + CLI + parsers + state machine | done (rc8) |
+| 2a | Real sing-box backend, GeoIP, world map | done (rc9 / rc10) |
+| 2b | UX polish: location-vs-name split, clickable pins | in progress |
+| 3 | TUN backend (wintun) + kill-switch + DNS-leak prevention | planned |
+| 4 | mosaicd as a Windows service (no UAC per Connect) | planned |
+| 5 | MCP server + CLI feature parity | planned |
+| 6 | Code signing + auto-update | planned |
+
+---
+
+## Credits
+
+- [sing-box](https://github.com/SagerNet/sing-box) — proxy engine
+- [simple-world-map](https://github.com/AndrewSouthpaw/simple-world-map)
+  — equirectangular SVG, used as the map base
+- [Tauri](https://tauri.app/) — desktop shell
+- [ip-api.com](https://ip-api.com/) — free GeoIP service
+
+---
+
+## License
+
+TBD. The project is currently in early development; no license has
+been formally selected. Code in this repository is © its authors.
