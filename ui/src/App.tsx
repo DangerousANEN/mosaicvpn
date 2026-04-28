@@ -160,7 +160,7 @@ export function App(): JSX.Element {
         />
       ) : null}
       {screen === "routing" ? <Routing /> : null}
-      {screen === "folio" ? <Folio /> : null}
+      {screen === "folio" ? <Folio status={status} /> : null}
     </div>
   );
 }

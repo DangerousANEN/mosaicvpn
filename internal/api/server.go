@@ -18,6 +18,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DangerousANEN/mosaicvpn/internal/geoip"
@@ -42,6 +43,11 @@ type Server struct {
 	fetcher Fetcher
 
 	mux *http.ServeMux
+
+	// bgGeo serialises background geo-resolve passes triggered by
+	// refresh / disconnect so a 1 000-server subscription doesn't
+	// stack three concurrent ip-api batches against the same data.
+	bgGeoMu sync.Mutex
 }
 
 // NewServer constructs an API server.
@@ -102,6 +108,7 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /v1/subscriptions", s.handleListSubs)
 	s.mux.HandleFunc("POST /v1/subscriptions", s.handleAddSub)
+	s.mux.HandleFunc("PATCH /v1/subscriptions/{id}", s.handleUpdateSub)
 	s.mux.HandleFunc("POST /v1/subscriptions/{id}/refresh", s.handleRefreshSub)
 	s.mux.HandleFunc("DELETE /v1/subscriptions/{id}", s.handleDeleteSub)
 
@@ -146,6 +153,11 @@ func (s *Server) handleDisconnect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Re-attempt geo-resolution for any servers that came in while
+	// the tunnel was up (DNS lookups were skipped to avoid poisoning
+	// ResolvedIP through the proxy). Best-effort; runs in the
+	// background so /v1/disconnect returns immediately.
+	s.kickGeoResolve("")
 	writeJSON(w, http.StatusOK, s.mgr.Status())
 }
 
@@ -187,6 +199,7 @@ func (s *Server) handleAddSub(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "fetch/parse failed: "+err.Error())
 		return
 	}
+	s.kickGeoResolve(sub.ID)
 	// reload after refresh
 	for _, su := range s.store.Snapshot().Subscriptions {
 		if su.ID == sub.ID {
@@ -216,6 +229,7 @@ func (s *Server) handleRefreshSub(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.kickGeoResolve(id)
 	for _, su := range s.store.Snapshot().Subscriptions {
 		if su.ID == id {
 			writeJSON(w, http.StatusOK, su)
@@ -223,6 +237,45 @@ func (s *Server) handleRefreshSub(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, target)
+}
+
+// handleUpdateSub mutates name/url on an existing subscription. The
+// renderer wires this to the Servers-screen Edit modal. After a URL
+// change we automatically run /refresh so the server list reflects
+// the new feed without forcing the user to click Refresh manually.
+func (s *Server) handleUpdateSub(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		Name string `json:"name"`
+		URL  string `json:"url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	updated, err := s.store.UpdateSubscriptionFields(id, strings.TrimSpace(req.Name), strings.TrimSpace(req.URL))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if strings.TrimSpace(req.URL) != "" {
+		// URL changed → refetch so /v1/servers and the map pin
+		// set immediately reflect the new feed. Failure here is
+		// non-fatal; we still surface the renamed/repointed
+		// record so the UI can show the user what was saved.
+		if err := s.refresh(r.Context(), updated); err != nil {
+			_ = s.store.MarkSubscriptionError(id, err.Error())
+		} else {
+			s.kickGeoResolve(id)
+			for _, su := range s.store.Snapshot().Subscriptions {
+				if su.ID == id {
+					updated = su
+					break
+				}
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, updated)
 }
 
 func (s *Server) handleDeleteSub(w http.ResponseWriter, r *http.Request) {
@@ -363,8 +416,6 @@ func resolveServerGeoBatch(ctx context.Context, st *store.Store, targets []proto
 		srv  proto.Server
 		hint string
 	}
-	queue := make([]pending, 0, len(targets))
-	hosts := make([]string, 0, len(targets))
 	// Re-snap servers so we see ResolvedIP that phase-1 just wrote;
 	// without this the batch lookup would target the bare hostname,
 	// re-paying the DNS round-trip we already spent.
@@ -373,6 +424,15 @@ func resolveServerGeoBatch(ctx context.Context, st *store.Store, targets []proto
 	for _, sv := range snap.Servers {
 		byID[sv.ID] = sv
 	}
+	// Pre-compute the work list so we can run the DNS-fallback step
+	// in parallel. Sequential ResolveHost on a 1 000-server feed is
+	// the regression that hid pins entirely in rc24.
+	type slot struct {
+		idx  int
+		srv  proto.Server
+		hint string
+	}
+	work := make([]slot, 0, len(targets))
 	for _, sv := range targets {
 		fresh, ok := byID[sv.ID]
 		if !ok {
@@ -381,26 +441,50 @@ func resolveServerGeoBatch(ctx context.Context, st *store.Store, targets []proto
 		if fresh.Lat != 0 || fresh.Lon != 0 {
 			continue
 		}
-		hint := geoip.IsoFromName(fresh.Name)
-		host := fresh.ResolvedIP
-		if host == "" {
-			// Phase-1 didn't populate ResolvedIP (e.g. probe failed
-			// or the user's subscription has hostnames the system
-			// resolver couldn't reach). Try a direct DNS lookup
-			// against 1.1.1.1 / 8.8.8.8 so the batch endpoint sees
-			// an IP literal — ip-api.com's batch is unreliable for
-			// raw hostnames and will silently return empty geo
-			// rows, which is exactly the symptom users hit when
-			// only one of two subscriptions lights up the world map.
-			if ip := geoip.ResolveHost(ctx, fresh.Address); ip != "" {
-				host = ip
-				_ = st.RecordServerResolved(fresh.ID, ip)
-			} else {
-				host = fresh.Address
-			}
+		work = append(work, slot{
+			idx:  len(work),
+			srv:  fresh,
+			hint: geoip.IsoFromName(fresh.Name),
+		})
+	}
+	hosts := make([]string, len(work))
+	for i, s := range work {
+		if s.srv.ResolvedIP != "" {
+			hosts[i] = s.srv.ResolvedIP
 		}
-		queue = append(queue, pending{srv: fresh, hint: hint})
-		hosts = append(hosts, host)
+	}
+	// Parallel ResolveHost for any slot that didn't already carry an
+	// IP. ip-api.com's batch endpoint silently returns empty rows
+	// for bare hostnames, so we MUST hand it IPs to keep the second-
+	// subscription pin gap from rc23 fixed.
+	const dnsConcurrency = 16
+	dnsSem := make(chan struct{}, dnsConcurrency)
+	var dnsWG sync.WaitGroup
+	for i := range work {
+		if hosts[i] != "" {
+			continue
+		}
+		dnsWG.Add(1)
+		dnsSem <- struct{}{}
+		go func(i int) {
+			defer dnsWG.Done()
+			defer func() { <-dnsSem }()
+			s := work[i]
+			if ip := geoip.ResolveHost(ctx, s.srv.Address); ip != "" {
+				hosts[i] = ip
+				_ = st.RecordServerResolved(s.srv.ID, ip)
+				return
+			}
+			// Last-ditch: hand the bare hostname to ip-api anyway.
+			// Some entries (e.g. DNS-over-HTTPS resolved later) still
+			// produce a useful row.
+			hosts[i] = s.srv.Address
+		}(i)
+	}
+	dnsWG.Wait()
+	queue := make([]pending, len(work))
+	for i, s := range work {
+		queue[i] = pending{srv: s.srv, hint: s.hint}
 	}
 	if len(queue) == 0 {
 		return
@@ -720,6 +804,53 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------- helpers -------------------------------------------------------
+
+// kickGeoResolve schedules a background geo-resolve pass for either a
+// specific subscription (subID != "") or every server still missing
+// lat/lon. It exits early if the daemon is currently connected — DNS
+// lookups would otherwise be captured by the live tunnel and produce
+// useless ResolvedIP entries (this is the same condition that gates
+// the connected branch in handleTestAll). The pass is serialised by
+// bgGeoMu so a quick succession of /v1/subscriptions POSTs (the rc24
+// "added 1 000 then 9 servers, no pins" report) doesn't stack three
+// concurrent ip-api batches at the same data.
+func (s *Server) kickGeoResolve(subID string) {
+	if s.mgr.Status().State == proto.StateConnected {
+		return
+	}
+	go func() {
+		s.bgGeoMu.Lock()
+		defer s.bgGeoMu.Unlock()
+		// Re-check connection state inside the lock so a Connect
+		// that races a refresh doesn't push DNS through the tunnel.
+		if s.mgr.Status().State == proto.StateConnected {
+			return
+		}
+		// Cap the whole pass at ~90 s so a hung ip-api endpoint or
+		// 1 000-server DNS storm can't keep this goroutine alive
+		// forever. Background ctx — the originating request is
+		// long gone.
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		snap := s.store.Snapshot()
+		targets := make([]proto.Server, 0, len(snap.Servers))
+		for _, sv := range snap.Servers {
+			if subID != "" && sv.SubscriptionID != subID {
+				continue
+			}
+			if sv.Lat != 0 || sv.Lon != 0 {
+				continue
+			}
+			targets = append(targets, sv)
+		}
+		if len(targets) == 0 {
+			return
+		}
+		logx.Info("background geo-resolve starting", "sub", subID, "servers", len(targets))
+		resolveServerGeoBatch(ctx, s.store, targets)
+		logx.Info("background geo-resolve finished", "sub", subID, "servers", len(targets))
+	}()
+}
 
 func (s *Server) refresh(ctx context.Context, sub proto.Subscription) error {
 	body, _, err := s.fetcher(ctx, sub.URL)

@@ -100,6 +100,11 @@ export const api = {
     request<Subscription>("POST", "/v1/subscriptions", { url, name }),
   refreshSubscription: (id: string) =>
     request<Subscription>("POST", `/v1/subscriptions/${id}/refresh`),
+  updateSubscription: (id: string, name?: string, url?: string) =>
+    request<Subscription>("PATCH", `/v1/subscriptions/${id}`, {
+      name: name ?? "",
+      url: url ?? "",
+    }),
   deleteSubscription: (id: string) =>
     request<void>("DELETE", `/v1/subscriptions/${id}`),
 

@@ -91,11 +91,34 @@ export function Pool({
     }
   };
 
-  const onTestAll = async (subID: string) => {
-    setBusy(`test:${subID}`);
+  const onEdit = async (sub: Subscription) => {
+    // Cheap inline editor — the rc24 user request was just "add an
+    // Edit button"; full modal can come later if needed. window.prompt
+    // is intentionally synchronous so we don't need to manage a separate
+    // modal-state tree across the gazetteer.
+    const newName = window.prompt(
+      "Subscription name (blank = keep current):",
+      sub.name ?? "",
+    );
+    if (newName === null) return; // user cancelled
+    const newURL = window.prompt(
+      "Subscription URL (blank = keep current):",
+      sub.url,
+    );
+    if (newURL === null) return;
+    const trimmedName = newName.trim();
+    const trimmedURL = newURL.trim();
+    const nameChanged = trimmedName !== "" && trimmedName !== (sub.name ?? "");
+    const urlChanged = trimmedURL !== "" && trimmedURL !== sub.url;
+    if (!nameChanged && !urlChanged) return;
+    setBusy(`edit:${sub.id}`);
     setErr(null);
     try {
-      await api.testAllServers(subID);
+      await api.updateSubscription(
+        sub.id,
+        nameChanged ? trimmedName : undefined,
+        urlChanged ? trimmedURL : undefined,
+      );
       await reload();
     } catch (e) {
       setErr((e as Error).message);
@@ -147,10 +170,10 @@ export function Pool({
             activeServerId={activeServerId}
             onRefresh={() => onRefresh(sub.id)}
             onDelete={() => onDelete(sub.id, sub.name)}
-            onTestAll={() => onTestAll(sub.id)}
+            onEdit={() => onEdit(sub)}
             refreshing={busy === `refresh:${sub.id}`}
             deleting={busy === `del:${sub.id}`}
-            testing={busy === `test:${sub.id}`}
+            editing={busy === `edit:${sub.id}`}
           />
         ))}
         {subs.length === 0 ? (
@@ -206,10 +229,10 @@ function PoolCard({
   activeServerId,
   onRefresh,
   onDelete,
-  onTestAll,
+  onEdit,
   refreshing,
   deleting,
-  testing,
+  editing,
 }: {
   num: string;
   sub: Subscription;
@@ -217,10 +240,10 @@ function PoolCard({
   activeServerId?: string;
   onRefresh: () => void;
   onDelete: () => void;
-  onTestAll: () => void;
+  onEdit: () => void;
   refreshing: boolean;
   deleting: boolean;
-  testing: boolean;
+  editing: boolean;
 }): JSX.Element {
   const isCur = servers.some((s) => s.id === activeServerId);
   const live = servers.filter(
@@ -295,37 +318,40 @@ function PoolCard({
         <div className="pool-actions">
           <button
             className="btn ghost"
-            onClick={onRefresh}
-            disabled={refreshing || deleting || testing}
-          >
-            {refreshing ? "Refreshing…" : "Refresh now"}
-          </button>
-          <button
-            className="btn ghost"
-            onClick={onTestAll}
-            disabled={refreshing || deleting || testing || servers.length === 0}
-            title="TCP-probe every station to measure reachability"
-          >
-            {testing ? "Testing…" : "Test all"}
-          </button>
-          <button
-            className="btn ghost"
             onClick={() => {
               // Drill-down route: Pool's old inline expand collapsed
               // an entire 600-server subscription into a cramped list
               // inside the card. Hand off to SubscriptionDetail via
               // hash so the user gets a dedicated table view with
               // pagination-free real estate (rc24 user request).
+              // rc25: renamed "Browse stations" → "Servers" per user
+              // ask; Test-all now lives on the detail screen alongside
+              // a separate Test all (URL) variant.
               window.location.hash = `sub=${encodeURIComponent(sub.id)}`;
             }}
             disabled={refreshing || deleting}
           >
-            Browse stations
+            Servers
+          </button>
+          <button
+            className="btn ghost"
+            onClick={onRefresh}
+            disabled={refreshing || deleting || editing}
+          >
+            {refreshing ? "Refreshing…" : "Refresh now"}
+          </button>
+          <button
+            className="btn ghost"
+            onClick={onEdit}
+            disabled={refreshing || deleting || editing}
+            title="Rename or repoint this subscription at a different URL"
+          >
+            {editing ? "Saving…" : "Edit"}
           </button>
           <button
             className="btn ghost danger"
             onClick={onDelete}
-            disabled={refreshing || deleting || testing}
+            disabled={refreshing || deleting || editing}
           >
             {deleting ? "Removing…" : "Delete"}
           </button>

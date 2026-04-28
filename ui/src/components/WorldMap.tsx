@@ -264,12 +264,37 @@ export function WorldMap({
         maxScale={6}
         doubleClick={{ mode: "reset" }}
         limitToBounds={true}
-        wheel={{ step: 0.15 }}
+        centerOnInit={true}
+        // wheel.step controls the per-tick zoom delta for both
+        // mouse-wheel and pinch gestures. rc24 used 0.15 which made
+        // a single notch of an MX Master scroll the map straight
+        // from 1× to ~5×; user feedback was "слишком крупный шаг".
+        // 0.05 gives roughly twenty notches across the full
+        // 1×-6× range, which feels closer to Google Maps.
+        wheel={{ step: 0.05 }}
+        // smoothStep also affects pinch zoom on touchpads.
+        pinch={{ step: 5 }}
+        // velocityDisabled removes the "fling" inertia after pan,
+        // which on a map with a hard limit feels more like a bounce
+        // than smooth motion.
         panning={{ velocityDisabled: true }}
       >
         <TransformComponent
-          wrapperStyle={{ width: "100%", height: "100%" }}
-          contentStyle={{ width: "100%", height: "100%", position: "relative" }}
+          wrapperStyle={{
+            width: "100%",
+            height: "100%",
+            // Same beige tone as the map's land fill so when the
+            // user pans toward an edge the gap between map and
+            // the stage's clipped frame doesn't reveal a different
+            // background colour (the rc24 "ugly borders" report).
+            background: "var(--worldmap-bg, #d8c8a8)",
+            overflow: "hidden",
+          }}
+          contentStyle={{
+            width: "100%",
+            height: "100%",
+            position: "relative",
+          }}
         >
       <svg
         className="worldmap-img"

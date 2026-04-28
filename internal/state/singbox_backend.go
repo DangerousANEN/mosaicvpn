@@ -173,8 +173,21 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, prefs s
 	b.cmd = cmd
 	b.cancel = cancel
 	b.doneCh = make(chan struct{})
-	b.socks = fmt.Sprintf("127.0.0.1:%d", socksPort)
-	b.http = fmt.Sprintf("127.0.0.1:%d", httpPort)
+	// Surface the actual listen host so the UI can show a usable
+	// LAN address. When ShareLAN is on sing-box binds 0.0.0.0 — but
+	// 0.0.0.0 is meaningless to a peer ("connect to 0.0.0.0:2080"
+	// won't work), so we publish the daemon machine's first non-
+	// loopback v4 address instead. Falls back to loopback if no
+	// LAN interface is up.
+	listenHost := "127.0.0.1"
+	if prefs.ShareLAN {
+		listenHost = firstLANAddr()
+		if listenHost == "" {
+			listenHost = "0.0.0.0"
+		}
+	}
+	b.socks = fmt.Sprintf("%s:%d", listenHost, socksPort)
+	b.http = fmt.Sprintf("%s:%d", listenHost, httpPort)
 	if clashPort > 0 {
 		b.clashAPI = fmt.Sprintf("127.0.0.1:%d", clashPort)
 	} else {
@@ -405,12 +418,44 @@ func (b *SingBoxBackend) Stop(_ context.Context) error {
 	return nil
 }
 
+// firstLANAddr returns the first non-loopback IPv4 address bound on
+// the host, or "" if none is up. Used to render a usable LAN
+// share address in the UI when ShareLAN is enabled — `0.0.0.0:2080`
+// is correct on the bind side but useless when copy-pasted into a
+// phone's manual proxy field.
+func firstLANAddr() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, a := range addrs {
+		ipn, ok := a.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		ip4 := ipn.IP.To4()
+		if ip4 == nil || ip4.IsLoopback() || ip4.IsLinkLocalUnicast() {
+			continue
+		}
+		return ip4.String()
+	}
+	return ""
+}
+
 // pickPort returns preferred if it's free, otherwise an ephemeral
 // loopback port. Returns 0 only if even the ephemeral allocation fails.
+//
+// preferred=0 is the explicit "give me anything" signal — in that case
+// we always go through the ephemeral path so we can read the actual
+// port the OS handed us; the previous implementation returned the
+// literal 0 here, which surfaced to the user as the bogus
+// "Verify: could not bind a free loopback port" error reported in rc24.
 func pickPort(preferred int) int {
-	if l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", preferred)); err == nil {
-		_ = l.Close()
-		return preferred
+	if preferred > 0 {
+		if l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", preferred)); err == nil {
+			_ = l.Close()
+			return preferred
+		}
 	}
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -514,10 +559,54 @@ func BuildSingBoxConfig(server proto.Server, prefs store.Prefs, socksPort, httpP
 	if prefs.TunnelMode == "tun" {
 		inbounds = append(inbounds, tunInbound(prefs))
 	}
+	// DNS configuration. The previous rc24 config left this section
+	// empty, which meant sing-box defaulted to the OS resolver — and on
+	// Windows + TUN that resolver's UDP queries hit the LAN router
+	// through the captured tunnel, looped back, and timed out (visible
+	// as ~200 "dns: exchange failed ... i/o timeout" lines per session
+	// in singbox.err.log). Forcing a remote resolver via DoH (1.1.1.1)
+	// reachable through the proxy outbound, with a direct local fallback
+	// for resolving the proxy server's own hostname, breaks that loop.
+	dnsServers := []any{
+		map[string]any{
+			"tag":              "remote-doh",
+			"address":          "https://1.1.1.1/dns-query",
+			"address_resolver": "local",
+			"detour":           "proxy",
+			"strategy":         "ipv4_only",
+		},
+		map[string]any{
+			"tag":     "local",
+			"address": "8.8.8.8",
+			"detour":  "direct",
+		},
+		map[string]any{
+			"tag":     "block",
+			"address": "rcode://success",
+		},
+	}
+	dnsRules := []any{
+		// Resolve sub/server hostnames (geosite-style domains we host
+		// outbounds against) through the local resolver so the proxy
+		// itself can dial them — without this every Connect fails to
+		// resolve the upstream proxy server when TUN intercepts the
+		// dial.
+		map[string]any{
+			"outbound": "any",
+			"server":   "local",
+		},
+	}
 	cfg := map[string]any{
 		"log": map[string]any{
 			"level":     "warn",
 			"timestamp": true,
+		},
+		"dns": map[string]any{
+			"servers":           dnsServers,
+			"rules":             dnsRules,
+			"final":             "remote-doh",
+			"strategy":          "ipv4_only",
+			"independent_cache": true,
 		},
 		"inbounds": inbounds,
 		"outbounds": []any{
@@ -567,13 +656,23 @@ func tunInbound(prefs store.Prefs) map[string]any {
 		"type":           "tun",
 		"tag":            "tun-in",
 		"interface_name": "mosaic0",
-		"inet4_address":  "172.19.0.1/30",
-		"inet6_address":  "fd00:cafe::1/126",
-		"mtu":            mtu,
-		"auto_route":     true,
-		"strict_route":   true,
-		"stack":          stack,
-		"sniff":          true,
+		// sing-box 1.10+ replaces the legacy inet4_address /
+		// inet6_address pair with a single `address` array. The new
+		// form is forward-compatible with 1.12+ which drops the
+		// legacy fields outright. /30 keeps the adapter's local
+		// subnet at exactly two host addresses (gateway + client) —
+		// matching the layout sing-box's gVisor stack expects.
+		"address": []any{
+			"172.19.0.1/30",
+			"fd00:cafe::1/126",
+		},
+		"mtu":          mtu,
+		"auto_route":   true,
+		"strict_route": true,
+		"stack":        stack,
+		"sniff":        true,
+		// endpoint_independent_nat lets symmetric NAT'd UDP
+		// flows (STUN, QUIC, WebRTC) survive the gVisor stack.
 		"endpoint_independent_nat": true,
 	}
 }

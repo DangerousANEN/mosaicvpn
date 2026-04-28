@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api/client";
-import type { Prefs } from "../api/types";
+import type { Prefs, Status } from "../api/types";
 import { isAdmin, restartAsAdmin } from "../api/tauri";
 
 /**
@@ -33,7 +33,7 @@ const CHAPTERS: { id: ChapterId; num: string; title: string; sub: string }[] = [
   },
 ];
 
-export function Folio(): JSX.Element {
+export function Folio({ status }: { status?: Status | null }): JSX.Element {
   const [loaded, setLoaded] = useState<Prefs | null>(null);
   const [draft, setDraft] = useState<Prefs | null>(null);
   const [busy, setBusy] = useState<"load" | "save" | null>("load");
@@ -209,6 +209,23 @@ export function Folio(): JSX.Element {
                   onChange={(v) => update("share_lan", v)}
                 />
               </Opt>
+              {/* Live LAN address — sing-box's listen_port may fall back
+                  to an ephemeral port when the configured 2080/2081 is
+                  busy, which made the rc24 "raздача в LAN либо не работает,
+                  либо не на порту 2080" complaint hard to debug. We
+                  surface the actual listener address here so the user
+                  knows exactly what to point a phone at. */}
+              {draft.share_lan && status?.proxy_socks ? (
+                <Opt
+                  name="LAN listener — actual"
+                  desc="What sing-box is currently listening on. Copy this into the proxy field of any LAN device."
+                >
+                  <div className="mono" style={{ fontSize: 12 }}>
+                    SOCKS · {status.proxy_socks}
+                    {status.proxy_http ? `   ·   HTTP · ${status.proxy_http}` : ""}
+                  </div>
+                </Opt>
+              ) : null}
               <Opt
                 name="LAN share — username"
                 desc="Optional username for the shared SOCKS / HTTP proxies. Leave blank to keep the listeners anonymous (still bound on 0.0.0.0). Both username and password must be set to enable auth."

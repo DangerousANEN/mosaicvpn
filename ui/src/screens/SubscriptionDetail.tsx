@@ -65,7 +65,7 @@ export function SubscriptionDetail({
     }
   };
 
-  const onTestAll = async () => {
+  const onTestAllTCP = async () => {
     setBusy("test-all");
     setErr(null);
     try {
@@ -76,6 +76,34 @@ export function SubscriptionDetail({
     } finally {
       setBusy(null);
     }
+  };
+
+  // onTestAllURL spins an ephemeral sing-box per server (serialised on
+  // the daemon side via urlTestMu) and walks the entire subscription.
+  // Each pass takes ~3-5 s; we surface progress ("Verifying X / N…")
+  // in the button so a 1 000-server feed doesn't look hung. Errors
+  // collected per server land in the banner as a short summary; the
+  // full per-server result still shows next to the row Verify button
+  // when the user runs it individually.
+  const onTestAllURL = async () => {
+    if (own.length === 0) return;
+    setBusy("url-all:0");
+    setErr(null);
+    let ok = 0;
+    let bad = 0;
+    for (let i = 0; i < own.length; i++) {
+      setBusy(`url-all:${i + 1}`);
+      try {
+        const r = await api.urlTestServer(own[i].id);
+        if (r.error) bad++;
+        else ok++;
+      } catch {
+        bad++;
+      }
+    }
+    setBusy(null);
+    setErr(`Verify all: ${ok} ok, ${bad} failed (of ${own.length})`);
+    await reload();
   };
 
   const onConnectClick = async (id: string) => {
@@ -106,14 +134,24 @@ export function SubscriptionDetail({
             {redactedURL(subscription.url)} · {own.length} servers
           </div>
         </div>
-        <div className="pool-mast-right">
+        <div className="pool-mast-right" style={{ display: "flex", gap: 8 }}>
           <button
             className="btn ghost"
-            onClick={onTestAll}
+            onClick={onTestAllTCP}
             disabled={busy !== null || own.length === 0}
-            title="TCP-probe every station in this subscription"
+            title="TCP-probe every station in this subscription (fast — a few seconds)"
           >
-            {busy === "test-all" ? "Testing…" : "Test all"}
+            {busy === "test-all" ? "Testing…" : "Test all (TCP)"}
+          </button>
+          <button
+            className="btn ghost"
+            onClick={onTestAllURL}
+            disabled={busy !== null || own.length === 0}
+            title="Spin up sing-box for each station and fetch generate_204 (slow — ~3-5 s per server, serialised)"
+          >
+            {busy?.startsWith("url-all:")
+              ? `Verifying ${busy.slice("url-all:".length)} / ${own.length}…`
+              : "Test all (URL)"}
           </button>
         </div>
       </header>

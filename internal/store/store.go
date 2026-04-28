@@ -216,6 +216,31 @@ func (s *Store) AddOrUpdateSubscription(sub proto.Subscription) (proto.Subscript
 	return saved, err
 }
 
+// UpdateSubscriptionFields mutates name/url on the subscription
+// matching id. Used by the Edit modal in the renderer's Servers
+// screen to rename a feed or repoint it at a new URL without
+// dropping its server / probe history. Returns the updated record.
+func (s *Store) UpdateSubscriptionFields(id, name, url string) (proto.Subscription, error) {
+	var saved proto.Subscription
+	err := s.Update(func(st *State) error {
+		for i := range st.Subscriptions {
+			if st.Subscriptions[i].ID != id {
+				continue
+			}
+			if name != "" {
+				st.Subscriptions[i].Name = name
+			}
+			if url != "" {
+				st.Subscriptions[i].URL = url
+			}
+			saved = st.Subscriptions[i]
+			return nil
+		}
+		return fmt.Errorf("subscription %q not found", id)
+	})
+	return saved, err
+}
+
 // ReplaceServersFor replaces all stored servers belonging to subID with the
 // supplied list. Each server's SubscriptionID is forced to subID.
 func (s *Store) ReplaceServersFor(subID string, servers []proto.Server) error {
