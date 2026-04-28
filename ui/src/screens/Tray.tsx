@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { api } from "../api/client";
-import type { Server, Status } from "../api/types";
+import type { Status } from "../api/types";
+import { useLiveServers } from "../hooks/useLiveServers";
 
 /**
  * Tray — the compact popup that appears from the system tray.
@@ -9,24 +10,11 @@ import type { Server, Status } from "../api/types";
  * wired in src-tauri/src/main.rs.
  */
 export function Tray({ status }: { status: Status }): JSX.Element {
-  const [servers, setServers] = useState<Server[]>([]);
+  const { servers, error: liveErr } = useLiveServers();
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .listServers()
-      .then((s) => {
-        if (!cancelled) setServers(s);
-      })
-      .catch((e: Error) => {
-        if (!cancelled) setErr(e.message);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const [localErr, setLocalErr] = useState<string | null>(null);
+  const err = localErr ?? liveErr;
+  const setErr = setLocalErr;
 
   const recent = useMemo(() => {
     return [...servers]

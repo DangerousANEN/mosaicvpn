@@ -482,22 +482,35 @@ func BuildSingBoxConfig(server proto.Server, prefs store.Prefs, socksPort, httpP
 	if prefs.ShareLAN {
 		listen = "0.0.0.0"
 	}
-	inbounds := []any{
-		map[string]any{
-			"type":        "socks",
-			"tag":         "socks-in",
-			"listen":      listen,
-			"listen_port": socksPort,
-			"sniff":       true,
-		},
-		map[string]any{
-			"type":        "http",
-			"tag":         "http-in",
-			"listen":      listen,
-			"listen_port": httpPort,
-			"sniff":       true,
-		},
+	socksIn := map[string]any{
+		"type":        "socks",
+		"tag":         "socks-in",
+		"listen":      listen,
+		"listen_port": socksPort,
+		"sniff":       true,
 	}
+	httpIn := map[string]any{
+		"type":        "http",
+		"tag":         "http-in",
+		"listen":      listen,
+		"listen_port": httpPort,
+		"sniff":       true,
+	}
+	// LAN share auth: when prefs.ShareLAN exposes the proxies on
+	// 0.0.0.0, require username/password if the user provided any.
+	// sing-box's socks/http inbound `users` array gates access; an
+	// empty/missing array leaves the listener anonymous (loopback
+	// historic behaviour). Only attach when ShareLAN is on so a
+	// loopback-only deployment never asks for a password.
+	if prefs.ShareLAN && prefs.ShareUser != "" && prefs.SharePass != "" {
+		users := []any{map[string]any{
+			"username": prefs.ShareUser,
+			"password": prefs.SharePass,
+		}}
+		socksIn["users"] = users
+		httpIn["users"] = users
+	}
+	inbounds := []any{socksIn, httpIn}
 	if prefs.TunnelMode == "tun" {
 		inbounds = append(inbounds, tunInbound(prefs))
 	}

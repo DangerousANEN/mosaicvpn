@@ -384,7 +384,20 @@ func resolveServerGeoBatch(ctx context.Context, st *store.Store, targets []proto
 		hint := geoip.IsoFromName(fresh.Name)
 		host := fresh.ResolvedIP
 		if host == "" {
-			host = fresh.Address
+			// Phase-1 didn't populate ResolvedIP (e.g. probe failed
+			// or the user's subscription has hostnames the system
+			// resolver couldn't reach). Try a direct DNS lookup
+			// against 1.1.1.1 / 8.8.8.8 so the batch endpoint sees
+			// an IP literal — ip-api.com's batch is unreliable for
+			// raw hostnames and will silently return empty geo
+			// rows, which is exactly the symptom users hit when
+			// only one of two subscriptions lights up the world map.
+			if ip := geoip.ResolveHost(ctx, fresh.Address); ip != "" {
+				host = ip
+				_ = st.RecordServerResolved(fresh.ID, ip)
+			} else {
+				host = fresh.Address
+			}
 		}
 		queue = append(queue, pending{srv: fresh, hint: hint})
 		hosts = append(hosts, host)

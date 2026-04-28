@@ -489,3 +489,53 @@
 .italic {
   font-style: italic;
 }
+
+/*
+ * SubscriptionDetail table — full-screen drill-down. Reachable from
+ * the Pool screen's "Browse stations" button. Inherits .pool-frame /
+ * .pool-mast styling for the header so the visual continuity with
+ * Pool stays intact.
+ */
+.sub-detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 12px;
+}
+.sub-detail-table th,
+.sub-detail-table td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--ink-2, #d8cfc0);
+  vertical-align: middle;
+}
+.sub-detail-table th {
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 10px;
+  color: var(--ink-2, #6a5e4f);
+  border-bottom: 1.5px solid var(--ink, #2a2620);
+}
+.sub-detail-table th.num,
+.sub-detail-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.sub-detail-table tr.cur {
+  background: rgba(0, 0, 0, 0.04);
+}
+.sub-detail-table tr.cur td:first-child::before {
+  content: "◆ ";
+  color: var(--copper);
+}
+.sub-detail-table td.actions {
+  white-space: nowrap;
+}
+.sub-detail-table td.actions .btn + .btn {
+  margin-left: 4px;
+}
+.sub-detail-table td.empty {
+  text-align: center;
+  padding: 24px 8px;
+}

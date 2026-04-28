@@ -49,6 +49,8 @@ type Prefs struct {
 	ShareLAN        bool   `json:"share_lan"`
 	ShareAddr       string `json:"share_addr"`
 	ShareAllow      []string `json:"share_allow,omitempty"`
+	ShareUser       string `json:"share_user,omitempty"`
+	SharePass       string `json:"share_pass,omitempty"`
 	AutoStart       string `json:"auto_start"` // "service" | "user" | "manual"
 	AutoConnect     bool   `json:"auto_connect"`
 	ShowOnLaunch    bool   `json:"show_on_launch"`

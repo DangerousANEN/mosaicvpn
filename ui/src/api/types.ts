@@ -109,6 +109,8 @@ export interface Prefs {
   allow_lan: boolean;
   share_lan: boolean;
   share_addr: string;
+  share_user?: string;
+  share_pass?: string;
   dns_proxied: string;
   dns_direct: string;
   auto_connect: boolean;

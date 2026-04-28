@@ -25,6 +25,7 @@
  */
 
 import { useState, type MouseEvent as ReactMouseEvent } from "react";
+import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import worldUrl from "../assets/world.svg";
 import type { Server } from "../api/types";
 import { cityToLatLon } from "./cityCoords";
@@ -253,6 +254,23 @@ export function WorldMap({
           .map pane so the world never gets stretched horizontally —
           letterboxing instead when the parent isn't 1.71:1. */}
       <div className="worldmap-stage">
+      {/* Pan + pinch wrapper. minScale=1 keeps the world fitted as the
+          neutral state; users can zoom in up to 6x for dense regions
+          and pan with click-drag. doubleClick.mode="reset" gives a
+          quick way back to fit-view. limitToBounds keeps panning
+          inside the visible stage. */}
+      <TransformWrapper
+        minScale={1}
+        maxScale={6}
+        doubleClick={{ mode: "reset" }}
+        limitToBounds={true}
+        wheel={{ step: 0.15 }}
+        panning={{ velocityDisabled: true }}
+      >
+        <TransformComponent
+          wrapperStyle={{ width: "100%", height: "100%" }}
+          contentStyle={{ width: "100%", height: "100%", position: "relative" }}
+        >
       <svg
         className="worldmap-img"
         viewBox={`${MAP_VB.x} ${MAP_VB.y} ${MAP_VB.w} ${MAP_VB.h}`}
@@ -619,6 +637,8 @@ export function WorldMap({
       ) : null}
 
       {bearing ? <div className="worldmap-bearing">{bearing}</div> : null}
+        </TransformComponent>
+      </TransformWrapper>
       </div>
     </div>
   );

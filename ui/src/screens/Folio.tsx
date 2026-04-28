@@ -209,6 +209,28 @@ export function Folio(): JSX.Element {
                   onChange={(v) => update("share_lan", v)}
                 />
               </Opt>
+              <Opt
+                name="LAN share — username"
+                desc="Optional username for the shared SOCKS / HTTP proxies. Leave blank to keep the listeners anonymous (still bound on 0.0.0.0). Both username and password must be set to enable auth."
+              >
+                <Text
+                  value={draft.share_user ?? ""}
+                  onChange={(v) => update("share_user", v)}
+                  placeholder="mosaic"
+                  disabled={!draft.share_lan}
+                />
+              </Opt>
+              <Opt
+                name="LAN share — password"
+                desc="Optional password paired with the username above. Stored in store.json (loopback-only file with 0700 dir perms); rotate as you would any other shared credential."
+              >
+                <Text
+                  value={draft.share_pass ?? ""}
+                  onChange={(v) => update("share_pass", v)}
+                  placeholder="••••••"
+                  disabled={!draft.share_lan}
+                />
+              </Opt>
             </Chapter>
           ) : null}
 

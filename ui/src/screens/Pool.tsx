@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api } from "../api/client";
 import type { Server, Subscription } from "../api/types";
-import { locText } from "../components/locText";
-import { groupServers } from "../components/serverGroup";
+
 
 /**
  * Pool — the gazetteer of subscriptions. Mirrors docs/mockups/subs.html.
@@ -21,7 +20,6 @@ export function Pool({
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [url, setUrl] = useState("");
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const reload = async () => {
     try {
@@ -106,56 +104,6 @@ export function Pool({
     }
   };
 
-  const onTestOne = async (serverID: string) => {
-    setBusy(`testone:${serverID}`);
-    setErr(null);
-    try {
-      await api.testServer(serverID);
-      await reload();
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const onUrlTest = async (serverID: string) => {
-    setBusy(`url:${serverID}`);
-    setErr(null);
-    try {
-      const r = await api.urlTestServer(serverID);
-      if (r.error) {
-        setErr(`Verify ${shortServerLabel(serverID)}: ${r.error}`);
-      } else {
-        setErr(
-          `Verify ${shortServerLabel(serverID)}: HTTP ${r.status} in ${r.rtt_ms}ms`,
-        );
-      }
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const shortServerLabel = (id: string): string => {
-    const s = servers.find((sv) => sv.id === id);
-    return s ? s.name : id.slice(0, 8);
-  };
-
-  const onConnect = async (serverID: string) => {
-    setBusy(`conn:${serverID}`);
-    setErr(null);
-    try {
-      await api.connect(serverID);
-      await reload();
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
-
   const totals = useMemo(() => {
     const live = servers.filter(
       (s) => (s.last_test_ms ?? 0) > 0 && !s.last_test_error,
@@ -197,17 +145,9 @@ export function Pool({
             sub={sub}
             servers={servers.filter((s) => s.subscription_id === sub.id)}
             activeServerId={activeServerId}
-            expanded={!!expanded[sub.id]}
-            busy={busy}
-            onToggleExpand={() =>
-              setExpanded((prev) => ({ ...prev, [sub.id]: !prev[sub.id] }))
-            }
             onRefresh={() => onRefresh(sub.id)}
             onDelete={() => onDelete(sub.id, sub.name)}
             onTestAll={() => onTestAll(sub.id)}
-            onTestOne={onTestOne}
-            onUrlTest={onUrlTest}
-            onConnect={onConnect}
             refreshing={busy === `refresh:${sub.id}`}
             deleting={busy === `del:${sub.id}`}
             testing={busy === `test:${sub.id}`}
@@ -264,15 +204,9 @@ function PoolCard({
   sub,
   servers,
   activeServerId,
-  expanded,
-  busy,
-  onToggleExpand,
   onRefresh,
   onDelete,
   onTestAll,
-  onTestOne,
-  onUrlTest,
-  onConnect,
   refreshing,
   deleting,
   testing,
@@ -281,15 +215,9 @@ function PoolCard({
   sub: Subscription;
   servers: Server[];
   activeServerId?: string;
-  expanded: boolean;
-  busy: string | null;
-  onToggleExpand: () => void;
   onRefresh: () => void;
   onDelete: () => void;
   onTestAll: () => void;
-  onTestOne: (id: string) => void;
-  onUrlTest: (id: string) => void;
-  onConnect: (id: string) => void;
   refreshing: boolean;
   deleting: boolean;
   testing: boolean;
@@ -382,10 +310,17 @@ function PoolCard({
           </button>
           <button
             className="btn ghost"
-            onClick={onToggleExpand}
+            onClick={() => {
+              // Drill-down route: Pool's old inline expand collapsed
+              // an entire 600-server subscription into a cramped list
+              // inside the card. Hand off to SubscriptionDetail via
+              // hash so the user gets a dedicated table view with
+              // pagination-free real estate (rc24 user request).
+              window.location.hash = `sub=${encodeURIComponent(sub.id)}`;
+            }}
             disabled={refreshing || deleting}
           >
-            {expanded ? "Hide stations" : "Browse stations"}
+            Browse stations
           </button>
           <button
             className="btn ghost danger"
@@ -398,91 +333,6 @@ function PoolCard({
             {fmtRefreshHint(sub)}
           </span>
         </div>
-
-        {expanded && servers.length > 0 ? (
-          <div className="pool-stations">
-            {groupServers(servers).map((g) => (
-              <div
-                key={g.key}
-                className={`host-group ${
-                  g.members.some((m) => m.id === activeServerId) ? "cur" : ""
-                }`}
-              >
-                <div className="host-head">
-                  <span className="host-addr mono">{g.host}</span>
-                  {locText(g.primary) ? (
-                    <span className="host-loc">{locText(g.primary)}</span>
-                  ) : null}
-                  <span className="host-meta mono">
-                    {g.members.length}{" "}
-                    {g.members.length === 1 ? "protocol" : "protocols"}
-                    {g.bestMs !== null ? ` · best ${g.bestMs}ms` : ""}
-                  </span>
-                </div>
-                {g.members.map((s) => {
-                  const testingOne = busy === `testone:${s.id}`;
-                  const connectingOne = busy === `conn:${s.id}`;
-                  return (
-                    <div
-                      key={s.id}
-                      className={`station ${
-                        s.id === activeServerId ? "cur" : ""
-                      }`}
-                    >
-                      <span className="name">{s.name}</span>
-                      <span className="addr mono">:{s.port}</span>
-                      <span className="proto mono">{s.protocol}</span>
-                      <span
-                        className="ms mono"
-                        title={s.last_test_error || undefined}
-                      >
-                        {testingOne
-                          ? "…"
-                          : (s.last_test_ms ?? 0) > 0
-                            ? `${s.last_test_ms}ms`
-                            : (s.last_test_ms ?? 0) < 0
-                              ? "fail"
-                              : "—"}
-                      </span>
-                      <span className="station-actions">
-                        <button
-                          type="button"
-                          className="btn ghost xs"
-                          onClick={() => onTestOne(s.id)}
-                          disabled={testingOne || testing}
-                          title="TCP probe — confirms remote port answers"
-                        >
-                          Test
-                        </button>
-                        <button
-                          type="button"
-                          className="btn ghost xs"
-                          onClick={() => onUrlTest(s.id)}
-                          disabled={busy === `url:${s.id}` || testing}
-                          title="URL test — fetches generate_204 through this proxy to prove real internet access"
-                        >
-                          {busy === `url:${s.id}` ? "…" : "Verify"}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn primary xs"
-                          onClick={() => onConnect(s.id)}
-                          disabled={connectingOne}
-                        >
-                          {connectingOne
-                            ? "…"
-                            : s.id === activeServerId
-                              ? "Active"
-                              : "Connect"}
-                        </button>
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-        ) : null}
       </div>
     </article>
   );
