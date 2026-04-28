@@ -16,6 +16,10 @@ import type {
 
 let cached: DaemonEndpoint | null = null;
 
+function arr<T>(v: T[] | null | undefined): T[] {
+  return Array.isArray(v) ? v : [];
+}
+
 /**
  * resolveEndpoint returns the cached endpoint or asks the Rust side to
  * read the lockfile. The lockfile may not exist if mosaicd isn't
@@ -65,9 +69,13 @@ export const api = {
     request<Status>("POST", "/v1/connect", { server_id: serverId }),
   disconnect: () => request<Status>("POST", "/v1/disconnect"),
 
-  listServers: () => request<Server[]>("GET", "/v1/servers"),
+  // Older daemons (pre-rc8) returned `null` instead of `[]` for empty
+  // lists; coerce to a real array so callers can spread/iterate
+  // unconditionally.
+  listServers: async () => arr(await request<Server[]>("GET", "/v1/servers")),
 
-  listSubscriptions: () => request<Subscription[]>("GET", "/v1/subscriptions"),
+  listSubscriptions: async () =>
+    arr(await request<Subscription[]>("GET", "/v1/subscriptions")),
   addSubscription: (url: string, name?: string) =>
     request<Subscription>("POST", "/v1/subscriptions", { url, name }),
   refreshSubscription: (id: string) =>
@@ -75,7 +83,7 @@ export const api = {
   deleteSubscription: (id: string) =>
     request<void>("DELETE", `/v1/subscriptions/${id}`),
 
-  listRules: () => request<Rule[]>("GET", "/v1/rules"),
+  listRules: async () => arr(await request<Rule[]>("GET", "/v1/rules")),
   addRule: (rule: Partial<Rule>) => request<Rule>("POST", "/v1/rules", rule),
   deleteRule: (id: string) => request<void>("DELETE", `/v1/rules/${id}`),
   reorderRules: (ids: string[]) =>

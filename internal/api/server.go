@@ -145,7 +145,11 @@ func (s *Server) handleDisconnect(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListSubs(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.Snapshot().Subscriptions)
+	subs := s.store.Snapshot().Subscriptions
+	if subs == nil {
+		subs = []proto.Subscription{}
+	}
+	writeJSON(w, http.StatusOK, subs)
 }
 
 func (s *Server) handleAddSub(w http.ResponseWriter, r *http.Request) {
@@ -237,11 +241,20 @@ func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if out == nil {
+		// JSON-encode an empty slice as `[]` rather than `null` so the
+		// renderer can iterate it unconditionally.
+		out = []proto.Server{}
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleListRules(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.store.Snapshot().Rules)
+	rules := s.store.Snapshot().Rules
+	if rules == nil {
+		rules = []proto.Rule{}
+	}
+	writeJSON(w, http.StatusOK, rules)
 }
 
 func (s *Server) handleAddRule(w http.ResponseWriter, r *http.Request) {
