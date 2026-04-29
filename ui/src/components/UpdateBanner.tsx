@@ -15,7 +15,7 @@ import {
   setDismissedUpdate,
 } from "../utils/localStore";
 
-const CURRENT_VERSION = "v0.1.0-rc28";
+const CURRENT_VERSION = "v0.1.0-rc30";
 const RELEASES_URL =
   "https://api.github.com/repos/DangerousANEN/mosaicvpn/releases/latest";
 
@@ -74,9 +74,12 @@ export function UpdateBanner(): JSX.Element | null {
   const url = latest?.html_url ?? "https://github.com/DangerousANEN/mosaicvpn/releases";
 
   return (
-    <div className="update-banner">
+    <div
+      className="update-banner"
+      title={`Newer release ${tag} available — currently on ${CURRENT_VERSION}`}
+    >
       <span className="update-text">
-        New release <b>{tag}</b> available — currently on {CURRENT_VERSION}.
+        <b>{tag}</b> available
       </span>
       <a
         className="update-link"
@@ -84,7 +87,7 @@ export function UpdateBanner(): JSX.Element | null {
         target="_blank"
         rel="noreferrer"
       >
-        view release →
+        view →
       </a>
       <button
         className="update-dismiss"
@@ -93,8 +96,9 @@ export function UpdateBanner(): JSX.Element | null {
           setDismissed(true);
         }}
         title="Hide until a newer release is published"
+        aria-label="Dismiss"
       >
-        dismiss
+        ×
       </button>
     </div>
   );
