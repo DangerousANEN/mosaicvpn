@@ -1,25 +1,25 @@
 /**
- * zoomBands — discrete zoom-level table for the hex strategy.
+ * zoomBands — discrete zoom-level table for the region strategy.
  *
- * Each band picks a hex edge length `hexR` (in viewBox units).  The
- * world.svg viewBox is ~784 wide × ~459 tall, so:
+ * The region strategy collapses servers into one of three semantic
+ * scales:
  *
- *   continent  R=46   →  ~10 hexes across the equator
- *   country    R=20   →  ~22 hexes
- *   region     R=10   →  ~45 hexes
- *   city       R=5    →  ~90 hexes
- *   server     R=2.5  →  ~180 hexes
+ *   continent  scale  < 1.8   →  one cluster per continent (NA/EU/AS/...)
+ *   country    1.8 ≤ s < 5.5  →  one cluster per country (ISO-2)
+ *   server     scale ≥ 5.5    →  one cluster per ServerGroup
  *
- * The band is a *pure* function of the current scale: the renderer
- * is allowed to flip back and forth between bands as the user zooms,
- * but within a band the cluster IDs are stable.
+ * Bands are a pure function of the current TransformWrapper scale.
+ * Cluster IDs change between bands by design — but the WorldMap
+ * tracks open popovers by `seedServerId`, not by cluster ID, so
+ * the popover follows the same group across the band transition.
  *
- * SOLID-wise: the table lives behind a function, so swapping in a
- * different strategy (Voronoi, QuadTree, supercluster) only needs
- * its own band table — no other code changes.
+ * SOLID-wise: the table lives behind `resolveBand()`. Swapping in a
+ * different strategy (hex, QuadTree, supercluster) only needs its
+ * own band table — nothing else in the renderer cares about how
+ * the bands are computed.
  */
 
-export type BandKind = "continent" | "country" | "region" | "city" | "server";
+export type BandKind = "continent" | "country" | "server";
 
 export interface ZoomBand {
   /** Stable identifier — part of every cluster ID so React keys
@@ -30,11 +30,7 @@ export interface ZoomBand {
   minScale: number;
   /** Upper bound (exclusive). */
   maxScale: number;
-  /** Hex edge length in viewBox units. */
-  hexR: number;
-  /** Diamond pin scale at this band — small at low zoom so
-   *  continent overview reads as silhouettes; bigger at high zoom
-   *  so the user can hit the click target.  Combined with the
+  /** Diamond pin scale at this band — combined with the
    *  counter-scale 1/scale in the renderer. */
   pinScale: number;
   /** Atlas-style plate label shown in the HUD. */
@@ -43,49 +39,28 @@ export interface ZoomBand {
 
 const BANDS: ZoomBand[] = [
   {
-    id: "b0",
+    id: "continent",
     kind: "continent",
     minScale: 0,
-    maxScale: 1.4,
-    hexR: 46,
-    pinScale: 0.7,
+    maxScale: 1.8,
+    pinScale: 0.85,
     plateLabel: "Plate I · Continental view",
   },
   {
-    id: "b1",
+    id: "country",
     kind: "country",
-    minScale: 1.4,
-    maxScale: 2.6,
-    hexR: 22,
-    pinScale: 0.85,
-    plateLabel: "Plate II · Countries in detail",
-  },
-  {
-    id: "b2",
-    kind: "region",
-    minScale: 2.6,
-    maxScale: 4.5,
-    hexR: 11,
-    pinScale: 0.95,
-    plateLabel: "Plate III · Regional survey",
-  },
-  {
-    id: "b3",
-    kind: "city",
-    minScale: 4.5,
-    maxScale: 7.5,
-    hexR: 5.5,
+    minScale: 1.8,
+    maxScale: 5.5,
     pinScale: 1.0,
-    plateLabel: "Plate IV · Cities and metros",
+    plateLabel: "Plate II · Countries and unions",
   },
   {
-    id: "b4",
+    id: "server",
     kind: "server",
-    minScale: 7.5,
+    minScale: 5.5,
     maxScale: Infinity,
-    hexR: 2.6,
-    pinScale: 1.05,
-    plateLabel: "Plate V · Individual stations",
+    pinScale: 1.1,
+    plateLabel: "Plate III · Individual stations",
   },
 ];
 
@@ -96,7 +71,6 @@ export function resolveBand(scale: number): ZoomBand {
   return BANDS[BANDS.length - 1];
 }
 
-/** All bands, in order — useful for legend rendering. */
 export function allBands(): ReadonlyArray<ZoomBand> {
   return BANDS;
 }
