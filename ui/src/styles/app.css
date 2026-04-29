@@ -958,10 +958,28 @@
   pointer-events: auto;
   z-index: 3;
 }
+/* rc32 — visible atlas-style frame around each city reference. 8 px
+   square centred on the city coordinate, thin ink stroke that flips
+   to copper on hover, mirroring the cur-pin accent elsewhere on the
+   map. The frame stays the same on-screen size because the parent
+   wrapper is counter-scaled via the inline transform. */
 .worldmap-city .city-hot {
   position: absolute;
-  inset: 0;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  opacity: 0.7;
+  transition: border-color 90ms ease-out, opacity 90ms ease-out;
+  box-sizing: border-box;
   display: block;
+}
+.worldmap-city:hover .city-hot {
+  border-color: var(--copper);
+  opacity: 1;
 }
 .worldmap-city .city-label {
   position: absolute;

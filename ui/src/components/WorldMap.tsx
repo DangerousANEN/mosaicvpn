@@ -56,7 +56,6 @@ import { locText } from "./locText";
 import {
   clusterAtLevel,
   levelForScale,
-  NEXT_BAND_MIN_SCALE,
   pixelMergeClusters,
   projectVB,
   resolveGroups,
@@ -217,12 +216,16 @@ export function WorldMap({
     return CITIES.slice(0, cap);
   }, [scale]);
 
-  // Drill-down: zoom so the clicked cluster's bbox fills ~85% of the
-  // viewport, guaranteed to step at least one hierarchy band deeper
-  // (continent→country, country→city, city→server) so the click
-  // always reveals new detail even when the cluster's projected bbox
-  // is small. Centre on the cluster centroid — measured from projected
-  // pin positions, not labels — so pins land under the cursor.
+  // Drill-down: zoom so the clicked cluster's bbox (derived from its
+  // extreme N/S/E/W projected pin positions) fills ~85% of the
+  // viewport. The target scale is proportional to the cluster's
+  // geographic span — a tiny country zooms hard, a sprawling
+  // continent only lightly. We only enforce a small step-forward
+  // floor (×1.2) so a click never *zooms out*, and cap at 12×.
+  //
+  // bbox centre is used instead of the weighted centroid so very
+  // asymmetric clusters (e.g. a continent with one outlier pin far
+  // north-east) still centre the framed rectangle on the viewport.
   const drillToCluster = (c: LevelCluster) => {
     const wrapper = transformRef.current;
     if (!wrapper) return;
@@ -232,11 +235,14 @@ export function WorldMap({
     const fracH = h / MAP_VB.h;
     // 0.85 keeps ~15% padding around the cluster once it's centred.
     const fitScale = 0.85 / Math.max(fracW, fracH, 0.0001);
-    const bandMin = NEXT_BAND_MIN_SCALE[c.level];
-    const targetScale = Math.min(12, Math.max(bandMin, fitScale));
-    // Centre the cluster centroid in the stage.
-    const cx = (c.vbX - MAP_VB.x) / MAP_VB.w;
-    const cy = (c.vbY - MAP_VB.y) / MAP_VB.h;
+    const stepMin = scale * 1.2; // never zoom backwards on a drill click
+    const targetScale = Math.min(12, Math.max(stepMin, fitScale));
+    // Centre the bbox in the stage (midpoint of extremes, not the
+    // member-weighted centroid).
+    const midX = (c.bbox.minX + c.bbox.maxX) / 2;
+    const midY = (c.bbox.minY + c.bbox.maxY) / 2;
+    const cx = (midX - MAP_VB.x) / MAP_VB.w;
+    const cy = (midY - MAP_VB.y) / MAP_VB.h;
     const tx = stageSize.w / 2 - cx * stageSize.w * targetScale;
     const ty = stageSize.h / 2 - cy * stageSize.h * targetScale;
     wrapper.setTransform(tx, ty, targetScale, 600, "easeOut");
