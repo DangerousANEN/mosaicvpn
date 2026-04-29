@@ -70,7 +70,10 @@ export function Sparkline({
           strokeLinecap="round"
         />
       ))}
-      {emphasizeLast && last ? (
+      {emphasizeLast &&
+      last &&
+      Number.isFinite(last.x) &&
+      Number.isFinite(last.y) ? (
         <circle cx={last.x} cy={last.y} r={1.6} fill="currentColor" />
       ) : null}
     </svg>

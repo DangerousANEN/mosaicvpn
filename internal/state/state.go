@@ -355,6 +355,7 @@ func (m *Manager) SetTunnelPrefs(mode string, killSwitch bool) {
 type SpeedtestResult struct {
 	URL          string  `json:"url"`
 	Bytes        int64   `json:"bytes"`
+	Note         string  `json:"note,omitempty"`
 	DurationMS   int64   `json:"duration_ms"`
 	MbitPerSec   float64 `json:"mbit_per_sec"`
 	HTTPStatus   int     `json:"http_status"`
@@ -452,16 +453,35 @@ func (m *Manager) Speedtest(ctx context.Context, url string) (SpeedtestResult, e
 		if cerr == nil {
 			return res, nil
 		}
-		// Partial-download heuristic: if we streamed ≥ 50 % of the
-		// requested bytes we still have enough signal to report a
-		// throughput figure. Otherwise fall through to the next,
-		// smaller URL.
+		// rc35 — partial-download heuristic relaxed from ≥ 50 % to
+		// ≥ 25 % of the requested bytes.  At 50 % the user saw
+		// entire 10 MB + 5 MB + 1 MB attempts classified as "fail"
+		// when each dropped 70-80 % of the way through, which is
+		// the exact throughput signal we actually care about.  A
+		// note on the result records that the measurement is
+		// partial so the UI can flag it.
 		want := extractRequestedBytes(u)
-		if want > 0 && n*2 >= want {
-			return res, nil
+		if n > 0 && dur > 250*time.Millisecond {
+			if want == 0 || n*4 >= want {
+				res.Note = fmt.Sprintf(
+					"partial: %d/%d bytes, %s", n, want, cerr.Error(),
+				)
+				return res, nil
+			}
 		}
 		lastErr = fmt.Errorf("speedtest: download: %w", cerr)
 		if idx == len(urls)-1 {
+			// rc35 — prefer returning whatever data we have with a
+			// populated Note over a hard 502.  The UI can render
+			// "throughput unknown (edge reset)" instead of a scary
+			// Bad Gateway toast that looks like the daemon is
+			// broken.
+			if n > 0 {
+				res.Note = fmt.Sprintf(
+					"partial: %d bytes, %s", n, cerr.Error(),
+				)
+				return res, nil
+			}
 			return res, lastErr
 		}
 	}

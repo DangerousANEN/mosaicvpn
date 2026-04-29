@@ -671,21 +671,17 @@ export function WorldMap({
             })() : null}
 
             {bearing ? <div className="worldmap-bearing">{bearing}</div> : null}
-
-            {/* Zoom indicator — bottom-left of the stage, inside the
-                transformed content so it reads against the atlas
-                paper even when scrolled. */}
-            <div
-              className="worldmap-zoom-indicator mono"
-              style={{
-                transform: `scale(${pinScale})`,
-                transformOrigin: "left bottom",
-              }}
-            >
-              lvl: {levelAbbrev(level)} · {scale.toFixed(1)}×
-            </div>
           </TransformComponent>
         </TransformWrapper>
+
+        {/* Zoom indicator — rc35 moved OUT of TransformComponent so
+            panning the camera does not drag the readout off-screen.
+            Pinned to the stage's absolute bottom-left; no
+            counter-scaling needed since we live outside the zoom
+            transform. */}
+        <div className="worldmap-zoom-indicator mono">
+          lvl: {levelAbbrev(level)} · {scale.toFixed(1)}×
+        </div>
       </div>
     </div>
   );

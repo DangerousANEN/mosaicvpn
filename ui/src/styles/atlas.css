@@ -175,21 +175,27 @@ body::before {
   color: var(--ink-mute);
   font-weight: 500;
   z-index: 4;
-  background: var(--paper);
   padding: 2px 10px;
   max-width: calc(50vw - 48px);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  box-shadow: 0 0 0 3px var(--paper);
 }
+/* rc35 — top corners (tl, tr) sit above the gutter where there is no
+ * content; the paper-fill that helped tl/tr in rc33 was painting over
+ * the page background and the user noticed it as a "block of paper"
+ * on otherwise blank columns.  Kept the fill on bl/br because there
+ * the marginalia still floats over the map / world graticule. */
 .marg.tl,
 .marg.tr {
   top: 8px;
+  background: transparent;
 }
 .marg.bl,
 .marg.br {
   bottom: 8px;
+  background: var(--paper);
+  box-shadow: 0 0 0 3px var(--paper);
 }
 .marg.tl,
 .marg.bl {

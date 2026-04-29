@@ -124,6 +124,11 @@ export const api = {
 export interface SpeedtestResult {
   url: string;
   bytes: number;
+  /** rc35 — daemon sets a non-empty note when the throughput number
+   *  comes from a partial download (edge reset before EOF).  UI
+   *  renders it as a "rough estimate" subtitle instead of hiding
+   *  the figure entirely. */
+  note?: string;
   duration_ms: number;
   mbit_per_sec: number;
   http_status: number;

@@ -94,9 +94,12 @@
   border-right: 1px solid var(--rule);
   padding-right: 28px;
   padding-top: 8px;
-  /* Keep overflow text from clashing with the absolute-positioned
-     bottom-left marginalia ("Daemon active · pid …"). */
-  padding-bottom: 40px;
+  /* rc35 — the SOCKS · :2080 · HTTP · :2081 line sits in the bottom
+     of col-left and kept colliding with the absolute-positioned
+     "Daemon active · pid …" marginalia.  Give the column a 66 px
+     floor (was 40) so the two rows no longer overlap at any
+     proxy-port string length. */
+  padding-bottom: 66px;
 }
 
 .masthead {
@@ -984,11 +987,12 @@
   fill: var(--paper);
 }
 
-/* rc33 — zoom-level indicator sitting in the bottom-left of the
-   transformed content so the user always knows which of the four
-   clustering bands (continent / country / city / server) is
-   currently active. Counter-scaled via an inline transform so the
-   type size stays constant as the user zooms. */
+/* rc35 — zoom-level indicator now lives OUTSIDE the TransformComponent
+   (see WorldMap.tsx).  That means it is pinned to the stage in screen
+   space instead of the SVG's user space: panning the camera never
+   drags it off-canvas, and zooming doesn't grow the text.  The stage
+   root is `position: relative`, so this absolute placement anchors to
+   the stage's bottom-left regardless of where the camera is. */
 .worldmap-zoom-indicator {
   position: absolute;
   left: 10px;
@@ -1001,8 +1005,7 @@
   color: var(--ink);
   text-transform: lowercase;
   pointer-events: none;
-  z-index: 4;
-  transform-origin: left bottom;
+  z-index: 6;
   box-shadow: 0 0 0 2px var(--paper);
 }
 

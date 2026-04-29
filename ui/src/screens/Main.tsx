@@ -67,6 +67,7 @@ export function Main({ status, onConnectId }: MainProps): JSX.Element {
     duration_ms: number;
     mbit_per_sec: number;
     http_status: number;
+    note?: string;
   } | null>(null);
   const [speedErr, setSpeedErr] = useState<string | null>(null);
   // Favorites + history live in localStorage; we mirror them in
@@ -332,6 +333,18 @@ export function Main({ status, onConnectId }: MainProps): JSX.Element {
             }}
           >
             {speedResult.mbit_per_sec.toFixed(2)} Mbit/s · {(speedResult.bytes / 1_048_576).toFixed(1)} MB in {(speedResult.duration_ms / 1000).toFixed(1)}s · HTTP {speedResult.http_status}
+            {speedResult.note ? (
+              <div
+                style={{
+                  fontSize: 10.5,
+                  color: "var(--ink-mute)",
+                  marginTop: 2,
+                }}
+                title={speedResult.note}
+              >
+                rough estimate — edge closed connection early
+              </div>
+            ) : null}
           </div>
         ) : null}
         {speedErr ? (
