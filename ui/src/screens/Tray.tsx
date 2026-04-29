@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { api } from "../api/client";
 import type { Status } from "../api/types";
 import { useLiveServers } from "../hooks/useLiveServers";
+import { romanLower as toRomanLower } from "../components/numerals";
 
 /**
  * Tray — the compact popup that appears from the system tray.
@@ -238,26 +239,4 @@ function fmtRate(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-function toRomanLower(n: number): string {
-  if (n <= 0) return "0";
-  const map: [number, string][] = [
-    [100, "c"],
-    [90, "xc"],
-    [50, "l"],
-    [40, "xl"],
-    [10, "x"],
-    [9, "ix"],
-    [5, "v"],
-    [4, "iv"],
-    [1, "i"],
-  ];
-  let out = "";
-  let rem = n;
-  for (const [v, s] of map) {
-    while (rem >= v) {
-      out += s;
-      rem -= v;
-    }
-  }
-  return out;
-}
+

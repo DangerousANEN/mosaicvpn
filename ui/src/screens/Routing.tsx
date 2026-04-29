@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import type { Action, Logic, Match, Rule, Server } from "../api/types";
+import { romanLower as toRomanLower } from "../components/numerals";
 
 /**
  * Routing — the register of routing rules. Mirrors docs/mockups/power.html.
@@ -678,25 +679,4 @@ function summarizeMatch(m: Match): string {
   return parts.join(" · ");
 }
 
-function toRomanLower(n: number): string {
-  const map: [number, string][] = [
-    [100, "c"],
-    [90, "xc"],
-    [50, "l"],
-    [40, "xl"],
-    [10, "x"],
-    [9, "ix"],
-    [5, "v"],
-    [4, "iv"],
-    [1, "i"],
-  ];
-  let out = "";
-  let rem = n;
-  for (const [v, s] of map) {
-    while (rem >= v) {
-      out += s;
-      rem -= v;
-    }
-  }
-  return out;
-}
+

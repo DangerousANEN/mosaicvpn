@@ -5,6 +5,10 @@ import { StatusSquare } from "../components/StatusSquare";
 import { WorldMap } from "../components/WorldMap";
 import { locText } from "../components/locText";
 import {
+  roman as toRoman,
+  romanLower as toRomanLower,
+} from "../components/numerals";
+import {
   getFavorites,
   getHistory,
   getNotes,
@@ -28,28 +32,6 @@ interface MainProps {
    *  recorded in one place). When omitted the screen falls back to
    *  api.connect directly. */
   onConnectId?: (id: string) => Promise<void> | void;
-}
-
-// Lowercase Roman numerals for the subscription filter chips. We
-// keep the chip glyph short ("i", "ii", "iii"…) so 4-5 chips fit in
-// the eyebrow without wrapping; the full subscription name lives in
-// the chip's title= tooltip.
-function toRomanLower(n: number): string {
-  const map: [number, string][] = [
-    [10, "x"],
-    [9, "ix"],
-    [5, "v"],
-    [4, "iv"],
-    [1, "i"],
-  ];
-  let out = "";
-  for (const [v, sym] of map) {
-    while (n >= v) {
-      out += sym;
-      n -= v;
-    }
-  }
-  return out;
 }
 
 export function Main({ status, onConnectId }: MainProps): JSX.Element {
@@ -565,20 +547,4 @@ function fmtBytes(n: number): string {
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
-function toRoman(n: number): string {
-  const map: [number, string][] = [
-    [10, "X"],
-    [9, "IX"],
-    [5, "V"],
-    [4, "IV"],
-    [1, "I"],
-  ];
-  let out = "";
-  for (const [v, sym] of map) {
-    while (n >= v) {
-      out += sym;
-      n -= v;
-    }
-  }
-  return out;
-}
+

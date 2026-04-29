@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api } from "../api/client";
 import type { Server, Subscription } from "../api/types";
+import { romanLower as toRomanLower } from "../components/numerals";
 
 
 /**
@@ -541,25 +542,6 @@ function protoLabel(p: string): string {
     default:
       return p.toUpperCase();
   }
-}
-
-function toRomanLower(n: number): string {
-  const map: [number, string][] = [
-    [10, "x"],
-    [9, "ix"],
-    [5, "v"],
-    [4, "iv"],
-    [1, "i"],
-  ];
-  let out = "";
-  let rem = n;
-  for (const [v, s] of map) {
-    while (rem >= v) {
-      out += s;
-      rem -= v;
-    }
-  }
-  return out;
 }
 
 /**

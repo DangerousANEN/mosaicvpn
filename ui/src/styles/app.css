@@ -987,26 +987,299 @@
   fill: var(--paper);
 }
 
-/* rc35 — zoom-level indicator now lives OUTSIDE the TransformComponent
-   (see WorldMap.tsx).  That means it is pinned to the stage in screen
-   space instead of the SVG's user space: panning the camera never
-   drags it off-canvas, and zooming doesn't grow the text.  The stage
-   root is `position: relative`, so this absolute placement anchors to
-   the stage's bottom-left regardless of where the camera is. */
-.worldmap-zoom-indicator {
+/* rc36 — hex grid layer.  Each cluster paints as a hex polygon in
+   viewBox space; cells never overlap by construction so we don't
+   need any pixel-merge or blob-on-blob de-duplication.  Stroke
+   uses non-scaling-stroke so line weight stays atlas-thin under
+   any zoom.  Latency-bucket modifier classes recolour the fill. */
+.worldmap-hexes {
   position: absolute;
-  left: 10px;
-  bottom: 10px;
-  padding: 2px 8px;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.worldmap-hex {
+  fill: var(--copper);
+  fill-opacity: 0.10;
+  stroke: var(--ink);
+  stroke-width: 0.9;
+  stroke-opacity: 0.5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: fill-opacity 140ms ease-out, stroke-opacity 140ms ease-out,
+    stroke 140ms ease-out;
+}
+.worldmap-hex.bucket-fast { fill: #6f8b65; fill-opacity: 0.14; }
+.worldmap-hex.bucket-med  { fill: var(--copper); fill-opacity: 0.14; }
+.worldmap-hex.bucket-slow { fill: #8a6a55; fill-opacity: 0.13; }
+.worldmap-hex.bucket-fail { fill: #6e5a55; fill-opacity: 0.10; }
+.worldmap-hex.bucket-untested { fill: #b8a67c; fill-opacity: 0.08; }
+.worldmap-hex.hov,
+.worldmap-hex.open {
+  fill-opacity: 0.30;
+  stroke: var(--copper);
+  stroke-opacity: 1;
+  stroke-width: 1.4;
+}
+.worldmap-hex.cur {
+  fill: var(--copper);
+  fill-opacity: 0.32;
+  stroke: var(--copper);
+  stroke-opacity: 1;
+  stroke-width: 1.4;
+}
+/* Tighter stroke at server-level so tiny hexes don't look thick. */
+.worldmap-hex.lvl-server {
+  stroke-width: 0.7;
+  fill-opacity: 0.16;
+}
+
+/* Diamond pins inherit the latency colour as a thin outline so the
+   user can pick the lowest-ms cluster at a glance. */
+.worldmap-pin.bucket-fast .pin-diamond { stroke: #4f6747; }
+.worldmap-pin.bucket-med  .pin-diamond { stroke: var(--ink); }
+.worldmap-pin.bucket-slow .pin-diamond { stroke: #8a6a55; }
+.worldmap-pin.bucket-fail .pin-diamond { stroke: #7a4f4a; }
+.worldmap-pin.bucket-untested .pin-diamond { stroke: var(--ink-mute); }
+
+/* rc36 — HUD overlay.  Sits in the same .worldmap-stage as the
+   TransformWrapper but ABOVE it, so panning/zooming never drags it
+   off-canvas.  Pointer-events: none on the hud root, opt-in on
+   interactive children. */
+.worldmap-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 8;
+}
+.hud-plate {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink);
   background: var(--paper);
   border: 1px solid var(--ink);
+  padding: 3px 12px;
+  font-variant: small-caps;
+  font-weight: 600;
+  box-shadow: 0 0 0 3px var(--paper);
+  pointer-events: none;
+}
+.hud-compass {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  pointer-events: none;
+}
+.hud-compass .rose-ring { fill: var(--paper); stroke: var(--ink); stroke-width: 1.2; }
+.hud-compass .rose-ring.inner { stroke: var(--ink); stroke-width: 0.5; opacity: 0.6; }
+.hud-compass .rose-ray { stroke: var(--ink); stroke-width: 0.7; opacity: 0.6; }
+.hud-compass .rose-ray.cardinal { stroke: var(--copper); stroke-width: 1.0; opacity: 1; }
+.hud-compass .rose-needle.north { fill: var(--copper); stroke: var(--copper); }
+.hud-compass .rose-needle.south { fill: var(--ink); opacity: 0.55; }
+.hud-compass .rose-label {
+  font-family: "Atlas Serif", Georgia, serif;
+  font-size: 8px;
+  font-weight: 700;
+  fill: var(--ink);
+  letter-spacing: 0.1em;
+}
+.hud-compass .rose-label.mute { fill: var(--ink-mute); }
+
+.hud-legend {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  padding: 6px 10px 7px;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  box-shadow: 0 0 0 3px var(--paper);
+  pointer-events: auto;
+  max-width: 220px;
+}
+.hud-legend-title {
+  font-variant: small-caps;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+  color: var(--copper);
+  margin-bottom: 4px;
+  font-size: 10px;
+}
+.hud-legend-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.hud-legend-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hud-legend .lg-glyph {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  position: relative;
+}
+.hud-legend .lg-hex {
+  background:
+    linear-gradient(0deg, var(--copper), var(--copper)) 50% 50% / 12px 7px no-repeat,
+    var(--paper);
+  border: 1px solid var(--ink);
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  background: rgba(178,90,40,0.25);
+}
+.hud-legend .lg-diamond {
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  width: 8px; height: 8px;
+  margin: 3px;
+  transform: rotate(45deg);
+}
+.hud-legend .lg-diamond.cur {
+  background: var(--copper);
+  border-color: var(--copper);
+}
+.hud-legend .lg-arc {
+  border-top: 1.4px solid var(--copper);
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+  height: 7px;
+  margin: 3px 0;
+  width: 14px;
+}
+.hud-legend .lg-vous {
+  background: var(--ink);
+  border-radius: 50%;
+  width: 6px; height: 6px;
+  margin: 4px;
+  border: 1px solid var(--paper);
+  box-shadow: 0 0 0 1px var(--ink);
+}
+
+.hud-scalebar {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+}
+.hud-scalebar-track {
+  position: relative;
+  height: 8px;
+  border-bottom: 1.2px solid var(--ink);
+  border-left: 1.2px solid var(--ink);
+  border-right: 1.2px solid var(--ink);
+  background: linear-gradient(
+    90deg,
+    var(--ink) 0 50%,
+    var(--paper) 50% 100%
+  );
+}
+.hud-scalebar-tick {
+  position: absolute;
+  top: -2px;
+  width: 1px;
+  height: 4px;
+  background: var(--ink);
+}
+.hud-scalebar-tick.start { left: 0; }
+.hud-scalebar-tick.mid { left: 50%; }
+.hud-scalebar-tick.end { right: 0; }
+.hud-scalebar-label {
+  margin-top: 3px;
+  color: var(--ink);
+  font-variant: small-caps;
+}
+
+.hud-zoom {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  pointer-events: auto;
+}
+.hud-zoom-btns {
+  display: inline-flex;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  box-shadow: 0 0 0 3px var(--paper);
+}
+.hud-zoom-btn {
+  appearance: none;
+  background: var(--paper);
+  color: var(--ink);
+  border: 0;
+  border-right: 1px solid var(--ink);
+  font-size: 14px;
+  width: 26px;
+  height: 26px;
+  cursor: pointer;
+  font-family: "Atlas Serif", Georgia, serif;
+  line-height: 1;
+  padding: 0;
+  transition: background 120ms, color 120ms;
+}
+.hud-zoom-btn:last-child { border-right: 0; }
+.hud-zoom-btn:hover { background: var(--ink); color: var(--paper); }
+.hud-zoom-readout {
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  padding: 2px 8px;
   font-size: 10.5px;
   letter-spacing: 0.08em;
   color: var(--ink);
   text-transform: lowercase;
-  pointer-events: none;
-  z-index: 6;
   box-shadow: 0 0 0 2px var(--paper);
+}
+
+/* rc36 — popover anchored alignment.  WorldMap clamps the anchor
+   to one of three horizontal positions (center / left / right) so
+   it never bleeds past the stage edge.  The transform is set
+   inline; these classes cover spacing tweaks only. */
+.worldmap-popover.h-left { /* anchor on left edge of popover */ }
+.worldmap-popover.h-right { /* anchor on right edge of popover */ }
+.worldmap-popover.v-below { /* popover hangs below anchor */ }
+
+.worldmap-popover .pop-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+.worldmap-popover .pop-fast-btn {
+  appearance: none;
+  border: 1px solid var(--copper);
+  background: var(--copper);
+  color: var(--paper);
+  padding: 3px 8px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+.worldmap-popover .pop-fast-btn:hover {
+  background: var(--ink);
+  border-color: var(--ink);
 }
 
 /* Continent / country / city cluster label variants. Continent
