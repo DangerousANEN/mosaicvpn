@@ -94,6 +94,9 @@
   border-right: 1px solid var(--rule);
   padding-right: 28px;
   padding-top: 8px;
+  /* Keep overflow text from clashing with the absolute-positioned
+     bottom-left marginalia ("Daemon active · pid …"). */
+  padding-bottom: 40px;
 }
 
 .masthead {
@@ -689,6 +692,29 @@
   min-width: 220px;
   max-width: 320px;
 }
+/* Multi-host variant used when a server-level pixel cluster swallows
+   several hosts in the same metro. Widen it and let the body scroll
+   so 30+ servers don't push the action buttons off-screen. */
+.worldmap-popover.multi-host {
+  min-width: 280px;
+  max-width: 360px;
+}
+.worldmap-popover .pop-list.pop-list-scroll {
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.worldmap-popover .pop-list.pop-list-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.worldmap-popover .pop-list.pop-list-scroll::-webkit-scrollbar-thumb {
+  background: var(--ink-mute);
+  border-radius: 3px;
+}
+.worldmap-popover .pop-loc.italic-mute {
+  color: var(--ink-mute);
+  font-size: 10.5px;
+}
 .worldmap-popover .pop-head {
   margin-bottom: 6px;
   border-bottom: 1px dashed var(--ink-mute);
@@ -917,20 +943,46 @@
   fill: var(--ink);
   opacity: 0.55;
 }
-.worldmap-city-label {
+/* rc31 — each city is a small hit-target + an always-rendered HTML
+   label that starts invisible and fades in when the cursor hovers
+   the dot.  The dot itself is the SVG circle above; the HTML
+   wrapper here gives us reliable :hover without SVG pointer-events
+   edge cases.  Wrapper is 20 × 20 px (post counter-scale) so the
+   hover zone is ~2 mm on-screen, comfortably wider than the dot. */
+.worldmap-city {
   position: absolute;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  /* margins cancelled by inline translate(-50%, -50%) */
+  pointer-events: auto;
+  z-index: 3;
+}
+.worldmap-city .city-hot {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+.worldmap-city .city-label {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
   font-family: "Atlas Serif", Georgia, serif;
   font-size: 9px;
   color: var(--ink);
-  opacity: 0.62;
   letter-spacing: 0.01em;
   white-space: nowrap;
-  pointer-events: none;
   user-select: none;
   text-shadow:
     0 0 2px var(--paper),
     0 0 2px var(--paper);
-  z-index: 2;
+  opacity: 0;
+  transition: opacity 90ms ease-out;
+  pointer-events: none;
+}
+.worldmap-city:hover .city-label {
+  opacity: 0.92;
 }
 
 /* Continent / country / city cluster label variants. Continent

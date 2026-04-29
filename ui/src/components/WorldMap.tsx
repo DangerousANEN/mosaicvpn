@@ -56,6 +56,8 @@ import { locText } from "./locText";
 import {
   clusterAtLevel,
   levelForScale,
+  NEXT_BAND_MIN_SCALE,
+  pixelMergeClusters,
   projectVB,
   resolveGroups,
   type LevelCluster,
@@ -187,10 +189,14 @@ export function WorldMap({
 
   const level = levelForScale(scale);
 
-  const clusters = useMemo(
-    () => clusterAtLevel(resolved, level, activeKey),
-    [resolved, level, activeKey],
-  );
+  const clusters = useMemo(() => {
+    const base = clusterAtLevel(resolved, level, activeKey);
+    // rc31 — second-pass pixel merge at server level so overlapping
+    // hosts in the same metro area collapse into a scrolling-popover
+    // cluster instead of 30 diamond pins stacked on top of each other.
+    if (level !== "server") return base;
+    return pixelMergeClusters(base, scale, stageSize.w, stageSize.h);
+  }, [resolved, level, activeKey, scale, stageSize.w, stageSize.h]);
 
   // Inverse zoom for SVG/HTML markers — keeps pins a constant
   // on-screen size as the user zooms in. Floor at 0.4 so the
@@ -211,26 +217,23 @@ export function WorldMap({
     return CITIES.slice(0, cap);
   }, [scale]);
 
-  // Drill-down: zoom-to-fit a cluster's bbox in viewBox units. We
-  // convert the bbox → fraction of the total viewBox, derive the
-  // target scale that fits it with 20% padding, then translate the
-  // wrapper so the cluster centroid lands in the middle of the stage.
+  // Drill-down: zoom so the clicked cluster's bbox fills ~85% of the
+  // viewport, guaranteed to step at least one hierarchy band deeper
+  // (continent→country, country→city, city→server) so the click
+  // always reveals new detail even when the cluster's projected bbox
+  // is small. Centre on the cluster centroid — measured from projected
+  // pin positions, not labels — so pins land under the cursor.
   const drillToCluster = (c: LevelCluster) => {
     const wrapper = transformRef.current;
     if (!wrapper) return;
     const w = Math.max(1, c.bbox.maxX - c.bbox.minX);
     const h = Math.max(1, c.bbox.maxY - c.bbox.minY);
-    // Minimum footprint so a tight cluster still produces a useful
-    // zoom step (otherwise a dense metro-area cluster would snap
-    // straight to maxScale=12).
-    const minSpan = 40; // viewBox units
-    const eW = Math.max(w, minSpan);
-    const eH = Math.max(h, minSpan);
-    const fracW = eW / MAP_VB.w;
-    const fracH = eH / MAP_VB.h;
-    // 0.7 keeps ~30% padding around the cluster once it's centred.
-    const fitScale = 0.7 / Math.max(fracW, fracH, 0.0001);
-    const targetScale = Math.min(12, Math.max(scale + 0.5, fitScale));
+    const fracW = w / MAP_VB.w;
+    const fracH = h / MAP_VB.h;
+    // 0.85 keeps ~15% padding around the cluster once it's centred.
+    const fitScale = 0.85 / Math.max(fracW, fracH, 0.0001);
+    const bandMin = NEXT_BAND_MIN_SCALE[c.level];
+    const targetScale = Math.min(12, Math.max(bandMin, fitScale));
     // Centre the cluster centroid in the stage.
     const cx = (c.vbX - MAP_VB.x) / MAP_VB.w;
     const cy = (c.vbY - MAP_VB.y) / MAP_VB.h;
@@ -341,15 +344,16 @@ export function WorldMap({
         ? cityOverlay.map((c) => (
             <div
               key={`cl-${c.country}-${c.name}`}
-              className="worldmap-city-label"
+              className="worldmap-city"
               style={{
                 left: `${((c.vbX - MAP_VB.x) / MAP_VB.w) * 100}%`,
                 top: `${((c.vbY - MAP_VB.y) / MAP_VB.h) * 100}%`,
-                transform: `translate(4px, -50%) scale(${pinScale})`,
-                transformOrigin: "left center",
+                transform: `translate(-50%, -50%) scale(${pinScale})`,
+                transformOrigin: "center center",
               }}
             >
-              {c.name}
+              <span className="city-hot" />
+              <span className="city-label">{c.name}</span>
             </div>
           ))
         : null}
@@ -399,7 +403,14 @@ export function WorldMap({
               if (!onPinClick) return;
               e.stopPropagation();
               if (isCluster) {
-                drillToCluster(p);
+                // Server-level clusters open a scrolling list popover;
+                // higher-level clusters drill the camera one band
+                // deeper.
+                if (p.level === "server") {
+                  setOpenIdx((o) => (o === i ? null : i));
+                } else {
+                  drillToCluster(p);
+                }
                 return;
               }
               const g = p.members[0].group;
@@ -417,6 +428,14 @@ export function WorldMap({
             const clusterR = isCluster
               ? Math.min(30, 11 + Math.sqrt(p.totalServers) * 1.5)
               : 0;
+            // Server-level clusters fit inside a small radius so a
+            // densely-populated metro can't spill its count off-pin.
+            // Cap the badge at "9+" once the cluster crosses the
+            // single-digit threshold.
+            const countDisplay =
+              p.level === "server" && p.totalServers > 9
+                ? "9+"
+                : String(p.totalServers);
             return (
               <g
                 key={p.key}
@@ -438,7 +457,7 @@ export function WorldMap({
                       dominantBaseline="central"
                       fontSize={Math.max(8, clusterR * 0.62)}
                     >
-                      {p.totalServers}
+                      {countDisplay}
                     </text>
                   </>
                 ) : (
@@ -508,7 +527,11 @@ export function WorldMap({
           if (!onPinClick) return;
           e.stopPropagation();
           if (isCluster) {
-            drillToCluster(p);
+            if (p.level === "server") {
+              setOpenIdx((o) => (o === i ? null : i));
+            } else {
+              drillToCluster(p);
+            }
             return;
           }
           const g = p.members[0].group;
@@ -562,6 +585,10 @@ export function WorldMap({
           style={{
             left: `${((YOU.x - MAP_VB.x) / MAP_VB.w) * 100}%`,
             top: `${((YOU.y - MAP_VB.y) / MAP_VB.h) * 100}%`,
+            // Counter-scale so the tooltip stays a fixed on-screen
+            // size no matter how far the user has zoomed the atlas.
+            transform: `translate(-50%, calc(-100% - 14px)) scale(${pinScale})`,
+            transformOrigin: "center bottom",
           }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -594,6 +621,8 @@ export function WorldMap({
           style={{
             left: `${((hover.vbX - MAP_VB.x) / MAP_VB.w) * 100}%`,
             top: `${((hover.vbY - MAP_VB.y) / MAP_VB.h) * 100}%`,
+            transform: `translate(-50%, calc(-100% - 14px)) scale(${pinScale})`,
+            transformOrigin: "center bottom",
           }}
         >
           {hover.members.length === 1 ? (
@@ -629,69 +658,179 @@ export function WorldMap({
                 <div className="tip-ms mono">best {hover.bestMs}ms</div>
               ) : null}
               {onPinClick ? (
-                <div className="tip-cta mono">click to zoom in</div>
+                <div className="tip-cta mono">
+                  {hover.level === "server" ? "click to choose" : "click to zoom in"}
+                </div>
               ) : null}
             </>
           )}
         </div>
       ) : null}
 
-      {open && open.members.length === 1 && open.members[0].group.members.length > 1 ? (
-        <>
-          <div
-            className="worldmap-popover-scrim"
-            onClick={() => setOpenIdx(null)}
-          />
-          <div
-            className="worldmap-popover"
-            style={{
-              left: `${((open.vbX - MAP_VB.x) / MAP_VB.w) * 100}%`,
-              top: `${((open.vbY - MAP_VB.y) / MAP_VB.h) * 100}%`,
-            }}
-          >
-            <div className="pop-head">
-              <div className="pop-host mono">{open.members[0].group.host}</div>
-              {locText(open.members[0].group.primary) ? (
-                <div className="pop-loc">
-                  {locText(open.members[0].group.primary)}
-                </div>
-              ) : null}
-            </div>
-            <ul className="pop-list">
-              {open.members[0].group.members.map((m) => {
-                const ms =
+      {open ? (() => {
+        // Three popover shapes:
+        //   1. multi-host server-level cluster → list every server
+        //      across every host, scrollable.
+        //   2. single-host bucket with multiple protocol entries →
+        //      list the protocols (port/protocol/ms + connect).
+        //   3. anything else → no popover (single-server pins connect
+        //      directly on click, higher-level clusters drill the
+        //      camera instead).
+        const isMultiHost = open.members.length > 1;
+        const singleGroup =
+          open.members.length === 1 ? open.members[0].group : null;
+        const isSingleHostMulti =
+          singleGroup !== null && singleGroup.members.length > 1;
+        if (!isMultiHost && !isSingleHostMulti) return null;
+
+        type Row = {
+          id: string;
+          host: string;
+          proto: string;
+          port: number;
+          ms: string;
+          loc: string;
+          isActive: boolean;
+        };
+        const rows: Row[] = [];
+        if (isMultiHost) {
+          for (const rg of open.members) {
+            const g = rg.group;
+            const loc = locText(g.primary) ?? "";
+            for (const m of g.members) {
+              rows.push({
+                id: m.id,
+                host: g.host,
+                proto: m.protocol ?? "",
+                port: m.port ?? 0,
+                ms:
                   m.last_test_ms !== undefined && m.last_test_ms > 0
                     ? `${m.last_test_ms}ms`
                     : m.last_test_error
                       ? "err"
-                      : "—";
-                const isActive = m.id === activeServerId;
-                return (
-                  <li key={m.id} className={isActive ? "is-active" : ""}>
-                    <span className="pop-proto mono">
-                      {m.protocol}:{m.port}
-                    </span>
-                    <span className="pop-ms mono">{ms}</span>
-                    <button
-                      type="button"
-                      className="pop-go mono"
-                      disabled={!onPinClick || isActive}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!onPinClick) return;
-                        setOpenIdx(null);
-                        onPinClick(m.id);
-                      }}
-                    >
-                      {isActive ? "current" : "connect"}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        </>
-      ) : null}
+                      : "—",
+                loc,
+                isActive: m.id === activeServerId,
+              });
+            }
+          }
+          // Active first, then probed fastest-ms ascending, then the
+          // rest in their natural order so the list feels stable.
+          rows.sort((a, b) => {
+            if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+            const aMs = parseInt(a.ms, 10);
+            const bMs = parseInt(b.ms, 10);
+            const aNum = Number.isFinite(aMs) ? aMs : Number.POSITIVE_INFINITY;
+            const bNum = Number.isFinite(bMs) ? bMs : Number.POSITIVE_INFINITY;
+            return aNum - bNum;
+          });
+        }
+
+        return (
+          <>
+            <div
+              className="worldmap-popover-scrim"
+              onClick={() => setOpenIdx(null)}
+            />
+            <div
+              className={`worldmap-popover ${isMultiHost ? "multi-host" : ""}`}
+              style={{
+                left: `${((open.vbX - MAP_VB.x) / MAP_VB.w) * 100}%`,
+                top: `${((open.vbY - MAP_VB.y) / MAP_VB.h) * 100}%`,
+                // Keep the popover a fixed on-screen size regardless
+                // of how far the map is zoomed. The outer transform
+                // accounts for the default CSS translate (centring on
+                // the pin) plus the inverse zoom.
+                transform: `translate(-50%, calc(-100% - 14px)) scale(${pinScale})`,
+                transformOrigin: "center bottom",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="pop-head">
+                {isMultiHost ? (
+                  <>
+                    <div className="pop-host mono">
+                      {open.label} · {open.totalServers} servers
+                    </div>
+                    <div className="pop-loc italic-mute">
+                      {open.members.length} hosts · scroll to pick one
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="pop-host mono">{singleGroup!.host}</div>
+                    {locText(singleGroup!.primary) ? (
+                      <div className="pop-loc">
+                        {locText(singleGroup!.primary)}
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
+              {isMultiHost ? (
+                <ul className="pop-list pop-list-scroll">
+                  {rows.map((r) => (
+                    <li key={r.id} className={r.isActive ? "is-active" : ""}>
+                      <span className="pop-proto mono" title={r.host}>
+                        {r.host}
+                      </span>
+                      <span className="pop-ms mono">
+                        {r.proto}:{r.port} · {r.ms}
+                      </span>
+                      <button
+                        type="button"
+                        className="pop-go mono"
+                        disabled={!onPinClick || r.isActive}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!onPinClick) return;
+                          setOpenIdx(null);
+                          onPinClick(r.id);
+                        }}
+                      >
+                        {r.isActive ? "current" : "connect"}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <ul className="pop-list">
+                  {singleGroup!.members.map((m) => {
+                    const ms =
+                      m.last_test_ms !== undefined && m.last_test_ms > 0
+                        ? `${m.last_test_ms}ms`
+                        : m.last_test_error
+                          ? "err"
+                          : "—";
+                    const isActive = m.id === activeServerId;
+                    return (
+                      <li key={m.id} className={isActive ? "is-active" : ""}>
+                        <span className="pop-proto mono">
+                          {m.protocol}:{m.port}
+                        </span>
+                        <span className="pop-ms mono">{ms}</span>
+                        <button
+                          type="button"
+                          className="pop-go mono"
+                          disabled={!onPinClick || isActive}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!onPinClick) return;
+                            setOpenIdx(null);
+                            onPinClick(m.id);
+                          }}
+                        >
+                          {isActive ? "current" : "connect"}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </>
+        );
+      })() : null}
 
       {bearing ? <div className="worldmap-bearing">{bearing}</div> : null}
         </TransformComponent>

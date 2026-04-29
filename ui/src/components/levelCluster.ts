@@ -241,3 +241,93 @@ export function clusterAtScale(
   const clusters = clusterAtLevel(resolved, level, activeKey);
   return { clusters, level, activeKey };
 }
+
+/** world.svg viewBox dimensions, for translating pixel distance into
+ *  viewBox units during the pixel-merge pass. */
+const VB_W = 784.077;
+const VB_H = 458.627;
+
+/** Pixel-distance sub-clustering, intended for the "server" level only.
+ *
+ * rc31 — even when the clusterer has resolved a bucket-per-host, two
+ * hosts that land within ~`mergePx` on-screen still overlap visually.
+ * We do a greedy nearest-neighbour merge on the already-resolved
+ * server-level clusters so a metro area with 30 VLESS endpoints on
+ * different hosts collapses into a single circle-with-count that can
+ * be expanded into a scrolling popover.
+ *
+ * Only runs when `level === "server"`; the continent / country / city
+ * levels are already bucketed by a geographic key, so a second spatial
+ * pass there is redundant (and would defeat the per-country UX the user
+ * asked for).
+ */
+export function pixelMergeClusters(
+  clusters: LevelCluster[],
+  scale: number,
+  stageW: number,
+  stageH: number,
+  mergePx: number = 36,
+): LevelCluster[] {
+  if (clusters.length <= 1) return clusters;
+  const pxPerVbX = (stageW / VB_W) * scale;
+  const pxPerVbY = (stageH / VB_H) * scale;
+  const pxPer = Math.min(pxPerVbX, pxPerVbY) || 1;
+  const mergeVb = mergePx / pxPer;
+
+  // Clone so we don't mutate the caller's array.
+  const working: LevelCluster[] = clusters.map((c) => ({
+    ...c,
+    members: [...c.members],
+    bbox: { ...c.bbox },
+  }));
+
+  let merged = true;
+  while (merged) {
+    merged = false;
+    outer: for (let i = 0; i < working.length; i++) {
+      for (let j = i + 1; j < working.length; j++) {
+        const a = working[i];
+        const b = working[j];
+        const dx = a.vbX - b.vbX;
+        const dy = a.vbY - b.vbY;
+        if (dx * dx + dy * dy > mergeVb * mergeVb) continue;
+        const aWeight = a.members.length;
+        const bWeight = b.members.length;
+        a.members.push(...b.members);
+        a.bbox = {
+          minX: Math.min(a.bbox.minX, b.bbox.minX),
+          maxX: Math.max(a.bbox.maxX, b.bbox.maxX),
+          minY: Math.min(a.bbox.minY, b.bbox.minY),
+          maxY: Math.max(a.bbox.maxY, b.bbox.maxY),
+        };
+        a.totalServers += b.totalServers;
+        if (b.bestMs !== null && (a.bestMs === null || b.bestMs < a.bestMs)) {
+          a.bestMs = b.bestMs;
+        }
+        if (b.active) a.active = true;
+        // Weighted centroid so a tight 10-host lump doesn't get yanked
+        // toward an isolated singleton that merged in last.
+        const total = aWeight + bWeight;
+        a.vbX = (a.vbX * aWeight + b.vbX * bWeight) / total;
+        a.vbY = (a.vbY * aWeight + b.vbY * bWeight) / total;
+        // Keep the label of the larger contributor so the popover
+        // title reads as the "primary" city/host of the merged lump.
+        if (bWeight > aWeight) a.label = b.label;
+        working.splice(j, 1);
+        merged = true;
+        break outer;
+      }
+    }
+  }
+  working.sort((a, b) => b.vbY - a.vbY);
+  return working;
+}
+
+/** The next band's minimum scale, used by drill-to-cluster to
+ *  guarantee each click steps exactly one hierarchy level deeper. */
+export const NEXT_BAND_MIN_SCALE: Record<MapLevel, number> = {
+  continent: 1.7,
+  country: 3.2,
+  city: 6.2,
+  server: 12,
+};

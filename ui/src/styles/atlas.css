@@ -169,7 +169,13 @@ body::before {
   text-transform: uppercase;
   color: var(--ink-mute);
   font-weight: 500;
-  z-index: 1;
+  z-index: 2;
+  background: var(--paper);
+  padding: 1px 6px;
+  max-width: calc(50vw - 48px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .marg.tl {
   top: 12px;

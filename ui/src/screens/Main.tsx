@@ -337,9 +337,18 @@ export function Main({ status, onConnectId }: MainProps): JSX.Element {
         {speedErr ? (
           <div
             className="mono"
-            style={{ color: "var(--copper)", marginTop: 6, fontSize: 11 }}
+            style={{
+              color: "var(--copper)",
+              marginTop: 6,
+              fontSize: 11,
+              wordBreak: "break-word",
+              overflowWrap: "anywhere",
+              maxHeight: 80,
+              overflow: "hidden",
+            }}
+            title={`speedtest: ${speedErr}`}
           >
-            speedtest: {speedErr}
+            {`speedtest: ${speedErr.replace(/^speedtest:\s*/i, "")}`}
           </div>
         ) : null}
         {err ? (
