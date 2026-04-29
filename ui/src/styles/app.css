@@ -1906,3 +1906,208 @@
 .worldmap-overlay .worldmap-popover.h-left { /* anchor on stage left */ }
 .worldmap-overlay .worldmap-tooltip.h-right,
 .worldmap-overlay .worldmap-popover.h-right { /* anchor on stage right */ }
+
+/* =============================================================
+ * rc38 — side panel (atlas info card docked to top-right of the
+ * worldmap stage).  Replaces the floating popover/tooltip layer
+ * that used clampOverlay() screen-space anchor coords.  Stays
+ * fixed at one location, never overlaps map content, never
+ * scales with the camera.
+ * ============================================================= */
+
+.worldmap-sidepanel {
+  position: absolute;
+  top: 60px;
+  right: 18px;
+  width: 296px;
+  max-height: calc(100% - 90px - 60px);
+  z-index: 11;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.worldmap-sidepanel .sidepanel-card,
+.worldmap-sidepanel .sidepanel-idle {
+  background: rgba(247, 232, 196, 0.94);
+  border: 1px solid rgba(120, 86, 44, 0.55);
+  box-shadow: 0 4px 18px rgba(60, 40, 18, 0.22);
+  border-radius: 4px;
+  padding: 12px 14px;
+  color: #2f2410;
+  font-family: var(--mosaic-font-body, "Cardo", serif);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+.worldmap-sidepanel .sidepanel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.worldmap-sidepanel .sidepanel-eyebrow {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7a5a30;
+}
+
+.worldmap-sidepanel .sidepanel-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f1809;
+  word-break: break-word;
+}
+
+.worldmap-sidepanel .sidepanel-row {
+  font-size: 12.5px;
+  color: #45331a;
+}
+
+.worldmap-sidepanel .sidepanel-row.italic-mute {
+  font-style: italic;
+  color: #7a5a30;
+}
+
+.worldmap-sidepanel .sidepanel-cta {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed rgba(120, 86, 44, 0.45);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: #7a5a30;
+}
+
+.worldmap-sidepanel .sidepanel-close {
+  background: transparent;
+  border: 0;
+  color: #7a5a30;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.worldmap-sidepanel .sidepanel-close:hover {
+  color: #1f1809;
+}
+
+.worldmap-sidepanel .sidepanel-idle {
+  opacity: 0.78;
+}
+
+.worldmap-sidepanel .sidepanel-idle-title {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7a5a30;
+}
+
+.worldmap-sidepanel .sidepanel-idle-hint {
+  font-size: 12px;
+  color: #45331a;
+}
+
+/* Re-target the existing pop-list / pop-host / pop-actions /
+ * pop-go rules that previously lived under .worldmap-popover so
+ * they apply inside the side-panel popover-card wrapper.  We
+ * scope these by the new wrapper class to avoid re-styling. */
+.worldmap-sidepanel .popover-card .pop-host {
+  font-family: var(--mosaic-font-mono, "JetBrains Mono", monospace);
+  font-size: 13px;
+  color: #1f1809;
+  word-break: break-all;
+}
+
+.worldmap-sidepanel .popover-card .pop-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.worldmap-sidepanel .popover-card .pop-fast-btn,
+.worldmap-sidepanel .popover-card .pop-zoom-btn {
+  font-family: var(--mosaic-font-mono, "JetBrains Mono", monospace);
+  font-size: 11px;
+  border: 1px solid rgba(120, 86, 44, 0.65);
+  background: rgba(247, 232, 196, 0.6);
+  color: #2f2410;
+  padding: 3px 8px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.worldmap-sidepanel .popover-card .pop-fast-btn:hover,
+.worldmap-sidepanel .popover-card .pop-zoom-btn:hover {
+  background: #f1d68b;
+}
+
+.worldmap-sidepanel .popover-card .pop-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow-y: auto;
+  max-height: 320px;
+}
+
+.worldmap-sidepanel .popover-card .pop-list li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 6px;
+  align-items: center;
+  font-family: var(--mosaic-font-mono, "JetBrains Mono", monospace);
+  font-size: 11px;
+  padding: 3px 0;
+  border-bottom: 1px dotted rgba(120, 86, 44, 0.25);
+}
+
+.worldmap-sidepanel .popover-card .pop-list li.is-active .pop-proto {
+  color: #1f1809;
+  font-weight: 700;
+}
+
+.worldmap-sidepanel .popover-card .pop-proto {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #45331a;
+}
+
+.worldmap-sidepanel .popover-card .pop-ms {
+  color: #7a5a30;
+  white-space: nowrap;
+}
+
+.worldmap-sidepanel .popover-card .pop-go {
+  font-family: var(--mosaic-font-mono, "JetBrains Mono", monospace);
+  font-size: 10.5px;
+  border: 1px solid rgba(120, 86, 44, 0.55);
+  background: transparent;
+  color: #2f2410;
+  padding: 2px 6px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.worldmap-sidepanel .popover-card .pop-go:hover:not(:disabled) {
+  background: #f1d68b;
+}
+
+.worldmap-sidepanel .popover-card .pop-go:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* rc38 — pin badges removed; hide any leftover instances. */
+.worldmap-pin .pin-badge,
+.worldmap-pin .pin-badge-count {
+  display: none !important;
+}

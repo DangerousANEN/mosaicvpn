@@ -84,14 +84,50 @@ interface RawDataset {
 let cachedCountries: CountryShape[] | null = null;
 let cachedContinents: ContinentShape[] | null = null;
 
-function buildPathFromRing(ring: number[][]): string {
-  let d = "";
-  for (let i = 0; i < ring.length; i++) {
+/**
+ * Split a polygon ring across the antimeridian (lon = ±180).
+ *
+ * Without splitting, a country whose polygon spans both sides of
+ * the dateline (Russia / USA-Aleutians / Fiji / Antarctica) gets
+ * rendered as a giant horizontal stripe across the whole map
+ * because the polygon's edge connects the +179° and -179° points
+ * with a straight line through the projection grid.
+ *
+ * The fix: walk the ring; whenever consecutive points have a
+ * longitude jump > 180°, close the current sub-ring and start a
+ * fresh one.  The two halves render as separate sub-polygons,
+ * each within the viewBox.
+ */
+function splitAntimeridian(ring: number[][]): number[][][] {
+  if (ring.length === 0) return [];
+  const parts: number[][][] = [];
+  let current: number[][] = [ring[0]];
+  for (let i = 1; i < ring.length; i++) {
     const [lon, lat] = ring[i];
+    const [pLon] = current[current.length - 1];
+    if (Math.abs(lon - pLon) > 180) {
+      if (current.length >= 2) parts.push(current);
+      current = [];
+    }
+    current.push([lon, lat]);
+  }
+  if (current.length >= 2) parts.push(current);
+  return parts;
+}
+
+function subringToPath(part: number[][]): string {
+  let d = "";
+  for (let i = 0; i < part.length; i++) {
+    const [lon, lat] = part[i];
     const { x, y } = projectVB(lat, lon);
     d += i === 0 ? `M${x.toFixed(1)} ${y.toFixed(1)}` : `L${x.toFixed(1)} ${y.toFixed(1)}`;
   }
   return d + "Z";
+}
+
+function buildPathFromRing(ring: number[][]): string {
+  const parts = splitAntimeridian(ring);
+  return parts.map(subringToPath).join("");
 }
 
 function buildPathFromPolygon(polygon: number[][][]): string {
@@ -108,7 +144,32 @@ function bboxOfRing(
   ring: number[][],
   acc: { minX: number; minY: number; maxX: number; maxY: number },
 ): void {
-  for (const [lon, lat] of ring) {
+  // Use only the antimeridian-split sub-rings so a wrap-around
+  // ring doesn't yank the bbox across the entire map.
+  const parts = splitAntimeridian(ring);
+  let bestPart = parts[0];
+  let bestSize = 0;
+  // Pick the largest sub-ring's bbox as the country's bbox.
+  for (const part of parts) {
+    let mnx = Infinity;
+    let mxx = -Infinity;
+    let mny = Infinity;
+    let mxy = -Infinity;
+    for (const [lon, lat] of part) {
+      const { x, y } = projectVB(lat, lon);
+      if (x < mnx) mnx = x;
+      if (x > mxx) mxx = x;
+      if (y < mny) mny = y;
+      if (y > mxy) mxy = y;
+    }
+    const size = (mxx - mnx) * (mxy - mny);
+    if (size > bestSize) {
+      bestSize = size;
+      bestPart = part;
+    }
+  }
+  if (!bestPart) return;
+  for (const [lon, lat] of bestPart) {
     const { x, y } = projectVB(lat, lon);
     if (x < acc.minX) acc.minX = x;
     if (x > acc.maxX) acc.maxX = x;

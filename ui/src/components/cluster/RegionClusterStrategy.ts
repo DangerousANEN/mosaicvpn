@@ -180,24 +180,69 @@ function clusterByCountry(
   return out;
 }
 
+/**
+ * Server-band clustering: pixel-grid merge so two ServerGroups
+ * whose pin centroids project within the same on-screen cell get
+ * collapsed into one cluster.  Without this, a city with five
+ * VLESS hosts at slightly different lat/lon shows five
+ * overlapping diamonds; with it, the user sees one diamond and a
+ * popover that lists all five.
+ *
+ * Cell size is in viewBox units, scaled inversely with the camera
+ * scale: at high zoom the cell shrinks so individual diamonds
+ * separate; at lower zoom the cell grows so dense metros merge.
+ */
 function clusterByServer(
   resolved: ResolvedGroup[],
   ctx: ClusterContext,
 ): Cluster[] {
-  const out: Cluster[] = [];
+  // 14 vb units \u2248 ~12 px on a 1280 px stage at scale=1.  Divide
+  // by ctx.scale so the cell shrinks proportionally as the user
+  // zooms in (5\u00d7 zoom \u2192 ~2.4 px cell, individual diamonds).
+  const cellVB = 14 / Math.max(ctx.scale, 0.5);
+  const buckets = new Map<string, ResolvedGroup[]>();
   for (const rg of resolved) {
+    const cx = Math.round(rg.vbX / cellVB);
+    const cy = Math.round(rg.vbY / cellVB);
+    const key = `${cx},${cy}`;
+    const arr = buckets.get(key);
+    if (arr) arr.push(rg);
+    else buckets.set(key, [rg]);
+  }
+  const out: Cluster[] = [];
+  for (const [cellKey, members] of buckets) {
     const bbox = emptyBBox();
-    expandBBox(bbox, rg.vbX, rg.vbY);
-    const members = [rg];
-    const label = rg.city || rg.country || rg.group.primary.name || "station";
+    let sumX = 0;
+    let sumY = 0;
+    for (const m of members) {
+      expandBBox(bbox, m.vbX, m.vbY);
+      sumX += m.vbX;
+      sumY += m.vbY;
+    }
+    const vbX = sumX / members.length;
+    const vbY = sumY / members.length;
+    // Stable label: city/country of the first member.  The
+    // popover lists every host inside the cluster.
+    const seed = members[0];
+    const label =
+      members.length === 1
+        ? seed.city || seed.country || seed.group.primary.name || "station"
+        : seed.city
+          ? `${seed.city} \u00b7 ${members.length} groups`
+          : seed.country
+            ? `${seed.country} \u00b7 ${members.length} groups`
+            : `${members.length} groups`;
+    // Cluster id is keyed on the cell so React can keep state
+    // across panning, but seed-server identity is what the
+    // WorldMap tracks for popover survival.
     out.push({
-      id: `region:server:${rg.group.key}`,
-      vbX: rg.vbX,
-      vbY: rg.vbY,
+      id: `region:server:${cellKey}`,
+      vbX,
+      vbY,
       bbox,
       shapePath: "",
       members,
-      totalServers: rg.group.members.length,
+      totalServers: totalServers(members),
       bestMs: bestMs(members),
       active: isActive(members, ctx.activeKey),
       label,

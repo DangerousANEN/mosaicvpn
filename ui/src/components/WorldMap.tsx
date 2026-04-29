@@ -47,7 +47,6 @@ import {
   TransformWrapper,
   type ReactZoomPanPinchRef,
 } from "react-zoom-pan-pinch";
-import worldUrl from "../assets/world.svg";
 import type { Server, GeoLocation } from "../api/types";
 import { resolveGroups, projectVB } from "./cluster/resolveGroups";
 import { RegionClusterStrategy } from "./cluster/RegionClusterStrategy";
@@ -287,34 +286,10 @@ export function WorldMap({
 
   const kmPer100Vb = 4598 / scale;
 
-  // Convert a viewBox point to screen-space CSS pixels (relative to
-  // worldmap-stage top-left).  Used to anchor tooltips/popovers
-  // outside the TransformWrapper without re-implementing camera.
-  const vbToScreen = (vbX: number, vbY: number): { x: number; y: number } => {
-    const cx = (vbX - MAP_VB.x) / MAP_VB.w;
-    const cy = (vbY - MAP_VB.y) / MAP_VB.h;
-    return {
-      x: cx * stageSize.w * tform.scale + tform.x,
-      y: cy * stageSize.h * tform.scale + tform.y,
-    };
-  };
-
-  const popoverPos = openCluster
-    ? clampOverlay(vbToScreen(openCluster.vbX, openCluster.vbY), stageSize, {
-        w: 300,
-        h: 240,
-      })
-    : null;
-  const tooltipPos = hover
-    ? clampOverlay(vbToScreen(hover.vbX, hover.vbY), stageSize, {
-        w: 220,
-        h: 80,
-      })
-    : null;
-  const vousScreen = vbToScreen(YOU.x, YOU.y);
-  const vousPos = vousOpen
-    ? clampOverlay(vousScreen, stageSize, { w: 200, h: 80 })
-    : null;
+  // rc38: tooltip / popover / vous-card all moved into a fixed
+  // side panel docked to the top-right corner of the stage; no
+  // anchor-position math needed and no need to translate viewBox
+  // coords back to screen space here.
 
   // Render shape layer based on band: at server band, paint
   // country fills as faint outlines so individual diamonds
@@ -361,21 +336,12 @@ export function WorldMap({
               position: "relative",
             }}
           >
-            <svg
-              className="worldmap-img"
-              viewBox={`${MAP_VB.x} ${MAP_VB.y} ${MAP_VB.w} ${MAP_VB.h}`}
-              preserveAspectRatio="xMidYMid meet"
-              aria-hidden="true"
-            >
-              <image
-                href={worldUrl}
-                x={MAP_VB.x}
-                y={MAP_VB.y}
-                width={MAP_VB.w}
-                height={MAP_VB.h}
-                preserveAspectRatio="xMidYMid meet"
-              />
-            </svg>
+            {/* rc38: removed the raster world.svg base layer.  The
+                country choropleth shapes (rendered below) are
+                derived from the same projectVB() that places
+                pins, so country borders, continent silhouettes
+                and pins all co-register by construction.  No
+                more 'two non-aligned maps' problem. */}
 
             <svg
               className="worldmap-grat"
@@ -543,10 +509,6 @@ export function WorldMap({
                   if (isOpen) closePopover();
                   else openClusterByCluster(c);
                 };
-                const serverCount = c.totalServers;
-                const showBadge = serverCount > 1;
-                const countDisplay =
-                  serverCount > 99 ? "99+" : String(serverCount);
                 return (
                   <g
                     key={`pin-${c.id}`}
@@ -570,26 +532,9 @@ export function WorldMap({
                       className="pin-diamond"
                       d="M 0 -6 L 4 -10 L 0 -14 L -4 -10 Z"
                     />
-                    {showBadge ? (
-                      <>
-                        <circle
-                          className="pin-badge"
-                          cx={5.5}
-                          cy={-13.5}
-                          r={countDisplay.length > 2 ? 3.4 : 2.6}
-                        />
-                        <text
-                          className="pin-badge-count mono"
-                          x={5.5}
-                          y={-13.4}
-                          textAnchor="middle"
-                          dominantBaseline="central"
-                          fontSize={countDisplay.length > 2 ? 3.0 : 3.6}
-                        >
-                          {countDisplay}
-                        </text>
-                      </>
-                    ) : null}
+                    {/* rc38: badges removed; the count moves to the
+                        side-panel hover/popover card.  Pin is now
+                        purely a shaped marker. */}
                   </g>
                 );
               })}
@@ -615,84 +560,27 @@ export function WorldMap({
           </TransformComponent>
         </TransformWrapper>
 
-        {/* Tooltip / popover overlay — outside TransformWrapper so
-            it never zooms or pans, screen-space coordinates. */}
-        <div className="worldmap-overlay" aria-hidden={false}>
-          {hover && tooltipPos ? (
-            <div
-              className={`worldmap-tooltip v-${tooltipPos.vAlign} h-${tooltipPos.hAlign}`}
-              style={{
-                left: `${tooltipPos.x}px`,
-                top: `${tooltipPos.y}px`,
-                transform: tooltipPos.transform,
-                transformOrigin: tooltipPos.origin,
-              }}
-            >
-              <div className="tip-host mono">
-                {hover.label} · {hover.totalServers} server
-                {hover.totalServers === 1 ? "" : "s"}
-              </div>
-              {hover.bestMs !== null && hover.bestMs > 0 ? (
-                <div className="tip-ms mono">best {hover.bestMs}ms</div>
-              ) : null}
-              {onPinClick ? (
-                <div className="tip-cta mono">click to choose</div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {vousOpen && vousPos ? (
-            <div
-              className={`worldmap-tooltip vous-tip v-${vousPos.vAlign} h-${vousPos.hAlign}`}
-              style={{
-                left: `${vousPos.x}px`,
-                top: `${vousPos.y}px`,
-                transform: vousPos.transform,
-                transformOrigin: vousPos.origin,
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="tip-host">It’s your location.</div>
-              {myLocation ? (
-                <>
-                  {myLocation.city || myLocation.country ? (
-                    <div className="tip-loc">
-                      {[myLocation.city, myLocation.country]
-                        .filter(Boolean)
-                        .join(", ")}
-                    </div>
-                  ) : null}
-                  <div className="tip-ms mono">
-                    {myLocation.lat.toFixed(2)}, {myLocation.lon.toFixed(2)}
-                  </div>
-                </>
-              ) : (
-                <div className="tip-loc italic-mute">
-                  resolving via ip-api…
-                </div>
-              )}
-              {!youValid ? (
-                <div className="tip-loc italic-mute">
-                  approximate · ip-geo unavailable
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {openCluster && popoverPos ? (
-            <PopoverBody
-              cluster={openCluster}
-              pos={popoverPos}
-              activeServerId={activeServerId}
-              onPinClick={onPinClick}
-              onDrill={() => {
-                drillToCluster(openCluster);
-                closePopover();
-              }}
-              onClose={closePopover}
-            />
-          ) : null}
-        </div>
+        {/* rc38: side panel — fixed atlas card docked top-right.
+            Holds the hover preview, the click-popover, and the
+            vous card.  No anchor-position math, no
+            counter-scaling, never overlaps the HUD. */}
+        <SidePanel
+          hover={hover}
+          openCluster={openCluster}
+          activeServerId={activeServerId}
+          onPinClick={onPinClick}
+          onDrill={() => {
+            if (openCluster) {
+              drillToCluster(openCluster);
+              closePopover();
+            }
+          }}
+          onClose={closePopover}
+          vousOpen={vousOpen}
+          onVousClose={() => setVousOpen(false)}
+          myLocation={myLocation}
+          youValid={youValid}
+        />
 
         {/* HUD — fixed-screen overlay. */}
         <HudOverlay
@@ -761,65 +649,158 @@ function CountryShapePath({
 }
 
 /* =============================================================
- * Overlay positioning
+ * Side panel — fixed atlas card docked to the top-right of the
+ * stage.  Holds hover preview, click-popover and vous card; one
+ * card visible at a time.  No position math, no scaling, no
+ * overlap with anything else.
  * ============================================================= */
 
-interface OverlayPos {
-  /** Anchor pixel coords (post-clamp), relative to stage. */
-  x: number;
-  y: number;
-  /** CSS transform string (positions popover relative to anchor). */
-  transform: string;
-  origin: string;
-  vAlign: "above" | "below";
-  hAlign: "center" | "left" | "right";
+interface SidePanelProps {
+  hover: Cluster | null;
+  openCluster: Cluster | null;
+  activeServerId?: string;
+  onPinClick?: (id: string) => void;
+  onDrill: () => void;
+  onClose: () => void;
+  vousOpen: boolean;
+  onVousClose: () => void;
+  myLocation?: GeoLocation;
+  youValid: boolean;
 }
 
-function clampOverlay(
-  anchor: { x: number; y: number },
-  stage: { w: number; h: number },
-  size: { w: number; h: number },
-): OverlayPos {
-  const margin = 12;
-  const halfW = size.w / 2;
-  // Horizontal: prefer center, flip to left/right if it would overflow.
-  let hAlign: OverlayPos["hAlign"] = "center";
-  if (anchor.x - halfW < margin) hAlign = "left";
-  else if (anchor.x + halfW > stage.w - margin) hAlign = "right";
-  // Vertical: prefer above, flip to below if no room.
-  let vAlign: OverlayPos["vAlign"] = "above";
-  if (anchor.y - size.h - margin < 0) vAlign = "below";
-  // Build transform string — translate before scale, no scale.
-  const yShift = vAlign === "above" ? "calc(-100% - 14px)" : "16px";
-  const xShift =
-    hAlign === "center"
-      ? "-50%"
-      : hAlign === "left"
-        ? "12px"
-        : "calc(-100% - 12px)";
-  // Clamp anchor itself so positions outside the stage are pulled
-  // back in — keeps popovers visible if user pans the map far.
-  const x = Math.max(margin, Math.min(stage.w - margin, anchor.x));
-  const y = Math.max(margin, Math.min(stage.h - margin, anchor.y));
-  return {
-    x,
-    y,
-    transform: `translate(${xShift}, ${yShift})`,
-    origin: `${hAlign === "center" ? "center" : hAlign} ${
-      vAlign === "above" ? "bottom" : "top"
-    }`,
-    vAlign,
-    hAlign,
-  };
+function SidePanel({
+  hover,
+  openCluster,
+  activeServerId,
+  onPinClick,
+  onDrill,
+  onClose,
+  vousOpen,
+  onVousClose,
+  myLocation,
+  youValid,
+}: SidePanelProps): JSX.Element {
+  // Priority: open popover > vous > hover preview > idle hint.
+  // The popover is the most committed state; until the user
+  // closes it, hover updates do not steal the panel.
+  let body: JSX.Element;
+  if (openCluster) {
+    body = (
+      <PopoverBody
+        cluster={openCluster}
+        activeServerId={activeServerId}
+        onPinClick={onPinClick}
+        onDrill={onDrill}
+        onClose={onClose}
+      />
+    );
+  } else if (vousOpen) {
+    body = (
+      <VousCard
+        myLocation={myLocation}
+        youValid={youValid}
+        onClose={onVousClose}
+      />
+    );
+  } else if (hover) {
+    body = <HoverCard cluster={hover} clickable={!!onPinClick} />;
+  } else {
+    body = (
+      <div className="sidepanel-idle">
+        <div className="sidepanel-idle-title mono">Atlas info</div>
+        <div className="sidepanel-idle-hint mono">
+          hover a region for a preview
+        </div>
+        <div className="sidepanel-idle-hint mono">
+          click for the full station list
+        </div>
+      </div>
+    );
+  }
+  return <aside className="worldmap-sidepanel">{body}</aside>;
+}
+
+interface HoverCardProps {
+  cluster: Cluster;
+  clickable: boolean;
+}
+
+function HoverCard({ cluster, clickable }: HoverCardProps): JSX.Element {
+  return (
+    <div className="sidepanel-card hover-card">
+      <div className="sidepanel-eyebrow mono">{cluster.level} · preview</div>
+      <div className="sidepanel-title mono" title={cluster.label}>
+        {cluster.label}
+      </div>
+      <div className="sidepanel-row mono">
+        {cluster.totalServers} station
+        {cluster.totalServers === 1 ? "" : "s"}
+      </div>
+      {cluster.bestMs !== null && cluster.bestMs > 0 ? (
+        <div className="sidepanel-row mono">best {cluster.bestMs} ms</div>
+      ) : null}
+      {clickable ? (
+        <div className="sidepanel-cta mono">click to choose</div>
+      ) : null}
+    </div>
+  );
+}
+
+interface VousCardProps {
+  myLocation?: GeoLocation;
+  youValid: boolean;
+  onClose: () => void;
+}
+
+function VousCard({
+  myLocation,
+  youValid,
+  onClose,
+}: VousCardProps): JSX.Element {
+  return (
+    <div className="sidepanel-card vous-card">
+      <div className="sidepanel-head">
+        <div className="sidepanel-eyebrow mono">vous · current location</div>
+        <button
+          type="button"
+          className="sidepanel-close mono"
+          onClick={onClose}
+          aria-label="Close"
+        >
+          ×
+        </button>
+      </div>
+      {myLocation ? (
+        <>
+          {myLocation.city || myLocation.country ? (
+            <div className="sidepanel-title">
+              {[myLocation.city, myLocation.country]
+                .filter(Boolean)
+                .join(", ")}
+            </div>
+          ) : null}
+          <div className="sidepanel-row mono">
+            {myLocation.lat.toFixed(2)}, {myLocation.lon.toFixed(2)}
+          </div>
+        </>
+      ) : (
+        <div className="sidepanel-row italic-mute">resolving via ip-api…</div>
+      )}
+      {!youValid ? (
+        <div className="sidepanel-row italic-mute">
+          approximate · ip-geo unavailable
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 /* =============================================================
- * Popover body
+ * Popover body — full station list for the open cluster.
  * ============================================================= */
 
 interface PopoverBodyProps {
   cluster: Cluster;
-  pos: OverlayPos;
   activeServerId?: string;
   onPinClick?: (id: string) => void;
   onDrill: () => void;
@@ -828,7 +809,6 @@ interface PopoverBodyProps {
 
 function PopoverBody({
   cluster,
-  pos,
   activeServerId,
   onPinClick,
   onDrill,
@@ -875,73 +855,69 @@ function PopoverBody({
   const scrollClass = rows.length > 6 ? "pop-list-scroll" : "";
 
   return (
-    <>
-      <div className="worldmap-popover-scrim" onClick={onClose} />
-      <div
-        className={`worldmap-popover v-${pos.vAlign} h-${pos.hAlign}`}
-        style={{
-          left: `${pos.x}px`,
-          top: `${pos.y}px`,
-          transform: pos.transform,
-          transformOrigin: pos.origin,
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="pop-head">
-          <div className="pop-host mono" title={cluster.label}>
-            {cluster.label} · {cluster.totalServers}
-            {cluster.totalServers === 1 ? " server" : " servers"}
-          </div>
-          <div className="pop-actions">
-            {onPinClick && fastest ? (
-              <button
-                type="button"
-                className="pop-fast-btn mono"
-                onClick={() => {
-                  onPinClick(fastest.id);
-                  onClose();
-                }}
-                title={`Connect to fastest in ${cluster.label}`}
-              >
-                fastest →
-              </button>
-            ) : null}
+    <div className="sidepanel-card popover-card">
+      <div className="sidepanel-head">
+        <div className="pop-host mono" title={cluster.label}>
+          {cluster.label} · {cluster.totalServers}
+          {cluster.totalServers === 1 ? " server" : " servers"}
+        </div>
+        <button
+          type="button"
+          className="sidepanel-close mono"
+          onClick={onClose}
+          aria-label="Close"
+        >
+          ×
+        </button>
+      </div>
+      <div className="pop-actions">
+        {onPinClick && fastest ? (
+          <button
+            type="button"
+            className="pop-fast-btn mono"
+            onClick={() => {
+              onPinClick(fastest.id);
+              onClose();
+            }}
+            title={`Connect to fastest in ${cluster.label}`}
+          >
+            fastest →
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="pop-zoom-btn mono"
+          onClick={onDrill}
+          title="Zoom into this region"
+        >
+          zoom
+        </button>
+      </div>
+      <ul className={`pop-list ${scrollClass}`}>
+        {rows.map((r) => (
+          <li key={r.id} className={r.isActive ? "is-active" : ""}>
+            <span className="pop-proto mono" title={r.host}>
+              {r.host}
+            </span>
+            <span className="pop-ms mono">
+              {r.proto}:{r.port} · {r.ms}
+            </span>
             <button
               type="button"
-              className="pop-zoom-btn mono"
-              onClick={onDrill}
-              title="Zoom into this region"
+              className="pop-go mono"
+              disabled={!onPinClick || r.isActive}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!onPinClick) return;
+                onClose();
+                onPinClick(r.id);
+              }}
             >
-              zoom
+              {r.isActive ? "current" : "connect"}
             </button>
-          </div>
-        </div>
-        <ul className={`pop-list ${scrollClass}`}>
-          {rows.map((r) => (
-            <li key={r.id} className={r.isActive ? "is-active" : ""}>
-              <span className="pop-proto mono" title={r.host}>
-                {r.host}
-              </span>
-              <span className="pop-ms mono">
-                {r.proto}:{r.port} · {r.ms}
-              </span>
-              <button
-                type="button"
-                className="pop-go mono"
-                disabled={!onPinClick || r.isActive}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (!onPinClick) return;
-                  onClose();
-                  onPinClick(r.id);
-                }}
-              >
-                {r.isActive ? "current" : "connect"}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
