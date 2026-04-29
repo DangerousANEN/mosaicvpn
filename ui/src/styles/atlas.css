@@ -160,7 +160,12 @@ body::before {
   opacity: 0.15;
 }
 
-/* corner marginalia (issue / chart number / lat-long etc.) */
+/* corner marginalia (issue / chart number / lat-long etc.)
+   rc33 — the four corners each sit on a dedicated paper-coloured
+   caption strip that spans the outer margin, so the label reads as
+   printed on the page regardless of whatever (map, modal, …) sits
+   underneath.  The strip is painted via an ::after that extends
+   horizontally to the binding-rule edges (left:40px / right:40px). */
 
 .marg {
   position: absolute;
@@ -169,28 +174,29 @@ body::before {
   text-transform: uppercase;
   color: var(--ink-mute);
   font-weight: 500;
-  z-index: 2;
+  z-index: 4;
   background: var(--paper);
-  padding: 1px 6px;
+  padding: 2px 10px;
   max-width: calc(50vw - 48px);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  box-shadow: 0 0 0 3px var(--paper);
 }
-.marg.tl {
-  top: 12px;
-  left: 40px;
-}
+.marg.tl,
 .marg.tr {
-  top: 12px;
-  right: 40px;
+  top: 8px;
 }
+.marg.bl,
+.marg.br {
+  bottom: 8px;
+}
+.marg.tl,
 .marg.bl {
-  bottom: 12px;
   left: 40px;
 }
+.marg.tr,
 .marg.br {
-  bottom: 12px;
   right: 40px;
 }
 .marg b {

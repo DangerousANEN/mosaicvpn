@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DangerousANEN/mosaicvpn/internal/firewall"
 	"github.com/DangerousANEN/mosaicvpn/internal/logx"
 	"github.com/DangerousANEN/mosaicvpn/internal/proto"
 	"github.com/DangerousANEN/mosaicvpn/internal/store"
@@ -51,6 +52,11 @@ type SingBoxBackend struct {
 	bytesIn   atomic.Uint64
 	bytesOut  atomic.Uint64
 	latencyMS atomic.Int32
+
+	// sharedPorts records any inbound Windows Firewall openings we
+	// created during Start (when ShareLAN was enabled) so Stop can
+	// tear them back down. Keyed by firewall tag → port.
+	sharedPorts map[string]int
 }
 
 // NewSingBoxBackend constructs a backend rooted at dataDir (where the
@@ -240,6 +246,30 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, prefs s
 	go b.clashAPIPoll(cctx, clashEndpoint)
 	go b.latencyPoll(cctx, server)
 
+	// When the user has ShareLAN enabled, sing-box listens on
+	// 0.0.0.0 but Windows Firewall silently drops inbound TCP from
+	// the LAN on public / private profiles unless a rule exists for
+	// our ports. Add two rules (one per listener) and remember them
+	// for Stop. On Linux/macOS the firewall helpers are no-ops.
+	if prefs.ShareLAN {
+		b.mu.Lock()
+		if b.sharedPorts == nil {
+			b.sharedPorts = make(map[string]int)
+		}
+		b.mu.Unlock()
+		for tag, port := range map[string]int{"socks": socksPort, "http": httpPort} {
+			if err := firewall.AllowInbound(tag, port); err != nil {
+				logx.Warn("firewall: allow inbound failed",
+					"tag", tag, "port", port, "err", err)
+				continue
+			}
+			b.mu.Lock()
+			b.sharedPorts[tag] = port
+			b.mu.Unlock()
+			logx.Info("firewall: inbound allowed", "tag", tag, "port", port)
+		}
+	}
+
 	return nil
 }
 
@@ -403,7 +433,20 @@ func (b *SingBoxBackend) Stop(_ context.Context) error {
 	b.bytesIn.Store(0)
 	b.bytesOut.Store(0)
 	b.latencyMS.Store(0)
+	shared := b.sharedPorts
+	b.sharedPorts = nil
 	b.mu.Unlock()
+	// Drop any LAN-share firewall rules we opened so disabling
+	// ShareLAN (or fully disconnecting) immediately closes the
+	// inbound path. Errors are logged but don't block shutdown.
+	for tag, port := range shared {
+		if err := firewall.DenyInbound(tag, port); err != nil {
+			logx.Warn("firewall: deny inbound failed",
+				"tag", tag, "port", port, "err", err)
+			continue
+		}
+		logx.Info("firewall: inbound denied", "tag", tag, "port", port)
+	}
 	if cancel == nil {
 		return nil
 	}

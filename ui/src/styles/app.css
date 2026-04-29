@@ -716,9 +716,31 @@
   font-size: 10.5px;
 }
 .worldmap-popover .pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   margin-bottom: 6px;
   border-bottom: 1px dashed var(--ink-mute);
   padding-bottom: 4px;
+}
+.worldmap-popover .pop-zoom-btn {
+  appearance: none;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  cursor: pointer;
+  text-transform: lowercase;
+  flex: 0 0 auto;
+}
+.worldmap-popover .pop-zoom-btn:hover {
+  background: var(--copper);
+  color: var(--paper);
+  border-color: var(--copper);
 }
 .worldmap-popover .pop-host {
   font-size: 11px;
@@ -891,47 +913,12 @@
    tour, sparkline, dark-theme palette swap.
    ============================================================ */
 
-/* Adaptive cluster pin (replaces the "country pin" treatment). The
-   circle is paper with an ink stroke; the count badge sits centered
-   inside. Hover + active states reuse the same colour swap idiom as
-   the diamond pins so all marker species feel consistent. */
-.worldmap-pin .pin-cluster {
-  fill: var(--paper);
-  stroke: var(--ink);
-  stroke-width: 1.4;
-  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.18));
-}
-.worldmap-pin .pin-cluster-count {
-  fill: var(--ink);
-  font-family: "JetBrains Mono", "IBM Plex Mono", monospace;
-  font-weight: 600;
-  pointer-events: none;
-}
-.worldmap-pin.hov .pin-cluster,
-.worldmap-pin.open .pin-cluster {
-  fill: var(--ink);
-}
-.worldmap-pin.hov .pin-cluster-count,
-.worldmap-pin.open .pin-cluster-count {
-  fill: var(--paper);
-}
-.worldmap-pin.cur .pin-cluster {
-  fill: var(--copper);
-  stroke: var(--copper);
-}
-.worldmap-pin.cur .pin-cluster-count {
-  fill: var(--paper);
-}
-.worldmap-label.is-cluster {
-  letter-spacing: 0.04em;
-  text-transform: lowercase;
-}
-
-/* rc30 city reference overlay. Dots are sized in viewBox units and
-   already compensate for zoom via r=(0.9/scale) in WorldMap.tsx; the
-   labels are HTML so they render at a stable 9 px regardless of
-   the SVG transform. Muted-paper tone so they recede behind pins. */
-.worldmap-cities {
+/* rc33 — blob layer.  Each parent cluster gets a smoothed path
+   describing the area its servers occupy.  Hovering lifts the blob
+   to copper-tinted; clicking opens the popover listing every server
+   inside.  Stroke is non-scaling so thickness stays constant as the
+   user zooms. */
+.worldmap-blobs {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -939,68 +926,90 @@
   pointer-events: none;
   overflow: visible;
 }
-.worldmap-cities .city-dot {
-  fill: var(--ink);
-  opacity: 0.55;
-}
-/* rc31 — each city is a small hit-target + an always-rendered HTML
-   label that starts invisible and fades in when the cursor hovers
-   the dot.  The dot itself is the SVG circle above; the HTML
-   wrapper here gives us reliable :hover without SVG pointer-events
-   edge cases.  Wrapper is 20 × 20 px (post counter-scale) so the
-   hover zone is ~2 mm on-screen, comfortably wider than the dot. */
-.worldmap-city {
-  position: absolute;
-  width: 20px;
-  height: 20px;
-  margin: -10px 0 0 -10px;
-  /* margins cancelled by inline translate(-50%, -50%) */
+.worldmap-blob {
+  fill: var(--copper);
+  fill-opacity: 0.12;
+  stroke: var(--ink);
+  stroke-width: 1.2;
+  stroke-opacity: 0.75;
+  vector-effect: non-scaling-stroke;
   pointer-events: auto;
-  z-index: 3;
+  cursor: pointer;
+  transition: fill-opacity 120ms ease-out, stroke-opacity 120ms ease-out,
+    stroke 120ms ease-out;
 }
-/* rc32 — visible atlas-style frame around each city reference. 8 px
-   square centred on the city coordinate, thin ink stroke that flips
-   to copper on hover, mirroring the cur-pin accent elsewhere on the
-   map. The frame stays the same on-screen size because the parent
-   wrapper is counter-scaled via the inline transform. */
-.worldmap-city .city-hot {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 8px;
-  height: 8px;
-  margin: -4px 0 0 -4px;
-  border: 1px solid var(--ink);
-  background: var(--paper);
-  opacity: 0.7;
-  transition: border-color 90ms ease-out, opacity 90ms ease-out;
-  box-sizing: border-box;
-  display: block;
+.worldmap-blob.hov,
+.worldmap-blob.open {
+  fill-opacity: 0.26;
+  stroke: var(--copper);
+  stroke-opacity: 1;
 }
-.worldmap-city:hover .city-hot {
-  border-color: var(--copper);
-  opacity: 1;
+.worldmap-blob.cur {
+  fill: var(--copper);
+  fill-opacity: 0.3;
+  stroke: var(--copper);
+  stroke-opacity: 1;
 }
-.worldmap-city .city-label {
-  position: absolute;
-  left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-family: "Atlas Serif", Georgia, serif;
-  font-size: 9px;
-  color: var(--ink);
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  user-select: none;
-  text-shadow:
-    0 0 2px var(--paper),
-    0 0 2px var(--paper);
-  opacity: 0;
-  transition: opacity 90ms ease-out;
+/* Tighter stroke for tiny server-level blobs so they don't look
+   thick at high zoom. */
+.worldmap-blob.lvl-server {
+  stroke-width: 1;
+  fill-opacity: 0.18;
+}
+
+/* rc33 — merge-count badge on diamond pins. Sits on the upper-right
+   shoulder of the diamond; only renders when the diamond represents
+   more than one underlying server.  Paper fill + ink edge while
+   idle, flips to copper when the pin is active. */
+.worldmap-pin .pin-badge {
+  fill: var(--ink);
+  stroke: var(--paper);
+  stroke-width: 0.6;
+  vector-effect: non-scaling-stroke;
+}
+.worldmap-pin .pin-badge-count {
+  fill: var(--paper);
+  font-family: "JetBrains Mono", "IBM Plex Mono", monospace;
+  font-weight: 600;
   pointer-events: none;
 }
-.worldmap-city:hover .city-label {
-  opacity: 0.92;
+.worldmap-pin.hov .pin-badge,
+.worldmap-pin.open .pin-badge {
+  fill: var(--paper);
+  stroke: var(--ink);
+}
+.worldmap-pin.hov .pin-badge-count,
+.worldmap-pin.open .pin-badge-count {
+  fill: var(--ink);
+}
+.worldmap-pin.cur .pin-badge {
+  fill: var(--copper);
+  stroke: var(--paper);
+}
+.worldmap-pin.cur .pin-badge-count {
+  fill: var(--paper);
+}
+
+/* rc33 — zoom-level indicator sitting in the bottom-left of the
+   transformed content so the user always knows which of the four
+   clustering bands (continent / country / city / server) is
+   currently active. Counter-scaled via an inline transform so the
+   type size stays constant as the user zooms. */
+.worldmap-zoom-indicator {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  padding: 2px 8px;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  text-transform: lowercase;
+  pointer-events: none;
+  z-index: 4;
+  transform-origin: left bottom;
+  box-shadow: 0 0 0 2px var(--paper);
 }
 
 /* Continent / country / city cluster label variants. Continent

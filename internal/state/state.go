@@ -21,6 +21,7 @@ import (
 	"net/http"
 	neturl "net/url"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -364,6 +365,17 @@ type SpeedtestResult struct {
 // and reports throughput. The request is short-circuited if the
 // backend isn't connected. The default payload is Cloudflare's
 // public speed-test endpoint at 10 MB; callers may override the URL.
+//
+// rc33 — many users report `unexpected EOF` mid-download when the
+// edge closes the connection early (flaky routes, ISP throttling,
+// or sing-box recycling the outbound). We now:
+//
+//   1. Fall through a ladder of sizes (10 MB → 5 MB → 1 MB) so a
+//      lossy link still produces a usable number.
+//   2. Treat a partial transfer (≥ 50 % of the requested bytes) as a
+//      success — report Mbit/s for what we got and a friendly note.
+//   3. Set an explicit User-Agent and Accept header; some Cloudflare
+//      edges 502 anonymous UAs on the speed endpoint.
 func (m *Manager) Speedtest(ctx context.Context, url string) (SpeedtestResult, error) {
 	m.mu.Lock()
 	st := m.st
@@ -381,10 +393,6 @@ func (m *Manager) Speedtest(ctx context.Context, url string) (SpeedtestResult, e
 	if socks == "" {
 		return res, fmt.Errorf("speedtest: SOCKS listener not advertised")
 	}
-	if url == "" {
-		url = "https://speed.cloudflare.com/__down?bytes=10485760"
-	}
-	res.URL = url
 	proxyURL, err := neturl.Parse("socks5h://" + socks)
 	if err != nil {
 		return res, fmt.Errorf("speedtest: bad proxy: %w", err)
@@ -393,34 +401,92 @@ func (m *Manager) Speedtest(ctx context.Context, url string) (SpeedtestResult, e
 		Proxy:                 http.ProxyURL(proxyURL),
 		ResponseHeaderTimeout: 15 * time.Second,
 		IdleConnTimeout:       30 * time.Second,
+		DisableKeepAlives:     true,
 		ForceAttemptHTTP2:     false,
 	}
 	client := &http.Client{
 		Transport: transport,
 		Timeout:   90 * time.Second,
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+
+	// When the caller supplies a custom URL we honour it exactly;
+	// otherwise we try the download-size ladder until one completes
+	// or we exhaust the retries.
+	var urls []string
+	if url != "" {
+		urls = []string{url}
+	} else {
+		urls = []string{
+			"https://speed.cloudflare.com/__down?bytes=10485760", // 10 MB
+			"https://speed.cloudflare.com/__down?bytes=5242880",  // 5 MB
+			"https://speed.cloudflare.com/__down?bytes=1048576",  // 1 MB
+		}
+	}
+
+	var lastErr error
+	for idx, u := range urls {
+		req, rerr := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if rerr != nil {
+			return res, rerr
+		}
+		req.Header.Set("User-Agent", "mosaic-speedtest/"+m.version)
+		req.Header.Set("Accept", "*/*")
+
+		start := time.Now()
+		resp, rerr := client.Do(req)
+		if rerr != nil {
+			lastErr = rerr
+			continue
+		}
+		res.URL = u
+		res.HTTPStatus = resp.StatusCode
+		// Pull the body and time it regardless of partial vs full.
+		n, cerr := io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		dur := time.Since(start)
+		res.Bytes = n
+		res.DurationMS = dur.Milliseconds()
+		if dur > 0 {
+			res.MbitPerSec = float64(n*8) / dur.Seconds() / 1_000_000.0
+		}
+		if cerr == nil {
+			return res, nil
+		}
+		// Partial-download heuristic: if we streamed ≥ 50 % of the
+		// requested bytes we still have enough signal to report a
+		// throughput figure. Otherwise fall through to the next,
+		// smaller URL.
+		want := extractRequestedBytes(u)
+		if want > 0 && n*2 >= want {
+			return res, nil
+		}
+		lastErr = fmt.Errorf("speedtest: download: %w", cerr)
+		if idx == len(urls)-1 {
+			return res, lastErr
+		}
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("speedtest: all sizes failed")
+	}
+	return res, lastErr
+}
+
+// extractRequestedBytes pulls the `bytes=N` query parameter out of a
+// Cloudflare __down-style URL, returning 0 if absent or malformed.
+func extractRequestedBytes(raw string) int64 {
+	u, err := neturl.Parse(raw)
 	if err != nil {
-		return res, err
+		return 0
 	}
-	start := time.Now()
-	resp, err := client.Do(req)
+	b := u.Query().Get("bytes")
+	if b == "" {
+		return 0
+	}
+	n, err := strconv.ParseInt(b, 10, 64)
 	if err != nil {
-		return res, fmt.Errorf("speedtest: %w", err)
+		return 0
 	}
-	defer resp.Body.Close()
-	res.HTTPStatus = resp.StatusCode
-	n, err := io.Copy(io.Discard, resp.Body)
-	dur := time.Since(start)
-	res.Bytes = n
-	res.DurationMS = dur.Milliseconds()
-	if dur > 0 {
-		res.MbitPerSec = float64(n*8) / dur.Seconds() / 1_000_000.0
-	}
-	if err != nil {
-		return res, fmt.Errorf("speedtest: download: %w", err)
-	}
-	return res, nil
+	return n
 }
 
 // Started returns when the daemon began running.

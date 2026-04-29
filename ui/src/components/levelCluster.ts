@@ -230,6 +230,32 @@ export function clusterAtLevel(
   return out;
 }
 
+/** Given a parent cluster, return the clusters one level deeper made
+ *  only from that parent's members.  Used to render diamonds inside
+ *  a blob — e.g. at continent level we want one diamond per country
+ *  within the continent cluster, not per individual host. */
+export function subClusters(
+  parent: LevelCluster,
+  activeKey: string | null,
+): LevelCluster[] {
+  const childLevel = childLevelOf(parent.level);
+  if (childLevel === null) return [];
+  return clusterAtLevel(parent.members, childLevel, activeKey);
+}
+
+function childLevelOf(level: MapLevel): MapLevel | null {
+  switch (level) {
+    case "continent":
+      return "country";
+    case "country":
+      return "city";
+    case "city":
+      return "server";
+    case "server":
+      return null;
+  }
+}
+
 /** Convenience wrapper: resolve then cluster at the given scale. */
 export function clusterAtScale(
   servers: Server[],
