@@ -116,7 +116,19 @@ export const api = {
 
   getPrefs: () => request<Prefs>("GET", "/v1/prefs"),
   setPrefs: (prefs: Prefs) => request<Prefs>("PUT", "/v1/prefs", prefs),
+
+  speedtest: (url?: string) =>
+    request<SpeedtestResult>("POST", "/v1/speedtest", { url: url ?? "" }),
 };
+
+export interface SpeedtestResult {
+  url: string;
+  bytes: number;
+  duration_ms: number;
+  mbit_per_sec: number;
+  http_status: number;
+  started_at_utc: string;
+}
 
 /**
  * subscribeStatus consumes the daemon's /v1/events SSE stream. We use

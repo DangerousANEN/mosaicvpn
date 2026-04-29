@@ -128,6 +128,7 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /v1/diag", s.handleDiag)
 	s.mux.HandleFunc("GET /v1/events", s.handleEvents)
+	s.mux.HandleFunc("POST /v1/speedtest", s.handleSpeedtest)
 }
 
 // ---------- handlers ------------------------------------------------------
@@ -748,6 +749,30 @@ func (s *Server) handleSetPrefs(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mgr.SetTunnelPrefs(p.TunnelMode, p.KillSwitch)
 	writeJSON(w, http.StatusOK, p)
+}
+
+func (s *Server) handleSpeedtest(w http.ResponseWriter, r *http.Request) {
+	type req struct {
+		URL string `json:"url"`
+	}
+	var body req
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	// Speedtest can take ~10-30 s; give it a generous deadline that
+	// is independent of the (typically short) HTTP request timeout
+	// the API server runs with.
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+	res, err := s.mgr.Speedtest(ctx, body.URL)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (s *Server) handleDiag(w http.ResponseWriter, _ *http.Request) {

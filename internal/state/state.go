@@ -17,6 +17,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	neturl "net/url"
 	"os"
 	"sync"
 	"time"
@@ -344,6 +347,80 @@ func (m *Manager) SetTunnelPrefs(mode string, killSwitch bool) {
 	st.TunnelMode = mode
 	st.KillSwitch = killSwitch
 	m.transitionLocked(st)
+}
+
+// SpeedtestResult is the outcome of a one-shot bandwidth test through
+// the active proxy backend.
+type SpeedtestResult struct {
+	URL          string  `json:"url"`
+	Bytes        int64   `json:"bytes"`
+	DurationMS   int64   `json:"duration_ms"`
+	MbitPerSec   float64 `json:"mbit_per_sec"`
+	HTTPStatus   int     `json:"http_status"`
+	StartedAtUTC string  `json:"started_at_utc"`
+}
+
+// Speedtest pulls a fixed-size payload through the active SOCKS proxy
+// and reports throughput. The request is short-circuited if the
+// backend isn't connected. The default payload is Cloudflare's
+// public speed-test endpoint at 10 MB; callers may override the URL.
+func (m *Manager) Speedtest(ctx context.Context, url string) (SpeedtestResult, error) {
+	m.mu.Lock()
+	st := m.st
+	be := m.backend
+	m.mu.Unlock()
+	res := SpeedtestResult{StartedAtUTC: time.Now().UTC().Format(time.RFC3339)}
+	if st.State != proto.StateConnected {
+		return res, fmt.Errorf("speedtest: not connected")
+	}
+	pl, ok := be.(ProxyListener)
+	if !ok {
+		return res, fmt.Errorf("speedtest: backend has no proxy listener")
+	}
+	socks, _ := pl.Proxies()
+	if socks == "" {
+		return res, fmt.Errorf("speedtest: SOCKS listener not advertised")
+	}
+	if url == "" {
+		url = "https://speed.cloudflare.com/__down?bytes=10485760"
+	}
+	res.URL = url
+	proxyURL, err := neturl.Parse("socks5h://" + socks)
+	if err != nil {
+		return res, fmt.Errorf("speedtest: bad proxy: %w", err)
+	}
+	transport := &http.Transport{
+		Proxy:                 http.ProxyURL(proxyURL),
+		ResponseHeaderTimeout: 15 * time.Second,
+		IdleConnTimeout:       30 * time.Second,
+		ForceAttemptHTTP2:     false,
+	}
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   90 * time.Second,
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return res, err
+	}
+	start := time.Now()
+	resp, err := client.Do(req)
+	if err != nil {
+		return res, fmt.Errorf("speedtest: %w", err)
+	}
+	defer resp.Body.Close()
+	res.HTTPStatus = resp.StatusCode
+	n, err := io.Copy(io.Discard, resp.Body)
+	dur := time.Since(start)
+	res.Bytes = n
+	res.DurationMS = dur.Milliseconds()
+	if dur > 0 {
+		res.MbitPerSec = float64(n*8) / dur.Seconds() / 1_000_000.0
+	}
+	if err != nil {
+		return res, fmt.Errorf("speedtest: download: %w", err)
+	}
+	return res, nil
 }
 
 // Started returns when the daemon began running.

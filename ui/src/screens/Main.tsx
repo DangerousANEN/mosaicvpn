@@ -58,6 +58,17 @@ export function Main({ status, onConnectId }: MainProps): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [subFilter, setSubFilter] = useState<string | null>(null);
+  // Speedtest one-shot state. setSpeedResult holds the latest run's
+  // throughput numbers so the inline result strip survives a status
+  // SSE re-render. setSpeedErr surfaces transport / proxy errors.
+  const [speedBusy, setSpeedBusy] = useState(false);
+  const [speedResult, setSpeedResult] = useState<{
+    bytes: number;
+    duration_ms: number;
+    mbit_per_sec: number;
+    http_status: number;
+  } | null>(null);
+  const [speedErr, setSpeedErr] = useState<string | null>(null);
   // Favorites + history live in localStorage; we mirror them in
   // state so the register re-orders without forcing a remount.
   const [favs, setFavs] = useState<Set<string>>(() => getFavorites());
@@ -174,6 +185,20 @@ export function Main({ status, onConnectId }: MainProps): JSX.Element {
     }
   };
 
+  const onSpeedtest = async () => {
+    setSpeedBusy(true);
+    setSpeedErr(null);
+    setSpeedResult(null);
+    try {
+      const r = await api.speedtest();
+      setSpeedResult(r);
+    } catch (e) {
+      setSpeedErr((e as Error).message);
+    } finally {
+      setSpeedBusy(false);
+    }
+  };
+
   const onAutoFastest = async () => {
     if (fastestAll.length === 0) {
       setErr("no probed servers — Test all in Pool first");
@@ -286,6 +311,37 @@ export function Main({ status, onConnectId }: MainProps): JSX.Element {
             <span className="mono"> · {fastestAll[0].last_test_ms}ms</span>
           ) : null}
         </button>
+        <button
+          type="button"
+          className="auto-fastest"
+          onClick={onSpeedtest}
+          disabled={speedBusy || status.state !== "connected"}
+          title="Pull a 10 MB payload through the active proxy and report Mbps"
+          style={{ marginTop: 6 }}
+        >
+          {speedBusy ? "↓ Speedtest …" : "↓ Speedtest (10 MB)"}
+        </button>
+        {speedResult ? (
+          <div
+            className="mono"
+            style={{
+              marginTop: 6,
+              fontSize: 11.5,
+              color: "var(--ink-2)",
+              letterSpacing: "0.04em",
+            }}
+          >
+            {speedResult.mbit_per_sec.toFixed(2)} Mbit/s · {(speedResult.bytes / 1_048_576).toFixed(1)} MB in {(speedResult.duration_ms / 1000).toFixed(1)}s · HTTP {speedResult.http_status}
+          </div>
+        ) : null}
+        {speedErr ? (
+          <div
+            className="mono"
+            style={{ color: "var(--copper)", marginTop: 6, fontSize: 11 }}
+          >
+            speedtest: {speedErr}
+          </div>
+        ) : null}
         {err ? (
           <div
             className="mono"

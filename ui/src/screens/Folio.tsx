@@ -20,6 +20,7 @@ type ChapterId =
   | "dns"
   | "autostart"
   | "mcp"
+  | "bypass"
   | "appearance";
 
 const CHAPTERS: { id: ChapterId; num: string; title: string; sub: string }[] = [
@@ -39,8 +40,14 @@ const CHAPTERS: { id: ChapterId; num: string; title: string; sub: string }[] = [
     sub: "letting an AI control Mosaic",
   },
   {
-    id: "appearance",
+    id: "bypass",
     num: "vi",
+    title: "Bypass list",
+    sub: "domains & IPs that skip the tunnel",
+  },
+  {
+    id: "appearance",
+    num: "vii",
     title: "Appearance & backup",
     sub: "theme, export & import",
   },
@@ -399,6 +406,8 @@ export function Folio({ status }: { status?: Status | null }): JSX.Element {
             </Chapter>
           ) : null}
 
+          {chapter === "bypass" ? <BypassChapter /> : null}
+
           {chapter === "appearance" ? (
             <AppearanceChapter />
           ) : null}
@@ -593,6 +602,167 @@ function Text({
 }
 
 /* ---------- rc28 — Appearance & backup chapter ---------- */
+
+/** BypassChapter — split-tunneling editor. Manages a single named
+ *  routing rule "Bypass list" with action=direct that the user can
+ *  populate with one domain or IP/CIDR per line. Saving deletes any
+ *  previous "Bypass list" rule and creates a fresh one at priority 1
+ *  (top of the rule chain) so it takes precedence over the catch-
+ *  all proxy rule. We keep the management entirely on the client
+ *  side (no new daemon endpoint) by composing existing Rules CRUD
+ *  calls. */
+const BYPASS_RULE_NAME = "Bypass list";
+
+function BypassChapter(): JSX.Element {
+  const [domains, setDomains] = useState("");
+  const [ips, setIps] = useState("");
+  const [busy, setBusy] = useState<"load" | "save" | null>("load");
+  const [err, setErr] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+
+  const reload = async () => {
+    setBusy("load");
+    setErr(null);
+    try {
+      const rules = await api.listRules();
+      const existing = rules.find((r) => r.name === BYPASS_RULE_NAME);
+      if (existing) {
+        setDomains((existing.match.domain_suffix ?? []).join("\n"));
+        setIps((existing.match.ip_cidr ?? []).join("\n"));
+      } else {
+        setDomains("");
+        setIps("");
+      }
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  useEffect(() => {
+    void reload();
+  }, []);
+
+  const parse = (raw: string): string[] =>
+    raw
+      .split(/[\n,]/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && !s.startsWith("#"));
+
+  const onSave = async () => {
+    setBusy("save");
+    setErr(null);
+    setInfo(null);
+    try {
+      const domList = parse(domains);
+      const ipList = parse(ips);
+      const rules = await api.listRules();
+      const existing = rules.find((r) => r.name === BYPASS_RULE_NAME);
+      if (existing) {
+        await api.deleteRule(existing.id);
+      }
+      if (domList.length === 0 && ipList.length === 0) {
+        setInfo("Bypass list cleared.");
+        return;
+      }
+      await api.addRule({
+        name: BYPASS_RULE_NAME,
+        action: "direct",
+        enabled: true,
+        match: {
+          logic: "or",
+          domain_suffix: domList,
+          ip_cidr: ipList,
+        },
+      });
+      // Bump the new rule to priority 1 so it wins over the proxy
+      // catch-all. We rebuild the priority order by listing again
+      // and pushing our rule's id to the front.
+      const after = await api.listRules();
+      const ours = after.find((r) => r.name === BYPASS_RULE_NAME);
+      if (ours) {
+        const reordered = [
+          ours.id,
+          ...after.filter((r) => r.id !== ours.id).map((r) => r.id),
+        ];
+        await api.reorderRules(reordered);
+      }
+      setInfo(
+        `Saved · ${domList.length} domain${domList.length === 1 ? "" : "s"}, ${ipList.length} IP entr${ipList.length === 1 ? "y" : "ies"}.`,
+      );
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <Chapter
+      num="vi"
+      title="Bypass list"
+      desc="Domains & IPs that skip the tunnel"
+    >
+      <p className="folio-prose">
+        Traffic matching any entry below goes <i>direct</i> instead of through
+        the active server. One per line. Domains match by suffix:
+        <code> youtube.com </code>also matches<code> www.youtube.com</code>.
+        IP entries accept CIDR (e.g.<code> 192.168.0.0/16</code>). Lines
+        starting with <code>#</code> are treated as comments and ignored.
+      </p>
+
+      <div className="bypass-grid">
+        <label className="bypass-col">
+          <span className="bypass-col-label">Domain suffixes</span>
+          <textarea
+            className="bypass-area"
+            value={domains}
+            onChange={(e) => setDomains(e.target.value)}
+            spellCheck={false}
+            placeholder={"# one host per line\nyoutube.com\n*.local"}
+            rows={10}
+            disabled={busy === "load"}
+          />
+        </label>
+        <label className="bypass-col">
+          <span className="bypass-col-label">IPs / CIDRs</span>
+          <textarea
+            className="bypass-area"
+            value={ips}
+            onChange={(e) => setIps(e.target.value)}
+            spellCheck={false}
+            placeholder={"192.168.0.0/16\n10.0.0.0/8\n100.64.0.0/10"}
+            rows={10}
+            disabled={busy === "load"}
+          />
+        </label>
+      </div>
+
+      {err ? <div className="folio-err">{err}</div> : null}
+      {info ? <div className="folio-info">{info}</div> : null}
+
+      <div className="bypass-actions">
+        <button
+          type="button"
+          className="btn ghost"
+          onClick={() => void reload()}
+          disabled={!!busy}
+        >
+          Reload
+        </button>
+        <button
+          type="button"
+          className="btn primary"
+          onClick={() => void onSave()}
+          disabled={!!busy}
+        >
+          {busy === "save" ? "Saving…" : "Save bypass list"}
+        </button>
+      </div>
+    </Chapter>
+  );
+}
 
 /** AppearanceChapter — light/dark toggle plus export/import of the
  *  user's full Mosaic config (subscriptions, rules, prefs) as a
