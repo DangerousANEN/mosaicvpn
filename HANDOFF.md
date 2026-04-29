@@ -860,3 +860,152 @@ concrete starting point:
   intended.
 
 — rc23 agent, signing off.
+
+---
+
+## 12. rc24 → rc38 cycle (notes for the next agent)
+
+The rc24-rc33 cycle is in `git log`; the §11 carry-over list (TUN
+debug, country-pin geo gaps, live updates beyond Pool/Main, LAN
+auth, subscription detail screen) was largely worked through.
+The work that *dominated* rc34-rc38 is the world map renderer; if
+you only read one section, read this one.
+
+### rc34 — pixel-merge clustering at all levels
+
+Dropped the `city` band from `level-based-clustering`; all
+clustering now goes through the same hex-bin or pixel-merge
+primitive.  Vous marker shrunk so it stops eating the centre of
+the viewport at low zoom.  `levelCluster.ts` is the entry point.
+
+### rc35 — atlas defects bingo
+
+Half-dozen visual regressions: SVG `NaN` on division by zero
+when no servers are visible, margin-top background hole, the
+zoom indicator overlapping the active pin, SOCKS-mode controls
+overlapping, speedtest 502.  See PR description for the file
+list — small, targeted patches.
+
+### rc36 — hex-bin grouping, atlas HUD, polish
+
+User asked for the cluster algorithm to actually prevent
+overlap.  Switched to a self-rolled hex-bin in `(lat, lon)`
+space (`vbToAxial(x, y, R)`) with 5 zoom-bands.  Stable cluster
+ID = `hex:${bandId}:${q},${r}`, no pixel-merge afterwards (hex
+cells don't overlap by construction).
+
+The HUD layer was created here: plate label / compass rose /
+atlas legend / km scale-bar / zoom controls.  Lives in
+`HudOverlay.tsx`, rendered **outside** `TransformWrapper` so it
+never zooms with the camera.
+
+Roman numerals capped at XII via `numerals.ts` (used by
+Main/Pool/Routing/Tray).  Min Tauri window 1100x720.
+
+### rc37 — atlas region renderer (continent / country / server)
+
+User: hexes are abstract, can we go continents → countries →
+servers like a real atlas, with choropleth fill and "terra
+incognita" hatching for empty regions?  Yes.
+
+- **`ui/src/data/countries-110m.json`** — Natural Earth 110m
+  countries minified to ~150 KB raw / ~30 KB gzipped.  No
+  d3-geo; we project through our own equirect `projectVB()`.
+- **`ui/src/components/atlas/shapeStore.ts`** — lazy-cached
+  country and continent SVG path strings, derived from the
+  GeoJSON above.  `getCountryShapes()`, `getContinentShapes()`,
+  `getCountryByIso(iso)`, `getContinentByCode(code)`.
+- **`ui/src/components/cluster/zoomBands.ts`** — three bands:
+  `continent` (scale < 1.8), `country` (1.8 ≤ scale < 5.5),
+  `server` (≥ 5.5).  `pinScale` is per-band.
+- **`ui/src/components/cluster/RegionClusterStrategy.ts`** —
+  groups `ResolvedGroup[]` by continent, country or server
+  depending on the active band; emits `Cluster` with `shapePath`
+  set from `shapeStore`.
+
+Pin badges (count circle + numeric) and the invisible hit-area
+circle were removed from the SVG pin element; the `<g>` itself
+is the pointer target via `pointer-events: bounding-box`.
+
+Wheel zoom step 0.06 → 0.02 to stop deltaY spikes from jumping
+multiple bands per scroll tick.
+
+Popover identity changed to `seedServerId` (the first member's
+primary server id) instead of `cluster.id`, so the popover
+survives band-boundary crossings.
+
+Min window bumped to **1350 × 860**.
+
+Dead code removed: `levelCluster.ts`, `blob.ts`,
+`HexClusterStrategy.ts`.
+
+### rc38 — side-panel HUD, antimeridian split, projection re-cal
+
+User feedback after rc37 was specific:
+
+1. Pin badges still rendering (rc37 only removed the SVG hit
+   circle, not the count badge).  **rc38: removed both.**
+   Diamonds are now pure shapes: stroke + fill, no circle child,
+   no inline number.
+2. Tooltip / popover shouldn't float above the pin — they should
+   live in the HUD.  **rc38: `.worldmap-sidepanel` — a fixed
+   atlas card docked top-right of the worldmap stage.**  Holds
+   one of: hover-card, click-popover, vous-card, idle hint.
+   Priority: open popover > vous > hover > idle.  No anchor
+   math, no counter-scaling, never overlaps the HUD or pins.
+3. New continents don't align with `world.svg` — Russia
+   overflows right, Chukotka leaks to the left edge.  **rc38:**
+   - `splitAntimeridian()` in `shapeStore.ts` splits any
+     polygon ring whose consecutive points jump > 180° lon.
+     Russia / USA-Aleutians / Fiji / Antarctica no longer
+     render as a horizontal stripe.  bbox computation likewise
+     picks the largest sub-ring, not the wrap-spanning union.
+   - Equirect projection re-calibrated:
+     `LON_OFFSET=422.806, LON_SCALE=2.178,
+      LAT_OFFSET=470.905, LAT_SCALE=2.548`.
+     The rc35-rc37 hand-tuned constants put `lon=180` ~30 px
+     past the right edge of the viewBox.
+   - `world.svg` raster base layer **dropped**.  The country
+     choropleth shapes are now THE base map.  Pins, country
+     borders and continent silhouettes share `projectVB()`, so
+     they co-register by construction.  No more "two
+     non-aligned maps" problem.  The asset file is still on
+     disk but unreferenced — safe to delete.
+4. Two diamonds visibly inside each other in dense metros.
+   **rc38: server-band pixel-grid merge.**  Multiple
+   `ResolvedGroup`s whose pin centroids fall within the same
+   on-screen cell collapse into one cluster.  Cell shrinks
+   inversely with zoom (14 vb / `max(scale, 0.5)`) so deep zoom
+   still separates individual hosts.
+
+PR #29 / tag `v0.1.0-rc38`.  Stacked on PR #28 (rc37).  Neither
+is merged yet — the user reviews and merges in their own time.
+
+### Non-map work the user might still want
+
+- TUN end-to-end is still flaky — see §11 carry-over.
+- Live updates beyond Pool/Main — Folio/Atlas/Tray still need a
+  shared `useLiveServers()` hook over `/v1/events` SSE.
+- LAN-share user/pass auth wiring.
+- README screenshots refresh — every map redesign invalidated
+  the old screenshots, so README.md / README.ru.md are stale.
+
+### Open questions for the next agent
+
+- **rc37 vs rc38 stacking.**  rc38 PR base is `devin/...rc37...`
+  (PR #28).  If the user merges rc37 first, fine.  If the user
+  decides to drop rc37 in favour of going directly from rc36
+  to rc38, you'll need to rebase rc38 onto main with the rc37
+  commit folded in.
+- **Should the world.svg asset be deleted?**  rc38 stopped
+  importing it.  `ui/src/assets/world.svg` is still on disk.
+  It's ~53 KB.  Either leave for nostalgia or delete in a
+  follow-up cleanup commit; the user's call.
+- **Country labels.**  rc37/rc38 do not draw country names on
+  the map.  Hover/click puts them into the side panel only.
+  If the user asks for inline labels, look at
+  `CountryShape.centroid` (bbox-centre, fast & deterministic;
+  not the polygon-centroid) and add a band-gated `<text>` layer
+  inside `.worldmap-shapes`.
+
+— rc38 agent, signing off.

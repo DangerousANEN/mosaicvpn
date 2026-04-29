@@ -109,8 +109,15 @@ present, so local end-to-end testing on Linux is limited to running
 | Probe + DNS bypass                   | `internal/api/server.go` `probeServer`,              |
 |                                      | `internal/geoip/hint.go` `DirectResolver`            |
 | GeoIP lookup (ip-api.com, no-proxy)  | `internal/geoip/geoip.go`                            |
-| World map projection                 | `ui/src/components/WorldMap.tsx` — `MAP_VB`,         |
-|                                      | `LON_OFFSET / SCALE`, `LAT_OFFSET / SCALE`           |
+| World map (renderer + HUD + side panel) | `ui/src/components/WorldMap.tsx`                   |
+| World map projection (equirect)      | `ui/src/components/cluster/resolveGroups.ts` —       |
+|                                      | `projectVB()`, `LON_OFFSET / SCALE`, `LAT_*`         |
+| Region cluster strategy              | `ui/src/components/cluster/RegionClusterStrategy.ts` |
+| GeoJSON country / continent shapes   | `ui/src/components/atlas/shapeStore.ts`,             |
+|                                      | `ui/src/data/countries-110m.json` (Natural Earth)    |
+| Zoom bands (continent/country/server)| `ui/src/components/cluster/zoomBands.ts`             |
+| Atlas HUD overlay (compass, legend)  | `ui/src/components/HudOverlay.tsx`                   |
+| Roman-numeral cap                    | `ui/src/components/numerals.ts`                      |
 | Tauri shell (tray, window, daemon)   | `ui/src-tauri/src/main.rs`                           |
 
 ## Outbound HTTP — must bypass proxy
@@ -140,3 +147,57 @@ new ones.
   don't add a separate spawn path or you'll race the lockfile.
 - `MOSAIC_DATA_DIR` env var overrides the per-OS data dir for both
   the shell and the daemon — use it in dev to point at a sandbox.
+
+## World map architecture (rc38)
+
+The map went through several rewrites; the current shape, as of
+rc38:
+
+- **Projection** — equirectangular, projected by
+  `projectVB(lat, lon)` in `cluster/resolveGroups.ts`.
+  `LON_OFFSET=422.806, LON_SCALE=2.178,
+   LAT_OFFSET=470.905, LAT_SCALE=2.548`.
+  Maps `[-180,180] × [-90,90]` cleanly onto the world.svg viewBox
+  `(30.767, 241.591, 784.077, 458.627)`.  Pins, country borders
+  and continent silhouettes all share this projection so they
+  co-register by construction.
+- **Base layer** — country shapes from
+  `ui/src/data/countries-110m.json` (Natural Earth 110m, ~150 KB
+  raw / ~30 KB gzipped).  No d3-geo.  `world.svg` is dropped from
+  the render but the asset still ships in the repo.
+- **Antimeridian** — `shapeStore.splitAntimeridian()` splits any
+  polygon ring whose consecutive points jump > 180° lon, so
+  Russia / USA-Aleutians / Fiji / Antarctica don't render as a
+  horizontal stripe across the whole map.
+- **Cluster strategy** — `RegionClusterStrategy` (no more hexes).
+  Three zoom bands defined in `cluster/zoomBands.ts`:
+  `continent` (scale < 1.8), `country` (1.8 ≤ scale < 5.5),
+  `server` (≥ 5.5).  At server band, ResolvedGroups are merged
+  into one cluster per pixel-grid cell so dense metros don't
+  show overlapping diamonds.
+- **Pin** — pure diamond.  No badge circle, no count text, no
+  hidden hit-area circle.  Hit target is the `<g>` element via
+  `pointer-events: bounding-box`.
+- **HUD** — `HudOverlay.tsx` renders compass / legend /
+  scale-bar / plate label / zoom controls **outside**
+  `TransformWrapper`, so it never zooms with the camera.
+- **Side panel** — `.worldmap-sidepanel`, fixed atlas card
+  docked top-right of the worldmap stage.  Holds one of:
+  click-popover, vous-card, hover preview, idle hint.  Priority
+  popover > vous > hover > idle.  No anchor math, no
+  counter-scaling, never opens off-screen.  This replaces the
+  rc35-rc37 floating tooltip / popover that used screen-space
+  anchor coords.
+- **Popover identity** — a popover is keyed on `seedServerId`
+  (the first member's primary server id), not `cluster.id`, so
+  it survives band transitions without vanishing.
+- **Min Tauri window** — 1350 × 860 (set in
+  `ui/src-tauri/tauri.conf.json`).  Don't shrink below this; the
+  HUD layout assumes that envelope.
+
+If the user reports "two non-aligned maps", "Russia overflows",
+"countries shifted", or "pins not on continents", you almost
+always want to look at `projectVB()` constants and
+`splitAntimeridian` in `shapeStore.ts` — the choropleth shapes
+and the pins share the same projection so any drift means the
+constants are off.
