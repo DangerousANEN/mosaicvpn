@@ -101,14 +101,17 @@ function levelAbbrev(level: MapLevel): string {
 // cluster traces its pins tightly.  Values picked empirically.
 function blobOffsetForLevel(level: MapLevel): number {
   switch (level) {
+    // rc34 — smaller offsets so blobs trace their cluster tight.
+    // A 14 vb-unit expansion at continent level read as "blobs of
+    // Europe and Asia glued together".
     case "continent":
-      return 14;
+      return 10;
     case "country":
-      return 8;
-    case "city":
       return 5;
+    case "city":
+      return 4;
     case "server":
-      return 3.2;
+      return 2.4;
   }
 }
 
@@ -169,12 +172,21 @@ export function WorldMap({
   const level = levelForScale(scale);
 
   // Parent clusters at the current zoom level — these get painted as
-  // blobs. At server-level we still pixel-merge so overlapping hosts
-  // collapse into a single diamond with a count badge.
+  // blobs.  rc34 — pixel-merge runs on ALL levels so Benelux-type
+  // country stacking or dense continent-side-by-side visits don't
+  // produce overlapping blobs.  The merge threshold scales with the
+  // band: coarse bands get more aggressive merging.
   const parents = useMemo(() => {
     const base = clusterAtLevel(resolved, level, activeKey);
-    if (level !== "server") return base;
-    return pixelMergeClusters(base, scale, stageSize.w, stageSize.h);
+    const mergePx =
+      level === "continent" ? 72 : level === "country" ? 56 : 36;
+    return pixelMergeClusters(
+      base,
+      scale,
+      stageSize.w,
+      stageSize.h,
+      mergePx,
+    );
   }, [resolved, level, activeKey, scale, stageSize.w, stageSize.h]);
 
   // Pin list: one diamond per sub-cluster (next level down). At
@@ -187,7 +199,20 @@ export function WorldMap({
         out.push({ cluster: p, drillTarget: p, parent: null });
         continue;
       }
-      const subs = subClusters(p, activeKey);
+      const rawSubs = subClusters(p, activeKey);
+      // rc34 — same pixel-merge treatment on the child diamonds so a
+      // continent blob doesn't end up with 40 overlapping country
+      // markers, and a country blob doesn't end up with 20 city-sized
+      // bumps.  Child threshold is half the parent band.
+      const childMerge =
+        p.level === "continent" ? 44 : p.level === "country" ? 36 : 32;
+      const subs = pixelMergeClusters(
+        rawSubs,
+        scale,
+        stageSize.w,
+        stageSize.h,
+        childMerge,
+      );
       if (subs.length === 0) {
         out.push({ cluster: p, drillTarget: p, parent: null });
       } else {
@@ -197,7 +222,7 @@ export function WorldMap({
       }
     }
     return out;
-  }, [parents, activeKey]);
+  }, [parents, activeKey, scale, stageSize.w, stageSize.h]);
 
   const pinScale = Math.max(0.4, 1 / scale);
   const activePin = pins.find((p) => p.cluster.active)?.cluster ?? null;

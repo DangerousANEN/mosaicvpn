@@ -39,13 +39,16 @@ export function projectVB(lat: number, lon: number): { x: number; y: number } {
 
 export type MapLevel = "continent" | "country" | "city" | "server";
 
-/** Scale thresholds match the rc30 spec — continent view at 1×,
- *  countries emerge at ~1.5×, cities at ~3×, individual servers at
- *  ~6× where server labels also become visible by default. */
+/** rc34 — dropped the city band.  A dedicated city tier stacked too
+ *  many overlapping blobs in dense regions (Benelux, Central Europe);
+ *  the user saw country-on-country-on-city chaos.  The world now
+ *  clusters as continent (<1.5×) → country (<4×) → server (≥4×) and
+ *  an extra pixel-merge pass at every level collapses adjacent
+ *  country blobs that project within ~44 px of each other so Germany
+ *  and Netherlands can fuse on a zoomed-in European view. */
 export function levelForScale(s: number): MapLevel {
   if (s < 1.5) return "continent";
-  if (s < 3) return "country";
-  if (s < 6) return "city";
+  if (s < 4) return "country";
   return "server";
 }
 
@@ -248,7 +251,7 @@ function childLevelOf(level: MapLevel): MapLevel | null {
     case "continent":
       return "country";
     case "country":
-      return "city";
+      return "server";
     case "city":
       return "server";
     case "server":
@@ -273,19 +276,14 @@ export function clusterAtScale(
 const VB_W = 784.077;
 const VB_H = 458.627;
 
-/** Pixel-distance sub-clustering, intended for the "server" level only.
+/** Pixel-distance sub-clustering.
  *
- * rc31 — even when the clusterer has resolved a bucket-per-host, two
- * hosts that land within ~`mergePx` on-screen still overlap visually.
- * We do a greedy nearest-neighbour merge on the already-resolved
- * server-level clusters so a metro area with 30 VLESS endpoints on
- * different hosts collapses into a single circle-with-count that can
- * be expanded into a scrolling popover.
- *
- * Only runs when `level === "server"`; the continent / country / city
- * levels are already bucketed by a geographic key, so a second spatial
- * pass there is redundant (and would defeat the per-country UX the user
- * asked for).
+ * rc31 introduced this for the server level (30 VLESS endpoints in one
+ * metro collapse into one badge-diamond).  rc34 extends it to every
+ * level: Germany + Netherlands + Belgium country-blobs rendered on
+ * top of each other at country zoom would otherwise look like ink
+ * spilled.  The caller picks a larger `mergePx` for coarser bands
+ * (continent / country ≈ 60 px; server ≈ 36 px).
  */
 export function pixelMergeClusters(
   clusters: LevelCluster[],
