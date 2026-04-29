@@ -8,31 +8,34 @@
  * lines up Brazil, Egypt, India, Iceland, Madagascar and South Africa
  * to within a few pixels of their actual mainland.
  *
- * Both the world image and the pin layer share that viewBox and use
- * `preserveAspectRatio="none"` so they stretch identically across the
- * container — ditto for the graticule. Stretching breaks geographic
- * accuracy slightly when the container aspect drifts from 1.71:1, but
- * keeps every pin glued to its country.
+ * rc30 — zoom-level clustering. The rc28 pixel-distance merge is
+ * replaced by a discrete continent → country → city → server
+ * hierarchy keyed off `levelForScale(scale)` (see ./levelCluster.ts).
+ * A cluster whose bucket ended up with exactly one server group
+ * collapses to a diamond pin so a country with one server skips the
+ * "circle-with-1" badge. Clicking a multi-member cluster zooms the
+ * TransformWrapper to the cluster's projected bbox + 20% padding; the
+ * next re-cluster falls out of the scale-dependent useMemo one level
+ * deeper.
  *
- * rc28 — Adaptive clustering. Pins now collapse based on their
- * on-screen pixel distance at the current zoom (see
- * ./adaptiveCluster.ts). A single isolated server stays a single
- * diamond; 50 servers in the same metro area lump into one cluster
- * pin with a count badge. Clicking a multi-member cluster animates
- * the zoom & pan to its bbox via TransformWrapper.setTransform; once
- * zoomed in, the cluster dissolves emergently into individual pins
- * because the merge threshold is now smaller in viewBox units.
+ * rc30 — city reference overlay. A bundled top-1000-by-population
+ * cities set (./data/cities-top1000.json) is drawn as 9 px serif
+ * labels plus pepper-dot anchors once `scale ≥ 3` (city level), so the
+ * map reads as an atlas when you zoom in on a region, not just a
+ * pin plot. Cities are filtered to the current viewport and capped at
+ * ~220 labels per frame to keep the render cheap.
  *
- * rc28 — Map full-bleed. The wrapper no longer aspect-ratio-locks
- * the stage; the map fills the parent .map container and the world
- * image is centered with object-fit/contain via `preserveAspectRatio`
- * on the SVG. Beige background covers the full container so panning
- * past the world outline reveals the same fill, not white bands.
+ * rc30 — server labels hidden by default. Individual server labels
+ * stay hidden at city/country/continent zooms unless the user hovers
+ * the pin; once `scale ≥ 6` (server level) they always show.
  *
- * rc28 — Subscription filter. The optional `subscriptionFilter` prop
- * narrows the rendered server set to a single subscription so the
- * filter chips above the map are wired through one prop instead of
- * having WorldMap walk the prefs.
+ * rc30 — floating update banner. The update banner is now a fixed
+ * pill (bottom-right) instead of a topbar strip — see
+ * `./UpdateBanner.tsx` + `.update-banner` in `../styles/app.css`.
+ *
+ * rc30 — vous pin counter-scale. The "vous" marker and its italic
+ * label now counter-scale with zoom like every other pin, so the
+ * user's own pin doesn't grow to cover half the map at max zoom.
  */
 
 import {
@@ -51,10 +54,13 @@ import worldUrl from "../assets/world.svg";
 import type { Server, GeoLocation } from "../api/types";
 import { locText } from "./locText";
 import {
-  clusterAtScale,
+  clusterAtLevel,
+  levelForScale,
+  projectVB,
   resolveGroups,
-  type AdaptiveCluster,
-} from "./adaptiveCluster";
+  type LevelCluster,
+} from "./levelCluster";
+import citiesData from "../data/cities-top1000.json";
 
 interface WorldMapProps {
   servers: Server[];
@@ -75,6 +81,14 @@ interface WorldMapProps {
   subscriptionFilter?: string | null;
 }
 
+interface CityDatum {
+  name: string;
+  lat: number;
+  lng: number;
+  country: string;
+  pop: number;
+}
+
 // world.svg's native viewBox. Both the world image and the pin layer
 // use it so coordinates are directly comparable.
 const MAP_VB = { x: 30.767, y: 241.591, w: 784.077, h: 458.627 } as const;
@@ -83,16 +97,8 @@ const MAP_VB = { x: 30.767, y: 241.591, w: 784.077, h: 458.627 } as const;
 // with constants regressed against the bbox centroids of 6 country
 // paths in the source SVG (br, eg, in, is, mg, za). Residuals stay
 // under ~10 px on a 784×459 canvas, well under one pin diameter.
-const LON_OFFSET = 409.7;
-const LON_SCALE = 2.414;
-const LAT_OFFSET = 530.8;
-const LAT_SCALE = 2.787;
-
 function project(lat: number, lon: number): { x: number; y: number } {
-  return {
-    x: LON_OFFSET + LON_SCALE * lon,
-    y: LAT_OFFSET - LAT_SCALE * lat,
-  };
+  return projectVB(lat, lon);
 }
 
 // Fallback "vous" anchor used until mosaicd's IP-geo lookup
@@ -101,17 +107,37 @@ function project(lat: number, lon: number): { x: number; y: number } {
 // myLocation prop once the daemon publishes a real coordinate.
 const YOU_FALLBACK = project(20, 0);
 
-/** Cluster-aware label string. Single pin → city · ms;
- *  multi-member cluster → "{N} servers · best {ms}". */
-function clusterLabel(c: AdaptiveCluster): string {
-  if (c.members.length === 1) {
+// Project every city once and sort by population descending so the
+// viewport filter keeps the biggest cities first.
+const CITIES: Array<CityDatum & { vbX: number; vbY: number }> = (
+  citiesData as CityDatum[]
+)
+  .map((c) => {
+    const p = projectVB(c.lat, c.lng);
+    return { ...c, vbX: p.x, vbY: p.y };
+  })
+  .sort((a, b) => b.pop - a.pop);
+
+/** Cluster label suffix — appends best-ms when a member has been
+ *  probed. Kept out of the JSX so it's testable in isolation. */
+function msSuffix(c: LevelCluster): string {
+  return c.bestMs !== null && c.bestMs > 0 ? ` · ${c.bestMs}ms` : "";
+}
+
+function clusterLabel(c: LevelCluster): string {
+  if (c.members.length === 1 && c.level === "server") {
     const g = c.members[0].group;
-    const ms = c.bestMs !== null && c.bestMs > 0 ? ` · ${c.bestMs}ms` : "";
     const city = g.primary.city || g.host;
-    return `${city}${ms}`;
+    return `${city}${msSuffix(c)}`;
   }
-  const ms = c.bestMs !== null && c.bestMs > 0 ? ` · ${c.bestMs}ms` : "";
-  return `${c.totalServers} servers${ms}`;
+  if (c.members.length === 1) {
+    // Single group at a higher level: label with the group's city
+    // but don't falsely advertise it as a cluster.
+    const g = c.members[0].group;
+    const city = g.primary.city || g.host;
+    return `${city}${msSuffix(c)}`;
+  }
+  return `${c.label} · ${c.totalServers}${msSuffix(c)}`;
 }
 
 export function WorldMap({
@@ -126,10 +152,6 @@ export function WorldMap({
   const [openIdx, setOpenIdx] = useState<number | null>(null);
   const [vousOpen, setVousOpen] = useState(false);
   const [scale, setScale] = useState(1);
-  // Stage pixel size, captured via ResizeObserver. Adaptive
-  // clustering needs real pixel dimensions to compute viewport
-  // distance between projected pins. Falls back to a sensible
-  // default until the observer fires once.
   const [stageSize, setStageSize] = useState({ w: 800, h: 460 });
   const stageRef = useRef<HTMLDivElement | null>(null);
   const transformRef = useRef<ReactZoomPanPinchRef | null>(null);
@@ -157,22 +179,17 @@ export function WorldMap({
     return servers.filter((s) => s.subscription_id === subscriptionFilter);
   }, [servers, subscriptionFilter]);
 
-  // Project every server group to viewBox coordinates once. Only
-  // re-runs when the underlying server set or active selection
-  // changes — clustering at the current zoom is much cheaper.
+  // Resolve groups once per server set; cluster once per zoom level.
   const { resolved, activeKey } = useMemo(
     () => resolveGroups(filtered, activeServerId),
     [filtered, activeServerId],
   );
 
-  // Re-cluster whenever the resolved-group set, zoom, or stage
-  // pixel size change. Adaptive clustering is O(N²) on the merge
-  // step but N is bounded by group count (≤ a few thousand even
-  // for 1000-server pools after grouping by host).
+  const level = levelForScale(scale);
+
   const clusters = useMemo(
-    () =>
-      clusterAtScale(resolved, scale, stageSize.w, stageSize.h, activeKey),
-    [resolved, scale, stageSize.w, stageSize.h, activeKey],
+    () => clusterAtLevel(resolved, level, activeKey),
+    [resolved, level, activeKey],
   );
 
   // Inverse zoom for SVG/HTML markers — keeps pins a constant
@@ -180,37 +197,46 @@ export function WorldMap({
   // 12× max zoom still shows readable diamonds.
   const pinScale = Math.max(0.4, 1 / scale);
   const activePin = clusters.find((c) => c.active);
-  // Suppress the hover tooltip whenever a popover is open.
   const hover = openIdx === null && hoverIdx !== null ? clusters[hoverIdx] : null;
   const open = openIdx !== null ? clusters[openIdx] ?? null : null;
 
-  // Drill-down: animate the transform wrapper to the bbox of the
-  // tapped cluster. We translate viewBox coordinates → percent of
-  // the stage size, then to pixel offsets the wrapper expects, and
-  // pad ~10 % so the cluster doesn't sit flush against the edge.
-  const drillToCluster = (c: AdaptiveCluster) => {
+  // City overlay comes alive once we're past continent zoom. Filter
+  // to the currently visible viewport (approximated via the wrapper
+  // scale — we can't read the pan offset from here without a ref
+  // stash, and the cap is per-frame anyway) and cap at 220 labels
+  // so the renderer stays under a few ms per frame.
+  const cityOverlay = useMemo(() => {
+    if (scale < 3) return [];
+    const cap = scale < 4 ? 140 : scale < 6 ? 220 : 400;
+    return CITIES.slice(0, cap);
+  }, [scale]);
+
+  // Drill-down: zoom-to-fit a cluster's bbox in viewBox units. We
+  // convert the bbox → fraction of the total viewBox, derive the
+  // target scale that fits it with 20% padding, then translate the
+  // wrapper so the cluster centroid lands in the middle of the stage.
+  const drillToCluster = (c: LevelCluster) => {
     const wrapper = transformRef.current;
     if (!wrapper) return;
-    const padX = (c.bbox.maxX - c.bbox.minX) * 0.2 + 8;
-    const padY = (c.bbox.maxY - c.bbox.minY) * 0.2 + 8;
-    const minX = c.bbox.minX - padX;
-    const maxX = c.bbox.maxX + padX;
-    const minY = c.bbox.minY - padY;
-    const maxY = c.bbox.maxY + padY;
-    // viewBox-units → fraction of total viewBox span, → fraction of
-    // stage pixels at scale=1.
-    const fracW = (maxX - minX) / MAP_VB.w;
-    const fracH = (maxY - minY) / MAP_VB.h;
-    const targetScale = Math.min(
-      12,
-      Math.max(scale + 0.5, 1 / Math.max(fracW, fracH, 0.0001) * 0.85),
-    );
-    // Cluster centroid in stage-pixel coordinates at the new scale.
+    const w = Math.max(1, c.bbox.maxX - c.bbox.minX);
+    const h = Math.max(1, c.bbox.maxY - c.bbox.minY);
+    // Minimum footprint so a tight cluster still produces a useful
+    // zoom step (otherwise a dense metro-area cluster would snap
+    // straight to maxScale=12).
+    const minSpan = 40; // viewBox units
+    const eW = Math.max(w, minSpan);
+    const eH = Math.max(h, minSpan);
+    const fracW = eW / MAP_VB.w;
+    const fracH = eH / MAP_VB.h;
+    // 0.7 keeps ~30% padding around the cluster once it's centred.
+    const fitScale = 0.7 / Math.max(fracW, fracH, 0.0001);
+    const targetScale = Math.min(12, Math.max(scale + 0.5, fitScale));
+    // Centre the cluster centroid in the stage.
     const cx = (c.vbX - MAP_VB.x) / MAP_VB.w;
     const cy = (c.vbY - MAP_VB.y) / MAP_VB.h;
     const tx = stageSize.w / 2 - cx * stageSize.w * targetScale;
     const ty = stageSize.h / 2 - cy * stageSize.h * targetScale;
-    wrapper.setTransform(tx, ty, targetScale, 350, "easeOutCubic");
+    wrapper.setTransform(tx, ty, targetScale, 600, "easeOut");
   };
 
   // Graticule lines in the same map coordinates: equator, tropics &
@@ -232,13 +258,6 @@ export function WorldMap({
 
   return (
     <div className="worldmap">
-      {/* Full-bleed stage. Holds the world image, graticule, pin
-          overlay, tooltip and popover. Beige fill covers the entire
-          container so panning past the world image reveals the same
-          colour rather than the page background. The world.svg <image>
-          uses preserveAspectRatio="xMidYMid meet" so it never
-          stretches; the pin layer stays glued to the same projection
-          regardless of container aspect. */}
       <div className="worldmap-stage" ref={stageRef}>
       <TransformWrapper
         ref={transformRef}
@@ -297,6 +316,44 @@ export function WorldMap({
         ))}
       </svg>
 
+      {/* City reference overlay. Rendered underneath the pin layer so
+          pin strokes paint on top. Dots are 0.9 px in viewBox units
+          and counter-scaled via non-scaling-stroke; labels are HTML
+          so we get real 9px serif text without SVG text sizing drift. */}
+      {cityOverlay.length > 0 ? (
+        <svg
+          className="worldmap-cities"
+          viewBox={`${MAP_VB.x} ${MAP_VB.y} ${MAP_VB.w} ${MAP_VB.h}`}
+          preserveAspectRatio="xMidYMid meet"
+        >
+          {cityOverlay.map((c) => (
+            <circle
+              key={`cd-${c.country}-${c.name}`}
+              cx={c.vbX}
+              cy={c.vbY}
+              r={0.9 / scale}
+              className="city-dot"
+            />
+          ))}
+        </svg>
+      ) : null}
+      {cityOverlay.length > 0
+        ? cityOverlay.map((c) => (
+            <div
+              key={`cl-${c.country}-${c.name}`}
+              className="worldmap-city-label"
+              style={{
+                left: `${((c.vbX - MAP_VB.x) / MAP_VB.w) * 100}%`,
+                top: `${((c.vbY - MAP_VB.y) / MAP_VB.h) * 100}%`,
+                transform: `translate(4px, -50%) scale(${pinScale})`,
+                transformOrigin: "left center",
+              }}
+            >
+              {c.name}
+            </div>
+          ))
+        : null}
+
       {clusters.length > 0 ? (
         <svg
           className="worldmap-pins"
@@ -329,36 +386,36 @@ export function WorldMap({
           {clusters.map((p, i) => {
             const isOpen = openIdx === i;
             const isHov = i === hoverIdx;
+            // A bucket with more than one server group → render as a
+            // circle cluster. A singleton bucket collapses to a
+            // diamond marker regardless of the level name.
             const isCluster = p.members.length > 1;
             const cls = `worldmap-pin ${p.active ? "cur" : ""} ${
               isHov ? "hov" : ""
             } ${isOpen ? "open" : ""} ${onPinClick ? "clickable" : ""} ${
               isCluster ? "is-cluster" : ""
-            }`;
+            } lvl-${p.level}`;
             const onPinClickHandler = (e: ReactMouseEvent) => {
               if (!onPinClick) return;
               e.stopPropagation();
               if (isCluster) {
-                // Drill-down: animate zoom+pan onto the cluster's
-                // bbox. Re-clustering at the new scale is automatic
-                // (it falls out of the scale-dependent useMemo).
                 drillToCluster(p);
                 return;
               }
               const g = p.members[0].group;
               if (g.members.length > 1) {
-                // Single host with multiple protocol entries — open
-                // the picker popover so the user chooses which one.
+                // Single host, multiple protocol entries — popover.
                 setOpenIdx((o) => (o === i ? null : i));
               } else {
                 setOpenIdx(null);
                 onPinClick(g.primary.id);
               }
             };
-            // Cluster radius scales with sqrt of member count so a
-            // 100-server cluster doesn't dwarf a 5-server one.
+            // Cluster radius grows with sqrt of the underlying server
+            // count so a 1000-server continent doesn't dwarf a
+            // 5-server country.
             const clusterR = isCluster
-              ? Math.min(28, 10 + Math.sqrt(p.totalServers) * 1.6)
+              ? Math.min(30, 11 + Math.sqrt(p.totalServers) * 1.5)
               : 0;
             return (
               <g
@@ -422,7 +479,7 @@ export function WorldMap({
           })}
           <g
             className="worldmap-pin you"
-            transform={`translate(${YOU.x},${YOU.y})`}
+            transform={`translate(${YOU.x},${YOU.y}) scale(${pinScale})`}
           >
             <circle r={2.5} className="dot" />
           </g>
@@ -430,11 +487,23 @@ export function WorldMap({
       ) : null}
 
       {clusters.map((p, i) => {
-        const label = clusterLabel(p);
         const isCluster = p.members.length > 1;
+        const isHov = i === hoverIdx;
+        // Server-level labels hide at continent/country/city zooms to
+        // prevent the "50 server names overlapping" mess the rc29 user
+        // complaint called out. They reappear on hover OR once the
+        // user has zoomed in to server level (scale ≥ 6).
+        const hideLabel =
+          !isCluster && p.level === "server" && scale < 6 && !isHov;
+        if (hideLabel) return null;
+        // Also hide labels for collapsed single-group clusters at
+        // higher levels — they're redundant with the diamond pin and
+        // clutter the continent/country view.
+        if (!isCluster && p.level !== "server" && !isHov) return null;
+        const label = clusterLabel(p);
         const cls = `worldmap-label ${p.active ? "cur" : ""} ${
           onPinClick ? "clickable" : ""
-        } ${isCluster ? "is-cluster" : ""}`;
+        } ${isCluster ? "is-cluster" : ""} lvl-${p.level}`;
         const onLabelClick = (e: ReactMouseEvent) => {
           if (!onPinClick) return;
           e.stopPropagation();
@@ -476,6 +545,8 @@ export function WorldMap({
         style={{
           left: `${((YOU.x - MAP_VB.x) / MAP_VB.w) * 100}%`,
           top: `${((YOU.y - MAP_VB.y) / MAP_VB.h) * 100}%`,
+          transform: `translate(-50%, 12px) scale(${pinScale})`,
+          transformOrigin: "center top",
         }}
         onClick={(e) => {
           e.stopPropagation();
@@ -552,13 +623,13 @@ export function WorldMap({
           ) : (
             <>
               <div className="tip-host mono">
-                {hover.totalServers} servers · {hover.members.length} hosts
+                {hover.label} · {hover.totalServers} servers
               </div>
               {hover.bestMs !== null && hover.bestMs > 0 ? (
                 <div className="tip-ms mono">best {hover.bestMs}ms</div>
               ) : null}
               {onPinClick ? (
-                <div className="tip-cta mono">click to drill in</div>
+                <div className="tip-cta mono">click to zoom in</div>
               ) : null}
             </>
           )}

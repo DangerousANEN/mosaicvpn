@@ -901,6 +901,53 @@
   text-transform: lowercase;
 }
 
+/* rc30 city reference overlay. Dots are sized in viewBox units and
+   already compensate for zoom via r=(0.9/scale) in WorldMap.tsx; the
+   labels are HTML so they render at a stable 9 px regardless of
+   the SVG transform. Muted-paper tone so they recede behind pins. */
+.worldmap-cities {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.worldmap-cities .city-dot {
+  fill: var(--ink);
+  opacity: 0.55;
+}
+.worldmap-city-label {
+  position: absolute;
+  font-family: "Atlas Serif", Georgia, serif;
+  font-size: 9px;
+  color: var(--ink);
+  opacity: 0.62;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  text-shadow:
+    0 0 2px var(--paper),
+    0 0 2px var(--paper);
+  z-index: 2;
+}
+
+/* Continent / country / city cluster label variants. Continent
+   clusters get the small-caps country treatment plus a slightly
+   heavier weight so the six continent pins on an unzoomed map read
+   as landmasses rather than filler. */
+.worldmap-label.lvl-continent {
+  font-variant: small-caps;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.worldmap-label.lvl-country {
+  font-variant: small-caps;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
 /* Subscription filter chips above the world map. Inline row of
    roman-numeral toggles; the active chip flips to copper-on-paper. */
 .sub-chips {
