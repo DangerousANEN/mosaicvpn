@@ -13,18 +13,21 @@
  *
  * Render layers (z-order, low → high):
  *
- *   0. world.svg base outline (flat raster of all coastlines)
- *   1. graticule (lat/lon lines)
- *   2. terra-incognita hatching for empty continents / countries
- *      (pre-painted at the current band, fades when no rooms apply)
- *   3. cluster shapes — choropleth by latency / density
- *   4. idle links + active arc
- *   5. pin layer — one diamond per cluster
- *   6. vous marker + label
- *   7. HUD overlay (compass, legend, scale, plate, zoom controls)
+ *   0. graticule (lat/lon lines, equator + meridian)
+ *   1. base map — country / continent shapes from Natural Earth.
+ *      At continent band the layer renders MONOLITHIC continents
+ *      (real polygon-union, no internal country borders); at
+ *      country / server bands it renders countries.  Hover and
+ *      click are bound directly to the shapes that have servers,
+ *      with active / hov / open state expressed via CSS classes.
+ *   2. terra-incognita hatching for shapes without servers.
+ *   3. idle links + active arc — copper.
+ *   4. pin layer — pure diamond, no stem, no badge, state via CSS.
+ *   5. vous marker + label.
+ *   6. HUD overlay (compass, legend, scale, plate, zoom controls)
  *      — outside TransformWrapper, never zooms with the camera.
- *   8. tooltip / popover — also outside TransformWrapper, screen
- *      space, anti-overflow, no counter-scaling needed.
+ *   7. side panel — fixed atlas card top-right, holds hover /
+ *      popover / vous / idle hint.
  *
  * Popovers track the cluster they were opened in by a
  * `seedServerId` (the first member's primary server id) instead of
@@ -51,7 +54,7 @@ import type { Server, GeoLocation } from "../api/types";
 import { resolveGroups, projectVB } from "./cluster/resolveGroups";
 import { RegionClusterStrategy } from "./cluster/RegionClusterStrategy";
 import { resolveBand } from "./cluster/zoomBands";
-import { latencyBucket, type Cluster } from "./cluster/types";
+import type { Cluster } from "./cluster/types";
 import {
   getCountryShapes,
   getContinentShapes,
@@ -294,9 +297,42 @@ export function WorldMap({
   // Render shape layer based on band: at server band, paint
   // country fills as faint outlines so individual diamonds
   // dominate; at country band, choropleth-fill all countries; at
-  // continent band, paint continents as thicker silhouettes.
+  // continent band, paint MONOLITHIC continents (real polygon-union,
+  // no internal country borders) — see shapeStore + build-continents.
   const showCountryShapes = band.kind !== "continent";
   const showContinentShapes = band.kind === "continent";
+
+  // Hover/click on a continent or country shape → same state as
+  // hover/click on the matching cluster pin.  Lookup is by the
+  // strategy's stable cluster id (`region:continent:<code>` /
+  // `region:country:<iso>`).  Shapes without a matching cluster
+  // (terra incognita, no servers) stay non-interactive.
+  const continentClusterByCode = useMemo(() => {
+    const m = new Map<string, Cluster>();
+    if (band.kind === "continent") {
+      for (const c of clusters) {
+        const code = c.id.replace("region:continent:", "");
+        if (code) m.set(code, c);
+      }
+    }
+    return m;
+  }, [clusters, band.kind]);
+  const countryClusterByIso = useMemo(() => {
+    const m = new Map<string, Cluster>();
+    if (band.kind === "country") {
+      for (const c of clusters) {
+        const iso = c.id.replace("region:country:", "");
+        if (iso) m.set(iso, c);
+      }
+    }
+    return m;
+  }, [clusters, band.kind]);
+
+  const onShapeClick = (c: Cluster) => {
+    if (!onPinClick) return;
+    if (openCluster?.id === c.id) closePopover();
+    else openClusterByCluster(c);
+  };
 
   return (
     <div className="worldmap">
@@ -403,55 +439,90 @@ export function WorldMap({
                 </pattern>
               </defs>
               {showContinentShapes
-                ? allContinents.map((cs) => (
-                    <ContinentShapePath
-                      key={`cont-${cs.code}`}
-                      shape={cs}
-                      hasServers={presence.continents.has(cs.code)}
-                      bucket={densityBucket(
-                        presence.continentServerCount.get(cs.code) ?? 0,
-                        maxContinentServers,
-                      )}
-                    />
-                  ))
+                ? allContinents.map((cs) => {
+                    const cluster = continentClusterByCode.get(cs.code);
+                    const isHov = cluster ? cluster.id === hoverId : false;
+                    const isOpen = cluster ? openCluster?.id === cluster.id : false;
+                    return (
+                      <ContinentShapePath
+                        key={`cont-${cs.code}`}
+                        shape={cs}
+                        hasServers={presence.continents.has(cs.code)}
+                        bucket={densityBucket(
+                          presence.continentServerCount.get(cs.code) ?? 0,
+                          maxContinentServers,
+                        )}
+                        active={cluster?.active ?? false}
+                        hovered={isHov}
+                        open={isOpen}
+                        clickable={!!cluster && !!onPinClick}
+                        onMouseEnter={
+                          cluster ? () => setHoverId(cluster.id) : undefined
+                        }
+                        onMouseLeave={
+                          cluster
+                            ? () =>
+                                setHoverId((h) =>
+                                  h === cluster.id ? null : h,
+                                )
+                            : undefined
+                        }
+                        onClick={
+                          cluster ? () => onShapeClick(cluster) : undefined
+                        }
+                      />
+                    );
+                  })
                 : null}
               {showCountryShapes
-                ? allCountries.map((cs) => (
-                    <CountryShapePath
-                      key={`cty-${cs.iso}`}
-                      shape={cs}
-                      hasServers={presence.countries.has(cs.iso)}
-                      bucket={densityBucket(
-                        presence.countryServerCount.get(cs.iso) ?? 0,
-                        maxCountryServers,
-                      )}
-                      band={band.kind}
-                    />
-                  ))
+                ? allCountries.map((cs) => {
+                    const cluster =
+                      band.kind === "country"
+                        ? countryClusterByIso.get(cs.iso)
+                        : undefined;
+                    const isHov = cluster ? cluster.id === hoverId : false;
+                    const isOpen = cluster
+                      ? openCluster?.id === cluster.id
+                      : false;
+                    return (
+                      <CountryShapePath
+                        key={`cty-${cs.iso}`}
+                        shape={cs}
+                        hasServers={presence.countries.has(cs.iso)}
+                        bucket={densityBucket(
+                          presence.countryServerCount.get(cs.iso) ?? 0,
+                          maxCountryServers,
+                        )}
+                        band={band.kind}
+                        active={cluster?.active ?? false}
+                        hovered={isHov}
+                        open={isOpen}
+                        clickable={!!cluster && !!onPinClick}
+                        onMouseEnter={
+                          cluster ? () => setHoverId(cluster.id) : undefined
+                        }
+                        onMouseLeave={
+                          cluster
+                            ? () =>
+                                setHoverId((h) =>
+                                  h === cluster.id ? null : h,
+                                )
+                            : undefined
+                        }
+                        onClick={
+                          cluster ? () => onShapeClick(cluster) : undefined
+                        }
+                      />
+                    );
+                  })
                 : null}
             </svg>
 
-            {/* Highlight layer — paints the active cluster's shape
-                with a copper outline.  Drawn above the base
-                choropleth so it always reads as foreground. */}
-            <svg
-              className="worldmap-cluster-overlay"
-              viewBox={`${MAP_VB.x} ${MAP_VB.y} ${MAP_VB.w} ${MAP_VB.h}`}
-              preserveAspectRatio="xMidYMid meet"
-            >
-              {clusters.map((c) => {
-                if (!c.shapePath) return null;
-                const isHov = c.id === hoverId;
-                const isOpen = openCluster?.id === c.id;
-                if (!c.active && !isHov && !isOpen) return null;
-                const cls = `worldmap-cluster-shape lvl-${c.level} bucket-${latencyBucket(
-                  c.bestMs,
-                )} ${c.active ? "cur" : ""} ${isHov ? "hov" : ""} ${
-                  isOpen ? "open" : ""
-                }`;
-                return <path key={`hl-${c.id}`} className={cls} d={c.shapePath} />;
-              })}
-            </svg>
+            {/* rc39: cluster-overlay layer dropped — hover / open /
+                active state is now expressed directly on the
+                base choropleth shape via `.worldmap-shape.{hov,
+                open,cur}` classes, so there is no need for a
+                second copper-stroked path on top. */}
 
             {/* Pin + arc layer. */}
             <svg
@@ -502,7 +573,7 @@ export function WorldMap({
                   isHov ? "hov" : ""
                 } ${isOpen ? "open" : ""} ${
                   onPinClick ? "clickable" : ""
-                } lvl-${c.level} bucket-${latencyBucket(c.bestMs)}`;
+                } lvl-${c.level}`;
                 const onPinClickHandler = (e: ReactMouseEvent) => {
                   if (!onPinClick) return;
                   e.stopPropagation();
@@ -521,20 +592,14 @@ export function WorldMap({
                     onClick={onPinClickHandler}
                     style={onPinClick ? { cursor: "pointer" } : undefined}
                   >
-                    <line
-                      x1={0}
-                      y1={0}
-                      x2={0}
-                      y2={-6}
-                      className="pin-stem"
-                    />
+                    {/* rc39: pin is a pure diamond centred on the
+                        geographic anchor.  No stem, no badge, no
+                        latency-bucket stroke colour — the pin
+                        carries only state (idle / hov / cur). */}
                     <path
                       className="pin-diamond"
-                      d="M 0 -6 L 4 -10 L 0 -14 L -4 -10 Z"
+                      d="M 0 -7 L 5 0 L 0 7 L -5 0 Z"
                     />
-                    {/* rc38: badges removed; the count moves to the
-                        side-panel hover/popover card.  Pin is now
-                        purely a shaped marker. */}
                   </g>
                 );
               })}
@@ -610,7 +675,17 @@ export function WorldMap({
  * Sub-components
  * ============================================================= */
 
-interface ContinentShapePathProps {
+interface ShapeInteractive {
+  active: boolean;
+  hovered: boolean;
+  open: boolean;
+  clickable: boolean;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+  onClick?: () => void;
+}
+
+interface ContinentShapePathProps extends ShapeInteractive {
   shape: ContinentShape;
   hasServers: boolean;
   bucket: string;
@@ -620,15 +695,39 @@ function ContinentShapePath({
   shape,
   hasServers,
   bucket,
+  active,
+  hovered,
+  open,
+  clickable,
+  onMouseEnter,
+  onMouseLeave,
+  onClick,
 }: ContinentShapePathProps): JSX.Element {
+  const stateCls = active
+    ? "cur"
+    : open
+      ? "open"
+      : hovered
+        ? "hov"
+        : "";
   const cls = hasServers
-    ? `worldmap-shape continent-shape ${bucket}`
+    ? `worldmap-shape continent-shape has-servers ${bucket} ${stateCls}`.trim()
     : "worldmap-shape continent-shape terra";
   const fill = hasServers ? undefined : "url(#terra-incognita)";
-  return <path className={cls} d={shape.pathD} fill={fill} />;
+  return (
+    <path
+      className={cls}
+      d={shape.pathD}
+      fill={fill}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onClick={onClick}
+      style={clickable ? { cursor: "pointer" } : undefined}
+    />
+  );
 }
 
-interface CountryShapePathProps {
+interface CountryShapePathProps extends ShapeInteractive {
   shape: CountryShape;
   hasServers: boolean;
   bucket: string;
@@ -640,12 +739,36 @@ function CountryShapePath({
   hasServers,
   bucket,
   band,
+  active,
+  hovered,
+  open,
+  clickable,
+  onMouseEnter,
+  onMouseLeave,
+  onClick,
 }: CountryShapePathProps): JSX.Element {
+  const stateCls = active
+    ? "cur"
+    : open
+      ? "open"
+      : hovered
+        ? "hov"
+        : "";
   const cls = `worldmap-shape country-shape band-${band} ${
-    hasServers ? bucket : "terra"
-  }`;
+    hasServers ? `has-servers ${bucket}` : "terra"
+  } ${stateCls}`.trim();
   const fill = hasServers ? undefined : "url(#terra-incognita)";
-  return <path className={cls} d={shape.pathD} fill={fill} />;
+  return (
+    <path
+      className={cls}
+      d={shape.pathD}
+      fill={fill}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      onClick={onClick}
+      style={clickable ? { cursor: "pointer" } : undefined}
+    />
+  );
 }
 
 /* =============================================================

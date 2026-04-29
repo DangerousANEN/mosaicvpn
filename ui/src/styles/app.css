@@ -439,59 +439,29 @@
 .worldmap-pin.you {
   pointer-events: none;
 }
-/* Idle pin — outline diamond + thin dashed stem to the geo-anchor.
-   Reads like an ink-on-paper bookmark next to the country. */
+/* rc39 — pin is a pure diamond, no stem, no badge, no latency
+ * stroke.  State carries colour:
+ *   idle  cream-fill  + black outline
+ *   hov   black-fill  + cream outline (inversion)
+ *   cur   copper-fill + black outline (matches the vous→active arc)
+ */
 .worldmap-pin .pin-diamond {
-  fill: var(--paper);
-  stroke: var(--ink);
-  stroke-width: 1.1;
-  vector-effect: non-scaling-stroke;
-  transition: fill 0.12s, stroke 0.12s;
-}
-.worldmap-pin .pin-stem {
-  stroke: var(--ink);
-  stroke-width: 0.8;
-  stroke-dasharray: 1.5 1.5;
-  vector-effect: non-scaling-stroke;
-  opacity: 0.65;
-}
-.worldmap-pin .pin-multi-dot {
   fill: var(--ink);
-  transition: fill 0.12s;
+  stroke: #1a1612;
+  stroke-width: 0.7;
+  vector-effect: non-scaling-stroke;
+  transition: fill 0.12s, stroke 0.12s, stroke-width 0.12s;
 }
-
-/* Hover / popover-open: idle diamonds turn ink-grey (filled) so the
-   user can tell "I'm pointing at this" but it still reads
-   different from the orange active state. */
 .worldmap-pin.hov .pin-diamond,
 .worldmap-pin.open .pin-diamond {
-  fill: var(--ink);
+  fill: #1a1612;
   stroke: var(--ink);
+  stroke-width: 1.0;
 }
-.worldmap-pin.hov .pin-multi-dot,
-.worldmap-pin.open .pin-multi-dot {
-  fill: var(--paper);
-}
-.worldmap-pin.hov .pin-stem,
-.worldmap-pin.open .pin-stem {
-  stroke: var(--ink);
-  opacity: 0.9;
-}
-
-/* Active connection: orange diamond. Same silhouette as the idle
-   marker so the user can match the active server back to its
-   row in Pool / Servers; the colour change is what identifies it
-   as "the tunnel is here". */
 .worldmap-pin.cur .pin-diamond {
   fill: var(--copper);
-  stroke: var(--copper);
-}
-.worldmap-pin.cur .pin-multi-dot {
-  fill: var(--paper);
-}
-.worldmap-pin.cur .pin-stem {
-  stroke: var(--copper);
-  opacity: 1;
+  stroke: #1a1612;
+  stroke-width: 1.2;
 }
 
 /* "you" — small ink dot, no halo; the italic "vous" label is an
@@ -960,38 +930,9 @@
   fill-opacity: 0.18;
 }
 
-/* rc33 — merge-count badge on diamond pins. Sits on the upper-right
-   shoulder of the diamond; only renders when the diamond represents
-   more than one underlying server.  Paper fill + ink edge while
-   idle, flips to copper when the pin is active. */
-.worldmap-pin .pin-badge {
-  fill: var(--ink);
-  stroke: var(--paper);
-  stroke-width: 0.6;
-  vector-effect: non-scaling-stroke;
-}
-.worldmap-pin .pin-badge-count {
-  fill: var(--paper);
-  font-family: "JetBrains Mono", "IBM Plex Mono", monospace;
-  font-weight: 600;
-  pointer-events: none;
-}
-.worldmap-pin.hov .pin-badge,
-.worldmap-pin.open .pin-badge {
-  fill: var(--paper);
-  stroke: var(--ink);
-}
-.worldmap-pin.hov .pin-badge-count,
-.worldmap-pin.open .pin-badge-count {
-  fill: var(--ink);
-}
-.worldmap-pin.cur .pin-badge {
-  fill: var(--copper);
-  stroke: var(--paper);
-}
-.worldmap-pin.cur .pin-badge-count {
-  fill: var(--paper);
-}
+/* rc39 — dead pin sub-element rules removed (.pin-stem,
+ * .pin-multi-dot, .pin-badge, .pin-badge-count).  The diamond is
+ * now the only pin element. */
 
 /* rc36 — hex grid layer.  Each cluster paints as a hex polygon in
    viewBox space; cells never overlap by construction so we don't
@@ -1043,13 +984,9 @@
   fill-opacity: 0.16;
 }
 
-/* Diamond pins inherit the latency colour as a thin outline so the
-   user can pick the lowest-ms cluster at a glance. */
-.worldmap-pin.bucket-fast .pin-diamond { stroke: #4f6747; }
-.worldmap-pin.bucket-med  .pin-diamond { stroke: var(--ink); }
-.worldmap-pin.bucket-slow .pin-diamond { stroke: #8a6a55; }
-.worldmap-pin.bucket-fail .pin-diamond { stroke: #7a4f4a; }
-.worldmap-pin.bucket-untested .pin-diamond { stroke: var(--ink-mute); }
+/* rc39 — latency-bucket pin strokes removed.  Pin colour now
+ * carries only state (idle/hov/cur); latency is communicated via
+ * the side panel and the per-server rows. */
 
 /* rc36 — HUD overlay.  Sits in the same .worldmap-stage as the
    TransformWrapper but ABOVE it, so panning/zooming never drags it
@@ -1792,43 +1729,91 @@
   pointer-events: none;
   overflow: visible;
 }
+/* rc39 — base shape: hairline outline on dark sand bg, no fill
+ * by default.  Specific has-servers / terra / state classes
+ * override below. */
 .worldmap-shape {
-  fill: var(--paper);
-  fill-opacity: 0;
+  fill: none;
   stroke: var(--ink);
   stroke-width: 0.35;
-  stroke-opacity: 0.55;
+  stroke-opacity: 0.30;
   vector-effect: non-scaling-stroke;
+  transition: fill 0.14s, fill-opacity 0.14s, stroke 0.14s,
+    stroke-width 0.14s, stroke-opacity 0.14s;
 }
+
+/* Continent monolith — polygon-union via build-continents.mjs,
+ * so there are NO internal country borders. */
+.worldmap-shape.continent-shape {
+  stroke-width: 0.7;
+}
+
+/* Country shapes — thin outline; visible at country / server bands. */
 .worldmap-shape.country-shape {
-  stroke-width: 0.45;
-  stroke-opacity: 0.45;
+  stroke-width: 0.4;
+  stroke-opacity: 0.30;
 }
 .worldmap-shape.country-shape.band-server {
-  stroke-opacity: 0.25;
-  fill-opacity: 0;
+  stroke-opacity: 0.18;
 }
-.worldmap-shape.continent-shape {
+
+/* ===== States for shapes that carry servers ===== */
+
+/* idle “available” — graphite pencil tone (#6a6a6e), low fill. */
+.worldmap-shape.has-servers {
+  fill: #6a6a6e;
+  fill-opacity: 0.22;
+  stroke: #8a8a90;
+  stroke-opacity: 0.55;
+  pointer-events: visiblePainted;
+  cursor: default;
+}
+.worldmap-shape.has-servers.continent-shape {
+  stroke-width: 0.9;
+}
+.worldmap-shape.has-servers.country-shape {
+  stroke-width: 0.55;
+}
+
+/* Density bucket modulates the graphite fill so dense regions
+ * read as more saturated, sparse ones as ghosted. */
+.worldmap-shape.has-servers.d0 { fill-opacity: 0.14; }
+.worldmap-shape.has-servers.d1 { fill-opacity: 0.22; }
+.worldmap-shape.has-servers.d2 { fill-opacity: 0.30; }
+.worldmap-shape.has-servers.d3 { fill-opacity: 0.38; }
+.worldmap-shape.has-servers.d4 { fill-opacity: 0.46; }
+
+/* hover — brighter graphite + lighter outline.  Cursor pointer
+ * only when the renderer wired an onClick handler (set inline
+ * in WorldMap via the `clickable` prop). */
+.worldmap-shape.has-servers.hov,
+.worldmap-shape.has-servers.open {
+  fill: #8a8a90;
+  fill-opacity: 0.42;
+  stroke: var(--ink);
+  stroke-opacity: 0.85;
+  stroke-width: 1.1;
+}
+.worldmap-shape.has-servers.continent-shape.hov,
+.worldmap-shape.has-servers.continent-shape.open {
+  stroke-width: 1.4;
+}
+
+/* active connection — the only copper element on the map besides
+ * the vous→active arc, so the eye lands on it instantly. */
+.worldmap-shape.has-servers.cur {
+  fill: var(--copper);
+  fill-opacity: 0.36;
   stroke: var(--copper);
-  stroke-width: 0.7;
-  stroke-opacity: 0.45;
+  stroke-opacity: 1;
+  stroke-width: 1.3;
+}
+.worldmap-shape.has-servers.continent-shape.cur {
+  stroke-width: 1.6;
 }
 
-/* Choropleth fill — copper hue stepped by density bucket. */
-.worldmap-shape.d0 { fill: var(--copper); fill-opacity: 0.06; }
-.worldmap-shape.d1 { fill: var(--copper); fill-opacity: 0.10; }
-.worldmap-shape.d2 { fill: var(--copper); fill-opacity: 0.18; }
-.worldmap-shape.d3 { fill: var(--copper); fill-opacity: 0.28; }
-.worldmap-shape.d4 { fill: var(--copper); fill-opacity: 0.40; }
-.worldmap-shape.country-shape.band-server.d1,
-.worldmap-shape.country-shape.band-server.d2,
-.worldmap-shape.country-shape.band-server.d3,
-.worldmap-shape.country-shape.band-server.d4 {
-  fill-opacity: 0;
-  stroke-opacity: 0.35;
-}
-
-/* "Terra incognita" — empty regions get a faint diagonal hatch. */
+/* “terra incognita” — empty regions: diagonal hatch + faint outline,
+ * non-interactive so it never steals clicks from the painted shapes. */
 .terra-stroke {
   stroke: var(--ink);
   stroke-width: 0.6;
@@ -1836,43 +1821,12 @@
 }
 .worldmap-shape.terra {
   stroke: var(--ink);
-  stroke-opacity: 0.30;
+  stroke-opacity: 0.28;
+  pointer-events: none;
 }
 .worldmap-shape.country-shape.band-server.terra {
-  stroke-opacity: 0.18;
+  stroke-opacity: 0.16;
   fill: none;
-}
-
-/* Cluster highlight overlay — paints active / hover / open cluster
- * shape with a copper outline above the base choropleth. */
-.worldmap-cluster-overlay {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  overflow: visible;
-}
-.worldmap-cluster-shape {
-  fill: var(--copper);
-  fill-opacity: 0.14;
-  stroke: var(--copper);
-  stroke-width: 1.2;
-  vector-effect: non-scaling-stroke;
-  pointer-events: none;
-}
-.worldmap-cluster-shape.hov {
-  fill-opacity: 0.22;
-  stroke-width: 1.5;
-}
-.worldmap-cluster-shape.open {
-  fill-opacity: 0.30;
-  stroke-width: 1.8;
-}
-.worldmap-cluster-shape.cur {
-  fill-opacity: 0.36;
-  stroke: var(--copper);
-  stroke-width: 1.6;
 }
 
 /* Tooltip / popover overlay — outside TransformWrapper, screen
@@ -2106,8 +2060,7 @@
   cursor: default;
 }
 
-/* rc38 — pin badges removed; hide any leftover instances. */
-.worldmap-pin .pin-badge,
-.worldmap-pin .pin-badge-count {
-  display: none !important;
-}
+/* rc39 — leftover pin badge / hex layer rules removed.
+ * The diamond pin and the choropleth shapes carry the entire
+ * pipeline now; nothing else paints in worldmap-pins or as a
+ * separate hex layer. */

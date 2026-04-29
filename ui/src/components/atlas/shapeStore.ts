@@ -8,14 +8,16 @@
  * uses — and emits SVG path strings ready to drop into the
  * worldmap-shapes layer.
  *
- * Continents are derived from Natural Earth's CONTINENT property,
- * remapped to the two-letter ISO continent codes used elsewhere in
- * Mosaic (NA / SA / EU / AS / AF / OC / AN). A continent's "shape"
- * is the union of its member country shapes — but we keep them as
- * a list of country paths and concatenate the `d` strings rather
- * than running real polygon-union: SVG natively handles holes and
- * overlapping subpaths in a single path with the even-odd or
- * nonzero fill rule, so the visual result is identical.
+ * Continents are loaded from a separate `continents-110m.json`
+ * dataset that ships pre-merged: `ui/scripts/build-continents.mjs`
+ * runs `polygon-clipping` (mfogel) over the country features once
+ * at build time, grouping by NE's CONTINENT property and emitting
+ * one MultiPolygon per continent (NA / SA / EU / AS / AF / OC / AN).
+ * The runtime then projects those union polygons through `projectVB`
+ * the same way as countries — so a continent silhouette is one
+ * monolithic shape with no internal country borders bleeding
+ * through, and pin / country / continent layers all co-register
+ * by construction.
  *
  * No d3-geo dependency on purpose — the equirect projection is one
  * line of arithmetic and we save 30 KB of bundle. If we ever need
@@ -24,6 +26,7 @@
 
 import { projectVB } from "../cluster/resolveGroups";
 import countries110m from "../../data/countries-110m.json";
+import continents110m from "../../data/continents-110m.json";
 
 /** Two-letter continent code, matching `continent_map.json`. */
 export type ContinentCode = "NA" | "SA" | "EU" | "AS" | "AF" | "OC" | "AN";
@@ -60,8 +63,10 @@ export interface ContinentShape {
   code: ContinentCode;
   name: string;
   members: CountryShape[];
-  /** Concatenation of all member country `pathD` — paints the
-   *  continent in one `<path>` element. */
+  /** Real polygon-union (built once at build time, see
+   *  `ui/scripts/build-continents.mjs`) projected into viewBox
+   *  space — one monolithic SVG path with no internal country
+   *  borders. */
   pathD: string;
   bbox: { minX: number; minY: number; maxX: number; maxY: number };
   centroid: { x: number; y: number };
@@ -79,6 +84,18 @@ interface RawFeature {
 interface RawDataset {
   type: "FeatureCollection";
   features: RawFeature[];
+}
+
+interface RawContinentFeature {
+  p: { code: string; name: string };
+  g:
+    | { type: "Polygon"; coordinates: number[][][] }
+    | { type: "MultiPolygon"; coordinates: number[][][][] };
+}
+
+interface RawContinentDataset {
+  type: "FeatureCollection";
+  features: RawContinentFeature[];
 }
 
 let cachedCountries: CountryShape[] | null = null;
@@ -225,7 +242,20 @@ function buildCountries(): CountryShape[] {
   return out;
 }
 
-function buildContinents(countries: CountryShape[]): ContinentShape[] {
+const CONTINENT_LABELS: Record<ContinentCode, string> = {
+  NA: "North America",
+  SA: "South America",
+  EU: "Europe",
+  AS: "Asia",
+  AF: "Africa",
+  OC: "Oceania",
+  AN: "Antarctica",
+};
+
+function buildContinents(
+  countries: CountryShape[],
+  raw: RawContinentDataset,
+): ContinentShape[] {
   const byCode = new Map<ContinentCode, CountryShape[]>();
   for (const c of countries) {
     if (c.continent === "") continue;
@@ -233,36 +263,20 @@ function buildContinents(countries: CountryShape[]): ContinentShape[] {
     if (arr) arr.push(c);
     else byCode.set(c.continent, [c]);
   }
-  const labels: Record<ContinentCode, string> = {
-    NA: "North America",
-    SA: "South America",
-    EU: "Europe",
-    AS: "Asia",
-    AF: "Africa",
-    OC: "Oceania",
-    AN: "Antarctica",
-  };
   const out: ContinentShape[] = [];
-  for (const [code, members] of byCode) {
-    const pathD = members.map((m) => m.pathD).join("");
-    const bbox = members.reduce(
-      (acc, m) => ({
-        minX: Math.min(acc.minX, m.bbox.minX),
-        minY: Math.min(acc.minY, m.bbox.minY),
-        maxX: Math.max(acc.maxX, m.bbox.maxX),
-        maxY: Math.max(acc.maxY, m.bbox.maxY),
-      }),
-      {
-        minX: Infinity,
-        minY: Infinity,
-        maxX: -Infinity,
-        maxY: -Infinity,
-      },
-    );
+  for (const f of raw.features) {
+    const code = (f.p.code || "").toUpperCase() as ContinentCode;
+    if (!CONTINENT_LABELS[code]) continue;
+    const pathD =
+      f.g.type === "Polygon"
+        ? buildPathFromPolygon(f.g.coordinates)
+        : buildPathFromMultiPolygon(f.g.coordinates);
+    if (!pathD) continue;
+    const bbox = bboxOf(f as unknown as RawFeature);
     out.push({
       code,
-      name: labels[code],
-      members,
+      name: CONTINENT_LABELS[code],
+      members: byCode.get(code) ?? [],
       pathD,
       bbox,
       centroid: {
@@ -281,7 +295,10 @@ export function getCountryShapes(): CountryShape[] {
 
 export function getContinentShapes(): ContinentShape[] {
   if (!cachedContinents) {
-    cachedContinents = buildContinents(getCountryShapes());
+    cachedContinents = buildContinents(
+      getCountryShapes(),
+      continents110m as unknown as RawContinentDataset,
+    );
   }
   return cachedContinents;
 }
