@@ -66,6 +66,32 @@ type Prefs struct {
 	MCPAddr         string `json:"mcp_addr"`
 	MCPPermission   string `json:"mcp_permission"` // "read" | "connect" | "full"
 	MCPConfirm      bool   `json:"mcp_confirm"`
+	// URLTestEndpoint is the URL the Verify (URL test) probe fetches
+	// through each ephemeral sing-box.  Empty string falls back to
+	// the historic gstatic-204 captive-portal probe.  Letting users
+	// pick a target removes the false-fail when their ISP / region
+	// is rate-limiting or blocking the default endpoint while real
+	// internet still works through the same proxy.
+	URLTestEndpoint string `json:"url_test_endpoint,omitempty"`
+	// DPIFingerprint overrides the per-server uTLS fingerprint with
+	// a global value.  "" / "auto" = use whatever the subscription
+	// declared; otherwise one of "chrome", "firefox", "safari",
+	// "ios", "android", "edge", "random".  Bypasses SNI-based DPI
+	// that fingerprints non-browser TLS handshakes.
+	DPIFingerprint string `json:"dpi_fingerprint,omitempty"`
+	// DPIFragment splits the TLS ClientHello across multiple TCP
+	// segments so SNI-keyword DPI loses the keyword.  "" = off,
+	// "1-3" / "2-5" = sing-box fragment ranges.
+	DPIFragment string `json:"dpi_fragment,omitempty"`
+	// DPIMux enables sing-box's mux.cool multiplexing across the
+	// outbound connection.  "" / "off" = no mux, "auto" = sing-box
+	// default, or an integer string like "4" / "8" for a fixed
+	// max_streams cap.
+	DPIMux string `json:"dpi_mux,omitempty"`
+	// DPIECH toggles Encrypted Client Hello in the TLS handshake.
+	// Requires the upstream server to publish an ECHConfigList in
+	// its DNS HTTPS RR or be configured statically; off by default.
+	DPIECH bool `json:"dpi_ech,omitempty"`
 }
 
 // DefaultPrefs returns the prefs Mosaic ships with on a fresh install.

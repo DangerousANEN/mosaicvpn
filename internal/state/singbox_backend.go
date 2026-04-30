@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -562,6 +563,7 @@ func BuildSingBoxConfig(server proto.Server, prefs store.Prefs, socksPort, httpP
 	if err != nil {
 		return nil, err
 	}
+	applyAntiDPI(out, prefs)
 	// LAN share toggle: when prefs.ShareLAN is true, bind the SOCKS
 	// and HTTP inbounds on 0.0.0.0 so devices on the same Wi-Fi can
 	// route through Mosaic by pointing their proxy at <host-LAN-IP>:port.
@@ -739,6 +741,70 @@ func tunInbound(prefs store.Prefs) map[string]any {
 		// endpoint_independent_nat lets symmetric NAT'd UDP
 		// flows (STUN, QUIC, WebRTC) survive the gVisor stack.
 		"endpoint_independent_nat": true,
+	}
+}
+
+// applyAntiDPI mutates the outbound config in-place to apply the
+// user's anti-DPI overrides (uTLS fingerprint, TLS-fragment, mux,
+// ECH).  Each toggle is best-effort: if the underlying outbound
+// type does not support an option, we skip it silently rather than
+// fail the connection.  Sing-box validates its own JSON on launch
+// so an unsupported field prints to singbox.err.log either way.
+func applyAntiDPI(out map[string]any, prefs store.Prefs) {
+	if out == nil {
+		return
+	}
+	// uTLS fingerprint override.  Only meaningful for TLS-bearing
+	// outbounds (vless, trojan, vmess, anything with a "tls" block).
+	// "auto" / "" leaves the subscription value alone.
+	fp := strings.ToLower(strings.TrimSpace(prefs.DPIFingerprint))
+	if fp != "" && fp != "auto" {
+		if tlsAny, ok := out["tls"].(map[string]any); ok {
+			tlsAny["enabled"] = true
+			tlsAny["utls"] = map[string]any{
+				"enabled":     true,
+				"fingerprint": fp,
+			}
+		}
+	}
+	// ECH (Encrypted Client Hello).  sing-box accepts a tls.ech
+	// object; with `enabled: true` and no static config it tries
+	// to read the ECHConfigList from DNS HTTPS RR for the SNI.
+	if prefs.DPIECH {
+		if tlsAny, ok := out["tls"].(map[string]any); ok {
+			tlsAny["enabled"] = true
+			tlsAny["ech"] = map[string]any{"enabled": true}
+		}
+	}
+	// TLS fragment.  sing-box's tls.fragment is structured as
+	// {enabled: true, size: "1-3", sleep: "0-0"}.  We only set
+	// `size` so the user picks the byte range; sleep stays at
+	// the sing-box default.
+	frag := strings.TrimSpace(prefs.DPIFragment)
+	if frag != "" {
+		if tlsAny, ok := out["tls"].(map[string]any); ok {
+			tlsAny["enabled"] = true
+			tlsAny["fragment"] = map[string]any{
+				"enabled": true,
+				"size":    frag,
+			}
+		}
+	}
+	// Mux.cool multiplexing.  Outbound-level multiplex object
+	// {enabled: true, protocol: "smux", max_streams: N}.  "auto"
+	// leaves max_streams unset (sing-box default = 0 = unlimited).
+	mux := strings.TrimSpace(prefs.DPIMux)
+	if mux != "" && mux != "off" {
+		muxBlock := map[string]any{
+			"enabled":  true,
+			"protocol": "smux",
+		}
+		if mux != "auto" {
+			if n, err := strconv.Atoi(mux); err == nil && n > 0 {
+				muxBlock["max_streams"] = n
+			}
+		}
+		out["multiplex"] = muxBlock
 	}
 }
 

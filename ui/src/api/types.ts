@@ -138,6 +138,13 @@ export interface Prefs {
   mcp_addr: string;
   mcp_permission: "read" | "connect" | "full";
   mcp_confirm: boolean;
+  /** Verify (URL test) target.  Empty = gstatic-204 default. */
+  url_test_endpoint?: string;
+  /** Anti-DPI overrides — see store.Prefs for semantics. */
+  dpi_fingerprint?: string;
+  dpi_fragment?: string;
+  dpi_mux?: string;
+  dpi_ech?: boolean;
 }
 
 export interface DaemonEndpoint {

@@ -38,17 +38,21 @@ type URLTestResult struct {
 // of the spin-up + probe + tear-down — typically <5 s.
 var urlTestMu sync.Mutex
 
+// DefaultURLTestEndpoint is the historic gstatic-204 captive-portal
+// probe — used when Prefs.URLTestEndpoint is empty.
+const DefaultURLTestEndpoint = "https://www.gstatic.com/generate_204"
+
 // URLTestServer launches an ephemeral sing-box bound to a free
 // loopback SOCKS port using the given server's outbound, then
-// performs HTTP GET https://www.gstatic.com/generate_204 through it.
-// A 204 response is a positive proof that the proxy actually carries
-// real traffic — much stronger than a TCP probe of the server endpoint
-// (which only proves something is listening on the port).
+// performs HTTP GET against `target` through it.  Any 2xx/3xx
+// response is treated as success — gstatic returns 204, www.google.com
+// returns 200, etc., and we don't want to surface a "fail" just because
+// the user picked a non-captive-portal endpoint.
 //
 // The whole exercise takes ~2-4 s end-to-end. The function never
 // touches the user's primary connection state; it spins its own
 // sing-box subprocess, captures the result, and kills it.
-func URLTestServer(ctx context.Context, binary, dataDir string, server proto.Server, timeout time.Duration) URLTestResult {
+func URLTestServer(ctx context.Context, binary, dataDir, target string, prefs store.Prefs, server proto.Server, timeout time.Duration) URLTestResult {
 	urlTestMu.Lock()
 	defer urlTestMu.Unlock()
 
@@ -71,7 +75,13 @@ func URLTestServer(ctx context.Context, binary, dataDir string, server proto.Ser
 	}
 	// We deliberately strip clash-api / TUN inbound here — URL test is
 	// a thin proxy probe and must not touch the OS routing table.
-	cfg, err := BuildSingBoxConfig(server, store.Prefs{TunnelMode: "proxy"}, socksPort, pickPort(0), 0)
+	// rc42 — pass anti-DPI overrides from prefs so the Verify probe
+	// uses the same uTLS / fragment / mux settings the user picked
+	// for live connections.  Force proxy mode so we don't try to
+	// open a TUN inbound from an ephemeral helper.
+	utPrefs := prefs
+	utPrefs.TunnelMode = "proxy"
+	cfg, err := BuildSingBoxConfig(server, utPrefs, socksPort, pickPort(0), 0)
 	if err != nil {
 		return URLTestResult{Error: "build config: " + err.Error()}
 	}
@@ -133,7 +143,9 @@ func URLTestServer(ctx context.Context, binary, dataDir string, server proto.Ser
 			TLSHandshakeTimeout: 6 * time.Second,
 		},
 	}
-	target := "https://www.gstatic.com/generate_204"
+	if target == "" {
+		target = DefaultURLTestEndpoint
+	}
 	t0 := time.Now()
 	req, err := http.NewRequestWithContext(cctx, http.MethodGet, target, nil)
 	if err != nil {
@@ -166,7 +178,12 @@ func URLTestServer(ctx context.Context, binary, dataDir string, server proto.Ser
 		rtt = 1
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
-	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+	// Any 2xx/3xx is positive proof that we reached the target —
+	// gstatic returns 204, www.google.com returns 200, cloudflare's
+	// trace returns 200, and a custom user URL might redirect.  We
+	// don't want to surface a "fail" for the user-picked URL just
+	// because it doesn't speak the gstatic captive-portal protocol.
+	if resp.StatusCode >= 400 {
 		return URLTestResult{
 			RTTMS:  rtt,
 			Status: resp.StatusCode,

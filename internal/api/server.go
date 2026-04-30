@@ -597,7 +597,8 @@ func (s *Server) handleURLTestServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	dataDir := paths.DataDir()
-	res := state.URLTestServer(r.Context(), state.LocateSingBox(), dataDir, srv, 12*time.Second)
+	prefs := s.store.Snapshot().Prefs
+	res := state.URLTestServer(r.Context(), state.LocateSingBox(), dataDir, prefs.URLTestEndpoint, prefs, srv, 12*time.Second)
 	// Persist the result so the SubscriptionDetail Verify column
 	// can surface the last-known state without re-running.  Best-
 	// effort: a write failure here only affects display; the live

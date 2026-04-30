@@ -18,6 +18,8 @@ type ChapterId =
   | "network"
   | "privacy"
   | "dns"
+  | "verify"
+  | "antidpi"
   | "autostart"
   | "mcp"
   | "bypass"
@@ -32,22 +34,34 @@ const CHAPTERS: { id: ChapterId; num: string; title: string; sub: string }[] = [
     sub: "if the tunnel drops",
   },
   { id: "dns", num: "iii", title: "DNS", sub: "name resolution" },
-  { id: "autostart", num: "iv", title: "Auto-start", sub: "how Mosaic launches" },
+  {
+    id: "verify",
+    num: "iv",
+    title: "Verify",
+    sub: "URL test target",
+  },
+  {
+    id: "antidpi",
+    num: "v",
+    title: "Anti-DPI",
+    sub: "evade carrier-level fingerprinting",
+  },
+  { id: "autostart", num: "vi", title: "Auto-start", sub: "how Mosaic launches" },
   {
     id: "mcp",
-    num: "v",
+    num: "vii",
     title: "Agent & MCP",
     sub: "letting an AI control Mosaic",
   },
   {
     id: "bypass",
-    num: "vi",
+    num: "viii",
     title: "Bypass list",
     sub: "domains & IPs that skip the tunnel",
   },
   {
     id: "appearance",
-    num: "vii",
+    num: "ix",
     title: "Appearance & backup",
     sub: "theme, export & import",
   },
@@ -350,9 +364,165 @@ export function Folio({ status }: { status?: Status | null }): JSX.Element {
             </Chapter>
           ) : null}
 
-          {chapter === "mcp" ? (
+          {chapter === "verify" ? (
+            <Chapter
+              num="iv"
+              title="Verify — URL test"
+              desc="what the per-server Verify probe fetches through the proxy"
+            >
+              <Opt
+                name="Target URL"
+                desc="A 2xx/3xx response is treated as success.  Pick a captive-portal endpoint (gstatic-204), a normal page (google.com), Cloudflare's diagnostic, or any URL.  Empty = gstatic default."
+              >
+                <Seg
+                  value={(() => {
+                    const v = draft.url_test_endpoint ?? "";
+                    if (v === "" || v === "https://www.gstatic.com/generate_204")
+                      return "gstatic";
+                    if (v === "https://www.google.com/") return "google";
+                    if (v === "https://www.cloudflare.com/cdn-cgi/trace")
+                      return "cf";
+                    return "custom";
+                  })()}
+                  options={[
+                    { v: "gstatic", lab: "GSTATIC 204" },
+                    { v: "google", lab: "GOOGLE" },
+                    { v: "cf", lab: "CLOUDFLARE" },
+                    { v: "custom", lab: "CUSTOM…" },
+                  ]}
+                  onChange={(v) => {
+                    if (v === "gstatic")
+                      update("url_test_endpoint", "");
+                    else if (v === "google")
+                      update("url_test_endpoint", "https://www.google.com/");
+                    else if (v === "cf")
+                      update(
+                        "url_test_endpoint",
+                        "https://www.cloudflare.com/cdn-cgi/trace",
+                      );
+                    else if (v === "custom")
+                      // Pre-fill the input so the user has something to edit.
+                      update(
+                        "url_test_endpoint",
+                        draft.url_test_endpoint &&
+                          draft.url_test_endpoint !==
+                            "https://www.gstatic.com/generate_204" &&
+                          draft.url_test_endpoint !== "https://www.google.com/" &&
+                          draft.url_test_endpoint !==
+                            "https://www.cloudflare.com/cdn-cgi/trace"
+                          ? draft.url_test_endpoint
+                          : "https://example.com/",
+                      );
+                  }}
+                />
+              </Opt>
+              <Opt
+                name="Custom URL"
+                desc="Used when the selector is on CUSTOM. Must start with http:// or https://."
+              >
+                <Text
+                  value={draft.url_test_endpoint ?? ""}
+                  onChange={(v) => update("url_test_endpoint", v)}
+                  placeholder="https://example.com/"
+                />
+              </Opt>
+            </Chapter>
+          ) : null}
+
+          {chapter === "antidpi" ? (
             <Chapter
               num="v"
+              title="Anti-DPI"
+              desc="evade carrier-level fingerprinting; only enable what you actually need"
+            >
+              <Opt
+                name="TLS fingerprint override"
+                desc="Forces the outbound to mimic a real browser's TLS handshake.  Auto = use whatever the subscription declared.  Try CHROME or FIREFOX if your ISP is fingerprinting non-browser TLS."
+              >
+                <Seg
+                  value={
+                    (draft.dpi_fingerprint || "auto") as
+                      | "auto"
+                      | "chrome"
+                      | "firefox"
+                      | "safari"
+                      | "ios"
+                      | "android"
+                      | "edge"
+                      | "random"
+                  }
+                  options={[
+                    { v: "auto", lab: "AUTO" },
+                    { v: "chrome", lab: "CHROME" },
+                    { v: "firefox", lab: "FIREFOX" },
+                    { v: "safari", lab: "SAFARI" },
+                    { v: "ios", lab: "iOS" },
+                    { v: "android", lab: "ANDROID" },
+                    { v: "edge", lab: "EDGE" },
+                    { v: "random", lab: "RANDOM" },
+                  ]}
+                  onChange={(v) =>
+                    update("dpi_fingerprint", v === "auto" ? "" : v)
+                  }
+                />
+              </Opt>
+              <Opt
+                name="TLS fragment"
+                desc="Splits the TLS ClientHello across multiple TCP segments so SNI-keyword DPI loses the keyword.  Useful in Iran / Russia where SNI is filtered.  OFF if your ISP doesn't do SNI filtering."
+              >
+                <Seg
+                  value={
+                    (draft.dpi_fragment || "off") as
+                      | "off"
+                      | "1-3"
+                      | "2-5"
+                      | "5-10"
+                  }
+                  options={[
+                    { v: "off", lab: "OFF" },
+                    { v: "1-3", lab: "1-3 B" },
+                    { v: "2-5", lab: "2-5 B" },
+                    { v: "5-10", lab: "5-10 B" },
+                  ]}
+                  onChange={(v) =>
+                    update("dpi_fragment", v === "off" ? "" : v)
+                  }
+                />
+              </Opt>
+              <Opt
+                name="Multiplexing (mux.cool)"
+                desc="Multiplex traffic over a single outbound connection so DPI can't isolate flows.  Effective for VLESS / Trojan; ignored by Hysteria2."
+              >
+                <Seg
+                  value={
+                    (draft.dpi_mux || "off") as "off" | "auto" | "4" | "8"
+                  }
+                  options={[
+                    { v: "off", lab: "OFF" },
+                    { v: "auto", lab: "AUTO" },
+                    { v: "4", lab: "MAX 4" },
+                    { v: "8", lab: "MAX 8" },
+                  ]}
+                  onChange={(v) =>
+                    update("dpi_mux", v === "off" ? "" : v)
+                  }
+                />
+              </Opt>
+              <Opt
+                name="Encrypted Client Hello (ECH)"
+                desc="Encrypts the SNI inside TLS so middleboxes can't see which host you're connecting to.  Requires the upstream server to publish an ECHConfigList; if it doesn't, this is a no-op."
+              >
+                <Switch
+                  value={!!draft.dpi_ech}
+                  onChange={(v) => update("dpi_ech", v)}
+                />
+              </Opt>
+            </Chapter>
+          ) : null}
+
+          {chapter === "mcp" ? (
+            <Chapter
+              num="vii"
               title="Agent & MCP"
               desc="letting an AI control Mosaic"
             >
