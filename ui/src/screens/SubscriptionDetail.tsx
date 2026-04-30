@@ -279,17 +279,26 @@ export function SubscriptionDetail({
             const fav = favs.has(s.id);
             const series = getLatencySeries(s.id);
             void seriesTick; // re-render trigger
-            // rc40 — Verify column.  Cell text is one of:
+            // rc40/rc41 — Verify column.  Cell text is one of:
             //   ✓ <ms>     last URL test succeeded with HTTP 204
             //   <status>   last URL test got an unexpected status
             //   fail       last URL test errored (hover for detail)
             //   —          never run
+            //
+            // We gate on `last_url_test_at` (timestamp set only on
+            // a real probe) so a stale/empty `last_url_test_error`
+            // string from older builds doesn't display as "fail" —
+            // a row that has *never* been url-tested must show "—".
             const urlMs = s.last_url_test_ms ?? 0;
             const urlStatus = s.last_url_test_status ?? 0;
             const urlErr = s.last_url_test_error;
+            const urlAt = s.last_url_test_at;
+            const everTested = !!urlAt && urlAt !== "0001-01-01T00:00:00Z";
             let verifyCell: JSX.Element;
             let verifyTitle: string | undefined;
-            if (urlErr) {
+            if (!everTested) {
+              verifyCell = <span className="italic-mute">—</span>;
+            } else if (urlErr) {
               verifyCell = <span className="verify-cell verify-fail">fail</span>;
               verifyTitle = urlErr;
             } else if (urlStatus === 204 || urlStatus === 200) {

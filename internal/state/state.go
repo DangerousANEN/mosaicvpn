@@ -82,13 +82,22 @@ func New(s *store.Store, backend Backend, version string) *Manager {
 		pid:     osPID(),
 		started: time.Now().UTC(),
 	}
-	prefs := s.Snapshot().Prefs
+	snap := s.Snapshot()
+	prefs := snap.Prefs
 	m.st = proto.Status{
 		State:         proto.StateDisconnected,
 		TunnelMode:    prefs.TunnelMode,
 		KillSwitch:    prefs.KillSwitch,
 		DaemonVersion: version,
 		DaemonPID:     m.pid,
+	}
+	// rc41 — hydrate myLocation from persisted store so the "vous"
+	// pin renders immediately on launch, even if the ip-api lookup
+	// fails or is slow.  The resolveMyLocation goroutine refreshes
+	// this periodically.
+	if snap.MyLocation != nil {
+		cp := *snap.MyLocation
+		m.myLocation = &cp
 	}
 	return m
 }

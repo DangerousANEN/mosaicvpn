@@ -15,7 +15,10 @@ import {
   setDismissedUpdate,
 } from "../utils/localStore";
 
-const CURRENT_VERSION = "v0.1.0-rc30";
+// rc41 — read the bundled version from a Vite define instead of a
+// hard-coded literal so each release tag (v0.1.0-rcN) auto-increments
+// the comparison baseline.  See vite.config.ts → resolveAppVersion().
+const CURRENT_VERSION = __APP_VERSION__;
 const RELEASES_URL =
   "https://api.github.com/repos/DangerousANEN/mosaicvpn/releases/latest";
 

@@ -29,7 +29,15 @@ type State struct {
 	Rules         []proto.Rule         `json:"rules"`
 	Prefs         Prefs                `json:"prefs"`
 	LastServerID  string               `json:"last_server_id,omitempty"`
-	Version       int                  `json:"version"`
+	// MyLocation is the most recently resolved user public-IP geo
+	// from ip-api.com (or a fallback geolocator).  Persisting it
+	// means that the "vous" pin plants instantly on next launch
+	// even if the lookup endpoint is temporarily unreachable —
+	// users behind a Russian/Iranian carrier can have ip-api.com
+	// blocked for extended periods, and without this field every
+	// relaunch would hide the pin until network resolves.
+	MyLocation *proto.GeoLocation `json:"my_location,omitempty"`
+	Version    int                `json:"version"`
 }
 
 // Prefs holds user-configurable behaviour of the daemon.
@@ -351,6 +359,32 @@ func (s *Store) RecordURLTest(id string, ms, status int, errMsg string) error {
 		}
 		return fmt.Errorf("server %q not found", id)
 	})
+}
+
+// SetMyLocation persists the user's resolved public-IP geo so the
+// renderer can plant the "vous" pin instantly on next launch even
+// if the lookup endpoint is temporarily unreachable.
+func (s *Store) SetMyLocation(loc *proto.GeoLocation) error {
+	return s.Update(func(st *State) error {
+		if loc == nil {
+			st.MyLocation = nil
+			return nil
+		}
+		cp := *loc
+		st.MyLocation = &cp
+		return nil
+	})
+}
+
+// MyLocation returns the persisted location or nil.
+func (s *Store) MyLocation() *proto.GeoLocation {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.state.MyLocation == nil {
+		return nil
+	}
+	cp := *s.state.MyLocation
+	return &cp
 }
 
 // RecordServerGeo updates the geographic metadata of a server. Call

@@ -14,11 +14,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -30,6 +32,22 @@ import (
 	"github.com/DangerousANEN/mosaicvpn/internal/state"
 	"github.com/DangerousANEN/mosaicvpn/internal/store"
 )
+
+// geoEndpoint is one public-IP geolocation source.  We try them in
+// order on startup; the first to answer with a finite lat/lon wins.
+// Russian and Iranian carriers routinely block ip-api.com, so rc41
+// adds ipapi.co and ipinfo.io as fallbacks — between the three, at
+// least one is reachable from every network we have seen in the
+// wild.  The decoded fields are normalised into proto.GeoLocation.
+type geoEndpoint struct {
+	name string
+	url  string
+	// decode runs on the raw response body and returns the
+	// normalised geo or an error.  Keeping parsing per-endpoint
+	// means we can tolerate schema drift without one bad
+	// provider breaking the whole cascade.
+	decode func([]byte) (*proto.GeoLocation, error)
+}
 
 // Version is set at build time via -ldflags "-X main.Version=...".
 var Version = "0.1.0-dev"
@@ -88,7 +106,7 @@ func run(dataDirOverride string) error {
 	// correct continent. Failures (no internet at boot, ip-api
 	// rate-limiting, captive portal, etc.) leave Status.MyLocation
 	// nil and the renderer falls back to its hardcoded default.
-	go resolveMyLocation(mgr)
+	go resolveMyLocation(mgr, store)
 
 	apiSrv := api.NewServer(store, mgr, nil)
 
@@ -193,20 +211,109 @@ func run(dataDirOverride string) error {
 // Failure modes (no internet, ip-api rate limit, DNS hijack returning
 // a 200 with junk body, captive portal) are logged at WARN and
 // retried; the renderer keeps its fallback default in the meantime.
-func resolveMyLocation(mgr *state.Manager) {
+func resolveMyLocation(mgr *state.Manager, st *store.Store) {
 	const minRetryGap = 5 * time.Second
 	const refreshGap = 30 * time.Minute
 
+	endpoints := []geoEndpoint{
+		{
+			name: "ip-api.com",
+			url:  "http://ip-api.com/json/?fields=status,country,city,lat,lon,query",
+			decode: func(data []byte) (*proto.GeoLocation, error) {
+				var body struct {
+					Status  string  `json:"status"`
+					Country string  `json:"country"`
+					City    string  `json:"city"`
+					Lat     float64 `json:"lat"`
+					Lon     float64 `json:"lon"`
+					Query   string  `json:"query"`
+				}
+				if err := json.Unmarshal(data, &body); err != nil {
+					return nil, err
+				}
+				if body.Status != "success" {
+					return nil, fmt.Errorf("status %q", body.Status)
+				}
+				return &proto.GeoLocation{
+					Lat: body.Lat, Lon: body.Lon,
+					City: body.City, Country: body.Country, IP: body.Query,
+				}, nil
+			},
+		},
+		{
+			name: "ipapi.co",
+			url:  "https://ipapi.co/json/",
+			decode: func(data []byte) (*proto.GeoLocation, error) {
+				var body struct {
+					IP          string  `json:"ip"`
+					City        string  `json:"city"`
+					CountryName string  `json:"country_name"`
+					Lat         float64 `json:"latitude"`
+					Lon         float64 `json:"longitude"`
+					Error       bool    `json:"error"`
+					Reason      string  `json:"reason"`
+				}
+				if err := json.Unmarshal(data, &body); err != nil {
+					return nil, err
+				}
+				if body.Error {
+					return nil, fmt.Errorf("ipapi.co: %s", body.Reason)
+				}
+				return &proto.GeoLocation{
+					Lat: body.Lat, Lon: body.Lon,
+					City: body.City, Country: body.CountryName, IP: body.IP,
+				}, nil
+			},
+		},
+		{
+			name: "ipinfo.io",
+			url:  "https://ipinfo.io/json",
+			decode: func(data []byte) (*proto.GeoLocation, error) {
+				// ipinfo returns "loc": "55.7558,37.6173" as a
+				// single string; split manually.
+				var body struct {
+					IP      string `json:"ip"`
+					City    string `json:"city"`
+					Country string `json:"country"` // ISO-2
+					Loc     string `json:"loc"`
+				}
+				if err := json.Unmarshal(data, &body); err != nil {
+					return nil, err
+				}
+				parts := strings.SplitN(body.Loc, ",", 2)
+				if len(parts) != 2 {
+					return nil, fmt.Errorf("ipinfo loc %q", body.Loc)
+				}
+				lat, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+				if err != nil {
+					return nil, err
+				}
+				lon, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+				if err != nil {
+					return nil, err
+				}
+				return &proto.GeoLocation{
+					Lat: lat, Lon: lon,
+					City: body.City, Country: body.Country, IP: body.IP,
+				}, nil
+			},
+		},
+	}
+
 	wasConnected := false
 	lastResolved := time.Time{}
+	// On first launch we may already have a persisted location from
+	// the store (hydrated into mgr); treat that as "resolved long
+	// ago" so the loop still attempts a fresh lookup.  The sleep
+	// below is the only fast-path gate.
 
 	for {
-		st := mgr.Status()
-		connected := st.State == proto.StateConnected
+		status := mgr.Status()
+		connected := status.State == proto.StateConnected
 
-		// Edge: connected → disconnected.  Force a refresh on the
-		// next tick so a user that disconnects from one country and
-		// reconnects from another sees their pin update.
+		// Edge: connected → disconnected.  Force a refresh so a
+		// user that disconnects from one country and reconnects
+		// from another sees their pin update.
 		if !connected && wasConnected {
 			lastResolved = time.Time{}
 		}
@@ -217,64 +324,78 @@ func resolveMyLocation(mgr *state.Manager) {
 			continue
 		}
 
-		// Skip if we already have a recent resolution.
 		if !lastResolved.IsZero() && time.Since(lastResolved) < refreshGap {
 			time.Sleep(minRetryGap)
 			continue
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-			"http://ip-api.com/json/?fields=status,country,city,lat,lon,query", nil)
-		if err != nil {
-			cancel()
-			time.Sleep(minRetryGap)
-			continue
-		}
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			cancel()
-			logx.Warn("ip-api lookup failed", "err", err.Error())
-			time.Sleep(minRetryGap)
-			continue
-		}
-		var body struct {
-			Status  string  `json:"status"`
-			Country string  `json:"country"`
-			City    string  `json:"city"`
-			Lat     float64 `json:"lat"`
-			Lon     float64 `json:"lon"`
-			Query   string  `json:"query"`
-		}
-		dec := json.NewDecoder(resp.Body)
-		decErr := dec.Decode(&body)
-		_ = resp.Body.Close()
-		cancel()
-		if decErr != nil || body.Status != "success" {
-			logx.Warn("ip-api decode failed", "err", decErr, "status", body.Status)
+		loc := tryGeoEndpoints(endpoints)
+		if loc == nil {
+			// All endpoints failed.  Keep whatever persisted
+			// value is already published by the manager (from
+			// store hydration) and retry after the short gap.
 			time.Sleep(minRetryGap)
 			continue
 		}
 
-		// Re-check the connected state right before publishing — a
-		// Connect that landed during the HTTP round-trip means our
-		// resolved IP is the egress, not the user.  Drop the result.
+		// Re-check connected state right before publishing — a
+		// Connect that landed during the HTTP round-trip means
+		// our resolved IP is the egress, not the user.  Drop.
 		if mgr.Status().State == proto.StateConnected {
-			logx.Warn("ip-api result discarded — connect happened mid-lookup, would mistake egress for home")
+			logx.Warn("geo result discarded — connect happened mid-lookup, would mistake egress for home")
 			time.Sleep(minRetryGap)
 			continue
 		}
-		mgr.SetMyLocation(&proto.GeoLocation{
-			Lat:     body.Lat,
-			Lon:     body.Lon,
-			City:    body.City,
-			Country: body.Country,
-			IP:      body.Query,
-		})
+
+		mgr.SetMyLocation(loc)
+		if err := st.SetMyLocation(loc); err != nil {
+			logx.Warn("persist my_location failed", "err", err.Error())
+		}
 		lastResolved = time.Now()
 		logx.Info("resolved user location",
-			"city", body.City, "country", body.Country,
-			"lat", body.Lat, "lon", body.Lon, "ip", body.Query)
+			"city", loc.City, "country", loc.Country,
+			"lat", loc.Lat, "lon", loc.Lon, "ip", loc.IP)
 		time.Sleep(refreshGap / 2)
 	}
+}
+
+// tryGeoEndpoints runs each endpoint in sequence with a short per-
+// request timeout, returning the first valid geo or nil if every
+// endpoint failed.  "Valid" means finite lat/lon that isn't literally
+// (0, 0) — some providers return zeroes on private IP or ratelimit.
+func tryGeoEndpoints(endpoints []geoEndpoint) *proto.GeoLocation {
+	client := &http.Client{Timeout: 6 * time.Second}
+	for _, ep := range endpoints {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, ep.url, nil)
+		if err != nil {
+			cancel()
+			continue
+		}
+		req.Header.Set("User-Agent", "mosaicvpn/0.1 (geo)")
+		resp, err := client.Do(req)
+		if err != nil {
+			cancel()
+			logx.Warn("geo endpoint failed", "src", ep.name, "err", err.Error())
+			continue
+		}
+		data, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		cancel()
+		if readErr != nil {
+			logx.Warn("geo endpoint read failed", "src", ep.name, "err", readErr.Error())
+			continue
+		}
+		loc, decErr := ep.decode(data)
+		if decErr != nil {
+			logx.Warn("geo endpoint decode failed", "src", ep.name, "err", decErr.Error())
+			continue
+		}
+		if loc == nil || (loc.Lat == 0 && loc.Lon == 0) {
+			logx.Warn("geo endpoint returned empty coords", "src", ep.name)
+			continue
+		}
+		return loc
+	}
+	return nil
 }

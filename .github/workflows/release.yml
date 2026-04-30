@@ -98,6 +98,13 @@ jobs:
 
       - name: build Tauri NSIS installer
         working-directory: ui
+        env:
+          # Pass the git tag (e.g. v0.1.0-rc41) into the renderer
+          # bundle so UpdateBanner compares against the real release.
+          # `github.ref_name` resolves to the tag name on a tag push;
+          # for workflow_dispatch we leave it empty and let the
+          # vite.config.ts fallback chain pick up `${pkg.version}-dev`.
+          APP_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
         run: npm run tauri -- build --target x86_64-pc-windows-msvc --bundles nsis
 
       - name: collect artifacts

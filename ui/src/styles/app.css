@@ -1910,10 +1910,12 @@
   gap: 6px;
   max-height: 100%;
   overflow: hidden;
-  /* The card itself has a real background, so it must catch
-   * clicks (otherwise the pop-go / pop-zoom buttons inside
-   * would inherit the root's none and stop working). */
-  pointer-events: auto;
+  /* rc41 — the card itself stays non-interactive so hover events
+   * pass through to the map shapes underneath; otherwise the
+   * panel grows-on-hover, intercepts the cursor, hoverId clears,
+   * panel shrinks, cursor lands on the shape again → infinite
+   * flicker.  Buttons / links inside opt back in below. */
+  pointer-events: none;
 }
 
 .worldmap-sidepanel .sidepanel-head {
@@ -2013,6 +2015,8 @@
   padding: 3px 8px;
   border-radius: 2px;
   cursor: pointer;
+  /* rc41 — opt back in (parent card is pointer-events:none). */
+  pointer-events: auto;
 }
 
 .worldmap-sidepanel .popover-card .pop-fast-btn:hover,
