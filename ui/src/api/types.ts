@@ -57,6 +57,11 @@ export interface Server {
    *  Used by the UI to group multi-protocol entries pointing at the
    *  same physical host. */
   resolved_ip?: string;
+  /** Protocol-specific fields carried from the subscription parse
+   *  (see internal/subs/*.go). `raw.uri` is the original `vless://`
+   *  / `trojan://` / `ss://` / `hy2://` / `naive+https://` URI
+   *  preserved so the UI can round-trip it with Copy URI. */
+  raw?: Record<string, unknown>;
 }
 
 export interface Subscription {

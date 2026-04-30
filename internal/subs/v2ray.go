@@ -80,16 +80,17 @@ func parseVLESS(subID, raw string) (proto.Server, error) {
 		Tag:            tag,
 		SubscriptionID: subID,
 		Raw: map[string]any{
-			"uuid":       uuid,
-			"flow":       flow,
-			"security":   q.Get("security"),
-			"sni":        q.Get("sni"),
-			"public_key": q.Get("pbk"),
-			"short_id":   q.Get("sid"),
+			"uri":         raw,
+			"uuid":        uuid,
+			"flow":        flow,
+			"security":    q.Get("security"),
+			"sni":         q.Get("sni"),
+			"public_key":  q.Get("pbk"),
+			"short_id":    q.Get("sid"),
 			"fingerprint": q.Get("fp"),
-			"network":    q.Get("type"),
-			"path":       q.Get("path"),
-			"host":       q.Get("host"),
+			"network":     q.Get("type"),
+			"path":        q.Get("path"),
+			"host":        q.Get("host"),
 		},
 	}
 	return s, nil
@@ -114,6 +115,8 @@ func parseVMess(subID, raw string) (proto.Server, error) {
 		name = fmt.Sprintf("vmess://%s:%d", host, port)
 	}
 	// vmess maps to vless in our model with tls-mode tag
+	// Preserve the encoded URI so the UI's Copy URI button can round-trip it.
+	v["uri"] = raw
 	s := proto.Server{
 		ID:             serverID(subID, "vmess", host, fmt.Sprint(port), uuid),
 		Name:           name,
@@ -160,6 +163,7 @@ func parseSS(subID, raw string) (proto.Server, error) {
 			Tag:            method,
 			SubscriptionID: subID,
 			Raw: map[string]any{
+				"uri":      raw,
 				"method":   method,
 				"password": pass,
 			},
@@ -189,6 +193,7 @@ func parseSS(subID, raw string) (proto.Server, error) {
 		Tag:            method,
 		SubscriptionID: subID,
 		Raw: map[string]any{
+			"uri":      raw,
 			"method":   method,
 			"password": pass,
 		},
@@ -216,11 +221,12 @@ func parseHysteria2(subID, raw string) (proto.Server, error) {
 		Tag:            q.Get("obfs"),
 		SubscriptionID: subID,
 		Raw: map[string]any{
-			"password":     password,
-			"obfs":         q.Get("obfs"),
+			"uri":           raw,
+			"password":      password,
+			"obfs":          q.Get("obfs"),
 			"obfs_password": q.Get("obfs-password"),
-			"sni":          q.Get("sni"),
-			"insecure":     q.Get("insecure") == "1",
+			"sni":           q.Get("sni"),
+			"insecure":      q.Get("insecure") == "1",
 		},
 	}, nil
 }
@@ -252,6 +258,7 @@ func parseNaive(subID, raw string) (proto.Server, error) {
 		Port:           port,
 		SubscriptionID: subID,
 		Raw: map[string]any{
+			"uri":      raw,
 			"username": user,
 			"password": pass,
 			"scheme":   u.Scheme, // https or quic
