@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,10 +32,22 @@ import (
 	"github.com/DangerousANEN/mosaicvpn/internal/subs"
 )
 
+// FetchResult is everything the fetcher managed to extract from one
+// subscription HTTP response — the raw payload plus the server-declared
+// format hint (Content-Type) and the Subscription-Userinfo header
+// (traffic / expiry) if the remote set it.
+type FetchResult struct {
+	Body         []byte
+	Format       string    // Content-Type, rarely useful except for data:// URLs
+	TrafficUsed  uint64    // bytes
+	TrafficTotal uint64    // bytes (0 = unlimited / not reported)
+	ExpiresAt    time.Time // zero = not reported
+}
+
 // Fetcher is the function used to retrieve subscription payloads. The
 // daemon wires in an HTTP-backed implementation; tests can supply an
 // in-memory one.
-type Fetcher func(ctx context.Context, url string) ([]byte, string, error)
+type Fetcher func(ctx context.Context, url string) (FetchResult, error)
 
 // Server bundles the daemon's HTTP API.
 type Server struct {
@@ -920,15 +933,15 @@ func (s *Server) URLTestServer(ctx context.Context, serverID string) error {
 }
 
 func (s *Server) refresh(ctx context.Context, sub proto.Subscription) error {
-	body, _, err := s.fetcher(ctx, sub.URL)
+	fr, err := s.fetcher(ctx, sub.URL)
 	if err != nil {
 		return fmt.Errorf("fetch: %w", err)
 	}
 	var res subs.Result
 	if sub.Format != "" && sub.Format != proto.FormatUnknown {
-		res, err = subs.ParseAs(sub.ID, body, sub.Format)
+		res, err = subs.ParseAs(sub.ID, fr.Body, sub.Format)
 	} else {
-		res, err = subs.Parse(sub.ID, body)
+		res, err = subs.Parse(sub.ID, fr.Body)
 	}
 	if err != nil {
 		return fmt.Errorf("parse: %w", err)
@@ -937,6 +950,16 @@ func (s *Server) refresh(ctx context.Context, sub proto.Subscription) error {
 	sub.ServerCount = len(res.Servers)
 	sub.LastFetched = time.Now().UTC()
 	sub.LastError = ""
+	// Only overwrite traffic / expiry fields when the remote actually
+	// reported them this fetch. A remote that drops the header between
+	// fetches keeps the last known values visible.
+	if fr.TrafficTotal != 0 || fr.TrafficUsed != 0 {
+		sub.TrafficUsed = fr.TrafficUsed
+		sub.TrafficTotal = fr.TrafficTotal
+	}
+	if !fr.ExpiresAt.IsZero() {
+		sub.ExpiresAt = fr.ExpiresAt
+	}
 	if _, err := s.store.AddOrUpdateSubscription(sub); err != nil {
 		return err
 	}
@@ -1083,29 +1106,78 @@ func HTTPFetcher(client *http.Client) Fetcher {
 	if client == nil {
 		client = directHTTPClient(30 * time.Second)
 	}
-	return func(ctx context.Context, url string) ([]byte, string, error) {
+	return func(ctx context.Context, url string) (FetchResult, error) {
 		if strings.HasPrefix(url, "data:") {
-			return decodeDataURL(url)
+			body, mime, err := decodeDataURL(url)
+			return FetchResult{Body: body, Format: mime}, err
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
-			return nil, "", err
+			return FetchResult{}, err
 		}
 		req.Header.Set("User-Agent", "Mosaic/0.1")
 		resp, err := client.Do(req)
 		if err != nil {
-			return nil, "", err
+			return FetchResult{}, err
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode/100 != 2 {
-			return nil, "", fmt.Errorf("http %s", resp.Status)
+			return FetchResult{}, fmt.Errorf("http %s", resp.Status)
 		}
 		body, err := readAllLimited(resp.Body, 16<<20) // 16 MiB cap
 		if err != nil {
-			return nil, "", err
+			return FetchResult{}, err
 		}
-		return body, resp.Header.Get("Content-Type"), nil
+		up, down, total, exp := parseSubscriptionUserinfo(resp.Header.Get("Subscription-Userinfo"))
+		return FetchResult{
+			Body:         body,
+			Format:       resp.Header.Get("Content-Type"),
+			TrafficUsed:  up + down,
+			TrafficTotal: total,
+			ExpiresAt:    exp,
+		}, nil
 	}
+}
+
+// parseSubscriptionUserinfo parses the de-facto-standard panel header:
+//
+//	Subscription-Userinfo: upload=0; download=1234567890; total=107374182400; expire=1767225600
+//
+// Upload/download/total are bytes (uint64), expire is Unix seconds.
+// Panels that don't set the header send an empty string → all zeros.
+// Returns (upload, download, total, expiresAt). A zero `expire` value is
+// normalised to a zero time.Time so callers can check `IsZero()`.
+func parseSubscriptionUserinfo(header string) (uint64, uint64, uint64, time.Time) {
+	if header == "" {
+		return 0, 0, 0, time.Time{}
+	}
+	var up, down, total uint64
+	var exp time.Time
+	for _, part := range strings.Split(header, ";") {
+		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(kv[0]))
+		val := strings.TrimSpace(kv[1])
+		n, err := strconv.ParseUint(val, 10, 64)
+		if err != nil {
+			continue
+		}
+		switch key {
+		case "upload":
+			up = n
+		case "download":
+			down = n
+		case "total":
+			total = n
+		case "expire":
+			if n > 0 {
+				exp = time.Unix(int64(n), 0).UTC()
+			}
+		}
+	}
+	return up, down, total, exp
 }
 
 // decodeDataURL parses a `data:[<mime>][;base64],<payload>` URL and

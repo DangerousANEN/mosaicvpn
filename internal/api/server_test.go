@@ -132,11 +132,11 @@ func TestCORSAuthenticatedRequestEchoesOrigin(t *testing.T) {
 func TestSubscriptionLifecycle(t *testing.T) {
 	payload := []byte("vless://abc@1.2.3.4:443?security=reality&flow=v#JP\n")
 	encoded := []byte(base64.StdEncoding.EncodeToString(payload))
-	fetcher := func(ctx context.Context, url string) ([]byte, string, error) {
+	fetcher := func(ctx context.Context, url string) (api.FetchResult, error) {
 		if !strings.HasPrefix(url, "https://example") {
-			return nil, "", errors.New("bad url")
+			return api.FetchResult{}, errors.New("bad url")
 		}
-		return encoded, "", nil
+		return api.FetchResult{Body: encoded}, nil
 	}
 	_, c, _ := newTestServer(t, fetcher)
 

@@ -318,6 +318,8 @@ function PoolCard({
           />
         </div>
 
+        <SubscriptionQuota sub={sub} />
+
         {protoMix.bar.length > 0 ? (
           <div className="pool-protos">
             PROTOCOLS
@@ -403,6 +405,94 @@ function Cell({
       </div>
     </div>
   );
+}
+
+/**
+ * SubscriptionQuota renders the `Subscription-Userinfo` panel header
+ * as a compact row under the stats cells: used / total traffic bar
+ * plus an expiry chip. Renders nothing when neither field is set so
+ * subscriptions without a panel reporting this stay clean.
+ *
+ * Tones mirror `subStatus`:
+ *   ok   — default graphite
+ *   warn — yellow: ≥ 80% traffic used OR < 7 days to expiry
+ *   err  — red:    ≥ 100% traffic used OR already expired
+ */
+function SubscriptionQuota({ sub }: { sub: Subscription }): JSX.Element | null {
+  const used = sub.traffic_used ?? 0;
+  const total = sub.traffic_total ?? 0;
+  const expIso = sub.expires_at;
+  if (total === 0 && used === 0 && !expIso) return null;
+
+  const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
+
+  let tone: "ok" | "warn" | "err" = "ok";
+  if (total > 0 && used >= total) tone = "err";
+  else if (total > 0 && pct >= 80) tone = "warn";
+
+  let expChip: string | null = null;
+  if (expIso) {
+    const expMs = new Date(expIso).getTime();
+    if (!Number.isNaN(expMs)) {
+      const now = Date.now();
+      if (expMs <= now) {
+        tone = "err";
+        expChip = "expired";
+      } else {
+        const days = Math.ceil((expMs - now) / 86_400_000);
+        if (days <= 7 && tone === "ok") tone = "warn";
+        if (days <= 30) {
+          expChip = `${days} d left`;
+        } else {
+          expChip = new Date(expIso).toISOString().slice(0, 10);
+        }
+      }
+    }
+  }
+
+  return (
+    <div className={`pool-quota ${tone}`}>
+      {total > 0 ? (
+        <>
+          <div className="pool-quota-label">
+            <span>QUOTA</span>
+            <span className="pool-quota-num">
+              {fmtBytes(used)} / {fmtBytes(total)}
+              <small> · {pct.toFixed(0)}%</small>
+            </span>
+          </div>
+          <div className="pool-quota-bar">
+            <span
+              className="pool-quota-fill"
+              style={{ width: `${pct.toFixed(1)}%` }}
+            />
+          </div>
+        </>
+      ) : used > 0 ? (
+        <div className="pool-quota-label">
+          <span>USED</span>
+          <span className="pool-quota-num">{fmtBytes(used)}</span>
+        </div>
+      ) : null}
+      {expChip ? (
+        <span className="pool-quota-chip">◷ {expChip}</span>
+      ) : null}
+    </div>
+  );
+}
+
+/** fmtBytes formats bytes with 3-significant-digit precision. */
+function fmtBytes(n: number): string {
+  if (n <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+  let i = 0;
+  let v = n;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  const digits = v >= 100 ? 0 : v >= 10 ? 1 : 2;
+  return `${v.toFixed(digits)} ${units[i]}`;
 }
 
 /* ---------- helpers ---------- */

@@ -213,6 +213,77 @@
   color: var(--copper);
 }
 
+.pool-quota {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  font-weight: 600;
+}
+.pool-quota-label {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.pool-quota-num {
+  color: var(--ink);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+.pool-quota-num small {
+  color: var(--ink-mute);
+  font-weight: 500;
+}
+.pool-quota-bar {
+  width: 100%;
+  height: 4px;
+  background: var(--rule);
+  position: relative;
+  order: 2;
+  flex-basis: 100%;
+}
+.pool-quota-fill {
+  display: block;
+  height: 100%;
+  background: var(--ink-mute);
+  transition: width 0.25s ease-out;
+}
+.pool-quota-chip {
+  color: var(--ink-mute);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 2px 8px;
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  order: 1;
+}
+.pool-quota.warn,
+.pool-quota.warn .pool-quota-chip {
+  color: #b8881e;
+  border-color: #b8881e;
+}
+.pool-quota.warn .pool-quota-fill {
+  background: #b8881e;
+}
+.pool-quota.err,
+.pool-quota.err .pool-quota-chip {
+  color: var(--copper);
+  border-color: var(--copper);
+}
+.pool-quota.err .pool-quota-fill {
+  background: var(--copper);
+}
+
 .pool-protos {
   margin-top: 12px;
   display: flex;

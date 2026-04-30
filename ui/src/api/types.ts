@@ -69,6 +69,12 @@ export interface Subscription {
   auto_refresh: boolean;
   refresh_interval_seconds: number;
   server_count: number;
+  /** Subscription-Userinfo (v2board / marzban / 3x-ui): bytes. 0 = not reported. */
+  traffic_used?: number;
+  /** Subscription-Userinfo total bytes. 0 = unlimited / unknown. */
+  traffic_total?: number;
+  /** Subscription-Userinfo expire, ISO-8601. Omitted = no expiry reported. */
+  expires_at?: string;
 }
 
 export interface Match {

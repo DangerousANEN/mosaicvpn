@@ -1009,3 +1009,215 @@ is merged yet — the user reviews and merges in their own time.
   inside `.worldmap-shapes`.
 
 — rc38 agent, signing off.
+
+---
+
+## 13. rc39 → rc44 cycle (agent continuing here)
+
+Shipped as a linear stack of branches, **none merged to main** — user
+keeps merging by tag. Default pattern every rc: branch off the previous
+rc branch, commit, push, open PR, create annotated tag
+`v0.1.0-rcN`, `release.yml` builds the Windows installer and uploads it
+as a release asset, attach the `Mosaic_0.1.0_x64-setup.exe` file to the
+chat.
+
+Current tip when you pick this up:
+- rc43 branch: `devin/1777578693-rc43-mcp-server` (PR #34) → tagged
+  `v0.1.0-rc43`. Contains the actual MCP server + SKILL.
+- rc44 branch: `devin/1777579866-rc44` (NOT yet pushed, work in
+  progress — see §13.7). Branched off rc43.
+
+### 13.1 rc39 — monolithic continent paths, shape-level interaction
+
+PR #30 (taken over by agent). B&W diamond pins, continent = single
+path (no per-country sub-shapes at the continent zoom band),
+shape-level hover/click (the entire country silhouette is the
+hit target, not the label).
+
+### 13.2 rc40 — HUD click-through, myLocation redesign
+
+PR not numbered (tag `v0.1.0-rc40` only). Changes:
+- `.worldmap-sidepanel` root got `pointer-events: none` so HUD no
+  longer eats cursor hovers behind it.
+- Zoom-control button in the country-band toolbar fixes to centre
+  (accounts for `preserveAspectRatio` letterboxing).
+- Compass rose removed from HUD.
+- Legend rewritten for rc39 palette (graphite available / copper
+  active / hatch terra-incognita / pin states).
+- All map hard-coded hex values moved to CSS vars so light theme
+  actually flips them.
+- `vous` chip pinned tight to the dot (no scale drift).
+- Server-band: pixel-merge ignores city/country, purely geometric.
+- **`resolveMyLocation`** (`cmd/mosaicd/main.go`): long-running
+  loop that *only* calls ip-api.com while disconnected, caches
+  30 min, force-refreshes on `Connected → Disconnected` edge,
+  drops the result if Connect happens during lookup. This
+  fixed the regression where `myLocation` was getting overwritten
+  by the egress server's IP on every url-test/connect.
+- **Verify column** in SubscriptionDetail with per-server
+  `last_url_test_ms / status / error`. Persisted on the server
+  record via `store.RecordURLTest`.
+- "Test all (URL)" → "Stop" when clicked again; AbortController
+  cancels in-flight.
+
+### 13.3 rc41 — vous + HUD flicker + Verify dash + live version
+
+PR #32. Fixes:
+- `resolveMyLocation` cascade: ip-api.com → ipapi.co → ipinfo.io,
+  and persists the last-known good result so vous pin appears
+  immediately on next launch.
+- `.sidepanel-card` (not just root) got `pointer-events: none` —
+  hover no longer flickers as cursor moves over the HUD card.
+- Servers that never ran Verify show `—` instead of a ghost
+  "fail" row in the Verify column.
+- `UpdateBanner.tsx`: `CURRENT_VERSION` is now `__APP_VERSION__`
+  from Vite define (wired up via `vite.config.ts`, read from
+  `package.json`). Before this it was hardcoded `"v0.1.0-rc30"`
+  so the banner always said "update available" starting rc31.
+
+### 13.4 rc42 — configurable Verify URL + Anti-DPI prefs
+
+PR #33. New Settings sections:
+- **Verify**: `Prefs.URLTestEndpoint` (default
+  `https://www.gstatic.com/generate_204`, options: GOOGLE,
+  CLOUDFLARE, CUSTOM). Any 2xx/3xx counts as success (was
+  only 200/204 before). Surfaces in `state.URLTestServer`.
+- **Anti-DPI** — four overrides applied when building the
+  sing-box outbound config:
+  - `DPIFingerprint` (auto / chrome / firefox / safari / ios /
+    android / edge / random) — overrides outbound `tls.utls`.
+  - `DPIFragment` (off / 1-3 / 2-5 / 5-10) — TLS ClientHello
+    fragmentation for SNI-based DPI.
+  - `DPIMux` (off / auto / 4 / 8) — mux.cool multiplexing.
+  - `DPIECH` (bool) — Encrypted Client Hello if server has it.
+- Applied to both Connect and Verify probes.
+
+### 13.5 rc43 — **real MCP server + agent SKILL**
+
+PR #34. The critical discovery was that rc-prior `Prefs.MCP*`
+fields existed but no actual server had ever been wired up.
+This rc fixes that.
+
+- **New package `internal/mcp/`** — JSON-RPC 2.0 over HTTP POST
+  on `Prefs.MCPAddr` (default `127.0.0.1:8731`).
+- Shares the api.Server bearer token; rebinds to loopback only.
+- Writes **discovery file** `{DataDir}/mcp.json` containing
+  `url`, `token`, `permission`, `confirm`, `version`, `pid`,
+  `started` — the file the agent SKILL teaches the agent to
+  read.
+- 10 tools with `minPerm` gating:
+  - read: `mosaic_status`, `mosaic_list_subscriptions`,
+    `mosaic_list_servers`, `mosaic_get_prefs`
+  - connect: `mosaic_connect`, `mosaic_disconnect`,
+    `mosaic_url_test`, `mosaic_refresh_subscription`
+  - full: `mosaic_add_subscription`, `mosaic_remove_subscription`
+- `MCPConfirm=true` currently **blocks** destructive tools with a
+  clear error ("disable confirm in Settings"). No SSE-to-renderer
+  confirm flow yet — planned for when multi-egress needs it.
+- `api.Server` exposes `Refresh`, `URLTestServer`,
+  `KickGeoResolve` so MCP reuses the same paths as the HTTP API.
+- `cmd/mosaicd/main.go` wires `mcp.Start(ctx)` after the API
+  listener and defers shutdown.
+- **`.agents/skills/mosaicvpn-mcp/SKILL.md`** — full agent
+  playbook. Discovery, auth, handshake, every tool, typical
+  scenarios, curl+jq example, troubleshooting.
+- Tests in `internal/mcp/server_test.go` cover auth, initialize,
+  tools/list scoping, tools/call, permission denied, discovery
+  file.
+
+### 13.6 rc44 — in progress (what you, next agent, are doing)
+
+**Planned scope** (one PR, not dropped):
+1. **Subscription-Userinfo header** — parse panel traffic/expiry
+   header (`upload/download/total/expire`), show badge in Pool
+   cards. Yellow when close to limit, red when expired/hit.
+2. **Recent-5 picker + Copy URI** — multi-egress needs a server
+   picker that isn't "dropdown of 1000". Sort servers by
+   `last_connected_at`, show top 5; paste-URI input for manual
+   `vless://` / `trojan://` / `ss://` / etc.
+3. **Multi-egress** — Settings-only section. Each egress = name +
+   server_id + port + protocol (socks5/http) + optional LAN-share
+   + optional user/pass. Daemon runs per-egress sing-box
+   inbounds (same pattern as url-test transient, but long-lived).
+   New MCP tools: `egress_list/create/start/stop/delete/update`.
+   Main Connect stays on the card/map as-is.
+4. **New app icon** — atlas-style globe, ink+copper, no
+   background. Update `.ico`, Tauri bundle icons, desktop
+   shortcut.
+
+**Current state (resume here):**
+- Branched off rc43: `devin/1777579866-rc44` (NOT pushed yet).
+- **Subscription-Userinfo backend DONE** and compiles + tests
+  green:
+  - `proto.Subscription` gained `TrafficUsed`, `TrafficTotal`,
+    `ExpiresAt`.
+  - `api.Fetcher` signature changed from
+    `(ctx, url) → ([]byte, string, error)` to
+    `(ctx, url) → (FetchResult, error)` where `FetchResult`
+    carries body + format + userinfo.
+  - `parseSubscriptionUserinfo(header)` in
+    `internal/api/server.go` handles v2board / marzban format.
+  - `server.refresh` populates sub.TrafficUsed/TrafficTotal/
+    ExpiresAt on every fetch that reports the header.
+  - Tests: `internal/api/subscription_userinfo_test.go`.
+- **UI types updated:** `ui/src/api/types.ts` → `Subscription`
+  now has `traffic_used`, `traffic_total`, `expires_at`.
+- **Pool card badge:** injected `<SubscriptionQuota sub={sub}/>`
+  between `pool-stats` and `pool-protos` in `Pool.tsx` — **but
+  the component itself is not yet defined**. That's your next
+  edit.
+- Recent-5 / Copy URI / multi-egress / MCP egress tools / icon
+  are ALL still pending.
+
+**Resume instructions for the next agent picking up mid-rc44:**
+1. `cd /home/ubuntu/mosaicvpn && git checkout devin/1777579866-rc44`.
+2. Add `SubscriptionQuota` component to `ui/src/screens/Pool.tsx`
+   (renders `used / total`, ISO date expiry, yellow/red tones).
+   See `fmtAge` / `subStatus` helpers in the same file for tone
+   conventions. Add CSS to `ui/src/styles/pool.css` under
+   `.pool-quota { ... }`.
+3. Add Recent-5 sort helper in store (`last_connected_at`
+   timestamp on `proto.Server` if not already — check before
+   adding). Wire `Copy URI` button on server rows in
+   `SubscriptionDetail.tsx`; the URI is regenerated from the
+   server record via a new helper `serverToURI(srv)`.
+4. Multi-egress: `Prefs.Egresses []EgressConfig` in
+   `internal/store/store.go`, Egress daemon in a new package
+   `internal/egress/` mirroring `internal/mcp/` pattern
+   (Start/Stop, shared state). Main sing-box ephemeral pattern
+   lives in `internal/state/singbox_urltest.go` — copy that
+   outbound builder but with an **inbound** SOCKS/HTTP instead
+   of the url-test probe. Register MCP tools in
+   `internal/mcp/server.go` (new `minPerm` entries).
+5. Icon: replace `src-tauri/icons/*` (generate all sizes via
+   `cargo tauri icon path/to.png`). Desktop shortcut on NSIS
+   picks up whatever's in `tauri.conf`.
+6. Run `go test ./...` and `cd ui && npm run lint && npm run
+   build`. Push branch, open PR stacked on rc43, tag
+   `v0.1.0-rc44`, wait for `release.yml`, attach installer.
+7. Update HANDOFF.md §13.6 to §13.7 with what actually shipped.
+
+### 13.7 Permanent learnings the next agent should NOT re-discover
+
+- User (`johndoedal2`) expects Russian replies, ships features by
+  testing a Windows installer, and merges PRs by tag-not-branch.
+- Every rc PR is stacked on the previous one. Don't rebase to
+  main — you'll drop the other rc PRs from the stack.
+- `release.yml` is triggered by pushing `v0.1.0-rc*` annotated
+  tags. No manual dispatch needed.
+- `Mosaic_0.1.0_x64-setup.exe` is the file to attach to the user;
+  they don't download `mosaic.exe` separately.
+- `MOSAICVPN_GITHUB_TOKEN` env var is a fine-grained PAT. It
+  **cannot create/update PRs via `git_pr` tool** — create PRs via
+  raw `curl` to `/repos/.../pulls` with the Authorization
+  header; update via `PATCH /repos/.../pulls/N`. Tested, works.
+- `git push` must go through `https://x-access-token:$TOKEN@...`
+  explicitly; the tool wrapper doesn't inject credentials.
+- Pre-commit hooks are not yet set up in this repo; running
+  `pre-commit run --all-files` is a no-op.
+- The Go binary lives at `/usr/local/go/bin/go`, not in PATH by
+  default. Always prefix: `export PATH=$PATH:/usr/local/go/bin`.
+
+— rc44 agent, picking up from rc38. Writing this as I go so if I
+die mid-rc44 the next agent can resume from §13.6 "Resume
+instructions".

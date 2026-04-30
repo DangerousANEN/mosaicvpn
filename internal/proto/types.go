@@ -93,6 +93,12 @@ type Subscription struct {
 	AutoRefresh            bool      `json:"auto_refresh"`
 	RefreshIntervalSeconds int       `json:"refresh_interval_seconds"`
 	ServerCount            int       `json:"server_count"`
+	// Subscription-Userinfo (v2board / marzban / 3x-ui / xui convention):
+	// bytes used/total and ISO-8601 expiry. Zero = unknown / not reported.
+	// Populated from the `Subscription-Userinfo` response header on fetch.
+	TrafficUsed  uint64    `json:"traffic_used,omitempty"`
+	TrafficTotal uint64    `json:"traffic_total,omitempty"`
+	ExpiresAt    time.Time `json:"expires_at,omitempty"`
 }
 
 // Action is the verdict a routing rule produces when it matches a flow.
