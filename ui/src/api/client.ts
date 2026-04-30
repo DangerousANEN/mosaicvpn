@@ -39,6 +39,7 @@ async function request<T>(
   method: string,
   path: string,
   body?: unknown,
+  signal?: AbortSignal,
 ): Promise<T> {
   const ep = await resolveEndpoint();
   const res = await fetch(baseURL(ep) + path, {
@@ -48,6 +49,7 @@ async function request<T>(
       authorization: `Bearer ${ep.token}`,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
   });
   if (!res.ok) {
     let msg = `${method} ${path} → ${res.status}`;
@@ -79,10 +81,14 @@ export const api = {
   // server and fetches a 204 endpoint through it — this proves the
   // proxy actually delivers internet, unlike the TCP probe that only
   // confirms the remote port answers. Returns rtt_ms / status / error.
-  urlTestServer: (id: string) =>
+  // rc40: optional AbortSignal so a "Test all (URL)" loop can cancel
+  // the in-flight probe instead of waiting the full ~12 s timeout.
+  urlTestServer: (id: string, signal?: AbortSignal) =>
     request<{ rtt_ms: number; status: number; error?: string }>(
       "POST",
       `/v1/servers/${id}/url-test`,
+      undefined,
+      signal,
     ),
   testAllServers: async (subscriptionId?: string) =>
     arr(

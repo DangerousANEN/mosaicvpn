@@ -49,6 +49,14 @@ type Server struct {
 	LastTestMS    int            `json:"last_test_ms,omitempty"`
 	LastTestError string         `json:"last_test_error,omitempty"`
 	LastTestAt    time.Time      `json:"last_test_at,omitempty"`
+	// LastURLTestMS / Status / Error / At persist the last result of
+	// a Verify (URL test) probe through this server.  Surfaced in the
+	// SubscriptionDetail Verify column so the user can see what the
+	// last gstatic-204 fetch actually returned without re-running it.
+	LastURLTestMS     int       `json:"last_url_test_ms,omitempty"`
+	LastURLTestStatus int       `json:"last_url_test_status,omitempty"`
+	LastURLTestError  string    `json:"last_url_test_error,omitempty"`
+	LastURLTestAt     time.Time `json:"last_url_test_at,omitempty"`
 	// Lat/Lon are decimal degrees (WGS84). Populated from a GeoIP
 	// lookup against Address; zero means "not resolved yet".
 	Lat float64 `json:"lat,omitempty"`

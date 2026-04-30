@@ -439,28 +439,35 @@
 .worldmap-pin.you {
   pointer-events: none;
 }
-/* rc39 — pin is a pure diamond, no stem, no badge, no latency
- * stroke.  State carries colour:
- *   idle  cream-fill  + black outline
- *   hov   black-fill  + cream outline (inversion)
- *   cur   copper-fill + black outline (matches the vous→active arc)
+/* rc39 → rc40 — pin is a pure diamond, no stem, no badge, no
+ * latency stroke.  State carries colour, all via theme tokens
+ * so light + dark themes both stay legible:
+ *
+ *   idle  fill = --ink   (always contrasts page bg)
+ *         stroke = --paper (subtle)
+ *   hov   inverse — fill = --paper, stroke = --ink
+ *   cur   fill = --copper, stroke = --ink
+ *
+ * In light theme --ink ≈ #1f1c18 (near-black) and --paper ≈
+ * cream, so pins read as black diamonds on a cream map.
+ * In dark theme they invert: cream pins on a brown-ink map.
  */
 .worldmap-pin .pin-diamond {
   fill: var(--ink);
-  stroke: #1a1612;
-  stroke-width: 0.7;
+  stroke: var(--paper);
+  stroke-width: 0.8;
   vector-effect: non-scaling-stroke;
   transition: fill 0.12s, stroke 0.12s, stroke-width 0.12s;
 }
 .worldmap-pin.hov .pin-diamond,
 .worldmap-pin.open .pin-diamond {
-  fill: #1a1612;
+  fill: var(--paper);
   stroke: var(--ink);
-  stroke-width: 1.0;
+  stroke-width: 1.1;
 }
 .worldmap-pin.cur .pin-diamond {
   fill: var(--copper);
-  stroke: #1a1612;
+  stroke: var(--ink);
   stroke-width: 1.2;
 }
 
@@ -616,11 +623,18 @@
    italic badge attached to the dot with a 1 px ink outline; the
    dark-fill look gave way to a semi-transparent paper chip so
    pins beneath it stay readable. */
+/* rc40 — vous chip
+ *   – background uses --paper (cream in light, dark-brown in dark)
+ *     so the chip flips with the theme instead of staying cream.
+ *   – text uses --ink so it always inverts.
+ *   – translate(-50%, 0) keeps it horizontally centred on the dot
+ *     and the JS-side `translate(…, 12px)` provides the vertical
+ *     offset; we no longer add another 10 px here on top. */
 .worldmap-you-label {
   position: absolute;
   z-index: 5;
-  transform: translate(-50%, 10px);
-  background: rgba(246, 238, 222, 0.88);
+  transform: translate(-50%, 0);
+  background: var(--paper);
   color: var(--ink);
   border: 1px solid var(--ink);
   padding: 0 5px 1px;
@@ -1017,26 +1031,8 @@
   box-shadow: 0 0 0 3px var(--paper);
   pointer-events: none;
 }
-.hud-compass {
-  position: absolute;
-  top: 10px;
-  right: 12px;
-  pointer-events: none;
-}
-.hud-compass .rose-ring { fill: var(--paper); stroke: var(--ink); stroke-width: 1.2; }
-.hud-compass .rose-ring.inner { stroke: var(--ink); stroke-width: 0.5; opacity: 0.6; }
-.hud-compass .rose-ray { stroke: var(--ink); stroke-width: 0.7; opacity: 0.6; }
-.hud-compass .rose-ray.cardinal { stroke: var(--copper); stroke-width: 1.0; opacity: 1; }
-.hud-compass .rose-needle.north { fill: var(--copper); stroke: var(--copper); }
-.hud-compass .rose-needle.south { fill: var(--ink); opacity: 0.55; }
-.hud-compass .rose-label {
-  font-family: "Atlas Serif", Georgia, serif;
-  font-size: 8px;
-  font-weight: 700;
-  fill: var(--ink);
-  letter-spacing: 0.1em;
-}
-.hud-compass .rose-label.mute { fill: var(--ink-mute); }
+/* rc40 — `.hud-compass` rules retired with the CompassRose component
+ * (the side panel now owns the top-right corner). */
 
 .hud-legend {
   position: absolute;
@@ -1080,24 +1076,40 @@
   flex: 0 0 14px;
   position: relative;
 }
-.hud-legend .lg-hex {
+/* rc40 — graphite tile legend swatch.  Mirrors
+ * `.worldmap-shape.has-servers` palette (graphite fill at ~22%). */
+.hud-legend .lg-tile-avail {
+  background: rgba(106, 106, 110, 0.55);
+  border: 1px solid rgba(138, 138, 144, 0.85);
+}
+.hud-legend .lg-tile-active {
+  background: rgba(192, 129, 68, 0.55);
+  border: 1px solid var(--copper);
+}
+/* Hatched terra-incognita swatch. */
+.hud-legend .lg-tile-empty {
   background:
-    linear-gradient(0deg, var(--copper), var(--copper)) 50% 50% / 12px 7px no-repeat,
+    repeating-linear-gradient(
+      45deg,
+      transparent 0,
+      transparent 2px,
+      var(--ink-mute) 2px,
+      var(--ink-mute) 3px
+    ),
     var(--paper);
-  border: 1px solid var(--ink);
-  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
-  background: rgba(178,90,40,0.25);
+  border: 1px solid var(--ink-mute);
+  opacity: 0.85;
 }
 .hud-legend .lg-diamond {
-  background: var(--paper);
-  border: 1px solid var(--ink);
+  background: var(--ink);
+  border: 1px solid var(--copper);
   width: 8px; height: 8px;
   margin: 3px;
   transform: rotate(45deg);
 }
 .hud-legend .lg-diamond.cur {
   background: var(--copper);
-  border-color: var(--copper);
+  border-color: var(--ink);
 }
 .hud-legend .lg-arc {
   border-top: 1.4px solid var(--copper);
@@ -1876,7 +1888,10 @@
   width: 296px;
   max-height: calc(100% - 90px - 60px);
   z-index: 11;
-  pointer-events: auto;
+  /* rc40 — root is non-interactive so map hover/click passes
+   * through the empty regions of the panel; the card / buttons
+   * below opt back in via pointer-events: auto. */
+  pointer-events: none;
   display: flex;
   flex-direction: column;
 }
@@ -1895,6 +1910,10 @@
   gap: 6px;
   max-height: 100%;
   overflow: hidden;
+  /* The card itself has a real background, so it must catch
+   * clicks (otherwise the pop-go / pop-zoom buttons inside
+   * would inherit the root's none and stop working). */
+  pointer-events: auto;
 }
 
 .worldmap-sidepanel .sidepanel-head {

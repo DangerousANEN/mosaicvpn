@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { api } from "../api/client";
 import type { Subscription } from "../api/types";
 import { useLiveServers } from "../hooks/useLiveServers";
@@ -118,24 +118,58 @@ export function SubscriptionDetail({
     }
   };
 
+  // rc40 — Test all (URL) is cancellable.  Clicking the button
+  // again while it is running flips `cancelRef` to true; the
+  // worker loop notices on the next iteration and returns early,
+  // and the in-flight HTTP request gets aborted via the
+  // controller below so we don't wait an extra ~12 s for the
+  // current sing-box probe to finish before stopping.
+  const cancelRef = useRef(false);
+  const inflightCtl = useRef<AbortController | null>(null);
+
+  const onTestAllURLStop = () => {
+    cancelRef.current = true;
+    inflightCtl.current?.abort();
+  };
+
   const onTestAllURL = async () => {
     if (own.length === 0) return;
+    cancelRef.current = false;
     setBusy("url-all:0");
     setErr(null);
     let ok = 0;
     let bad = 0;
+    let stopped = false;
     for (let i = 0; i < own.length; i++) {
+      if (cancelRef.current) {
+        stopped = true;
+        break;
+      }
       setBusy(`url-all:${i + 1}`);
+      const ctl = new AbortController();
+      inflightCtl.current = ctl;
       try {
-        const r = await api.urlTestServer(own[i].id);
+        const r = await api.urlTestServer(own[i].id, ctl.signal);
         if (r.error) bad++;
         else ok++;
-      } catch {
+      } catch (e) {
+        // AbortError counts as cancelled; everything else as a
+        // failure of this individual server.
+        if ((e as Error).name === "AbortError") {
+          stopped = true;
+          break;
+        }
         bad++;
+      } finally {
+        inflightCtl.current = null;
       }
     }
     setBusy(null);
-    setErr(`Verify all: ${ok} ok, ${bad} failed (of ${own.length})`);
+    setErr(
+      stopped
+        ? `Verify all: stopped after ${ok + bad} of ${own.length} (${ok} ok, ${bad} failed)`
+        : `Verify all: ${ok} ok, ${bad} failed (of ${own.length})`,
+    );
     await reload();
   };
 
@@ -186,16 +220,27 @@ export function SubscriptionDetail({
           >
             {busy === "test-all" ? "Testing…" : "Test all (TCP)"}
           </button>
-          <button
-            className="btn ghost"
-            onClick={onTestAllURL}
-            disabled={busy !== null || own.length === 0}
-            title="Spin up sing-box for each station and fetch generate_204 (slow — ~3-5 s per server, serialised)"
-          >
-            {busy?.startsWith("url-all:")
-              ? `Verifying ${busy.slice("url-all:".length)} / ${own.length}…`
-              : "Test all (URL)"}
-          </button>
+          {/* rc40 — Test all (URL) becomes a Stop button while it
+              is running so the user can interrupt without waiting
+              for the remaining ~12 s × N timeout. */}
+          {busy?.startsWith("url-all:") ? (
+            <button
+              className="btn ghost"
+              onClick={onTestAllURLStop}
+              title="Stop the running Verify-all loop"
+            >
+              Stop ({busy.slice("url-all:".length)} / {own.length})
+            </button>
+          ) : (
+            <button
+              className="btn ghost"
+              onClick={onTestAllURL}
+              disabled={busy !== null || own.length === 0}
+              title="Spin up sing-box for each station and fetch generate_204 (slow — ~3-5 s per server, serialised). Click again to stop."
+            >
+              Test all (URL)
+            </button>
+          )}
         </div>
       </header>
 
@@ -213,6 +258,7 @@ export function SubscriptionDetail({
             <th className="num">Port</th>
             <th className="num">RTT</th>
             <th>Trend</th>
+            <th className="num">Verify</th>
             <th>Note</th>
             <th>Actions</th>
           </tr>
@@ -220,7 +266,7 @@ export function SubscriptionDetail({
         <tbody>
           {own.length === 0 ? (
             <tr>
-              <td colSpan={10} className="empty italic-mute">
+              <td colSpan={11} className="empty italic-mute">
                 — no servers yet, refresh the subscription —
               </td>
             </tr>
@@ -233,6 +279,30 @@ export function SubscriptionDetail({
             const fav = favs.has(s.id);
             const series = getLatencySeries(s.id);
             void seriesTick; // re-render trigger
+            // rc40 — Verify column.  Cell text is one of:
+            //   ✓ <ms>     last URL test succeeded with HTTP 204
+            //   <status>   last URL test got an unexpected status
+            //   fail       last URL test errored (hover for detail)
+            //   —          never run
+            const urlMs = s.last_url_test_ms ?? 0;
+            const urlStatus = s.last_url_test_status ?? 0;
+            const urlErr = s.last_url_test_error;
+            let verifyCell: JSX.Element;
+            let verifyTitle: string | undefined;
+            if (urlErr) {
+              verifyCell = <span className="verify-cell verify-fail">fail</span>;
+              verifyTitle = urlErr;
+            } else if (urlStatus === 204 || urlStatus === 200) {
+              verifyCell = (
+                <span className="verify-cell verify-ok">{`✓ ${urlMs}ms`}</span>
+              );
+            } else if (urlStatus > 0) {
+              verifyCell = (
+                <span className="verify-cell verify-warn">{urlStatus}</span>
+              );
+            } else {
+              verifyCell = <span className="italic-mute">—</span>;
+            }
             return (
               <tr key={s.id} className={isActive ? "cur" : ""}>
                 <td className="num">
@@ -269,6 +339,9 @@ export function SubscriptionDetail({
                       —
                     </span>
                   )}
+                </td>
+                <td className="num mono" title={verifyTitle}>
+                  {verifyCell}
                 </td>
                 <td>
                   <input

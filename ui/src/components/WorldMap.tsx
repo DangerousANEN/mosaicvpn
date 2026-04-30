@@ -241,7 +241,20 @@ export function WorldMap({
     if (seed) setOpenSeedId(seed);
   };
 
-  /** Zoom to fit a cluster's shape with a little breathing room. */
+  /** Zoom to fit a cluster's shape with a little breathing room.
+   *
+   * The SVG layers render with `preserveAspectRatio="xMidYMid meet"`,
+   * which letterboxes the viewBox inside the stage when their
+   * aspect ratios differ.  At base scale (1.0) the cluster's
+   * stage-pixel position is therefore
+   *
+   *     padL + (vbX - MAP_VB.x) * vbToPx
+   *     padT + (vbY - MAP_VB.y) * vbToPx
+   *
+   * not `cx * stageSize.{w,h}`.  The previous formula skipped the
+   * letterbox padding, so the camera under-shot the cluster
+   * vertically when the stage was taller than the viewBox aspect
+   * (the common case at country band — tall installer window). */
   const drillToCluster = (c: Cluster) => {
     const wrapper = transformRef.current;
     if (!wrapper) return;
@@ -255,10 +268,18 @@ export function WorldMap({
     const fitScale = 0.85 / Math.max(fracW, fracH, 0.0001);
     const stepMin = scale * 1.4;
     const targetScale = Math.min(MAX_SCALE, Math.max(stepMin, fitScale));
-    const cx = (c.vbX - MAP_VB.x) / MAP_VB.w;
-    const cy = (c.vbY - MAP_VB.y) / MAP_VB.h;
-    const tx = stageSize.w / 2 - cx * stageSize.w * targetScale;
-    const ty = stageSize.h / 2 - cy * stageSize.h * targetScale;
+    // preserveAspectRatio: xMidYMid meet — the viewBox is scaled
+    // uniformly to fit inside the stage, then centered.
+    const vbToPx = Math.min(
+      stageSize.w / MAP_VB.w,
+      stageSize.h / MAP_VB.h,
+    );
+    const padL = (stageSize.w - MAP_VB.w * vbToPx) / 2;
+    const padT = (stageSize.h - MAP_VB.h * vbToPx) / 2;
+    const px = padL + (c.vbX - MAP_VB.x) * vbToPx;
+    const py = padT + (c.vbY - MAP_VB.y) * vbToPx;
+    const tx = stageSize.w / 2 - px * targetScale;
+    const ty = stageSize.h / 2 - py * targetScale;
     wrapper.setTransform(tx, ty, targetScale, 700, "easeOutCubic");
   };
 
@@ -611,7 +632,16 @@ export function WorldMap({
                 style={{
                   left: `${((YOU.x - MAP_VB.x) / MAP_VB.w) * 100}%`,
                   top: `${((YOU.y - MAP_VB.y) / MAP_VB.h) * 100}%`,
-                  transform: `translate(-50%, 12px) scale(${pinScale})`,
+                  /* rc40: chip sits flush below the dot regardless
+                   * of camera zoom.  The label stays at fixed
+                   * pixel size (no scale-with-zoom) — readability
+                   * matters more than cartographic faithfulness for
+                   * a UI label — and the offset is purely vertical,
+                   * 4 px below the geographic anchor.  The previous
+                   * `scale(pinScale)` formula stretched the chip
+                   * vertically and caused it to drift away from
+                   * the dot at high zoom. */
+                  transform: "translate(-50%, 4px)",
                   transformOrigin: "center top",
                 }}
                 onClick={(e) => {

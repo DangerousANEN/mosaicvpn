@@ -598,6 +598,13 @@ func (s *Server) handleURLTestServer(w http.ResponseWriter, r *http.Request) {
 	}
 	dataDir := paths.DataDir()
 	res := state.URLTestServer(r.Context(), state.LocateSingBox(), dataDir, srv, 12*time.Second)
+	// Persist the result so the SubscriptionDetail Verify column
+	// can surface the last-known state without re-running.  Best-
+	// effort: a write failure here only affects display; the live
+	// response below still carries the verdict.
+	if err := s.store.RecordURLTest(id, res.RTTMS, res.Status, res.Error); err != nil {
+		logx.Warn("RecordURLTest failed", "server", id, "err", err.Error())
+	}
 	writeJSON(w, http.StatusOK, res)
 }
 

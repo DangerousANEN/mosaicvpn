@@ -331,6 +331,28 @@ func (s *Store) RecordServerProbe(id string, ms int, errMsg string) error {
 	})
 }
 
+// RecordURLTest stores the result of a Verify (URL test) probe — a
+// gstatic-204 fetch through an ephemeral sing-box bound to this
+// server's outbound.  ms is the round-trip time in milliseconds
+// (positive on success, kept on partial failure with errMsg set);
+// status is the HTTP status returned by gstatic; errMsg is non-empty
+// on any failure.  Surfaced in the SubscriptionDetail Verify column
+// so the user can inspect last-known proxy health without re-running.
+func (s *Store) RecordURLTest(id string, ms, status int, errMsg string) error {
+	return s.Update(func(st *State) error {
+		for i := range st.Servers {
+			if st.Servers[i].ID == id {
+				st.Servers[i].LastURLTestMS = ms
+				st.Servers[i].LastURLTestStatus = status
+				st.Servers[i].LastURLTestError = errMsg
+				st.Servers[i].LastURLTestAt = time.Now().UTC()
+				return nil
+			}
+		}
+		return fmt.Errorf("server %q not found", id)
+	})
+}
+
 // RecordServerGeo updates the geographic metadata of a server. Call
 // with city/country/lat/lon resolved by an external GeoIP lookup; an
 // empty string or zero value leaves the field unchanged so partial

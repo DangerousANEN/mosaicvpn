@@ -571,6 +571,32 @@
   padding: 24px 8px;
 }
 
+/* rc40 — Verify column cells.
+ *   verify-ok   green-ink success (gstatic 204)
+ *   verify-warn amber for unexpected status (3xx/4xx via proxy)
+ *   verify-fail copper for connection error (proxy down / EOF)
+ */
+.verify-cell {
+  display: inline-block;
+  padding: 0 3px;
+  font-size: 11px;
+}
+.verify-cell.verify-ok {
+  color: #5b7d4f;
+}
+.verify-cell.verify-warn {
+  color: #b58a2c;
+}
+.verify-cell.verify-fail {
+  color: var(--copper);
+}
+[data-theme="dark"] .verify-cell.verify-ok {
+  color: #8eb27d;
+}
+[data-theme="dark"] .verify-cell.verify-warn {
+  color: #d8b66a;
+}
+
 /*
  * In-app modal — used by Pool 's subscription Edit flow (rc26).
  * Replaces window.prompt() pair which clashed with the rest of the

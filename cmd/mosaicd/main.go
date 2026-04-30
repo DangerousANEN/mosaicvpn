@@ -175,34 +175,67 @@ func run(dataDirOverride string) error {
 	return nil
 }
 
-// resolveMyLocation does a one-shot ip-api.com lookup for the user's
-// public-IP geolocation. Result is published to the manager so every
-// subsequent /v1/status snapshot carries Status.MyLocation. We do not
-// persist this — re-resolved on every daemon start so a user moving
-// laptops between countries doesn't end up with a stale "vous" pin.
+// resolveMyLocation queries ip-api.com for the user's real public-IP
+// geolocation and publishes the result to the manager so every
+// subsequent /v1/status snapshot carries Status.MyLocation.
+//
+// The lookup MUST run while the VPN is disconnected — running it
+// over an active tunnel would resolve the egress server's IP
+// instead of the user's home location and the "vous" pin would
+// snap to whatever country the user is currently tunneling
+// through.  rc40: this is a long-running loop that
+//   1. waits for the manager to be in a non-Connected state,
+//   2. queries ip-api,
+//   3. on success, republishes only if state is still non-Connected,
+//   4. re-runs after every Connected → Disconnected transition so
+//      a user roaming between Wi-Fi networks gets refreshed.
 //
 // Failure modes (no internet, ip-api rate limit, DNS hijack returning
-// a 200 with junk body, captive portal) are silently ignored; the
-// renderer already has a default-fallback path.
+// a 200 with junk body, captive portal) are logged at WARN and
+// retried; the renderer keeps its fallback default in the meantime.
 func resolveMyLocation(mgr *state.Manager) {
-	// Generous overall budget but a tight per-attempt timeout so a
-	// flaky resolver can't block the daemon's startup banner for
-	// the full window. Three attempts spaced ~5 s apart cover the
-	// "wifi just connected, DHCP still settling" boot case.
-	for attempt := 0; attempt < 3; attempt++ {
-		if attempt > 0 {
-			time.Sleep(5 * time.Second)
+	const minRetryGap = 5 * time.Second
+	const refreshGap = 30 * time.Minute
+
+	wasConnected := false
+	lastResolved := time.Time{}
+
+	for {
+		st := mgr.Status()
+		connected := st.State == proto.StateConnected
+
+		// Edge: connected → disconnected.  Force a refresh on the
+		// next tick so a user that disconnects from one country and
+		// reconnects from another sees their pin update.
+		if !connected && wasConnected {
+			lastResolved = time.Time{}
 		}
+		wasConnected = connected
+
+		if connected {
+			time.Sleep(minRetryGap)
+			continue
+		}
+
+		// Skip if we already have a recent resolution.
+		if !lastResolved.IsZero() && time.Since(lastResolved) < refreshGap {
+			time.Sleep(minRetryGap)
+			continue
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 			"http://ip-api.com/json/?fields=status,country,city,lat,lon,query", nil)
 		if err != nil {
 			cancel()
+			time.Sleep(minRetryGap)
 			continue
 		}
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			cancel()
+			logx.Warn("ip-api lookup failed", "err", err.Error())
+			time.Sleep(minRetryGap)
 			continue
 		}
 		var body struct {
@@ -218,6 +251,17 @@ func resolveMyLocation(mgr *state.Manager) {
 		_ = resp.Body.Close()
 		cancel()
 		if decErr != nil || body.Status != "success" {
+			logx.Warn("ip-api decode failed", "err", decErr, "status", body.Status)
+			time.Sleep(minRetryGap)
+			continue
+		}
+
+		// Re-check the connected state right before publishing — a
+		// Connect that landed during the HTTP round-trip means our
+		// resolved IP is the egress, not the user.  Drop the result.
+		if mgr.Status().State == proto.StateConnected {
+			logx.Warn("ip-api result discarded — connect happened mid-lookup, would mistake egress for home")
+			time.Sleep(minRetryGap)
 			continue
 		}
 		mgr.SetMyLocation(&proto.GeoLocation{
@@ -227,10 +271,10 @@ func resolveMyLocation(mgr *state.Manager) {
 			Country: body.Country,
 			IP:      body.Query,
 		})
+		lastResolved = time.Now()
 		logx.Info("resolved user location",
 			"city", body.City, "country", body.Country,
-			"lat", body.Lat, "lon", body.Lon)
-		return
+			"lat", body.Lat, "lon", body.Lon, "ip", body.Query)
+		time.Sleep(refreshGap / 2)
 	}
-	logx.Warn("failed to resolve user IP location; vous pin will use fallback")
 }

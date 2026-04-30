@@ -181,36 +181,66 @@ function clusterByCountry(
 }
 
 /**
- * Server-band clustering: pixel-grid merge so two ServerGroups
- * whose pin centroids project within the same on-screen cell get
- * collapsed into one cluster.  Without this, a city with five
- * VLESS hosts at slightly different lat/lon shows five
- * overlapping diamonds; with it, the user sees one diamond and a
- * popover that lists all five.
+ * Server-band clustering: greedy proximity merge so any two
+ * ServerGroups whose pin centroids project within the same on-
+ * screen "diamond footprint" are collapsed into one cluster —
+ * regardless of city / country boundary.
  *
- * Cell size is in viewBox units, scaled inversely with the camera
- * scale: at high zoom the cell shrinks so individual diamonds
- * separate; at lower zoom the cell grows so dense metros merge.
+ * rc40: the previous pixel-bucket grid (cellVB = 14/scale) had
+ * two failure modes that produced visible overlap:
+ *   1. Two pins straddling a bucket boundary (e.g. cx=4 vs cx=5)
+ *      were never merged even when only ~1 vb apart.
+ *   2. Two pins in different cities that happened to project to
+ *      nearby pixels (e.g. small islands, dense metros across
+ *      city limits) were not merged because the strategy was
+ *      keyed on city.  The new merge is geometric only: any two
+ *      pins within `mergeRadius` vb units fold into one cluster
+ *      whose label keeps the seed city if uniform, else lists
+ *      "<city> + N more".
+ *
+ * mergeRadius matches the rendered diamond width at this zoom so
+ * adjacent diamonds always touch but never overlap.
  */
 function clusterByServer(
   resolved: ResolvedGroup[],
   ctx: ClusterContext,
 ): Cluster[] {
-  // 14 vb units \u2248 ~12 px on a 1280 px stage at scale=1.  Divide
-  // by ctx.scale so the cell shrinks proportionally as the user
-  // zooms in (5\u00d7 zoom \u2192 ~2.4 px cell, individual diamonds).
-  const cellVB = 14 / Math.max(ctx.scale, 0.5);
-  const buckets = new Map<string, ResolvedGroup[]>();
-  for (const rg of resolved) {
-    const cx = Math.round(rg.vbX / cellVB);
-    const cy = Math.round(rg.vbY / cellVB);
-    const key = `${cx},${cy}`;
-    const arr = buckets.get(key);
-    if (arr) arr.push(rg);
-    else buckets.set(key, [rg]);
+  // Diamond half-width is ~7 vb at native; band.pinScale at the
+  // server band is 1.1, divided by camera scale.  We merge any
+  // two pins whose centroids are within ~1.7× that radius so
+  // diamonds never visually overlap.
+  const band = resolveBand(ctx.scale);
+  const halfDiamondVB = (7 * band.pinScale) / Math.max(ctx.scale, 0.5);
+  const mergeRadius = halfDiamondVB * 2.0;
+  const r2 = mergeRadius * mergeRadius;
+
+  // Greedy merge: walk the resolved list, for each unconsumed pin
+  // pull every other pin within `mergeRadius` into a new bucket
+  // and mark them consumed.  O(n^2) on the worst case but n is
+  // already capped to whatever fits the band (typical ~few hundred).
+  const consumed = new Array<boolean>(resolved.length).fill(false);
+  const buckets: ResolvedGroup[][] = [];
+  for (let i = 0; i < resolved.length; i++) {
+    if (consumed[i]) continue;
+    const seed = resolved[i];
+    const bucket: ResolvedGroup[] = [seed];
+    consumed[i] = true;
+    for (let j = i + 1; j < resolved.length; j++) {
+      if (consumed[j]) continue;
+      const o = resolved[j];
+      const dx = o.vbX - seed.vbX;
+      const dy = o.vbY - seed.vbY;
+      if (dx * dx + dy * dy <= r2) {
+        bucket.push(o);
+        consumed[j] = true;
+      }
+    }
+    buckets.push(bucket);
   }
+
   const out: Cluster[] = [];
-  for (const [cellKey, members] of buckets) {
+  for (let bi = 0; bi < buckets.length; bi++) {
+    const members = buckets[bi];
     const bbox = emptyBBox();
     let sumX = 0;
     let sumY = 0;
@@ -221,22 +251,29 @@ function clusterByServer(
     }
     const vbX = sumX / members.length;
     const vbY = sumY / members.length;
-    // Stable label: city/country of the first member.  The
-    // popover lists every host inside the cluster.
+
+    // Label: prefer city of the seed; if all members share a
+    // city, just use that; if mixed, fall back to a "metro" label
+    // so the user understands they got merged across boundaries.
     const seed = members[0];
+    const cities = new Set<string>();
+    for (const m of members) {
+      const c = m.city || m.country || "";
+      if (c) cities.add(c);
+    }
+    const uniformCity = cities.size === 1 ? Array.from(cities)[0] : null;
     const label =
       members.length === 1
         ? seed.city || seed.country || seed.group.primary.name || "station"
-        : seed.city
-          ? `${seed.city} \u00b7 ${members.length} groups`
-          : seed.country
-            ? `${seed.country} \u00b7 ${members.length} groups`
-            : `${members.length} groups`;
-    // Cluster id is keyed on the cell so React can keep state
-    // across panning, but seed-server identity is what the
-    // WorldMap tracks for popover survival.
+        : uniformCity
+          ? `${uniformCity} \u00b7 ${members.length} groups`
+          : `${members.length} nearby groups`;
+
+    // Cluster id is keyed on the seed group so React can keep
+    // state across small pan jitters.  Seed identity is what the
+    // WorldMap tracks for popover survival anyway.
     out.push({
-      id: `region:server:${cellKey}`,
+      id: `region:server:${seed.group.key}-${bi}`,
       vbX,
       vbY,
       bbox,

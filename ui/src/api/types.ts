@@ -43,6 +43,14 @@ export interface Server {
   last_test_ms?: number;
   last_test_error?: string;
   last_test_at?: string;
+  /** rc40 — last result of a Verify (URL test) probe.  Persisted
+   *  by the daemon so the SubscriptionDetail Verify column can
+   *  display the most recent gstatic-204 outcome without re-
+   *  running the test. */
+  last_url_test_ms?: number;
+  last_url_test_status?: number;
+  last_url_test_error?: string;
+  last_url_test_at?: string;
   lat?: number;
   lon?: number;
   /** IP that `address` resolved to during the most recent probe.

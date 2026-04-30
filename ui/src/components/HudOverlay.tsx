@@ -3,12 +3,16 @@
  * TransformWrapper, so they never zoom or pan with the camera.
  *
  *   ┌─────────────────────────────────────────────┐
- *   │ Plate label                       Compass   │
+ *   │ Plate label                                 │
  *   │                                             │
  *   │                                             │
  *   │                                             │
  *   │ Legend                Scale-bar │ Zoom lvl  │
  *   └─────────────────────────────────────────────┘
+ *
+ * rc40 — the compass rose was retired; the side panel already
+ * occupies the top-right corner and a static north-up rose was
+ * decoration that fought it for space.
  *
  * Every block is absolutely positioned against the worldmap-stage
  * (the same parent that hosts TransformWrapper), with a high
@@ -65,9 +69,6 @@ export function HudOverlay({
           masthead area stays clean. */}
       <div className="hud-plate mono">{plateLabel}</div>
 
-      {/* Top-right: compass rose. */}
-      <CompassRose />
-
       {/* Bottom-left: legend (collapsible). */}
       <Legend />
 
@@ -117,68 +118,38 @@ export function HudOverlay({
   );
 }
 
-/** Minimal eight-pointed mariner's rose, pure SVG, no deps.  The
- *  compass always points north-up because the world map is
- *  equirectangular and never rotates. */
-function CompassRose(): JSX.Element {
-  return (
-    <svg
-      className="hud-compass"
-      viewBox="-50 -50 100 100"
-      width={68}
-      height={68}
-      aria-hidden="true"
-    >
-      <circle r={46} className="rose-ring" />
-      <circle r={40} className="rose-ring inner" />
-      {/* Eight rays — long N/S/E/W, short NE/NW/SE/SW. */}
-      {Array.from({ length: 8 }).map((_, i) => {
-        const a = (i * Math.PI) / 4;
-        const r1 = 6;
-        const r2 = i % 2 === 0 ? 38 : 22;
-        return (
-          <line
-            key={i}
-            x1={Math.cos(a) * r1}
-            y1={Math.sin(a) * r1}
-            x2={Math.cos(a) * r2}
-            y2={Math.sin(a) * r2}
-            className={i % 2 === 0 ? "rose-ray cardinal" : "rose-ray"}
-          />
-        );
-      })}
-      {/* Triangle pointer for north. */}
-      <path className="rose-needle north" d="M -3 -8 L 0 -42 L 3 -8 Z" />
-      <path className="rose-needle south" d="M -3 8 L 0 42 L 3 8 Z" />
-      <text x={0} y={-44} textAnchor="middle" className="rose-label">
-        N
-      </text>
-      <text x={0} y={49} textAnchor="middle" className="rose-label mute">
-        S
-      </text>
-    </svg>
-  );
-}
-
-/** Atlas legend cartouche — explains the map glyphs.  Static
- *  content for now; if we add subscription colours / protocol
- *  shapes later, this becomes data-driven. */
+/** Atlas legend cartouche — explains the rc39 map glyphs.
+ *
+ *   – graphite tile = country/continent that hosts servers
+ *   – copper tile   = currently routed-through country
+ *   – hatched tile  = terra incognita (no servers in catalog)
+ *   – cream diamond = station pin (idle)
+ *   – copper diamond = active station pin
+ *   – arc           = bearing line vous → active
+ *   – vous chip     = you are here
+ */
 function Legend(): JSX.Element {
   return (
     <div className="hud-legend">
       <div className="hud-legend-title mono">Legenda</div>
       <ul className="hud-legend-list mono">
         <li>
-          <span className="lg-glyph lg-hex" /> hex · stations grouped by area
+          <span className="lg-glyph lg-tile-avail" /> region · has servers
+        </li>
+        <li>
+          <span className="lg-glyph lg-tile-active" /> region · active route
+        </li>
+        <li>
+          <span className="lg-glyph lg-tile-empty" /> terra · no servers
         </li>
         <li>
           <span className="lg-glyph lg-diamond" /> station · single host
         </li>
         <li>
-          <span className="lg-glyph lg-diamond cur" /> active route
+          <span className="lg-glyph lg-diamond cur" /> station · active
         </li>
         <li>
-          <span className="lg-glyph lg-arc" /> bearing to current
+          <span className="lg-glyph lg-arc" /> bearing vous → active
         </li>
         <li>
           <span className="lg-glyph lg-vous" /> vous · you are here

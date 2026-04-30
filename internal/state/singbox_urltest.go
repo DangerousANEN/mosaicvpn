@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -92,12 +93,16 @@ func URLTestServer(ctx context.Context, binary, dataDir string, server proto.Ser
 	cmd.Dir = dataDir
 	logPath := filepath.Join(dataDir, fmt.Sprintf("singbox-urltest-%d.log", socksPort))
 	logFile, _ := os.Create(logPath)
+	// rc40 — keep the log file around so callers can diagnose
+	// "unexpected EOF" without spawning a new sing-box.  We close
+	// the handle (so writes flush) but do not delete the file.
+	// Each url-test reuses a unique port-keyed name, so old logs
+	// won't accumulate beyond what's reasonable for one session.
 	if logFile != nil {
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
 		defer func() {
 			_ = logFile.Close()
-			_ = os.Remove(logPath)
 		}()
 	}
 	if err := cmd.Start(); err != nil {
@@ -140,7 +145,20 @@ func URLTestServer(ctx context.Context, binary, dataDir string, server proto.Ser
 		// Distinguish dial failure (proxy reachable but upstream broken)
 		// from the entire proxy being unreachable. We surface the raw
 		// error message either way; the UI prepends a label.
-		return URLTestResult{Error: classifyURLTestErr(err), RTTMS: int(time.Since(t0).Milliseconds())}
+		base := classifyURLTestErr(err)
+		// rc40 — for opaque "unexpected EOF" / connection-reset
+		// failures, append the last ~600 bytes of the sing-box
+		// log so the user sees what really happened (TLS abort,
+		// server reset, no auth handshake, etc.) instead of a
+		// blank "Get …: unexpected EOF".
+		if tail := readURLTestTail(logPath, 600); tail != "" {
+			logx.Debug("url-test failed", "server", server.ID,
+				"err", base, "singbox_tail", tail)
+			base = base + " | singbox: " + condense(tail)
+		} else {
+			logx.Debug("url-test failed (no singbox log)", "server", server.ID, "err", base)
+		}
+		return URLTestResult{Error: base, RTTMS: int(time.Since(t0).Milliseconds())}
 	}
 	defer resp.Body.Close()
 	rtt := int(time.Since(t0).Milliseconds())
@@ -179,6 +197,38 @@ func readURLTestTail(path string, n int) string {
 		data = data[len(data)-n:]
 	}
 	return string(data)
+}
+
+// condense flattens a multi-line sing-box log tail into a single line
+// by joining on " | " and dropping common-prefix timestamps so the
+// resulting "verify failed | singbox: …" string fits in the UI's
+// error column.  Returns at most ~280 chars of payload.
+func condense(s string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimRight(line, " \t\r")
+		// Drop "+0000 INFO " etc. structured prefixes; keep payload.
+		if i := strings.Index(line, "INFO "); i >= 0 {
+			line = line[i+len("INFO "):]
+		} else if i := strings.Index(line, "ERROR "); i >= 0 {
+			line = line[i+len("ERROR "):]
+		}
+		if line == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteString(" | ")
+		}
+		b.WriteString(line)
+		if b.Len() > 280 {
+			out := b.String()
+			if len(out) > 280 {
+				out = out[:280]
+			}
+			return out + "…"
+		}
+	}
+	return b.String()
 }
 
 func killProcess(cmd *exec.Cmd) error {
