@@ -26,6 +26,7 @@ import (
 
 	"github.com/DangerousANEN/mosaicvpn/internal/api"
 	"github.com/DangerousANEN/mosaicvpn/internal/logx"
+	"github.com/DangerousANEN/mosaicvpn/internal/mcp"
 	"github.com/DangerousANEN/mosaicvpn/internal/paths"
 	"github.com/DangerousANEN/mosaicvpn/internal/proto"
 	"github.com/DangerousANEN/mosaicvpn/internal/single"
@@ -154,6 +155,26 @@ func run(dataDirOverride string) error {
 		"api", fmt.Sprintf("http://%s:%d", host, port),
 	)
 
+	// MCP server: loopback JSON-RPC 2.0 endpoint agents can drive.
+	// Shares the API's bearer token and lives on Prefs.MCPAddr (or
+	// the default 127.0.0.1:8731). Failures are logged and non-fatal
+	// so a port conflict on the MCP port never blocks the daemon
+	// itself from starting.
+	mcpSrv := mcp.New(mcp.Config{
+		Store:   store,
+		Manager: mgr,
+		Token:   apiSrv.Token(),
+		Version: Version,
+		DataDir: dataDir,
+		URLTest: apiSrv.URLTestServer,
+		Refresh: apiSrv.Refresh,
+	})
+	mcpShutdown, err := mcpSrv.Start(ctx)
+	if err != nil {
+		logx.Warn("mcp server failed to start", "err", err)
+		mcpShutdown = func(context.Context) error { return nil }
+	}
+
 	// Auto-connect to the last server the user picked, if Prefs.AutoConnect
 	// is on and we still have it. This is best-effort: failures are logged
 	// and the daemon proceeds in the disconnected state so the user can pick
@@ -189,6 +210,7 @@ func run(dataDirOverride string) error {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 	_ = mgr.Disconnect(shutdownCtx)
+	_ = mcpShutdown(shutdownCtx)
 	_ = shutdown(shutdownCtx)
 	return nil
 }

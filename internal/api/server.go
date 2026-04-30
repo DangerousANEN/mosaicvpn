@@ -886,6 +886,39 @@ func (s *Server) kickGeoResolve(subID string) {
 	}()
 }
 
+// Refresh is the exported refresh helper used by MCP tools. It re-fetches
+// a subscription and replaces its server list. Callers should normally
+// follow up with KickGeoResolve(sub.ID) to backfill geo info.
+func (s *Server) Refresh(ctx context.Context, sub proto.Subscription) error {
+	return s.refresh(ctx, sub)
+}
+
+// KickGeoResolve schedules a background geo-resolve pass for the given
+// subscription (empty string = all). Exported for MCP / CLI use.
+func (s *Server) KickGeoResolve(subID string) { s.kickGeoResolve(subID) }
+
+// URLTestServer runs a Verify (URL test) probe through serverID,
+// persists the result on the server record, and returns any error.
+// This is the MCP-facing wrapper around the same sing-box probe the
+// /v1/servers/{id}/url-test handler uses.
+func (s *Server) URLTestServer(ctx context.Context, serverID string) error {
+	var srv *proto.Server
+	for _, sv := range s.store.Snapshot().Servers {
+		if sv.ID == serverID {
+			cp := sv
+			srv = &cp
+			break
+		}
+	}
+	if srv == nil {
+		return fmt.Errorf("server %s not found", serverID)
+	}
+	prefs := s.store.Snapshot().Prefs
+	dataDir := paths.DataDir()
+	res := state.URLTestServer(ctx, state.LocateSingBox(), dataDir, prefs.URLTestEndpoint, prefs, *srv, 12*time.Second)
+	return s.store.RecordURLTest(serverID, res.RTTMS, res.Status, res.Error)
+}
+
 func (s *Server) refresh(ctx context.Context, sub proto.Subscription) error {
 	body, _, err := s.fetcher(ctx, sub.URL)
 	if err != nil {
