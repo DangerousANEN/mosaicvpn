@@ -57,6 +57,10 @@ export interface Server {
    *  Used by the UI to group multi-protocol entries pointing at the
    *  same physical host. */
   resolved_ip?: string;
+  /** rc44 — timestamp of the most recent successful Connect to this
+   *  server (ISO-8601).  Drives the Recent-5 picker in the tray and
+   *  the multi-egress server-select dropdown. */
+  last_connected_at?: string;
   /** Protocol-specific fields carried from the subscription parse
    *  (see internal/subs/*.go). `raw.uri` is the original `vless://`
    *  / `trojan://` / `ss://` / `hy2://` / `naive+https://` URI
@@ -166,3 +170,42 @@ export interface DaemonEndpoint {
   version: string;
   started: string;
 }
+
+/* rc44 — auxiliary egress lifecycle. -------------------------------- */
+
+/** EgressConfig describes a long-lived auxiliary proxy listener: a
+ *  SOCKS5 or HTTP inbound pinned to a single server, independent of
+ *  the main Connect/Disconnect tunnel.  Useful for routing specific
+ *  apps through a different geo without touching the main VPN.        */
+export interface EgressConfig {
+  id: string;
+  name: string;
+  server_id: string;
+  /** "socks5" (default) or "http". */
+  protocol: string;
+  /** Local TCP port the inbound binds to (1..65535). */
+  port: number;
+  /** Bind on 0.0.0.0 instead of 127.0.0.1 so other LAN devices can
+   *  use this egress as their proxy. */
+  share_lan: boolean;
+  /** When non-empty, the inbound requires basic auth from clients on
+   *  the LAN.  Both empty = anonymous. */
+  share_user?: string;
+  share_pass?: string;
+  /** Bring this egress up automatically at daemon launch. */
+  auto_start: boolean;
+}
+
+/** EgressStatus is the live runtime state of one egress's sing-box
+ *  subprocess.  Exposed by GET /v1/egresses alongside the config so
+ *  the renderer can paint a row in one round-trip. */
+export interface EgressStatus {
+  running: boolean;
+  pid?: number;
+  started_at?: string;
+  last_error?: string;
+}
+
+/** EgressDTO bundles the persisted config with the live status, as
+ *  returned by GET /v1/egresses. */
+export type EgressDTO = EgressConfig & { status: EgressStatus };

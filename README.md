@@ -17,7 +17,7 @@ system settings.
 ## Highlights
 
 - **Multi-protocol** — VLESS (+TLS / Reality, ws / grpc / xhttp), Hysteria2,
-  Shadowsocks. Naive and AmneziaWG are on the roadmap.
+  Shadowsocks, Naive, AmneziaWG.
 - **Real sing-box backend** — `Connect` actually opens a local proxy on
   `127.0.0.1:2080` (SOCKS) and `127.0.0.1:2081` (HTTP). No mock, no fake
   state.
@@ -208,8 +208,29 @@ docs/
 | Shadowsocks | ✅ | All AEAD ciphers sing-box ships |
 | Trojan | partial | Parsed; not yet wired into sing-box config gen |
 | VMess | partial | Parsed; not yet wired into sing-box config gen |
-| Naive | ❌ | sing-box has no native client; bundling planned |
-| AmneziaWG | ❌ | Userland WireGuard; bundling planned |
+| Naive | ✅ | Native sing-box `naive` outbound (rc44); naive+https + naive+quic both supported |
+| AmneziaWG | ✅ | Native sing-box `wireguard` + `amnezia_wg_settings` (rc44); accepts clash flat keys (jc, jmin, jmax, s1, s2, h1..h4) and nested sing-box JSON form |
+
+---
+
+## Agent integration (MCP)
+
+Mosaic ships a Model Context Protocol server bound to loopback so AI
+assistants (Claude Desktop, Cursor, Continue, …) can read its state and
+optionally drive it: switch servers, refresh subscriptions, run latency
+tests, manage auxiliary egresses.
+
+Quick path:
+
+1. Folio → Agent & MCP → toggle **MCP server** on, pick a permission
+   level (default **connect**).
+2. Open `%LOCALAPPDATA%\Mosaic\mcp.json` (Windows) — copy the `url` and
+   `token`.
+3. Drop them into your agent's MCP config; restart.
+
+Full guide with copy-paste snippets for Claude Desktop / Cursor /
+Continue, the per-tool permission table, and security notes lives at
+[`docs/AGENTS-MCP.md`](docs/AGENTS-MCP.md).
 
 ---
 

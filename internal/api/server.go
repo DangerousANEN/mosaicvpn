@@ -62,6 +62,23 @@ type Server struct {
 	// refresh / disconnect so a 1 000-server subscription doesn't
 	// stack three concurrent ip-api batches against the same data.
 	bgGeoMu sync.Mutex
+
+	// egress wires the auxiliary-egress manager when the daemon owns
+	// one. Nil when the API runs without an egress backend (mock,
+	// tests). Set via SetEgressManager after construction so NewServer
+	// stays compatible with the historic four-argument signature.
+	egress EgressManager
+}
+
+// EgressManager is the subset of internal/egress.Manager the API needs
+// to drive auxiliary egress lifecycle.  Defined here as an interface to
+// avoid an import cycle (internal/egress already imports
+// internal/state, which imports internal/api in some test builds).
+type EgressManager interface {
+	Start(ctx context.Context, id string) error
+	Stop(ctx context.Context, id string) error
+	Status(id string) proto.EgressStatus
+	ListStatus() map[string]proto.EgressStatus
 }
 
 // NewServer constructs an API server.
@@ -83,6 +100,14 @@ func NewServer(s *store.Store, mgr *state.Manager, fetcher Fetcher) *Server {
 // Token returns the secret bearer token. It is written into the lockfile
 // so trusted local clients can authenticate.
 func (s *Server) Token() string { return s.token }
+
+// SetEgressManager wires an auxiliary-egress manager into the API
+// server.  Called by mosaicd after both the API server and the
+// egress.Manager are constructed (we can't pass it in NewServer
+// because egress.Manager itself depends on the daemon data dir, which
+// is computed alongside the API). Nil-safe — the egress endpoints
+// reject requests with 503 when no manager is wired.
+func (s *Server) SetEgressManager(m EgressManager) { s.egress = m }
 
 // Handler returns the underlying http.Handler, including the CORS,
 // auth, and logging middleware. CORS sits outermost so that preflight
@@ -142,6 +167,14 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/diag", s.handleDiag)
 	s.mux.HandleFunc("GET /v1/events", s.handleEvents)
 	s.mux.HandleFunc("POST /v1/speedtest", s.handleSpeedtest)
+
+	// Auxiliary egress lifecycle (rc44).
+	s.mux.HandleFunc("GET /v1/egresses", s.handleListEgresses)
+	s.mux.HandleFunc("POST /v1/egresses", s.handleAddEgress)
+	s.mux.HandleFunc("PATCH /v1/egresses/{id}", s.handleUpdateEgress)
+	s.mux.HandleFunc("DELETE /v1/egresses/{id}", s.handleDeleteEgress)
+	s.mux.HandleFunc("POST /v1/egresses/{id}/start", s.handleStartEgress)
+	s.mux.HandleFunc("POST /v1/egresses/{id}/stop", s.handleStopEgress)
 }
 
 // ---------- handlers ------------------------------------------------------
@@ -909,6 +942,130 @@ func (s *Server) Refresh(ctx context.Context, sub proto.Subscription) error {
 // KickGeoResolve schedules a background geo-resolve pass for the given
 // subscription (empty string = all). Exported for MCP / CLI use.
 func (s *Server) KickGeoResolve(subID string) { s.kickGeoResolve(subID) }
+
+// ---------- egress handlers (rc44) -----------------------------------
+
+// egressDTO bundles the persisted config with live runtime state so a
+// single GET response is enough for the renderer to draw the row.
+type egressDTO struct {
+	proto.EgressConfig
+	Status proto.EgressStatus `json:"status"`
+}
+
+func (s *Server) handleListEgresses(w http.ResponseWriter, _ *http.Request) {
+	cfgs := s.store.Snapshot().Egresses
+	if cfgs == nil {
+		cfgs = []proto.EgressConfig{}
+	}
+	statuses := map[string]proto.EgressStatus{}
+	if s.egress != nil {
+		statuses = s.egress.ListStatus()
+	}
+	out := make([]egressDTO, 0, len(cfgs))
+	for _, c := range cfgs {
+		out = append(out, egressDTO{EgressConfig: c, Status: statuses[c.ID]})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleAddEgress(w http.ResponseWriter, r *http.Request) {
+	var req proto.EgressConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if req.ServerID == "" {
+		writeError(w, http.StatusBadRequest, "server_id required")
+		return
+	}
+	if req.Port <= 0 || req.Port > 65535 {
+		writeError(w, http.StatusBadRequest, "port must be 1..65535")
+		return
+	}
+	if _, ok := s.store.FindServer(req.ServerID); !ok {
+		writeError(w, http.StatusNotFound, "server not found")
+		return
+	}
+	saved, err := s.store.AddEgress(req)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, saved)
+}
+
+func (s *Server) handleUpdateEgress(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req proto.EgressConfig
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	req.ID = id
+	if req.ServerID == "" {
+		writeError(w, http.StatusBadRequest, "server_id required")
+		return
+	}
+	if req.Port <= 0 || req.Port > 65535 {
+		writeError(w, http.StatusBadRequest, "port must be 1..65535")
+		return
+	}
+	saved, err := s.store.UpdateEgress(req)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	// If running, restart so the new config takes effect.
+	if s.egress != nil {
+		st := s.egress.Status(id)
+		if st.Running {
+			_ = s.egress.Stop(r.Context(), id)
+			if err := s.egress.Start(r.Context(), id); err != nil {
+				writeError(w, http.StatusInternalServerError, "restart: "+err.Error())
+				return
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, saved)
+}
+
+func (s *Server) handleDeleteEgress(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if s.egress != nil {
+		_ = s.egress.Stop(r.Context(), id)
+	}
+	if err := s.store.DeleteEgress(id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleStartEgress(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if s.egress == nil {
+		writeError(w, http.StatusServiceUnavailable, "egress manager not wired")
+		return
+	}
+	if err := s.egress.Start(r.Context(), id); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, s.egress.Status(id))
+}
+
+func (s *Server) handleStopEgress(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if s.egress == nil {
+		writeError(w, http.StatusServiceUnavailable, "egress manager not wired")
+		return
+	}
+	if err := s.egress.Stop(r.Context(), id); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, s.egress.Status(id))
+}
 
 // URLTestServer runs a Verify (URL test) probe through serverID,
 // persists the result on the server record, and returns any error.

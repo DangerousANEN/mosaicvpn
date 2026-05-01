@@ -57,6 +57,11 @@ type Server struct {
 	LastURLTestStatus int       `json:"last_url_test_status,omitempty"`
 	LastURLTestError  string    `json:"last_url_test_error,omitempty"`
 	LastURLTestAt     time.Time `json:"last_url_test_at,omitempty"`
+	// LastConnectedAt is the timestamp of the most recent successful
+	// Connect to this server (rc44). Used by the Recent-5 picker in
+	// the tray and the multi-egress server-select to surface what the
+	// user has actually used, rather than dumping the entire pool.
+	LastConnectedAt time.Time `json:"last_connected_at,omitempty"`
 	// Lat/Lon are decimal degrees (WGS84). Populated from a GeoIP
 	// lookup against Address; zero means "not resolved yet".
 	Lat float64 `json:"lat,omitempty"`
@@ -99,6 +104,44 @@ type Subscription struct {
 	TrafficUsed  uint64    `json:"traffic_used,omitempty"`
 	TrafficTotal uint64    `json:"traffic_total,omitempty"`
 	ExpiresAt    time.Time `json:"expires_at,omitempty"`
+}
+
+// EgressConfig describes a long-lived auxiliary proxy listener (rc44).
+// The main Connect / Disconnect flow stays on a single user-selected
+// server; egresses are independent SOCKS/HTTP proxies a user can stand
+// up in addition, each pinned to its own server.  Useful for routing
+// specific apps through a different geo without flipping the main
+// tunnel.  Configured per-egress and persisted in store.State.
+type EgressConfig struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	ServerID string `json:"server_id"`
+	// Protocol is "socks5" or "http" — determines what kind of inbound
+	// the per-egress sing-box exposes.  Defaults to socks5 when empty.
+	Protocol string `json:"protocol"`
+	// Port is the local TCP port the inbound listens on.  Bound to
+	// 127.0.0.1 by default; 0.0.0.0 when ShareLAN is true.
+	Port int `json:"port"`
+	// ShareLAN flips the listen address to 0.0.0.0 so other devices
+	// on the same network can use this egress as their proxy.
+	ShareLAN bool `json:"share_lan"`
+	// ShareUser / SharePass gate the inbound when exposed on the LAN.
+	// Both empty = anonymous listener (loopback historic behaviour).
+	ShareUser string `json:"share_user,omitempty"`
+	SharePass string `json:"share_pass,omitempty"`
+	// AutoStart asks the daemon to bring this egress up at launch
+	// without an explicit /v1/egresses/:id/start call.  Set when the
+	// user wants the egress to behave like a system service.
+	AutoStart bool `json:"auto_start"`
+}
+
+// EgressStatus is the runtime state of a single egress, surfaced via
+// the /v1/egresses endpoint and the MCP egress tools.
+type EgressStatus struct {
+	Running   bool      `json:"running"`
+	StartedAt time.Time `json:"started_at,omitempty"`
+	LastError string    `json:"last_error,omitempty"`
+	PID       int       `json:"pid,omitempty"`
 }
 
 // Action is the verdict a routing rule produces when it matches a flow.

@@ -1125,77 +1125,131 @@ This rc fixes that.
   tools/list scoping, tools/call, permission denied, discovery
   file.
 
-### 13.6 rc44 — in progress (what you, next agent, are doing)
+### 13.6 rc44 — shipped
 
-**Planned scope** (one PR, not dropped):
-1. **Subscription-Userinfo header** — parse panel traffic/expiry
-   header (`upload/download/total/expire`), show badge in Pool
-   cards. Yellow when close to limit, red when expired/hit.
-2. **Recent-5 picker + Copy URI** — multi-egress needs a server
-   picker that isn't "dropdown of 1000". Sort servers by
-   `last_connected_at`, show top 5; paste-URI input for manual
-   `vless://` / `trojan://` / `ss://` / etc.
-3. **Multi-egress** — Settings-only section. Each egress = name +
-   server_id + port + protocol (socks5/http) + optional LAN-share
-   + optional user/pass. Daemon runs per-egress sing-box
-   inbounds (same pattern as url-test transient, but long-lived).
-   New MCP tools: `egress_list/create/start/stop/delete/update`.
-   Main Connect stays on the card/map as-is.
-4. **New app icon** — atlas-style globe, ink+copper, no
-   background. Update `.ico`, Tauri bundle icons, desktop
-   shortcut.
+**Scope shipped in one PR (`devin/1777579866-rc44`):**
 
-**Current state (resume here):**
-- Branched off rc43: `devin/1777579866-rc44` (NOT pushed yet).
-- **Subscription-Userinfo backend DONE** and compiles + tests
-  green:
-  - `proto.Subscription` gained `TrafficUsed`, `TrafficTotal`,
-    `ExpiresAt`.
-  - `api.Fetcher` signature changed from
-    `(ctx, url) → ([]byte, string, error)` to
-    `(ctx, url) → (FetchResult, error)` where `FetchResult`
-    carries body + format + userinfo.
-  - `parseSubscriptionUserinfo(header)` in
-    `internal/api/server.go` handles v2board / marzban format.
-  - `server.refresh` populates sub.TrafficUsed/TrafficTotal/
-    ExpiresAt on every fetch that reports the header.
-  - Tests: `internal/api/subscription_userinfo_test.go`.
-- **UI types updated:** `ui/src/api/types.ts` → `Subscription`
-  now has `traffic_used`, `traffic_total`, `expires_at`.
-- **Pool card badge:** injected `<SubscriptionQuota sub={sub}/>`
-  between `pool-stats` and `pool-protos` in `Pool.tsx` — **but
-  the component itself is not yet defined**. That's your next
-  edit.
-- Recent-5 / Copy URI / multi-egress / MCP egress tools / icon
-  are ALL still pending.
+1. **Subscription-Userinfo + Pool quota badge.** v2board / marzban
+   `Subscription-Userinfo` header is parsed at fetch time;
+   `proto.Subscription` carries `TrafficUsed`, `TrafficTotal`,
+   `ExpiresAt`. Pool cards show a `SubscriptionQuota` strip with
+   used / total bytes, a percentage bar, and an ISO-date expiry
+   chip. Tone follows `subStatus`: yellow when ≥80% or expiring
+   within 7 days; red when ≥95% or already expired.
 
-**Resume instructions for the next agent picking up mid-rc44:**
-1. `cd /home/ubuntu/mosaicvpn && git checkout devin/1777579866-rc44`.
-2. Add `SubscriptionQuota` component to `ui/src/screens/Pool.tsx`
-   (renders `used / total`, ISO date expiry, yellow/red tones).
-   See `fmtAge` / `subStatus` helpers in the same file for tone
-   conventions. Add CSS to `ui/src/styles/pool.css` under
-   `.pool-quota { ... }`.
-3. Add Recent-5 sort helper in store (`last_connected_at`
-   timestamp on `proto.Server` if not already — check before
-   adding). Wire `Copy URI` button on server rows in
-   `SubscriptionDetail.tsx`; the URI is regenerated from the
-   server record via a new helper `serverToURI(srv)`.
-4. Multi-egress: `Prefs.Egresses []EgressConfig` in
-   `internal/store/store.go`, Egress daemon in a new package
-   `internal/egress/` mirroring `internal/mcp/` pattern
-   (Start/Stop, shared state). Main sing-box ephemeral pattern
-   lives in `internal/state/singbox_urltest.go` — copy that
-   outbound builder but with an **inbound** SOCKS/HTTP instead
-   of the url-test probe. Register MCP tools in
-   `internal/mcp/server.go` (new `minPerm` entries).
-5. Icon: replace `src-tauri/icons/*` (generate all sizes via
-   `cargo tauri icon path/to.png`). Desktop shortcut on NSIS
-   picks up whatever's in `tauri.conf`.
-6. Run `go test ./...` and `cd ui && npm run lint && npm run
-   build`. Push branch, open PR stacked on rc43, tag
-   `v0.1.0-rc44`, wait for `release.yml`, attach installer.
-7. Update HANDOFF.md §13.6 to §13.7 with what actually shipped.
+2. **Recent-5 picker.** `proto.Server` gained `LastConnectedAt`;
+   `state.Manager.Connect` calls `store.RecordConnect(serverID)`
+   on a successful tunnel (state.go). Tray panel sorts by
+   `last_connected_at` desc; if fewer than 5 servers ever
+   connected, fills the rest with best-latency tested stations.
+
+3. **Copy URI on server rows.** `SubscriptionDetail.tsx` shows a
+   Copy-URI button per row. URI comes from `raw.uri` (preserved
+   at parse time for v2ray-style sources) or is regenerated via
+   `serverToURI(srv)`.
+
+4. **Multi-egress subsystem.** Long-lived auxiliary SOCKS5 /
+   HTTP proxies independent of the main Connect/Disconnect:
+   - `proto.EgressConfig` + `proto.EgressStatus`.
+   - `store.AddEgress / UpdateEgress / DeleteEgress / FindEgress`
+     on `State.Egresses`.
+   - **`internal/egress/manager.go`** — Manager type with
+     `Start / Stop / Status / ListStatus / AutoStartAll /
+     StopAll`; spawns one sing-box subprocess per egress, with
+     a per-egress runtime struct tracking pid + cancel + cmd +
+     startedAt + lastError. Subprocess gets reaped via
+     `reapAfterExit` goroutine.
+   - **`internal/state/singbox_egress.go`** — `BuildEgressConfig`
+     builds the per-egress sing-box config: one inbound (SOCKS5
+     or HTTP, never TUN/clash-api), one outbound (the pinned
+     server). Anti-DPI overrides apply. ShareLAN flips bind to
+     0.0.0.0 with optional ShareUser/SharePass auth.
+   - **HTTP API:** `GET /v1/egresses`, `POST /v1/egresses`,
+     `PATCH /v1/egresses/{id}`, `DELETE /v1/egresses/{id}`,
+     `POST /v1/egresses/{id}/start`, `POST .../stop`. Wired via
+     `apiSrv.SetEgressManager(egMgr)` in `cmd/mosaicd/main.go`.
+   - **MCP tools:** `mosaic_list_egresses` (read),
+     `mosaic_start_egress` / `mosaic_stop_egress` (connect),
+     `mosaic_add_egress` / `mosaic_remove_egress` (full).
+   - **Folio UI:** new chapter **viii Egresses** with table view
+     (Name, Server, Protocol, Listen address, State, actions),
+     per-row Start/Stop/Edit/Delete, "+ New egress" form with
+     server dropdown, port, protocol, share-LAN toggle, optional
+     LAN user/pass, AutoStart toggle.
+   - **AutoStart:** `egMgr.AutoStartAll(ctx)` runs once at daemon
+     startup; egresses with `AutoStart=true` come up
+     automatically without explicit `/start`.
+
+5. **Naive + AmneziaWG outbound (real, not stub).**
+   `internal/state/singbox_backend.go` — `outboundFor` now
+   builds proper sing-box configs:
+   - **Naive:** native sing-box `naive` outbound. Detects scheme
+     (https / quic) from `raw.scheme` or the original URI;
+     `network: tcp` for naive+https, `network: udp` for
+     naive+quic. TLS on by default, SNI defaults to host.
+   - **AmneziaWG:** sing-box `wireguard` outbound +
+     `amnezia_wg_settings` sub-object. Accepts both flat clash
+     keys (jc / jmin / jmax / s1 / s2 / h1..h4) and the nested
+     sing-box JSON form. Reads `private_key` /
+     `peer_public_key` / `pre_shared_key` / `mtu` /
+     `local_address` / `reserved` from raw, with clash fallbacks
+     (`private-key`, `public-key`, `ip` / `ipv6`).
+   - Old "not yet supported" returns are gone. README + README.ru
+     protocol matrix bumped to ✅.
+
+6. **Agent integration docs.** Added user-facing
+   [`docs/AGENTS-MCP.md`](../docs/AGENTS-MCP.md): how Claude
+   Desktop / Cursor / Continue / any MCP client connects to the
+   running Mosaic — discovery file, token, JSON-RPC endpoint,
+   per-tool permission table, copy-paste config snippets,
+   security notes, troubleshooting. Linked from README.md
+   ("Agent integration (MCP)") and README.ru.md ("Подключение
+   AI-агента (MCP)"). The pre-existing
+   `.agents/skills/mosaicvpn-mcp/SKILL.md` stays as the
+   **developer-agent** material; the new doc is for **end-user
+   agents**.
+
+**Skipped this round (deliberate):**
+- New app icon — no design provided, and the box has no
+  `cargo tauri` CLI to regenerate icon sizes. Existing
+  `src-tauri/icons/*` carry over from rc43. Pickup the next time
+  the user provides a base PNG.
+
+**Files touched (rc44 cumulative):**
+- `internal/proto/types.go` — `Server.LastConnectedAt`,
+  `EgressConfig`, `EgressStatus`.
+- `internal/store/store.go` — `State.Egresses`, egress CRUD,
+  `RecordConnect`.
+- `internal/state/state.go` — call `RecordConnect` after
+  successful Connect.
+- `internal/state/singbox_backend.go` — naive / amneziawg
+  outbound builders; `firstNonEmpty` helper bumped to variadic.
+- `internal/state/singbox_egress.go` *(new)* —
+  `BuildEgressConfig`.
+- `internal/egress/manager.go` *(new)* — Manager.
+- `internal/api/server.go` — `EgressManager` interface,
+  `SetEgressManager`, six egress endpoints.
+- `internal/mcp/server.go` — `EgressIface`, `Egress` config
+  field, six egress tools, `stringArg / intArg / boolArg` arg
+  helpers.
+- `cmd/mosaicd/main.go` — wire `egress.New`,
+  `apiSrv.SetEgressManager`, `mcp.Config.Egress`,
+  `egMgr.AutoStartAll`, `defer egMgr.StopAll`.
+- `ui/src/api/types.ts` — `Server.last_connected_at`,
+  `EgressConfig / EgressStatus / EgressDTO`.
+- `ui/src/api/client.ts` — `listEgresses / addEgress /
+  updateEgress / deleteEgress / startEgress / stopEgress`.
+- `ui/src/screens/Tray.tsx` — Recent-5 by connection history.
+- `ui/src/screens/Pool.tsx` — `SubscriptionQuota` component +
+  pool-quota CSS.
+- `ui/src/screens/SubscriptionDetail.tsx` — Copy-URI button +
+  `serverToURI` helper.
+- `ui/src/screens/Folio.tsx` — `EgressChapter` (viii) + chapter
+  registration.
+- `ui/src/styles/app.css` — `.folio-egress-*` styling.
+- `docs/AGENTS-MCP.md` *(new)* — user-facing MCP guide.
+- `README.md`, `README.ru.md` — Naive / AmneziaWG ✅; new "Agent
+  integration (MCP)" / "Подключение AI-агента (MCP)" sections.
 
 ### 13.7 Permanent learnings the next agent should NOT re-discover
 

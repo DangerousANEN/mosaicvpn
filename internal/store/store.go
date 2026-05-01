@@ -37,7 +37,10 @@ type State struct {
 	// blocked for extended periods, and without this field every
 	// relaunch would hide the pin until network resolves.
 	MyLocation *proto.GeoLocation `json:"my_location,omitempty"`
-	Version    int                `json:"version"`
+	// Egresses are auxiliary long-lived proxy listeners managed
+	// independently of the main Connect/Disconnect flow (rc44).
+	Egresses []proto.EgressConfig `json:"egresses,omitempty"`
+	Version  int                  `json:"version"`
 }
 
 // Prefs holds user-configurable behaviour of the daemon.
@@ -199,7 +202,73 @@ func (s *Store) Snapshot() State {
 	cp.Subscriptions = append([]proto.Subscription(nil), s.state.Subscriptions...)
 	cp.Servers = append([]proto.Server(nil), s.state.Servers...)
 	cp.Rules = append([]proto.Rule(nil), s.state.Rules...)
+	cp.Egresses = append([]proto.EgressConfig(nil), s.state.Egresses...)
 	return cp
+}
+
+// AddEgress inserts a new egress configuration. ID is generated if
+// empty. Used by the egress CRUD endpoint and the Folio Settings UI.
+func (s *Store) AddEgress(eg proto.EgressConfig) (proto.EgressConfig, error) {
+	var saved proto.EgressConfig
+	err := s.Update(func(st *State) error {
+		if eg.ID == "" {
+			eg.ID = fmt.Sprintf("egress-%d", time.Now().UnixNano())
+		}
+		if eg.Protocol == "" {
+			eg.Protocol = "socks5"
+		}
+		st.Egresses = append(st.Egresses, eg)
+		saved = eg
+		return nil
+	})
+	return saved, err
+}
+
+// UpdateEgress replaces fields on the egress with matching ID.
+func (s *Store) UpdateEgress(eg proto.EgressConfig) (proto.EgressConfig, error) {
+	var saved proto.EgressConfig
+	err := s.Update(func(st *State) error {
+		for i := range st.Egresses {
+			if st.Egresses[i].ID == eg.ID {
+				if eg.Protocol == "" {
+					eg.Protocol = st.Egresses[i].Protocol
+				}
+				st.Egresses[i] = eg
+				saved = eg
+				return nil
+			}
+		}
+		return fmt.Errorf("egress %q not found", eg.ID)
+	})
+	return saved, err
+}
+
+// DeleteEgress removes the egress with the given ID. Returns nil even
+// when the ID is unknown — idempotent for callers retrying after a
+// crash.
+func (s *Store) DeleteEgress(id string) error {
+	return s.Update(func(st *State) error {
+		out := st.Egresses[:0]
+		for _, eg := range st.Egresses {
+			if eg.ID != id {
+				out = append(out, eg)
+			}
+		}
+		st.Egresses = out
+		return nil
+	})
+}
+
+// FindEgress locates an egress by id.
+func (s *Store) FindEgress(id string) (proto.EgressConfig, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, eg := range s.state.Egresses {
+		if eg.ID == id {
+			return eg, true
+		}
+	}
+	return proto.EgressConfig{}, false
 }
 
 // Update applies fn to a copy of the state under write lock and persists
@@ -460,6 +529,28 @@ func (s *Store) RecordServerResolved(id, ip string) error {
 func (s *Store) SetLastServer(id string) error {
 	return s.Update(func(st *State) error {
 		st.LastServerID = id
+		return nil
+	})
+}
+
+// RecordConnect stamps Server.LastConnectedAt for the given server id.
+// Used by the Recent-5 picker (rc44) so the tray and multi-egress
+// server-select can show "what the user actually used" instead of the
+// full pool.  Silent on missing server — Connect() may target an id
+// that's about to be replaced by a Refresh; we don't want to fail the
+// connect just because the timestamp didn't write.
+func (s *Store) RecordConnect(id string) error {
+	if id == "" {
+		return nil
+	}
+	return s.Update(func(st *State) error {
+		now := time.Now().UTC()
+		for i := range st.Servers {
+			if st.Servers[i].ID == id {
+				st.Servers[i].LastConnectedAt = now
+				return nil
+			}
+		}
 		return nil
 	})
 }

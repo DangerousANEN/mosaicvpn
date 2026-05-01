@@ -17,7 +17,7 @@ HTTP прокси, который ты можешь воткнуть в брау
 ## Что внутри
 
 - **Мульти-протокол** — VLESS (+TLS / Reality, ws / grpc / xhttp),
-  Hysteria2, Shadowsocks. Naive и AmneziaWG — в roadmap.
+  Hysteria2, Shadowsocks, Naive, AmneziaWG.
 - **Настоящий sing-box backend** — `Connect` реально открывает локальный
   прокси на `127.0.0.1:2080` (SOCKS) и `127.0.0.1:2081` (HTTP). Без
   мока и подделки состояния.
@@ -207,8 +207,28 @@ docs/
 | Shadowsocks | ✅ | Все AEAD-шифры из sing-box |
 | Trojan | partial | Парсится; ещё не разводится в sing-box config |
 | VMess | partial | Парсится; ещё не разводится в sing-box config |
-| Naive | ❌ | sing-box не умеет нативно; bundling в roadmap |
-| AmneziaWG | ❌ | userland WireGuard; bundling в roadmap |
+| Naive | ✅ | Нативный outbound sing-box `naive` (rc44); поддерживаются и naive+https, и naive+quic |
+| AmneziaWG | ✅ | Нативный sing-box `wireguard` + `amnezia_wg_settings` (rc44); понимает плоские ключи clash (jc, jmin, jmax, s1, s2, h1..h4) и вложенный sing-box JSON |
+
+---
+
+## Подключение AI-агента (MCP)
+
+Mosaic поднимает MCP-сервер на loopback, через который сторонние
+ассистенты (Claude Desktop, Cursor, Continue, …) читают состояние и при
+необходимости рулят клиентом: переключают серверы, обновляют подписки,
+гоняют латенси-тесты, заводят вспомогательные egress'ы.
+
+Краткий путь:
+
+1. Folio → Agent & MCP → включить **MCP server**, выбрать уровень
+   разрешений (по умолчанию **connect**).
+2. Открыть `%LOCALAPPDATA%\Mosaic\mcp.json` и скопировать `url` + `token`.
+3. Вставить в конфиг MCP-клиента, перезапустить.
+
+Полный гайд со сниппетами для Claude Desktop / Cursor / Continue,
+матрицей разрешений по tool'ам и заметками о безопасности:
+[`docs/AGENTS-MCP.md`](docs/AGENTS-MCP.md).
 
 ---
 

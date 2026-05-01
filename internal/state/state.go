@@ -258,6 +258,9 @@ func (m *Manager) Connect(ctx context.Context, serverID string) error {
 	if err := m.store.SetLastServer(serverID); err != nil {
 		logx.Warn("could not persist last server", "err", err)
 	}
+	if err := m.store.RecordConnect(serverID); err != nil {
+		logx.Warn("could not stamp last_connected_at", "err", err)
+	}
 	return nil
 }
 

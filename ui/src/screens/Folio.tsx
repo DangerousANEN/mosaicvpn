@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../api/client";
-import type { Prefs, Status, Subscription } from "../api/types";
+import type {
+  EgressConfig,
+  EgressDTO,
+  Prefs,
+  Server,
+  Status,
+  Subscription,
+} from "../api/types";
 import { isAdmin, restartAsAdmin } from "../api/tauri";
 import { useTheme } from "../hooks/useTheme";
 
@@ -22,6 +29,7 @@ type ChapterId =
   | "antidpi"
   | "autostart"
   | "mcp"
+  | "egress"
   | "bypass"
   | "appearance";
 
@@ -54,14 +62,20 @@ const CHAPTERS: { id: ChapterId; num: string; title: string; sub: string }[] = [
     sub: "letting an AI control Mosaic",
   },
   {
-    id: "bypass",
+    id: "egress",
     num: "viii",
+    title: "Egresses",
+    sub: "auxiliary SOCKS/HTTP proxies",
+  },
+  {
+    id: "bypass",
+    num: "ix",
     title: "Bypass list",
     sub: "domains & IPs that skip the tunnel",
   },
   {
     id: "appearance",
-    num: "ix",
+    num: "x",
     title: "Appearance & backup",
     sub: "theme, export & import",
   },
@@ -576,6 +590,8 @@ export function Folio({ status }: { status?: Status | null }): JSX.Element {
             </Chapter>
           ) : null}
 
+          {chapter === "egress" ? <EgressChapter /> : null}
+
           {chapter === "bypass" ? <BypassChapter /> : null}
 
           {chapter === "appearance" ? (
@@ -929,6 +945,331 @@ function BypassChapter(): JSX.Element {
         >
           {busy === "save" ? "Saving…" : "Save bypass list"}
         </button>
+      </div>
+    </Chapter>
+  );
+}
+
+/* ---------- rc44 — Egresses chapter ---------- */
+
+/** EgressChapter — CRUD over auxiliary SOCKS5/HTTP egresses.  Each
+ *  row is one long-lived sing-box subprocess pinned to a single
+ *  server, exposing a local proxy port independent of the main
+ *  Connect/Disconnect tunnel.  Common use: route Telegram via a DE
+ *  server while watching Russian streaming on the main tunnel.       */
+function EgressChapter(): JSX.Element {
+  const [items, setItems] = useState<EgressDTO[]>([]);
+  const [servers, setServers] = useState<Server[]>([]);
+  const [busy, setBusy] = useState<"load" | "act" | null>("load");
+  const [err, setErr] = useState<string | null>(null);
+  const [draft, setDraft] = useState<EgressConfig | null>(null);
+
+  const reload = async () => {
+    setBusy("load");
+    setErr(null);
+    try {
+      const [list, srv] = await Promise.all([
+        api.listEgresses(),
+        api.listServers(),
+      ]);
+      setItems(list);
+      setServers(srv);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  useEffect(() => {
+    void reload();
+  }, []);
+
+  const startNew = () => {
+    setDraft({
+      id: "",
+      name: "",
+      server_id: servers[0]?.id ?? "",
+      protocol: "socks5",
+      port: 10808,
+      share_lan: false,
+      share_user: "",
+      share_pass: "",
+      auto_start: false,
+    });
+  };
+
+  const onSave = async () => {
+    if (!draft) return;
+    setBusy("act");
+    setErr(null);
+    try {
+      if (draft.id) {
+        await api.updateEgress(draft.id, draft);
+      } else {
+        await api.addEgress(draft);
+      }
+      setDraft(null);
+      await reload();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onDelete = async (id: string) => {
+    setBusy("act");
+    setErr(null);
+    try {
+      await api.deleteEgress(id);
+      await reload();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onToggle = async (e: EgressDTO) => {
+    setBusy("act");
+    setErr(null);
+    try {
+      if (e.status?.running) {
+        await api.stopEgress(e.id);
+      } else {
+        await api.startEgress(e.id);
+      }
+      await reload();
+    } catch (ex) {
+      setErr((ex as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const serverName = (id: string): string => {
+    const s = servers.find((sv) => sv.id === id);
+    if (!s) return id;
+    const where = [s.country, s.city].filter(Boolean).join(" · ");
+    return where ? `${s.name} (${where})` : s.name;
+  };
+
+  return (
+    <Chapter
+      num="viii"
+      title="Egresses"
+      desc="auxiliary SOCKS/HTTP proxies running alongside the main tunnel"
+    >
+      {err ? <div className="folio-err">{err}</div> : null}
+
+      <div className="folio-egresses">
+        {items.length === 0 ? (
+          <div className="folio-empty">
+            No egresses configured. Create one to expose a local proxy
+            port pinned to a specific server, independent of the main
+            Connect/Disconnect flow.
+          </div>
+        ) : (
+          <table className="folio-egress-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Server</th>
+                <th>Protocol</th>
+                <th>Listen</th>
+                <th>State</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((e) => (
+                <tr key={e.id}>
+                  <td>{e.name || "—"}</td>
+                  <td className="folio-egress-srv">
+                    {serverName(e.server_id)}
+                  </td>
+                  <td>{(e.protocol || "socks5").toUpperCase()}</td>
+                  <td className="mono">
+                    {e.share_lan ? "0.0.0.0" : "127.0.0.1"}:{e.port}
+                  </td>
+                  <td>
+                    {e.status?.running ? (
+                      <span className="folio-egress-on">● running</span>
+                    ) : e.status?.last_error ? (
+                      <span className="folio-egress-err">
+                        × {e.status.last_error}
+                      </span>
+                    ) : (
+                      <span className="folio-egress-off">○ stopped</span>
+                    )}
+                  </td>
+                  <td className="folio-egress-actions">
+                    <button
+                      type="button"
+                      className="folio-btn"
+                      onClick={() => void onToggle(e)}
+                      disabled={busy !== null}
+                    >
+                      {e.status?.running ? "Stop" : "Start"}
+                    </button>
+                    <button
+                      type="button"
+                      className="folio-btn"
+                      onClick={() => setDraft(e)}
+                      disabled={busy !== null}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="folio-btn folio-btn-danger"
+                      onClick={() => void onDelete(e.id)}
+                      disabled={busy !== null}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        {!draft ? (
+          <button
+            type="button"
+            className="folio-btn folio-btn-primary"
+            onClick={startNew}
+            disabled={busy !== null || servers.length === 0}
+          >
+            + New egress
+          </button>
+        ) : (
+          <div className="folio-egress-form">
+            <div className="folio-egress-row">
+              <label>Name</label>
+              <input
+                type="text"
+                value={draft.name}
+                onChange={(ev) =>
+                  setDraft({ ...draft, name: ev.target.value })
+                }
+                placeholder="Telegram-DE"
+              />
+            </div>
+            <div className="folio-egress-row">
+              <label>Server</label>
+              <select
+                value={draft.server_id}
+                onChange={(ev) =>
+                  setDraft({ ...draft, server_id: ev.target.value })
+                }
+              >
+                {servers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {serverName(s.id)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="folio-egress-row">
+              <label>Protocol</label>
+              <select
+                value={draft.protocol || "socks5"}
+                onChange={(ev) =>
+                  setDraft({ ...draft, protocol: ev.target.value })
+                }
+              >
+                <option value="socks5">SOCKS5</option>
+                <option value="http">HTTP</option>
+              </select>
+            </div>
+            <div className="folio-egress-row">
+              <label>Port</label>
+              <input
+                type="number"
+                min={1}
+                max={65535}
+                value={draft.port}
+                onChange={(ev) =>
+                  setDraft({
+                    ...draft,
+                    port: Math.max(1, Math.min(65535, +ev.target.value || 0)),
+                  })
+                }
+              />
+            </div>
+            <div className="folio-egress-row">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={draft.share_lan}
+                  onChange={(ev) =>
+                    setDraft({ ...draft, share_lan: ev.target.checked })
+                  }
+                />{" "}
+                Share on LAN (bind 0.0.0.0)
+              </label>
+            </div>
+            {draft.share_lan ? (
+              <>
+                <div className="folio-egress-row">
+                  <label>LAN user</label>
+                  <input
+                    type="text"
+                    value={draft.share_user ?? ""}
+                    onChange={(ev) =>
+                      setDraft({ ...draft, share_user: ev.target.value })
+                    }
+                    placeholder="optional"
+                  />
+                </div>
+                <div className="folio-egress-row">
+                  <label>LAN password</label>
+                  <input
+                    type="password"
+                    value={draft.share_pass ?? ""}
+                    onChange={(ev) =>
+                      setDraft({ ...draft, share_pass: ev.target.value })
+                    }
+                    placeholder="optional"
+                  />
+                </div>
+              </>
+            ) : null}
+            <div className="folio-egress-row">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={draft.auto_start}
+                  onChange={(ev) =>
+                    setDraft({ ...draft, auto_start: ev.target.checked })
+                  }
+                />{" "}
+                Start automatically at daemon launch
+              </label>
+            </div>
+            <div className="folio-egress-actions">
+              <button
+                type="button"
+                className="folio-btn folio-btn-primary"
+                onClick={() => void onSave()}
+                disabled={busy !== null || !draft.server_id || draft.port <= 0}
+              >
+                {draft.id ? "Save" : "Create"}
+              </button>
+              <button
+                type="button"
+                className="folio-btn"
+                onClick={() => setDraft(null)}
+                disabled={busy !== null}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </Chapter>
   );

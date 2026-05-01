@@ -17,11 +17,23 @@ export function Tray({ status }: { status: Status }): JSX.Element {
   const err = localErr ?? liveErr;
   const setErr = setLocalErr;
 
+  // rc44 — Recent-5 by actual connection history. Servers with a
+  // last_connected_at timestamp come first (newest → oldest); the
+  // remainder is filled by best-latency tested stations so a fresh
+  // install with no Connect history still sees something useful here.
   const recent = useMemo(() => {
-    return [...servers]
-      .filter((s) => (s.last_test_ms ?? 0) > 0)
-      .sort((a, b) => (a.last_test_ms ?? 0) - (b.last_test_ms ?? 0))
-      .slice(0, 4);
+    const ts = (s: { last_connected_at?: string }) =>
+      s.last_connected_at ? Date.parse(s.last_connected_at) : 0;
+    const used = [...servers]
+      .filter((s) => ts(s) > 0)
+      .sort((a, b) => ts(b) - ts(a));
+    if (used.length >= 5) return used.slice(0, 5);
+    const tested = [...servers]
+      .filter(
+        (s) => (s.last_test_ms ?? 0) > 0 && !used.some((u) => u.id === s.id),
+      )
+      .sort((a, b) => (a.last_test_ms ?? 0) - (b.last_test_ms ?? 0));
+    return [...used, ...tested].slice(0, 5);
   }, [servers]);
 
   const onToggle = async () => {
@@ -141,7 +153,7 @@ export function Tray({ status }: { status: Status }): JSX.Element {
         <div className="tray-quick-head">
           <div className="l">Recent stations</div>
           <div className="r">
-            i—{toRomanLower(Math.min(recent.length, 4))} of{" "}
+            i—{toRomanLower(Math.min(recent.length, 5))} of{" "}
             {toRomanLower(servers.length)}
           </div>
         </div>

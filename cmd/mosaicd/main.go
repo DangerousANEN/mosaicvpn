@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/DangerousANEN/mosaicvpn/internal/api"
+	"github.com/DangerousANEN/mosaicvpn/internal/egress"
 	"github.com/DangerousANEN/mosaicvpn/internal/logx"
 	"github.com/DangerousANEN/mosaicvpn/internal/mcp"
 	"github.com/DangerousANEN/mosaicvpn/internal/paths"
@@ -111,6 +112,15 @@ func run(dataDirOverride string) error {
 
 	apiSrv := api.NewServer(store, mgr, nil)
 
+	// Wire the auxiliary-egress manager (rc44).  Each egress is its
+	// own sing-box subprocess pinned to a single server, exposing a
+	// SOCKS5 / HTTP inbound on a user-chosen port — independent of
+	// the main Connect/Disconnect tunnel.  StopAll runs from the
+	// graceful-shutdown path so we don't leak sing-box processes.
+	egMgr := egress.New(state.LocateSingBox(), dataDir, store)
+	apiSrv.SetEgressManager(egMgr)
+	defer egMgr.StopAll()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -168,12 +178,18 @@ func run(dataDirOverride string) error {
 		DataDir: dataDir,
 		URLTest: apiSrv.URLTestServer,
 		Refresh: apiSrv.Refresh,
+		Egress:  egMgr,
 	})
 	mcpShutdown, err := mcpSrv.Start(ctx)
 	if err != nil {
 		logx.Warn("mcp server failed to start", "err", err)
 		mcpShutdown = func(context.Context) error { return nil }
 	}
+
+	// Bring up every egress with AutoStart=true so user-managed
+	// auxiliary proxies behave like services and survive a daemon
+	// restart without manual intervention.
+	go egMgr.AutoStartAll(ctx)
 
 	// Auto-connect to the last server the user picked, if Prefs.AutoConnect
 	// is on and we still have it. This is best-effort: failures are logged

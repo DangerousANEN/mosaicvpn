@@ -38,6 +38,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -79,6 +80,17 @@ type URLTestFn func(ctx context.Context, serverID string) error
 // RefreshFn refreshes a subscription (fetch + parse + replace servers).
 type RefreshFn func(ctx context.Context, sub proto.Subscription) error
 
+// EgressIface is the subset of internal/egress.Manager the MCP tools
+// need.  Defined locally so internal/mcp doesn't have to import
+// internal/egress (which would risk a cycle later if egress ever needs
+// to call back into mcp for confirmations).
+type EgressIface interface {
+	Start(ctx context.Context, id string) error
+	Stop(ctx context.Context, id string) error
+	Status(id string) proto.EgressStatus
+	ListStatus() map[string]proto.EgressStatus
+}
+
 // Server is the MCP JSON-RPC server.
 type Server struct {
 	store     *store.Store
@@ -89,6 +101,7 @@ type Server struct {
 	confirm   bool
 	urlTest   URLTestFn
 	refresh   RefreshFn
+	egress    EgressIface
 	dataDir   string
 
 	listener net.Listener
@@ -104,6 +117,7 @@ type Config struct {
 	DataDir string
 	URLTest URLTestFn
 	Refresh RefreshFn
+	Egress  EgressIface
 }
 
 // New constructs a disabled (not yet listening) MCP server.
@@ -116,6 +130,7 @@ func New(c Config) *Server {
 		dataDir: c.DataDir,
 		urlTest: c.URLTest,
 		refresh: c.Refresh,
+		egress:  c.Egress,
 	}
 }
 
@@ -455,7 +470,187 @@ func (s *Server) tools() []toolDef {
 			minPerm:     PermRead,
 			handler:     s.toolGetPrefs,
 		},
+		// rc44 — auxiliary egress lifecycle.  Egresses are independent
+		// long-lived SOCKS5/HTTP proxies pinned to a single server,
+		// separate from the main Connect/Disconnect tunnel.
+		{
+			Name:        "mosaic_list_egresses",
+			Description: "List all configured auxiliary egresses (long-lived per-server SOCKS5/HTTP proxies separate from the main tunnel) with their live status.",
+			InputSchema: empty,
+			minPerm:     PermRead,
+			handler:     s.toolListEgresses,
+		},
+		{
+			Name:        "mosaic_add_egress",
+			Description: "Create a new auxiliary egress: a long-lived SOCKS5 or HTTP proxy pinned to one server on a chosen local port, independent of the main tunnel.",
+			InputSchema: objSchema(map[string]any{
+				"name":       map[string]any{"type": "string"},
+				"server_id":  map[string]any{"type": "string"},
+				"protocol":   map[string]any{"type": "string", "enum": []string{"socks5", "http"}},
+				"port":       map[string]any{"type": "integer", "description": "Local TCP port; 1..65535"},
+				"share_lan":  map[string]any{"type": "boolean", "description": "Bind on 0.0.0.0 instead of 127.0.0.1"},
+				"share_user": map[string]any{"type": "string"},
+				"share_pass": map[string]any{"type": "string"},
+				"auto_start": map[string]any{"type": "boolean", "description": "Bring up automatically at daemon launch"},
+			}, "server_id", "port"),
+			minPerm: PermFull,
+			handler: s.toolAddEgress,
+		},
+		{
+			Name:        "mosaic_remove_egress",
+			Description: "Stop and delete an egress by id. Irreversible.",
+			InputSchema: objSchema(map[string]any{
+				"egress_id": map[string]any{"type": "string"},
+			}, "egress_id"),
+			minPerm: PermFull,
+			handler: s.toolRemoveEgress,
+		},
+		{
+			Name:        "mosaic_start_egress",
+			Description: "Start the egress sing-box subprocess by id. Idempotent.",
+			InputSchema: objSchema(map[string]any{
+				"egress_id": map[string]any{"type": "string"},
+			}, "egress_id"),
+			minPerm: PermConnect,
+			handler: s.toolStartEgress,
+		},
+		{
+			Name:        "mosaic_stop_egress",
+			Description: "Stop the egress sing-box subprocess by id. Idempotent.",
+			InputSchema: objSchema(map[string]any{
+				"egress_id": map[string]any{"type": "string"},
+			}, "egress_id"),
+			minPerm: PermConnect,
+			handler: s.toolStopEgress,
+		},
 	}
+}
+
+// ---------- egress tool handlers (rc44) -------------------------------
+
+// stringArg / intArg / boolArg are forgiving accessors over the loosely
+// typed `arguments` JSON map MCP clients send.  JSON has no integer
+// type, so a port shows up as float64 from encoding/json — we fan out
+// the conversions here once instead of repeating the type-switch in
+// every egress tool handler.
+func stringArg(m map[string]any, k string) string {
+	v, _ := m[k].(string)
+	return strings.TrimSpace(v)
+}
+
+func intArg(m map[string]any, k string) int {
+	switch v := m[k].(type) {
+	case float64:
+		return int(v)
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case json.Number:
+		n, _ := v.Int64()
+		return int(n)
+	case string:
+		n, _ := strconv.Atoi(strings.TrimSpace(v))
+		return n
+	}
+	return 0
+}
+
+func boolArg(m map[string]any, k string) bool {
+	v, _ := m[k].(bool)
+	return v
+}
+
+func (s *Server) toolListEgresses(_ context.Context, _ map[string]any) (any, error) {
+	cfgs := s.store.Snapshot().Egresses
+	statuses := map[string]proto.EgressStatus{}
+	if s.egress != nil {
+		statuses = s.egress.ListStatus()
+	}
+	out := make([]map[string]any, 0, len(cfgs))
+	for _, c := range cfgs {
+		out = append(out, map[string]any{
+			"id":         c.ID,
+			"name":       c.Name,
+			"server_id":  c.ServerID,
+			"protocol":   c.Protocol,
+			"port":       c.Port,
+			"share_lan":  c.ShareLAN,
+			"share_user": c.ShareUser,
+			"auto_start": c.AutoStart,
+			"status":     statuses[c.ID],
+		})
+	}
+	return map[string]any{"egresses": out}, nil
+}
+
+func (s *Server) toolAddEgress(_ context.Context, args map[string]any) (any, error) {
+	cfg := proto.EgressConfig{
+		Name:      stringArg(args, "name"),
+		ServerID:  stringArg(args, "server_id"),
+		Protocol:  stringArg(args, "protocol"),
+		Port:      intArg(args, "port"),
+		ShareLAN:  boolArg(args, "share_lan"),
+		ShareUser: stringArg(args, "share_user"),
+		SharePass: stringArg(args, "share_pass"),
+		AutoStart: boolArg(args, "auto_start"),
+	}
+	if cfg.ServerID == "" {
+		return nil, fmt.Errorf("server_id is required")
+	}
+	if cfg.Port <= 0 || cfg.Port > 65535 {
+		return nil, fmt.Errorf("port must be 1..65535")
+	}
+	if _, ok := s.store.FindServer(cfg.ServerID); !ok {
+		return nil, fmt.Errorf("server %q not found", cfg.ServerID)
+	}
+	saved, err := s.store.AddEgress(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return saved, nil
+}
+
+func (s *Server) toolRemoveEgress(ctx context.Context, args map[string]any) (any, error) {
+	id := stringArg(args, "egress_id")
+	if id == "" {
+		return nil, fmt.Errorf("egress_id is required")
+	}
+	if s.egress != nil {
+		_ = s.egress.Stop(ctx, id)
+	}
+	if err := s.store.DeleteEgress(id); err != nil {
+		return nil, err
+	}
+	return map[string]any{"ok": true}, nil
+}
+
+func (s *Server) toolStartEgress(ctx context.Context, args map[string]any) (any, error) {
+	id := stringArg(args, "egress_id")
+	if id == "" {
+		return nil, fmt.Errorf("egress_id is required")
+	}
+	if s.egress == nil {
+		return nil, fmt.Errorf("egress manager not wired")
+	}
+	if err := s.egress.Start(ctx, id); err != nil {
+		return nil, err
+	}
+	return s.egress.Status(id), nil
+}
+
+func (s *Server) toolStopEgress(ctx context.Context, args map[string]any) (any, error) {
+	id := stringArg(args, "egress_id")
+	if id == "" {
+		return nil, fmt.Errorf("egress_id is required")
+	}
+	if s.egress == nil {
+		return nil, fmt.Errorf("egress manager not wired")
+	}
+	if err := s.egress.Stop(ctx, id); err != nil {
+		return nil, err
+	}
+	return s.egress.Status(id), nil
 }
 
 func (s *Server) rpcToolsList(w http.ResponseWriter, _ *http.Request, req jsonRPCRequest) {

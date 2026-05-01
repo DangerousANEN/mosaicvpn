@@ -7,6 +7,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   DaemonEndpoint,
+  EgressConfig,
+  EgressDTO,
+  EgressStatus,
   Prefs,
   Rule,
   Server,
@@ -125,6 +128,23 @@ export const api = {
 
   speedtest: (url?: string) =>
     request<SpeedtestResult>("POST", "/v1/speedtest", { url: url ?? "" }),
+
+  // rc44 — auxiliary egress lifecycle.  Each egress is its own
+  // long-lived sing-box subprocess pinned to one server, exposing a
+  // SOCKS5 / HTTP inbound on a user-chosen port — independent of the
+  // main Connect/Disconnect tunnel.
+  listEgresses: async () =>
+    arr(await request<EgressDTO[]>("GET", "/v1/egresses")),
+  addEgress: (cfg: EgressConfig) =>
+    request<EgressConfig>("POST", "/v1/egresses", cfg),
+  updateEgress: (id: string, cfg: EgressConfig) =>
+    request<EgressConfig>("PATCH", `/v1/egresses/${id}`, cfg),
+  deleteEgress: (id: string) =>
+    request<void>("DELETE", `/v1/egresses/${id}`),
+  startEgress: (id: string) =>
+    request<EgressStatus>("POST", `/v1/egresses/${id}/start`),
+  stopEgress: (id: string) =>
+    request<EgressStatus>("POST", `/v1/egresses/${id}/stop`),
 };
 
 export interface SpeedtestResult {

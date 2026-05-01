@@ -274,11 +274,13 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, prefs s
 	return nil
 }
 
-func firstNonEmpty(a, b string) string {
-	if a != "" {
-		return a
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
 	}
-	return b
+	return ""
 }
 
 // clashAPIPoll hits sing-box's embedded clash API and refreshes
@@ -927,15 +929,168 @@ func outboundFor(s proto.Server) (map[string]any, error) {
 		}
 		return out, nil
 	case proto.ProtoNaive:
-		// sing-box doesn't ship a native naive client; we proxy via a
-		// chained http-tunnel. The real fix is to bundle naïve too,
-		// but that's out of scope for rc10.
-		return nil, errors.New("naive proxy not yet supported by bundled sing-box; pick another station")
+		// sing-box ≥1.4 ships a native `naive` outbound.  We map our
+		// stored fields (uri / username / password / scheme) onto its
+		// schema and force TLS on for naive+https, off for naive+quic
+		// (sing-box's naive type accepts both transports).
+		out := map[string]any{
+			"type":        "naive",
+			"tag":         "proxy",
+			"server":      s.Address,
+			"server_port": s.Port,
+			"username":    rs("username"),
+			"password":    rs("password"),
+		}
+		// `network` lets sing-box pick the underlying transport: tcp
+		// for naive+https (default), udp for naive+quic.
+		scheme := strings.ToLower(rs("scheme"))
+		if scheme == "" && s.Raw != nil {
+			if u, ok := s.Raw["uri"].(string); ok {
+				low := strings.ToLower(u)
+				switch {
+				case strings.HasPrefix(low, "naive+quic://"):
+					scheme = "quic"
+				case strings.HasPrefix(low, "naive+https://"):
+					scheme = "https"
+				}
+			}
+		}
+		switch scheme {
+		case "quic":
+			out["network"] = "udp"
+		default:
+			out["network"] = "tcp"
+		}
+		tls := map[string]any{"enabled": true}
+		if sni := rs("sni"); sni != "" {
+			tls["server_name"] = sni
+		} else if scheme == "https" || scheme == "quic" {
+			tls["server_name"] = s.Address
+		}
+		if rs("insecure") == "true" || rs("allow_insecure") == "1" || rs("skip-cert-verify") == "true" {
+			tls["insecure"] = true
+		}
+		out["tls"] = tls
+		return out, nil
 	case proto.ProtoAmneziaWG:
-		return nil, errors.New("amneziawg not yet supported; pick another station")
+		// sing-box's `wireguard` outbound understands an
+		// `amnezia_wg_settings` sub-object that drives the AmneziaWG
+		// packet obfuscation parameters (jc/jmin/jmax/s1/s2/h1..h4).
+		// Subscriptions in the wild expose these either as flat keys
+		// (clash YAML — `jc`, `jmin`, …) or as a nested
+		// `amnezia_wg_settings` (sing-box JSON), and we accept both.
+		out := map[string]any{
+			"type":        "wireguard",
+			"tag":         "proxy",
+			"server":      s.Address,
+			"server_port": s.Port,
+			"private_key": firstNonEmpty(rs("private_key"), rs("private-key")),
+		}
+		if pk := firstNonEmpty(rs("peer_public_key"), rs("public-key"), rs("public_key")); pk != "" {
+			out["peer_public_key"] = pk
+		}
+		if psk := firstNonEmpty(rs("pre_shared_key"), rs("pre-shared-key"), rs("preshared-key")); psk != "" {
+			out["pre_shared_key"] = psk
+		}
+		if mtu := rs("mtu"); mtu != "" {
+			if n, err := strconv.Atoi(mtu); err == nil && n > 0 {
+				out["mtu"] = n
+			}
+		}
+		// local_address — single string or []string from the source.
+		if s.Raw != nil {
+			switch la := s.Raw["local_address"].(type) {
+			case []any:
+				addrs := make([]string, 0, len(la))
+				for _, v := range la {
+					if str, ok := v.(string); ok && str != "" {
+						addrs = append(addrs, str)
+					}
+				}
+				if len(addrs) > 0 {
+					out["local_address"] = addrs
+				}
+			case string:
+				if la != "" {
+					out["local_address"] = []string{la}
+				}
+			}
+			if _, ok := out["local_address"]; !ok {
+				// clash uses "ip" / "ipv6" instead of local_address.
+				addrs := []string{}
+				if v, ok := s.Raw["ip"].(string); ok && v != "" {
+					addrs = append(addrs, v+"/32")
+				}
+				if v, ok := s.Raw["ipv6"].(string); ok && v != "" {
+					addrs = append(addrs, v+"/128")
+				}
+				if len(addrs) > 0 {
+					out["local_address"] = addrs
+				}
+			}
+		}
+		// Reserved bytes (some AWG providers ship `reserved: [a,b,c]`).
+		if s.Raw != nil {
+			if rsv, ok := s.Raw["reserved"]; ok {
+				out["reserved"] = rsv
+			}
+		}
+		// AmneziaWG obfuscation block.
+		awg := map[string]any{}
+		applyAWGKey := func(key, alt string) {
+			if v := rs(key); v != "" {
+				if n, err := strconv.Atoi(v); err == nil {
+					awg[key] = n
+					return
+				}
+			}
+			if alt != "" {
+				if v := rs(alt); v != "" {
+					if n, err := strconv.Atoi(v); err == nil {
+						awg[key] = n
+					}
+				}
+			}
+		}
+		applyAWGKey("jc", "")
+		applyAWGKey("jmin", "")
+		applyAWGKey("jmax", "")
+		applyAWGKey("s1", "")
+		applyAWGKey("s2", "")
+		applyAWGKey("h1", "")
+		applyAWGKey("h2", "")
+		applyAWGKey("h3", "")
+		applyAWGKey("h4", "")
+		// Nested form: sing-box subscriptions sometimes embed the same
+		// keys under "amnezia_wg_settings". Promote whatever's there.
+		if s.Raw != nil {
+			if nested, ok := s.Raw["amnezia_wg_settings"].(map[string]any); ok {
+				for k, v := range nested {
+					if _, present := awg[k]; present {
+						continue
+					}
+					switch t := v.(type) {
+					case float64:
+						awg[k] = int(t)
+					case int:
+						awg[k] = t
+					case string:
+						if n, err := strconv.Atoi(t); err == nil {
+							awg[k] = n
+						}
+					}
+				}
+			}
+		}
+		if len(awg) > 0 {
+			out["amnezia_wg_settings"] = awg
+		}
+		return out, nil
 	}
 	return nil, fmt.Errorf("unsupported protocol %q", s.Protocol)
 }
+
+
 
 func mergeMap(a, b map[string]any) map[string]any {
 	for k, v := range b {
