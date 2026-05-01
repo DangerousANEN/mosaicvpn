@@ -104,8 +104,12 @@ func LookupBatch(ctx context.Context, hosts []string) ([]BatchEntry, error) {
 		Fields string `json:"fields"`
 	}
 	const fields = "status,message,country,countryCode,city,lat,lon,query"
-	body := make([]req, len(hosts))
+	body := make([]req, 0, len(hosts))
 	idxByQuery := map[string]int{}
+	// Local DB pass: anything resolved offline never makes it into the
+	// outbound HTTP batch, which both speeds the call up and shrinks
+	// the rate-limit window we burn for the misses.
+	hasLocal := HasLocalDB()
 	for i, h := range hosts {
 		host := strings.TrimSpace(h)
 		out[i].Host = host
@@ -113,11 +117,21 @@ func LookupBatch(ctx context.Context, hosts []string) ([]BatchEntry, error) {
 			out[i].Err = "empty host"
 			continue
 		}
+		if hasLocal {
+			if res, ok, err := LookupLocal(ctx, host); err == nil && ok {
+				out[i].Result = res
+				continue
+			}
+		}
 		// ip-api.com expects an IP literal or a hostname that resolves
 		// publicly. We pass the user's address verbatim; the service
 		// resolves names itself so we don't double-resolve.
-		body[i] = req{Query: host, Fields: fields}
+		body = append(body, req{Query: host, Fields: fields})
 		idxByQuery[host] = i
+	}
+	if len(body) == 0 {
+		// Every host satisfied locally → skip the network round-trip.
+		return out, nil
 	}
 	cctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
@@ -176,13 +190,23 @@ func LookupBatch(ctx context.Context, hosts []string) ([]BatchEntry, error) {
 	return out, nil
 }
 
-// Lookup resolves host (an IPv4/v6 address or DNS name) using
-// ip-api.com. Returns an empty Result and a non-nil error when the
-// lookup fails or the host is invalid.
+// Lookup resolves host (an IPv4/v6 address or DNS name).
+//
+// If a local MMDB is loaded (rc47+) we try it first — it's offline,
+// rate-limit-free, and an order of magnitude faster than the
+// ip-api.com round-trip.  Misses (and any local-DB failure) fall
+// through to ip-api.com so the GeoIP feature degrades gracefully on
+// hosts where the city DB hasn't downloaded yet (network blocked,
+// first launch still warming, etc.).
 func Lookup(ctx context.Context, host string) (Result, error) {
 	host = strings.TrimSpace(host)
 	if host == "" {
 		return Result{}, errors.New("empty host")
+	}
+	if HasLocalDB() {
+		if res, ok, err := LookupLocal(ctx, host); err == nil && ok {
+			return res, nil
+		}
 	}
 	cctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()

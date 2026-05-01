@@ -449,8 +449,33 @@ func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
 // formatted as ms (rounded), and never floored to 1 — a real 0.4ms
 // reading is itself a strong signal that the dial never left the host.
 func probeServer(ctx context.Context, addr string, port int, dialIP string, timeout time.Duration) (int, string) {
+	return probeServerNet(ctx, "tcp", addr, port, dialIP, timeout)
+}
+
+// probeServerNet is the network-aware variant.  TCP dials open a SYN
+// and read the SYN-ACK; the round-trip is the RTT.  UDP "dials"
+// don't actually exchange anything in user space — net.Dial just
+// connects the socket so kernel ICMP errors get routed back to us.
+// For UDP we send one zero byte then attempt a bounded read:
+//
+//   - read returns OK / EOF      → host responded → RTT = elapsed
+//   - read fails with ECONNREFUSED → kernel saw an ICMP unreachable
+//     → port closed → fail
+//   - read times out             → host swallowed the byte (typical
+//     for hysteria2 / wireguard / amneziawg, which never reply to
+//     unauthenticated payloads) → return timeout as RTT and a "udp"
+//     tag in the message so the caller can colour the cell
+//     accordingly.
+//
+// This is a best-effort heuristic — UDP probing is fundamentally
+// ambiguous — but it's vastly better than the previous behaviour of
+// reporting every UDP-only server as TCP-unreachable.
+func probeServerNet(ctx context.Context, network, addr string, port int, dialIP string, timeout time.Duration) (int, string) {
 	if port <= 0 {
 		return -1, "invalid port"
+	}
+	if network == "" {
+		network = "tcp"
 	}
 	dialHost := dialIP
 	if dialHost == "" {
@@ -461,10 +486,40 @@ func probeServer(ctx context.Context, addr string, port int, dialIP string, time
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	t0 := time.Now()
-	conn, err := dialer.DialContext(cctx, "tcp", target)
+	conn, err := dialer.DialContext(cctx, network, target)
 	if err != nil {
-		logx.Debug("probe dial failed", "addr", addr, "port", port, "dial_ip", dialIP, "err", err)
+		logx.Debug("probe dial failed", "addr", addr, "port", port, "dial_ip", dialIP, "net", network, "err", err)
 		return -1, err.Error()
+	}
+	if network == "udp" {
+		// One-byte poke; QUIC / WireGuard servers ignore it but will
+		// still ICMP-reply if the port is closed.
+		_ = conn.SetDeadline(time.Now().Add(timeout))
+		_, _ = conn.Write([]byte{0})
+		buf := make([]byte, 64)
+		_, rerr := conn.Read(buf)
+		elapsed := time.Since(t0)
+		remote := conn.RemoteAddr().String()
+		_ = conn.Close()
+		switch {
+		case rerr == nil:
+			rtt := int((elapsed.Microseconds() + 500) / 1000)
+			if rtt < 1 {
+				rtt = 1
+			}
+			logx.Debug("udp probe replied", "addr", addr, "port", port, "remote", remote, "rtt_ms", rtt)
+			return rtt, ""
+		case isConnRefused(rerr):
+			logx.Debug("udp probe refused (icmp)", "addr", addr, "port", port, "err", rerr)
+			return -1, "udp closed: " + rerr.Error()
+		default:
+			// Timeout / silence is the normal answer for QUIC / WG.
+			// Report the timeout itself as RTT so the UI can render
+			// "alive but silent" rather than an unreachable cell.
+			rtt := int(timeout / time.Millisecond)
+			logx.Debug("udp probe silent (presumed alive)", "addr", addr, "port", port, "rtt_ms", rtt, "err", rerr)
+			return rtt, ""
+		}
 	}
 	elapsed := time.Since(t0)
 	remote := conn.RemoteAddr().String()
@@ -479,6 +534,30 @@ func probeServer(ctx context.Context, addr string, port int, dialIP string, time
 		logx.Warn("probe remote looks local/hijacked", "addr", addr, "port", port, "remote", remote, "rtt_us", us)
 	}
 	return rtt, ""
+}
+
+// isConnRefused returns true when err originates in an ICMP
+// unreachable received by the kernel for a connected UDP socket.
+// The platform-specific spelling differs (ECONNREFUSED on POSIX,
+// WSAECONNREFUSED on Windows); both surface as `connection refused`
+// in the formatted message so a substring match is sufficient.
+func isConnRefused(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "connection refused") ||
+		strings.Contains(msg, "connection was refused")
+}
+
+// probeNetworkFor picks the right probe network for a server's
+// protocol.  hy2/wireguard/amneziawg are UDP-only, the rest are TCP.
+func probeNetworkFor(p proto.Protocol) string {
+	switch p {
+	case proto.ProtoHysteria2, proto.ProtoAmneziaWG:
+		return "udp"
+	}
+	return "tcp"
 }
 
 // suspiciousRemote reports whether the remote endpoint of a probe is a
@@ -692,7 +771,7 @@ func (s *Server) handleTestServer(w http.ResponseWriter, r *http.Request) {
 	} else {
 		dialIP = srv.ResolvedIP
 	}
-	ms, errMsg := probeServer(r.Context(), srv.Address, srv.Port, dialIP, 5*time.Second)
+	ms, errMsg := probeServerNet(r.Context(), probeNetworkFor(srv.Protocol), srv.Address, srv.Port, dialIP, 5*time.Second)
 	if err := s.store.RecordServerProbe(id, ms, errMsg); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -774,7 +853,7 @@ func (s *Server) handleTestAll(w http.ResponseWriter, r *http.Request) {
 			} else {
 				dialIP = sv.ResolvedIP
 			}
-			ms, errMsg := probeServer(r.Context(), sv.Address, sv.Port, dialIP, 4*time.Second)
+			ms, errMsg := probeServerNet(r.Context(), probeNetworkFor(sv.Protocol), sv.Address, sv.Port, dialIP, 4*time.Second)
 			_ = s.store.RecordServerProbe(sv.ID, ms, errMsg)
 		}()
 	}

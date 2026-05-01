@@ -26,6 +26,7 @@ import (
 
 	"github.com/DangerousANEN/mosaicvpn/internal/api"
 	"github.com/DangerousANEN/mosaicvpn/internal/egress"
+	"github.com/DangerousANEN/mosaicvpn/internal/geoip"
 	"github.com/DangerousANEN/mosaicvpn/internal/logx"
 	"github.com/DangerousANEN/mosaicvpn/internal/mcp"
 	"github.com/DangerousANEN/mosaicvpn/internal/paths"
@@ -109,6 +110,15 @@ func run(dataDirOverride string) error {
 	// rate-limiting, captive portal, etc.) leave Status.MyLocation
 	// nil and the renderer falls back to its hardcoded default.
 	go resolveMyLocation(mgr, store)
+
+	// rc47: warm the offline city DB out-of-band.  Subsequent
+	// `geoip.Lookup` calls (server pin resolution, public-IP
+	// detection) try the local MMDB first and fall back to ip-api.com
+	// on miss.  Failures here just mean the daemon stays on ip-api
+	// for this run — no hard error.
+	go geoip.EnsureLocalDB(context.Background(), dataDir, func(msg string, kv ...any) {
+		logx.Info(msg, kv...)
+	})
 
 	apiSrv := api.NewServer(store, mgr, nil)
 
