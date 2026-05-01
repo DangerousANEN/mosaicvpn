@@ -8,6 +8,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -147,6 +148,7 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /v1/subscriptions", s.handleListSubs)
 	s.mux.HandleFunc("POST /v1/subscriptions", s.handleAddSub)
+	s.mux.HandleFunc("POST /v1/subscriptions/import", s.handleImportSub)
 	s.mux.HandleFunc("PATCH /v1/subscriptions/{id}", s.handleUpdateSub)
 	s.mux.HandleFunc("POST /v1/subscriptions/{id}/refresh", s.handleRefreshSub)
 	s.mux.HandleFunc("DELETE /v1/subscriptions/{id}", s.handleDeleteSub)
@@ -249,6 +251,84 @@ func (s *Server) handleAddSub(w http.ResponseWriter, r *http.Request) {
 	}
 	s.kickGeoResolve(sub.ID)
 	// reload after refresh
+	for _, su := range s.store.Snapshot().Subscriptions {
+		if su.ID == sub.ID {
+			sub = su
+			break
+		}
+	}
+	writeJSON(w, http.StatusOK, sub)
+}
+
+// handleImportSub creates a subscription from an inline payload that
+// the client already has in memory.  Used by the "Import from file"
+// flow in the renderer for AmneziaWG `.conf`, AmneziaVPN `vpn://`
+// tokens, sing-box JSON, Clash YAML, etc. — anything Detect knows.
+//
+// Imported subscriptions have an empty URL (there is no remote to
+// re-poll) and AutoRefresh disabled; the parsed servers are stored
+// once at import time.  The renderer's Refresh button is hidden for
+// these and Edit can re-upload a new payload via this endpoint with
+// the same ID semantics — but for now we treat each import as a new
+// subscription, which keeps the handler trivially idempotent.
+func (s *Server) handleImportSub(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name     string `json:"name"`
+		Filename string `json:"filename"`
+		Content  string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	payload := []byte(req.Content)
+	if len(bytes.TrimSpace(payload)) == 0 {
+		writeError(w, http.StatusBadRequest, "content required")
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		name = subs.SuggestNameFromFilename(req.Filename)
+	}
+	if name == "" {
+		name = "Imported"
+	}
+	res, err := subs.ParseWithName("", payload, name)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "parse failed: "+err.Error())
+		return
+	}
+	if res.Format == proto.FormatUnknown {
+		writeError(w, http.StatusBadRequest, "unrecognised payload format")
+		return
+	}
+	sub, err := s.store.AddOrUpdateSubscription(proto.Subscription{
+		Name:                   name,
+		URL:                    "",
+		Format:                 res.Format,
+		AutoRefresh:            false,
+		RefreshIntervalSeconds: 0,
+		LastFetched:            time.Now().UTC(),
+		ServerCount:            len(res.Servers),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// Re-key parsed servers under the assigned subscription ID so
+	// Server.SubscriptionID matches Subscription.ID for the
+	// renderer's join.
+	rekeyed, err := subs.ParseWithName(sub.ID, payload, name)
+	if err != nil {
+		_ = s.store.MarkSubscriptionError(sub.ID, err.Error())
+		writeError(w, http.StatusBadRequest, "reparse failed: "+err.Error())
+		return
+	}
+	if err := s.store.ReplaceServersFor(sub.ID, rekeyed.Servers); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.kickGeoResolve(sub.ID)
 	for _, su := range s.store.Snapshot().Subscriptions {
 		if su.ID == sub.ID {
 			sub = su

@@ -30,7 +30,9 @@ system settings.
   city / country metadata.
 - **Subscription engine** — auto-detects sing-box JSON, Clash YAML, v2ray
   base64 (`vless://`, `vmess://`, `ss://`, `hysteria2://`, `naive+https://`),
-  and SIP008.
+  SIP008, AmneziaWG / WireGuard `.conf` (`[Interface]` / `[Peer]` INI),
+  and AmneziaVPN `vpn://` exports — either fetched from a URL or
+  imported from a local file via Pool → **Import file…**.
 - **Single-instance daemon** — global named mutex on Windows + lockfile
   carrying the loopback endpoint and bearer token. CLI, GUI and future
   MCP clients all attach to the same `mosaicd`.
@@ -60,7 +62,10 @@ tracked on the roadmap.
 ### Quick start
 
 1. Launch **Mosaic** from the Start menu.
-2. Open **Pool**, paste a subscription URL, click **Add**.
+2. Open **Pool**, paste a subscription URL and click **Add** — or
+   click **Import file…** to load a local `.conf` (WireGuard /
+   AmneziaWG), `vpn://` (AmneziaVPN export), `.yaml` (Clash) or
+   `.json` (sing-box) file directly.
 3. Click **Test all** on the subscription card. Latency is probed via
    TCP and the daemon resolves each server's IP through ip-api.com so
    pins land in the right place on the map.
@@ -246,6 +251,7 @@ POST   /v1/disconnect
 
 GET    /v1/subscriptions
 POST   /v1/subscriptions           { url, name? }
+POST   /v1/subscriptions/import    { content, name?, filename? }   (rc45)
 POST   /v1/subscriptions/{id}/refresh
 DELETE /v1/subscriptions/{id}
 

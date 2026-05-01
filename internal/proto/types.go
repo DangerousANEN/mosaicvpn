@@ -79,11 +79,13 @@ type Server struct {
 type Format string
 
 const (
-	FormatSingbox  Format = "singbox"
-	FormatClash    Format = "clash"
-	FormatV2RayB64 Format = "v2ray-base64"
-	FormatSIP008   Format = "sip008"
-	FormatUnknown  Format = "unknown"
+	FormatSingbox        Format = "singbox"
+	FormatClash          Format = "clash"
+	FormatV2RayB64       Format = "v2ray-base64"
+	FormatSIP008         Format = "sip008"
+	FormatWireGuardConf  Format = "wireguard-conf"
+	FormatAmneziaVPN     Format = "amnezia-vpn"
+	FormatUnknown        Format = "unknown"
 )
 
 // Subscription is a remote source of Servers, periodically fetched and

@@ -29,7 +29,9 @@ HTTP прокси, который ты можешь воткнуть в брау
   city / country.
 - **Парсер подписок** — auto-detect: sing-box JSON, Clash YAML, v2ray
   base64 (`vless://`, `vmess://`, `ss://`, `hysteria2://`, `naive+https://`),
-  SIP008.
+  SIP008, AmneziaWG / WireGuard `.conf` (`[Interface]` / `[Peer]`),
+  AmneziaVPN `vpn://` экспорт. Можно подкинуть как URL подписки, так и
+  локальный файл через **Import file…** в Pool.
 - **Single-instance daemon** — global named mutex на Windows + lockfile
   с loopback-endpoint'ом и bearer-токеном. CLI, GUI и будущий MCP-клиент
   все цепляются к одному `mosaicd`.
@@ -58,7 +60,10 @@ roadmap.
 ### Быстрый старт
 
 1. Запусти **Mosaic** через меню Пуск.
-2. Открой **Pool**, вставь URL подписки, жми **Add**.
+2. Открой **Pool**, вставь URL подписки и жми **Add** — или
+   **Import file…**, чтобы подгрузить локальный файл `.conf`
+   (WireGuard / AmneziaWG), `vpn://` (экспорт AmneziaVPN), `.yaml`
+   (Clash) или `.json` (sing-box).
 3. На карточке подписки жми **Test all**. Daemon TCP-пробит каждую
    станцию и резолвит её IP через `ip-api.com`, после чего пины на
    карте встают по настоящим координатам.

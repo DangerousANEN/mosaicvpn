@@ -107,6 +107,12 @@ export const api = {
     arr(await request<Subscription[]>("GET", "/v1/subscriptions")),
   addSubscription: (url: string, name?: string) =>
     request<Subscription>("POST", "/v1/subscriptions", { url, name }),
+  importSubscription: (content: string, name?: string, filename?: string) =>
+    request<Subscription>("POST", "/v1/subscriptions/import", {
+      content,
+      name: name ?? "",
+      filename: filename ?? "",
+    }),
   refreshSubscription: (id: string) =>
     request<Subscription>("POST", `/v1/subscriptions/${id}/refresh`),
   updateSubscription: (id: string, name?: string, url?: string) =>

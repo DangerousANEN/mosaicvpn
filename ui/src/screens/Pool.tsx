@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api } from "../api/client";
 import type { Server, Subscription } from "../api/types";
 import { romanLower as toRomanLower } from "../components/numerals";
@@ -65,6 +65,39 @@ export function Pool({
       // state, the Pool listing refreshes via its own poll.
       void api.testAllServers(sub.id).catch(() => {
         /* per-server errors land on the Server.last_test_error field */
+      });
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // rc45 — file-based import path for AmneziaWG `.conf`,
+  // AmneziaVPN `vpn://` exports, sing-box JSON, Clash YAML, etc.
+  // We use a plain <input type=file> hidden behind a button label
+  // because the Tauri webview runs the same FileReader API as any
+  // browser — no native dialog plugin needed.  The hidden input is
+  // re-keyed via the ref reset trick so picking the same file twice
+  // in a row still fires `change`.
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const onImportClick = () => {
+    fileInputRef.current?.click();
+  };
+  const onImportFile = async (e: FormEvent<HTMLInputElement>) => {
+    const input = e.currentTarget;
+    const file = input.files?.[0];
+    // Reset immediately so the same file can be re-imported later.
+    input.value = "";
+    if (!file) return;
+    setBusy("add");
+    setErr(null);
+    try {
+      const content = await file.text();
+      const sub = await api.importSubscription(content, undefined, file.name);
+      await reload();
+      void api.testAllServers(sub.id).catch(() => {
+        /* see onAdd */
       });
     } catch (e) {
       setErr((e as Error).message);
@@ -226,7 +259,7 @@ export function Pool({
             disabled={busy === "add"}
           />
           <span className="add-formats">
-            sing-box · clash · v2ray base64 · sip008
+            sing-box · clash · v2ray base64 · sip008 · wg-quick · vpn://
           </span>
         </span>
         <button
@@ -236,6 +269,22 @@ export function Pool({
         >
           {busy === "add" ? "Fetching…" : "Fetch"}
         </button>
+        <button
+          type="button"
+          className="btn"
+          onClick={onImportClick}
+          disabled={busy === "add"}
+          title="Import from .conf / vpn:// / .json / .yaml file"
+        >
+          {busy === "add" ? "Importing…" : "Import file…"}
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".conf,.json,.yaml,.yml,.txt,application/json,application/x-yaml,text/plain"
+          style={{ display: "none" }}
+          onChange={onImportFile}
+        />
       </form>
     </div>
   );

@@ -36,6 +36,19 @@ func Detect(payload []byte) proto.Format {
 		return proto.FormatUnknown
 	}
 
+	// AmneziaVPN export — `vpn://...`. Checked before plain v2ray
+	// base64 because both can look base64-shaped.
+	if LooksLikeAmneziaVPN([]byte(trimmed)) {
+		return proto.FormatAmneziaVPN
+	}
+
+	// WireGuard / AmneziaWG `.conf` (wg-quick INI).  Cheap string
+	// check on the section markers; full validation happens in
+	// ParseWireGuardConf.
+	if LooksLikeWireGuardConf([]byte(trimmed)) {
+		return proto.FormatWireGuardConf
+	}
+
 	// JSON-ish detection
 	if trimmed[0] == '{' || trimmed[0] == '[' {
 		if looksLikeSingbox(trimmed) {
@@ -74,28 +87,24 @@ func Detect(payload []byte) proto.Format {
 // derived deterministically from their canonical form so that re-fetching a
 // subscription does not churn IDs.
 func Parse(subID string, payload []byte) (Result, error) {
-	format := Detect(payload)
-	switch format {
-	case proto.FormatSingbox:
-		servers, err := ParseSingbox(subID, payload)
-		return Result{Format: format, Servers: servers}, err
-	case proto.FormatV2RayB64:
-		servers, err := ParseV2RayBase64(subID, payload)
-		return Result{Format: format, Servers: servers}, err
-	case proto.FormatClash:
-		servers, err := ParseClash(subID, payload)
-		return Result{Format: format, Servers: servers}, err
-	case proto.FormatSIP008:
-		servers, err := ParseSIP008(subID, payload)
-		return Result{Format: format, Servers: servers}, err
-	default:
-		return Result{Format: proto.FormatUnknown}, ErrUnknownFormat
-	}
+	return parseWithName(subID, payload, Detect(payload), "")
 }
 
 // ParseAs forces a specific format. Useful when the user explicitly specifies
 // the subscription type.
 func ParseAs(subID string, payload []byte, format proto.Format) (Result, error) {
+	return parseWithName(subID, payload, format, "")
+}
+
+// ParseWithName is like Parse but lets the caller supply a friendly
+// display name (e.g. derived from a filename for file-based imports).
+// The wireguard-conf and amnezia-vpn parsers use it to label the
+// resulting Server when the payload itself does not carry a name.
+func ParseWithName(subID string, payload []byte, name string) (Result, error) {
+	return parseWithName(subID, payload, Detect(payload), name)
+}
+
+func parseWithName(subID string, payload []byte, format proto.Format, name string) (Result, error) {
 	switch format {
 	case proto.FormatSingbox:
 		s, err := ParseSingbox(subID, payload)
@@ -108,6 +117,12 @@ func ParseAs(subID string, payload []byte, format proto.Format) (Result, error) 
 		return Result{Format: format, Servers: s}, err
 	case proto.FormatSIP008:
 		s, err := ParseSIP008(subID, payload)
+		return Result{Format: format, Servers: s}, err
+	case proto.FormatWireGuardConf:
+		s, err := ParseWireGuardConf(subID, payload, name)
+		return Result{Format: format, Servers: s}, err
+	case proto.FormatAmneziaVPN:
+		s, err := ParseAmneziaVPN(subID, payload, name)
 		return Result{Format: format, Servers: s}, err
 	}
 	return Result{Format: proto.FormatUnknown}, ErrUnknownFormat

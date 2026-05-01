@@ -1251,7 +1251,86 @@ This rc fixes that.
 - `README.md`, `README.ru.md` — Naive / AmneziaWG ✅; new "Agent
   integration (MCP)" / "Подключение AI-агента (MCP)" sections.
 
-### 13.7 Permanent learnings the next agent should NOT re-discover
+### 13.7 rc45 — shipped
+
+**Scope shipped in one PR (`devin/1777640079-rc45`, stacked on rc44):**
+
+User asked: "а как добавлять amnesiawg подписки? они же как файлы
+вроде" — pre-rc45 the only entry point for AmneziaWG was an
+HTTP-served Clash YAML or sing-box JSON.  AmneziaVPN providers
+typically hand out either a `.conf` file (`[Interface]` / `[Peer]`)
+or a `vpn://...` token.  rc45 closes that gap.
+
+- **`internal/subs/wireguardconf.go`** *(new)* — wg-quick INI
+  parser. Hand-rolled (no third-party INI dep). `[Interface]` and
+  `[Peer]` sections; comments `#` / `;`; `key = value` split on
+  first `=`. AmneziaWG obfuscation params (`Jc`, `Jmin`, `Jmax`,
+  `S1`, `S2`, `H1`..`H4`) lifted from `[Interface]` straight into
+  `Server.Raw` under their lowercase canonical names — outboundFor
+  in `singbox_backend.go` already speaks both clash flat and
+  sing-box nested forms, so they round-trip unchanged.
+  `Address` may be CSV (`10.0.0.2/32, fd42::2/128`) → parsed into
+  `local_address []any`. `Endpoint` parsed via `net.SplitHostPort`
+  so IPv6 bracket form works.
+- **`internal/subs/amnezia_vpn.go`** *(new)* — `vpn://...`
+  parser. Format reverse-engineered from amnezia-client and the
+  reference decoder at github.com/andr13/amnezia-config-decoder:
+  `vpn://` prefix → strip → urlsafe-base64 (lenient padding) →
+  4-byte big-endian length header → zlib-decompress → JSON.
+  Handles two flavours of the JSON: (a) "full export" with
+  `containers[].awg.last_config` (a verbatim wg-quick payload —
+  routed through `ParseWireGuardConf`); (b) "API handle" with
+  `api_endpoint` + `api_key` — surfaces a descriptive error
+  pointing the user at the AmneziaVPN client's "unwrap once,
+  paste .conf" flow instead of silently producing zero servers.
+- **`internal/subs/parser.go`** — `Detect()` now returns
+  `FormatAmneziaVPN` / `FormatWireGuardConf` (checked first
+  because both can otherwise look base64-shaped or JSON-shaped).
+  New `ParseWithName(subID, payload, name)` lets callers pass a
+  filename-derived display name; `Parse` and `ParseAs` now
+  delegate to a shared `parseWithName` helper.
+- **`internal/proto/types.go`** — added `FormatWireGuardConf` and
+  `FormatAmneziaVPN`.
+- **`POST /v1/subscriptions/import`** *(new endpoint, `internal/api/server.go::handleImportSub`)*
+  — accepts `{name, filename, content}`. Detects format on
+  `content`, creates a Subscription with empty URL +
+  `AutoRefresh=false` (no remote to re-poll), then re-parses with
+  the assigned subscription ID and stores via
+  `ReplaceServersFor`. Re-parse step is intentional — first
+  `ParseWithName` run just to validate format/error; second to
+  rekey servers under `sub.ID` so `Server.SubscriptionID` joins
+  cleanly with `Subscription.ID`.
+- **UI: Pool → Add subscription bar** — new **Import file…**
+  button next to **Fetch**. Hidden `<input type="file"
+  accept=".conf,.json,.yaml,.yml,.txt,...">` triggered via ref;
+  reads via `File.text()` (no Tauri dialog plugin needed — the
+  webview's FileReader is sufficient). On success the Pool auto-
+  Test-alls the new subscription, same as URL-based add.
+- **`README.md` / `README.ru.md`** — feature bullet, quick-start
+  step, API reference table all updated with the new endpoint
+  and accepted formats.
+- **Tests** — `internal/subs/wireguardconf_test.go` covers
+  `.conf` parse (full + minimal + missing-peer error),
+  `SuggestNameFromFilename`, the round-trip
+  `vpn://...` parser via an in-test encoder mirroring
+  amnezia-client's `encode_config`, and the API-handle error
+  path. `go test ./...` green.
+
+**Files touched (rc45 cumulative):**
+
+- *(new)* `internal/subs/wireguardconf.go`
+- *(new)* `internal/subs/amnezia_vpn.go`
+- *(new)* `internal/subs/wireguardconf_test.go`
+- `internal/subs/parser.go`
+- `internal/proto/types.go`
+- `internal/api/server.go` (added `bytes` import,
+  `handleImportSub`, route registration)
+- `ui/src/api/client.ts` (added `importSubscription`)
+- `ui/src/screens/Pool.tsx` (file input + Import file… button)
+- `README.md`, `README.ru.md`
+- `HANDOFF.md` (this section)
+
+### 13.8 Permanent learnings the next agent should NOT re-discover
 
 - User (`johndoedal2`) expects Russian replies, ships features by
   testing a Windows installer, and merges PRs by tag-not-branch.
