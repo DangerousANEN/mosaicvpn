@@ -106,9 +106,12 @@ present, so local end-to-end testing on Linux is limited to running
 | State machine, prefs, persistence    | `internal/state/state.go`, `internal/store/store.go` |
 | Subscription parsers (vmess, vless,  | `internal/subs/`                                     |
 | trojan, hy2, ss, naive, sing-box)    |                                                      |
-| Probe + DNS bypass                   | `internal/api/server.go` `probeServer`,              |
-|                                      | `internal/geoip/hint.go` `DirectResolver`            |
-| GeoIP lookup (ip-api.com, no-proxy)  | `internal/geoip/geoip.go`                            |
+| Probe + DNS bypass (TCP for SS/VLESS,| `internal/api/server.go` `probeServerNet`,           |
+|  UDP for hy2 / amneziawg via         | `probeNetworkFor` (rc47);                            |
+|  one-byte poke + ICMP detect)        | `internal/geoip/hint.go` `DirectResolver`            |
+| GeoIP lookup (offline MMDB first,    | `internal/geoip/geoip.go`,                           |
+|  ip-api.com fallback)                | `internal/geoip/local.go` (rc47 — db-ip.com lite,    |
+|                                      | CC-BY 4.0, downloaded to `<DataDir>/geo/city.mmdb`)  |
 | World map (renderer + HUD + side panel) | `ui/src/components/WorldMap.tsx`                   |
 | World map projection (equirect)      | `ui/src/components/cluster/resolveGroups.ts` —       |
 |                                      | `projectVB()`, `LON_OFFSET / SCALE`, `LAT_*`         |

@@ -1330,7 +1330,144 @@ or a `vpn://...` token.  rc45 closes that gap.
 - `README.md`, `README.ru.md`
 - `HANDOFF.md` (this section)
 
-### 13.8 Permanent learnings the next agent should NOT re-discover
+### 13.8 rc46 — bug-fix pass on rc45
+
+User reported nine items after testing rc45.  rc46 closed seven of
+them in a single PR (`devin/1777641257-rc46`, PR #37, stacked on
+rc45).  The two remaining items (offline GeoIP, UDP probe) shipped
+in rc47.
+
+**Closed in rc46:**
+
+1. **Folio `.folio-btn` / `.folio-btn-primary` checkboxes
+   unstyled** — pre-rc46 these classes had zero CSS rules; the
+   rc44 egress chapter introduced LAN-share / AutoStart checkboxes
+   and three buttons that all fell through to raw browser default.
+   Added the bordered "paper" button family (default / primary /
+   danger) plus a custom 14×14 checkbox skin to
+   `ui/src/styles/app.css`.
+2. **`SubscriptionQuota` marks every server as `expired`** when
+   the subscription doesn't expose a `Subscription-Userinfo`
+   header.  Root cause: Go's `omitempty` does **not** drop a zero
+   `time.Time`, so JSON encoded it as `"0001-01-01T00:00:00Z"`,
+   which the renderer parsed as a date in year 1 → tone=err.
+   Fix: filter the zero-time string in `SubscriptionQuota` (UI).
+   The Go side could equally well use a custom marshaller; UI
+   filter is the lower-risk change.
+3. **Hysteria2 server duplication** — providers ship one URI for
+   the TLS listener and another for the port-hopping variant
+   (`?mport=20000-50000`).  Both URIs collapsed onto the same
+   ID because `serverID()` only hashed `host:port:password` —
+   the store kept whichever survived a `ReplaceServersFor`, and
+   the UI's `activeServerId === server.id` check matched both.
+   Fix: include the raw URI in the ID hash; mport now also
+   round-trips into `Server.Raw` and the outbound builder emits
+   `server_ports: ["start:end"]` for sing-box.
+4. **UI shows two simultaneous connects** — same root cause as
+   #3.  No additional code change needed once IDs are unique.
+5. **`vpn.tgapp.dev` subscription parsing** — the URI list was
+   parsed correctly, but `mport` / `alpn` were stored in `Raw`
+   without flowing through to the outbound builder.  Now both
+   are surfaced (`tls.alpn`, `server_ports`).
+6. **Naive doesn't connect** — `singbox_backend.go:outboundFor`
+   was forcing `network: "udp"` for `naive+quic://` URIs.
+   sing-box's native naive outbound is TCP-only — `network` is a
+   filter, not a transport switch — so this rejected the config.
+   Removed the override; ALPN now passes through if set.
+7. **Hysteria2 password bug** *(silently fixed during the rc46
+   audit; previously surfaced as Verify / Speedtest "unexpected
+   EOF")* — `parseHysteria2` stored only `u.User.Username()`
+   (the part before `:`) and dropped the colon half.  Hysteria2
+   uses the **entire userinfo blob** as a single auth token.
+   Auth failed silently upstream and sing-box dropped the
+   connection mid-handshake → downstream probes saw EOF.
+   Fix: `password = u.User.String()` with fallback to
+   Username-only for legacy URIs.
+
+**Files touched (rc46):**
+
+- `internal/subs/v2ray.go` (parseHysteria2 password / dedup /
+  mport / alpn; parseNaive ID dedup)
+- `internal/state/singbox_backend.go` (hysteria2 outbound
+  `server_ports` + `tls.alpn`; naive outbound — drop bogus
+  `network: udp`, pass through ALPN)
+- `ui/src/screens/Pool.tsx` (`SubscriptionQuota` zero-time
+  guard)
+- `ui/src/styles/app.css` (`.folio-btn*` + checkbox skin)
+
+### 13.9 rc47 — offline geo db + UDP probe for QUIC / WireGuard
+
+Closes the two items deferred from rc46.
+
+**Offline GeoIP (replaces ip-api.com round-trip on every probe).**
+User (`johndoedal2`) lives behind a network where ip-api.com is
+flaky / rate-limited / blocked; pins for the `vpn.tgapp.dev`
+subscription weren't drawing because `geoip.LookupBatch` was
+silently failing.
+
+- *(new)* `internal/geoip/local.go` — wraps
+  `oschwald/maxminddb-golang` (added to go.mod).  `LoadLocalDB`
+  / `LookupLocal` / `HasLocalDB` against the MMDB.  The schema
+  matches both MaxMind GeoLite2-City and db-ip.com City Lite —
+  `country.iso_code`, `city.names.en`, `location.{latitude,
+  longitude}`.
+- `EnsureLocalDB(ctx, dataDir, logf)` is the orchestrator.
+  Stat the file at `<DataDir>/geo/city.mmdb`; reload if
+  it exists and is < 35 days old; otherwise download
+  `https://download.db-ip.com/free/dbip-city-lite-YYYY-MM.mmdb.gz`
+  for the current month, falling back through the previous two
+  months if the URL isn't yet published.  Atomic write
+  (`<dest>.part` → rename).  Long-deadline `http.Client` (no
+  total timeout, just dial / TLS deadlines) — the existing 8 s
+  client is fine for the JSON endpoint but trips on the ~50 MB
+  download.  Failures are non-fatal; the package keeps using
+  ip-api.com.
+- `internal/geoip/geoip.go::Lookup` and `LookupBatch` try the
+  local DB first.  In `LookupBatch` we only build the outbound
+  HTTP body for hosts that missed the local DB, so a
+  1 000-server feed served by the local DB pays zero ip-api
+  roundtrips.
+- `cmd/mosaicd/main.go` kicks `EnsureLocalDB` in a goroutine at
+  startup (no blocking).
+- License: db-ip.com City Lite is **CC-BY 4.0**.  The download
+  log line includes the attribution string ("db-ip.com lite, CC-BY
+  4.0") on first load so we satisfy the licence by acknowledging
+  the source in the daemon log.  README does **not** yet have
+  the attribution — add it before any public release outside
+  the rc cycle.
+
+**UDP probe for QUIC / WireGuard.**  TCP-probing UDP-only
+protocols always failed because the listener simply isn't on TCP.
+
+- `internal/api/server.go::probeServerNet` adds a UDP path for
+  `ProtoHysteria2` and `ProtoAmneziaWG` (selected via the
+  `probeNetworkFor` helper).  Sends a single zero byte, then
+  reads with a deadline:
+  - data back / EOF → RTT = elapsed wall time.
+  - `ECONNREFUSED` (POSIX) / `WSAECONNREFUSED` (Windows) →
+    kernel saw an ICMP unreachable → port closed → fail with
+    `udp closed: …`.  `isConnRefused` substring-matches on the
+    formatted error since both spellings normalise to
+    "connection refused".
+  - timeout / silence → "alive but silent" (typical for QUIC
+    and WireGuard, which never reply to unauthenticated
+    payloads).  Returns the timeout itself as RTT so the UI
+    renders "alive" instead of "unreachable".
+- Non-UDP protocols are unchanged; `probeServer` is now a thin
+  wrapper that always picks `"tcp"`.
+
+**Files touched (rc47):**
+
+- *(new)* `internal/geoip/local.go`
+- `internal/geoip/geoip.go` (local-first Lookup / LookupBatch)
+- `cmd/mosaicd/main.go` (kick `EnsureLocalDB` async)
+- `internal/api/server.go` (probeServerNet + UDP path +
+  probeNetworkFor; both probe call-sites updated)
+- `go.mod` / `go.sum` (added
+  `github.com/oschwald/maxminddb-golang v1.13.1`,
+  bumped `golang.org/x/sys` to v0.21.0)
+
+### 13.10 Permanent learnings the next agent should NOT re-discover
 
 - User (`johndoedal2`) expects Russian replies, ships features by
   testing a Windows installer, and merges PRs by tag-not-branch.
@@ -1350,7 +1487,57 @@ or a `vpn://...` token.  rc45 closes that gap.
   `pre-commit run --all-files` is a no-op.
 - The Go binary lives at `/usr/local/go/bin/go`, not in PATH by
   default. Always prefix: `export PATH=$PATH:/usr/local/go/bin`.
+- **rc46 lesson — Go `omitempty` does NOT drop a zero `time.Time`.**
+  Either guard the zero string in the renderer or write a custom
+  MarshalJSON.  Bit me on `Subscription.ExpiresAt`.
+- **rc46 lesson — `serverID(subID, "hy2", host, port, password)`
+  is not enough for hysteria2.** Port-hopping variants and any
+  protocol with meaningful query parameters need the **full raw
+  URI** in the hash, otherwise the store dedups them and the UI
+  marks both as the active connection at the same time.
+- **rc46 lesson — Hysteria2's URI userinfo is a single auth
+  token.**  `u.User.String()` not `u.User.Username()`.  The
+  symptom is silent EOF on every probe / Verify / Speedtest
+  through the proxy — sing-box auth fails and the upstream
+  drops the conn mid-handshake.
+- **rc46 lesson — sing-box's native `naive` outbound is
+  TCP-only.**  `network` is a NetworkList **filter**, not a
+  transport switch.  Don't set `"network": "udp"` for
+  `naive+quic://`; sing-box rejects the config.
+- **rc47 lesson — db-ip.com City Lite is the "free GeoLite2
+  alternative" with no API key required.**  URL pattern:
+  `https://download.db-ip.com/free/dbip-city-lite-YYYY-MM.mmdb.gz`.
+  Schema (country.iso_code / city.names.en /
+  location.{latitude, longitude}) is compatible with the MaxMind
+  GeoLite2-City schema, so a single `oschwald/maxminddb-golang`
+  reader handles both.  License is CC-BY 4.0 — credit the source
+  in any public-facing copy.
+- **rc47 lesson — `probeServer` must be protocol-aware.**  TCP
+  probe is wrong for hysteria2 / amneziawg / wireguard — those
+  servers don't listen on TCP at all.  Use `probeServerNet` with
+  `udp` for those protocols and read with a deadline so the
+  kernel can ICMP-back closed-port errors.
 
-— rc44 agent, picking up from rc38. Writing this as I go so if I
-die mid-rc44 the next agent can resume from §13.6 "Resume
-instructions".
+— rc47 agent, picking up from rc44 mid-cycle.  Closed rc44, then
+rc45 (file-import for AmneziaWG), then rc46 (bug list of nine), then
+rc47 (deferred items: offline geo + UDP probe).  Open issues that
+the next agent should triage:
+
+- **Naive subscription not personally tested** — the rc46 fix
+  (drop `network: udp`) is correct per sing-box docs but I have
+  no naive provider to verify against.  If user reports it still
+  fails, grab `mosaicd.err.log` and check whether sing-box errors
+  on schema validation vs. handshake.
+- **Local geo DB attribution** — the daemon logs the CC-BY 4.0
+  source on first load but there's no UI surface for it.  Should
+  appear in Folio "About" chapter alongside the version banner.
+- **TCP-probe fallback for protocols that listen on both** — if
+  a hysteria2 server happens to also accept TCP/443 (some panels
+  multiplex hy2 + sni-proxy on the same port), we currently only
+  probe UDP.  Could be improved with a TCP pre-probe and
+  fallback to UDP, but it's marginal.
+- **Multi-egress UI polish** — rc44 added the chapter, rc46
+  styled the buttons.  Empty-state copy ("No egresses yet —
+  click + Add to create one") is currently the literal
+  `.folio-empty` italic placeholder; could use a clearer
+  illustration / inline help.
