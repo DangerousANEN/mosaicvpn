@@ -470,7 +470,15 @@ function Cell({
 function SubscriptionQuota({ sub }: { sub: Subscription }): JSX.Element | null {
   const used = sub.traffic_used ?? 0;
   const total = sub.traffic_total ?? 0;
-  const expIso = sub.expires_at;
+  // Go's `omitempty` doesn't drop a zero `time.Time`, so subscriptions
+  // without an expiry get serialised as `"0001-01-01T00:00:00Z"` —
+  // which the renderer would otherwise treat as a date in year 1
+  // (long since "expired").  Filter that explicitly so providers that
+  // don't surface a Subscription-Userinfo header don't show a red
+  // "expired" chip on every server card.
+  const rawExp = sub.expires_at;
+  const expIso =
+    rawExp && !rawExp.startsWith("0001-01-01") ? rawExp : undefined;
   if (total === 0 && used === 0 && !expIso) return null;
 
   const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;

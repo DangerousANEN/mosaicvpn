@@ -910,12 +910,36 @@ func outboundFor(s proto.Server) (map[string]any, error) {
 		if rs("insecure") == "true" || rs("allow_insecure") == "1" || rs("skip-cert-verify") == "true" {
 			tls["insecure"] = true
 		}
+		// Hysteria2 commonly advertises `alpn=h3` in URI / clash;
+		// surface it on the TLS block so sing-box negotiates the
+		// matching protocol with the upstream.
+		if alpn := rs("alpn"); alpn != "" {
+			var parts []string
+			for _, p := range strings.Split(alpn, ",") {
+				if t := strings.TrimSpace(p); t != "" {
+					parts = append(parts, t)
+				}
+			}
+			if len(parts) > 0 {
+				tls["alpn"] = parts
+			}
+		}
 		out["tls"] = tls
 		if obfs := rs("obfs"); obfs != "" {
 			out["obfs"] = map[string]any{
 				"type":     obfs,
 				"password": rs("obfs-password"),
 			}
+		}
+		// Port-hopping: subscription URIs encode this as
+		// `?mport=20000-50000` (or via clash `ports: 20000-50000`).
+		// sing-box's hysteria2 outbound takes `server_ports` as an
+		// array of `start:end` strings; we already normalise the
+		// separator at parse time.
+		if mport := rs("mport"); mport != "" {
+			out["server_ports"] = []string{mport}
+		} else if ports := rs("ports"); ports != "" {
+			out["server_ports"] = []string{strings.ReplaceAll(ports, "-", ":")}
 		}
 		return out, nil
 	case proto.ProtoShadowsocks:
@@ -929,10 +953,14 @@ func outboundFor(s proto.Server) (map[string]any, error) {
 		}
 		return out, nil
 	case proto.ProtoNaive:
-		// sing-box ≥1.4 ships a native `naive` outbound.  We map our
-		// stored fields (uri / username / password / scheme) onto its
-		// schema and force TLS on for naive+https, off for naive+quic
-		// (sing-box's naive type accepts both transports).
+		// sing-box ≥1.4 ships a native `naive` outbound.  Schema:
+		//   server, server_port, username, password, tls{enabled,
+		//   server_name, insecure, alpn}.  `network` is a list filter
+		//   (TCP/UDP) — sing-box defaults to TCP+UDP and we leave
+		//   that alone; previous versions of this builder forced
+		//   `network: udp` for naive+quic which broke modern
+		//   sing-box because the naive outbound only carries TCP
+		//   under the hood.
 		out := map[string]any{
 			"type":        "naive",
 			"tag":         "proxy",
@@ -941,8 +969,6 @@ func outboundFor(s proto.Server) (map[string]any, error) {
 			"username":    rs("username"),
 			"password":    rs("password"),
 		}
-		// `network` lets sing-box pick the underlying transport: tcp
-		// for naive+https (default), udp for naive+quic.
 		scheme := strings.ToLower(rs("scheme"))
 		if scheme == "" && s.Raw != nil {
 			if u, ok := s.Raw["uri"].(string); ok {
@@ -955,12 +981,6 @@ func outboundFor(s proto.Server) (map[string]any, error) {
 				}
 			}
 		}
-		switch scheme {
-		case "quic":
-			out["network"] = "udp"
-		default:
-			out["network"] = "tcp"
-		}
 		tls := map[string]any{"enabled": true}
 		if sni := rs("sni"); sni != "" {
 			tls["server_name"] = sni
@@ -969,6 +989,18 @@ func outboundFor(s proto.Server) (map[string]any, error) {
 		}
 		if rs("insecure") == "true" || rs("allow_insecure") == "1" || rs("skip-cert-verify") == "true" {
 			tls["insecure"] = true
+		}
+		// Some naive servers expect h2 ALPN; pass through if set.
+		if alpn := rs("alpn"); alpn != "" {
+			var parts []string
+			for _, p := range strings.Split(alpn, ",") {
+				if t := strings.TrimSpace(p); t != "" {
+					parts = append(parts, t)
+				}
+			}
+			if len(parts) > 0 {
+				tls["alpn"] = parts
+			}
 		}
 		out["tls"] = tls
 		return out, nil

@@ -1807,8 +1807,100 @@
   background: var(--paper, #fff);
   color: var(--ink, #222);
 }
+/* rc46 — base styles for the egress chapter buttons.  Pre-rc46
+ * `.folio-btn` and `.folio-btn-primary` had no rules at all so the
+ * Create / Edit / Cancel buttons fell through to the browser
+ * default <button> chrome — visually a regression against the rest
+ * of Folio's bordered, monospace look.  Mirror the .btn family from
+ * the global toolbar but tighter (12px font, 4×8 padding) so the
+ * inline egress table doesn't steal vertical space. */
+.folio-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 1.3;
+  font-family: inherit;
+  color: var(--ink, #222);
+  background: var(--paper, #fff);
+  border: 1px solid var(--rule, #d6cfc1);
+  border-radius: 2px;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+.folio-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: var(--ink-soft, #555);
+}
+.folio-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.folio-btn-primary {
+  background: var(--ink, #222);
+  color: var(--paper, #fff);
+  border-color: var(--ink, #222);
+}
+.folio-btn-primary:hover:not(:disabled) {
+  background: var(--ink-soft, #444);
+  border-color: var(--ink-soft, #444);
+}
 .folio-btn-danger {
   color: var(--copper, #b6541d);
+  border-color: var(--copper, #b6541d);
+}
+.folio-btn-danger:hover:not(:disabled) {
+  background: rgba(182, 84, 29, 0.08);
+}
+
+/* rc46 — checkbox rows in the egress form lost the wrapper input
+ * styling above (which only targets text/password/number/select), so
+ * the checkbox + caption read as raw browser default. Give the label
+ * a sane shape and the checkbox a consistent square. */
+.folio-egress-row label:has(> input[type="checkbox"]) {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--ink, #222);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.folio-egress-row input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border: 1px solid var(--rule, #d6cfc1);
+  background: var(--paper, #fff);
+  border-radius: 2px;
+  cursor: pointer;
+  display: inline-block;
+  position: relative;
+}
+.folio-egress-row input[type="checkbox"]:hover {
+  border-color: var(--ink-soft, #555);
+}
+.folio-egress-row input[type="checkbox"]:checked {
+  background: var(--ink, #222);
+  border-color: var(--ink, #222);
+}
+.folio-egress-row input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 0px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--paper, #fff);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
 }
 
 /* ===== rc37 — region (continent / country / server) renderer =====

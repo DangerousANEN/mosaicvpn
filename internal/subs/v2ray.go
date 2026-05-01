@@ -206,28 +206,53 @@ func parseHysteria2(subID, raw string) (proto.Server, error) {
 		return proto.Server{}, err
 	}
 	host, port := hostPort(u)
-	password := u.User.Username()
+	// Hysteria2 protocol uses the entire userinfo string as a single
+	// auth token — `user:pass` is the literal password.  The earlier
+	// implementation passed only `Username()` (the part before `:`)
+	// which is what most v2board / marzban panels emit, breaking
+	// authentication for any panel that uses both halves.  We also
+	// fall through to `Username()` alone for legacy URIs that have
+	// no password component.
+	password := u.User.String()
 	if password == "" {
-		password = u.User.String()
+		password = u.User.Username()
 	}
 	q := u.Query()
 	name := decodeFragment(u.Fragment, fmt.Sprintf("hy2://%s:%d", host, port))
+	// Port-hopping: providers ship duplicate URIs that differ only
+	// by `?mport=20000-50000` (TLS variant + Hopping variant of the
+	// same server).  Parse the range so the outbound builder can
+	// emit `server_ports` for sing-box; include the raw URI in the
+	// ID hash so the duplicates don't collide in the store / make
+	// the UI mark both as the active server simultaneously.
+	mport := strings.TrimSpace(q.Get("mport"))
+	alpn := q.Get("alpn")
+	rawMap := map[string]any{
+		"uri":           raw,
+		"password":      password,
+		"obfs":          q.Get("obfs"),
+		"obfs_password": q.Get("obfs-password"),
+		"sni":           q.Get("sni"),
+		"insecure":      q.Get("insecure") == "1",
+	}
+	if alpn != "" {
+		rawMap["alpn"] = alpn
+	}
+	if mport != "" {
+		// Accept both `20000-50000` and `20000:50000` separators;
+		// sing-box's server_ports expects `start:end`.
+		clean := strings.ReplaceAll(mport, "-", ":")
+		rawMap["mport"] = clean
+	}
 	return proto.Server{
-		ID:             serverID(subID, "hy2", host, fmt.Sprint(port), password),
+		ID:             serverID(subID, "hy2", host, fmt.Sprint(port), password, raw),
 		Name:           name,
 		Protocol:       proto.ProtoHysteria2,
 		Address:        host,
 		Port:           port,
 		Tag:            q.Get("obfs"),
 		SubscriptionID: subID,
-		Raw: map[string]any{
-			"uri":           raw,
-			"password":      password,
-			"obfs":          q.Get("obfs"),
-			"obfs_password": q.Get("obfs-password"),
-			"sni":           q.Get("sni"),
-			"insecure":      q.Get("insecure") == "1",
-		},
+		Raw:            rawMap,
 	}, nil
 }
 
@@ -251,7 +276,7 @@ func parseNaive(subID, raw string) (proto.Server, error) {
 	pass, _ := u.User.Password()
 	name := decodeFragment(u.Fragment, fmt.Sprintf("naive://%s:%d", host, port))
 	return proto.Server{
-		ID:             serverID(subID, "naive", host, fmt.Sprint(port), user),
+		ID:             serverID(subID, "naive", host, fmt.Sprint(port), user, raw),
 		Name:           name,
 		Protocol:       proto.ProtoNaive,
 		Address:        host,
