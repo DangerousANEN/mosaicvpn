@@ -81,7 +81,13 @@ func URLTestServer(ctx context.Context, binary, dataDir, target string, prefs st
 	// open a TUN inbound from an ephemeral helper.
 	utPrefs := prefs
 	utPrefs.TunnelMode = "proxy"
-	cfg, err := BuildSingBoxConfig(server, utPrefs, socksPort, pickPort(0), 0)
+	// rc48 — Verify is an isolated probe; pass nil for user rules so
+	// the only bypass entries in the ephemeral config are the
+	// hard-coded system geo hosts. User-defined splits don't apply
+	// to the test path: we want to know whether *the proxy itself*
+	// can reach the target, not whether the user's bypass list
+	// would have skipped it.
+	cfg, err := BuildSingBoxConfig(server, utPrefs, nil, socksPort, pickPort(0), 0)
 	if err != nil {
 		return URLTestResult{Error: "build config: " + err.Error()}
 	}
@@ -123,7 +129,19 @@ func URLTestServer(ctx context.Context, binary, dataDir, target string, prefs st
 		_, _ = cmd.Process.Wait()
 	}()
 
+	// rc48 — flushLog forces buffered sing-box stderr to disk before
+	// we slurp the tail. Without this, Windows hands us back an empty
+	// file because the OS cache hasn't been flushed yet, so the user
+	// sees the bare "unexpected EOF" the rc40 fix was supposed to
+	// dress up with sing-box context.
+	flushLog := func() {
+		if logFile != nil {
+			_ = logFile.Sync()
+		}
+	}
+
 	if err := waitForListen(cctx, "127.0.0.1", socksPort, 5*time.Second); err != nil {
+		flushLog()
 		return URLTestResult{Error: "sing-box did not start: " + readURLTestTail(logPath, 600)}
 	}
 
@@ -162,13 +180,18 @@ func URLTestServer(ctx context.Context, binary, dataDir, target string, prefs st
 		// failures, append the last ~600 bytes of the sing-box
 		// log so the user sees what really happened (TLS abort,
 		// server reset, no auth handshake, etc.) instead of a
-		// blank "Get …: unexpected EOF".
+		// blank "Get …: unexpected EOF".  rc48: explicit Sync()
+		// before the read, plus we surface the log path on disk
+		// so the user can grab the full text manually if the
+		// 600-byte tail still doesn't show the cause.
+		flushLog()
 		if tail := readURLTestTail(logPath, 600); tail != "" {
 			logx.Debug("url-test failed", "server", server.ID,
 				"err", base, "singbox_tail", tail)
 			base = base + " | singbox: " + condense(tail)
 		} else {
 			logx.Debug("url-test failed (no singbox log)", "server", server.ID, "err", base)
+			base = base + " | log: " + logPath
 		}
 		return URLTestResult{Error: base, RTTMS: int(time.Since(t0).Milliseconds())}
 	}

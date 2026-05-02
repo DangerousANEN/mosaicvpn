@@ -1541,3 +1541,142 @@ the next agent should triage:
   click + Add to create one") is currently the literal
   `.folio-empty` italic placeholder; could use a clearer
   illustration / inline help.
+
+# rc48 — johndoedal2 bug list (six fixes, one PR)
+
+Stacked on `devin/1777659415-rc47`. PR shipped as `devin/1777707247-rc48`.
+Closes the user-reported pile that came in after the rc47 install — none of
+them blocked the daemon, all of them blocked **trust in the daemon's UI**.
+
+Fixes in this rc, in the order they're discoverable from the user's
+report:
+
+1. **MCP permission was effectively immutable** — the `Server` struct
+   cached `perm Permission` and `confirm bool` at `Start()`, so flipping
+   Settings → MCP from "connect" to "full" only took effect after a
+   daemon restart. The `mcp.json` discovery file ALSO carried the stale
+   value, so external agents (Claude, Cursor) inspecting it on launch
+   saw the pre-restart permission. rc48 drops the cached fields and
+   reads `store.Snapshot().Prefs.MCP*` live on every `tools/list` /
+   `tools/call`. `internal/api/server.go` grew a `SetPrefsChangedHook`
+   callback fired by `PUT /v1/prefs`; mosaicd wires it to
+   `mcp.Server.RewriteDiscovery()` so the file is re-emitted with the
+   live values whenever Settings change.
+
+2. **Verify "unexpected EOF"** lacked the sing-box stderr tail the rc40
+   fix was supposed to attach. Root cause was Windows file-handle
+   buffering — `logFile.Sync()` had to fire before `readURLTestTail`
+   could see anything. Added an explicit `flushLog()` helper called on
+   every error path; on tail miss we now also surface the absolute log
+   path (`%APPDATA%\…\daemon\singbox-urltest-<port>.log`) so the user
+   can inspect the full log manually.
+
+3. **Speedtest "unexpected EOF"** had the same opaque-error problem —
+   no sing-box context attached. Added a `LogTailer` interface
+   implemented by `SingBoxBackend.LogTail(n int)` that returns the
+   trailing N bytes of `singbox.err.log`. `Manager.Speedtest` now
+   decorates every dial / read failure with the live tail, mirroring
+   what Verify does. New `Prefs.SpeedtestURL` lets users override the
+   default Cloudflare 10 MB → 5 MB → 1 MB ladder when their ISP / region
+   throttles the speed.cloudflare.com edge mid-download. UI: new
+   "Speedtest URL override" Opt in the Verify chapter (where
+   url_test_endpoint already lives — same family of options).
+
+4. **Bypass list wasn't actually bypassing** — Folio's `BypassChapter`
+   wrote `proto.Rule` entries to the store, but `BuildSingBoxConfig`
+   threw `_` over the rules slice and built `route.rules` with only the
+   DNS rules. Result: in TUN mode every "direct" rule the user added
+   was silently ignored. rc48 plumbs `rules []proto.Rule` through
+   `BuildSingBoxConfig`, filters by `Action=="direct" && Enabled`, and
+   emits one sing-box rule per entry. **Plus** a hard-coded
+   `SystemBypassDomains` list that always appears in `route.rules` —
+   ip-api.com, ipapi.co, ipinfo.io, db-ip.com, 2ip.ru, 2ip.io,
+   ifconfig.me, ifconfig.co, icanhazip.com, api.ipify.org. These are
+   the hosts mosaicd uses to detect the user's home location, so they
+   must dial direct even while the tunnel is up.
+
+5. **myLocation = egress location** — fallout from #4. With
+   geo-resolution hosts now plumbed through the system bypass at the
+   sing-box level, a Connect that lands mid-lookup no longer hijacks
+   the IP. Plus rc48 adds an offline path: if all of ip-api.com /
+   ipapi.co / ipinfo.io fail (rate-limit, ISP block, captive portal),
+   `tryOfflineMyLocation` hits api.ipify.org / ifconfig.me /
+   icanhazip.com (all in `SystemBypassDomains`) for the public IP and
+   geocodes it locally via `geoip.LookupLocal` against the rc47
+   db-ip.com city DB. We also enrich every successful cascade response
+   with a `LookupLocal` pass — db-ip.com tends to give finer-grained
+   city data than ip-api.com's free tier, and crucially it can never
+   be poisoned by a mid-lookup Connect. The "drop on Connected" guard
+   stays as a belt-and-braces backstop in case sing-box fails to start
+   or `BuildSingBoxConfig` returns an error before the bypass list is
+   in effect.
+
+6. **VOUS label drifted off the dot** — the chip was an absolute-
+   positioned HTML div using `(YOU.x - MAP_VB.x) / MAP_VB.w * 100%`
+   for `left`/`top`. The pin layer SVG uses
+   `preserveAspectRatio="xMidYMid meet"`, which letterboxes the SVG
+   inside its CSS box; HTML percentage-of-box ≠ viewBox-coord-of-pin
+   when the container aspect doesn't match the viewBox aspect. Fix:
+   move the label into the pin SVG as a `<text>` element under the
+   same `<g transform="translate(YOU.x, YOU.y)">`. While there: swap
+   the bare `<circle r=1.8>` "you" dot for a teardrop pin with a
+   contrasting copper fill and a paper-coloured core, so the user can
+   actually find themselves at any zoom level. The paint-order:
+   stroke-fill on the label gives it a paper-coloured halo for
+   readability over dark geography.
+
+## rc48 permanent learnings
+
+- **MCP permission flips need live reads.** Caching at `Start()` is
+  technically faster but the user-perceptible cost is "had to restart
+  the daemon to grant the LLM extra permission" — which loses trust in
+  Settings entirely. Live `store.Snapshot()` reads cost microseconds
+  and run at human-clickable cadence, so just do them.
+- **`mcp.json` is documentation, not auth.** The file is consumed by
+  external agents on startup. Auth gating happens in
+  `Server.handleRPC`, which now reads live. Keep them in sync via the
+  `SetPrefsChangedHook` callback so the file matches reality at all
+  times.
+- **`logFile.Sync()` before tail-read on Windows.** OS write cache
+  delays kept the rc40 "attach singbox tail" feature silently broken
+  for two RCs. Always flush before slurping a file you just wrote
+  through a stdio pipe.
+- **`route.rules` system bypass first, user rules after.** sing-box
+  evaluates in order; the system bypass for geo-resolution hosts must
+  come before any user rule that might accidentally proxy them. The
+  hard-coded list is small (10 hosts) and well-defined (everything
+  mosaicd or a curious user would hit to verify "is my IP leaking?"),
+  so the policy is "bypass these, full stop, no user opt-out".
+- **db-ip.com city lookups beat ip-api.com city.** The free tier of
+  ip-api.com is rate-limited and gives a coarse city guess; db-ip.com
+  Lite (already loaded for server-pin resolution) is sub-city in
+  populated regions and never rate-limits. Enrich every result through
+  the local DB when one is loaded.
+- **HTML-overlay positioning over an SVG with `preserveAspectRatio`
+  is a trap.** The viewBox-to-pixel mapping inside the SVG is **not**
+  the same as percentage-of-bounding-box outside it whenever the SVG
+  letterboxes. If a marker has to sit relative to an SVG point, render
+  it inside the SVG.
+- **`paint-order: stroke fill` + paper-coloured stroke is the cheap
+  text-on-anything trick.** No need for a backing rect: render the
+  stroke first (in the page background colour), then the fill on top.
+  Works at every zoom and stays sharp.
+
+Open hand-offs going into rc49:
+
+- **TUN end-to-end stability** — still no reproducible "internet works
+  through TUN tunnel" report from the user. The bypass-rules fix in
+  this rc means at least the daemon's *own* probes survive TUN, but
+  user-traffic round-trip needs `mosaicd.log` + `singbox.err.log`
+  excerpt from a real Connect attempt to triage further.
+- **Naive personal verification** — no provider available to me;
+  rc46+rc47 fixes are theoretically correct.
+- **db-ip.com attribution in About** — still TODO; daemon log carries
+  it but Folio "About" chapter doesn't.
+- **Live updates** — Pool/Main poll `/v1/events`; Folio/Atlas/Tray do
+  not. A `useLiveServers()` hook would consolidate.
+- **LAN share user/pass full plumbing** — rc44 added Prefs fields,
+  sing-box inbound `users[]` array is wired (rc44), but UI flows for
+  generating + displaying the credentials still need polish.
+
+— rc48 agent.

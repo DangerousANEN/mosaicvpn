@@ -436,8 +436,13 @@
 .worldmap-pin.clickable {
   pointer-events: bounding-box;
 }
+/* rc48 — the "you" pin is now interactive (clicking it toggles the
+   vous side card), so we restore pointer-events. The bounding-box
+   rule from .worldmap-pin.clickable above already gives us a wide
+   hit area; on top of that the inline cursor:pointer style makes the
+   affordance obvious. */
 .worldmap-pin.you {
-  pointer-events: none;
+  pointer-events: bounding-box;
 }
 /* rc39 → rc40 — pin is a pure diamond, no stem, no badge, no
  * latency stroke.  State carries colour, all via theme tokens
@@ -471,17 +476,36 @@
   stroke-width: 1.2;
 }
 
-/* "you" — small ink dot, no halo; the italic "vous" label is an
-   HTML overlay so it can use the page font. */
-.worldmap-pin.you .dot {
-  fill: var(--ink);
-  stroke: var(--paper);
-  stroke-width: 1;
+/* rc48 — "you" is a teardrop pin with a contrasting copper core and
+   an italic SVG-text label sitting just under the anchor.  The
+   label is rendered inside the same SVG layer as the pin so the
+   `preserveAspectRatio="xMidYMid meet"` letterboxing cannot drift
+   it off the geographic anchor (the rc40 HTML-percent overlay had
+   exactly that bug). */
+.worldmap-pin.you .you-pin {
+  fill: var(--copper);
+  stroke: var(--ink);
+  stroke-width: 0.7;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0.5px 0.5px rgba(0, 0, 0, 0.25));
 }
-.worldmap-pin.you .halo {
+.worldmap-pin.you .you-pin-core {
+  fill: var(--paper);
+  stroke: none;
+}
+.worldmap-pin.you .you-pin-label {
   fill: var(--ink);
-  opacity: 0.14;
-  transform: none;
+  font-family: "Atlas Serif", Georgia, serif;
+  font-style: italic;
+  font-size: 4.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  paint-order: stroke fill;
+  stroke: var(--paper);
+  stroke-width: 1.2px;
+  stroke-linejoin: round;
+  pointer-events: none;
+  user-select: none;
 }
 .worldmap-tooltip {
   position: absolute;
@@ -615,42 +639,10 @@
   font-weight: 600;
 }
 
-/* "vous" label — dark-fill rectangle so the user's own pin reads as
-   the inverse of every other label, mirroring the reference design.
-   Italic + slightly bolder weight gives it the marginalia feel. */
-/* rc34 — shrunk the vous pill; at European country zoom the old
-   size was eclipsing multiple country blobs.  It's now a small
-   italic badge attached to the dot with a 1 px ink outline; the
-   dark-fill look gave way to a semi-transparent paper chip so
-   pins beneath it stay readable. */
-/* rc40 — vous chip
- *   – background uses --paper (cream in light, dark-brown in dark)
- *     so the chip flips with the theme instead of staying cream.
- *   – text uses --ink so it always inverts.
- *   – translate(-50%, 0) keeps it horizontally centred on the dot
- *     and the JS-side `translate(…, 12px)` provides the vertical
- *     offset; we no longer add another 10 px here on top. */
-.worldmap-you-label {
-  position: absolute;
-  z-index: 5;
-  transform: translate(-50%, 0);
-  background: var(--paper);
-  color: var(--ink);
-  border: 1px solid var(--ink);
-  padding: 0 5px 1px;
-  font-family: "Atlas Serif", Georgia, serif;
-  font-style: italic;
-  font-size: 9.5px;
-  font-weight: 500;
-  line-height: 1.35;
-  pointer-events: auto;
-  user-select: none;
-  white-space: nowrap;
-  letter-spacing: 0.02em;
-}
-.worldmap-you-label.clickable {
-  cursor: pointer;
-}
+/* rc48 — the HTML-overlay "vous" chip is gone; the label now lives
+ * inside the SVG pin layer (see .worldmap-pin.you .you-pin-label
+ * above), so HTML-percent positioning math no longer drifts the chip
+ * away from the dot at off-aspect-ratio container sizes. */
 .worldmap-tooltip.vous-tip {
   z-index: 6;
   pointer-events: auto;

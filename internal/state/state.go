@@ -22,6 +22,7 @@ import (
 	neturl "net/url"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,6 +46,16 @@ type Backend interface {
 // will report empty proxy fields.
 type ProxyListener interface {
 	Proxies() (socks, http string)
+}
+
+// LogTailer-aware backends expose the trailing bytes of their stderr
+// log file. Used by Speedtest / Verify to attach sing-box context to
+// opaque "unexpected EOF" / "connection reset" failures so the UI
+// shows what actually went wrong (TLS abort, server reset, sing-box
+// crash) instead of just the bare http error. Backends without an
+// underlying log file (MockBackend) need not implement this.
+type LogTailer interface {
+	LogTail(n int) string
 }
 
 // Manager owns the connection state and is safe for concurrent use.
@@ -424,16 +435,44 @@ func (m *Manager) Speedtest(ctx context.Context, url string) (SpeedtestResult, e
 
 	// When the caller supplies a custom URL we honour it exactly;
 	// otherwise we try the download-size ladder until one completes
-	// or we exhaust the retries.
+	// or we exhaust the retries.  rc48 — if the user pinned a
+	// Prefs.SpeedtestURL in Settings, that takes precedence over the
+	// hard-coded Cloudflare ladder so users on ISPs that throttle
+	// speed.cloudflare.com can point at any other __down-style
+	// endpoint without recompiling.
+	prefs := m.store.Snapshot().Prefs
 	var urls []string
-	if url != "" {
+	switch {
+	case url != "":
 		urls = []string{url}
-	} else {
+	case strings.TrimSpace(prefs.SpeedtestURL) != "":
+		urls = []string{strings.TrimSpace(prefs.SpeedtestURL)}
+	default:
 		urls = []string{
 			"https://speed.cloudflare.com/__down?bytes=10485760", // 10 MB
 			"https://speed.cloudflare.com/__down?bytes=5242880",  // 5 MB
 			"https://speed.cloudflare.com/__down?bytes=1048576",  // 1 MB
 		}
+	}
+
+	// rc48 — attachSingboxTail decorates an opaque http error with the
+	// last few hundred bytes of the live sing-box stderr log so the UI
+	// shows what actually went wrong (TLS abort, server reset, sing-box
+	// crash) instead of the bare "unexpected EOF". Mirrors what Verify
+	// already does in singbox_urltest.go.
+	attachSingboxTail := func(err error) error {
+		if err == nil {
+			return nil
+		}
+		lt, ok := be.(LogTailer)
+		if !ok {
+			return err
+		}
+		tail := lt.LogTail(600)
+		if tail == "" {
+			return err
+		}
+		return fmt.Errorf("%w | singbox: %s", err, condense(tail))
 	}
 
 	var lastErr error
@@ -448,7 +487,7 @@ func (m *Manager) Speedtest(ctx context.Context, url string) (SpeedtestResult, e
 		start := time.Now()
 		resp, rerr := client.Do(req)
 		if rerr != nil {
-			lastErr = rerr
+			lastErr = attachSingboxTail(rerr)
 			continue
 		}
 		res.URL = u
@@ -481,7 +520,7 @@ func (m *Manager) Speedtest(ctx context.Context, url string) (SpeedtestResult, e
 				return res, nil
 			}
 		}
-		lastErr = fmt.Errorf("speedtest: download: %w", cerr)
+		lastErr = attachSingboxTail(fmt.Errorf("speedtest: download: %w", cerr))
 		if idx == len(urls)-1 {
 			// rc35 — prefer returning whatever data we have with a
 			// populated Note over a hard 502.  The UI can render

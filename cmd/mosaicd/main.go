@@ -195,6 +195,12 @@ func run(dataDirOverride string) error {
 		logx.Warn("mcp server failed to start", "err", err)
 		mcpShutdown = func(context.Context) error { return nil }
 	}
+	// Refresh mcp.json on every prefs update so external agents that
+	// read the discovery file once on startup still see the live
+	// permission level after the user toggles Settings → MCP.
+	apiSrv.SetPrefsChangedHook(func() {
+		mcpSrv.RewriteDiscovery()
+	})
 
 	// Bring up every egress with AutoStart=true so user-managed
 	// auxiliary proxies behave like services and survive a daemon
@@ -379,16 +385,54 @@ func resolveMyLocation(mgr *state.Manager, st *store.Store) {
 
 		loc := tryGeoEndpoints(endpoints)
 		if loc == nil {
-			// All endpoints failed.  Keep whatever persisted
-			// value is already published by the manager (from
-			// store hydration) and retry after the short gap.
+			// rc48 — last-ditch offline path: hit a cheap
+			// "what's my IP" endpoint (these are in
+			// SystemBypassDomains so they go direct even
+			// while the tunnel is up) and resolve the IP
+			// against the local db-ip.com city DB. Lets us
+			// keep "vous" accurate when ip-api / ipapi /
+			// ipinfo are all blocked or rate-limited but
+			// the user still has internet through the
+			// fallback chain.
+			loc = tryOfflineMyLocation()
+		}
+		if loc == nil {
+			// Every cascade endpoint failed AND the offline
+			// path could not produce coordinates. Keep
+			// whatever persisted value is already published
+			// by the manager (from store hydration) and
+			// retry after the short gap.
 			time.Sleep(minRetryGap)
 			continue
 		}
 
+		// rc48 — sanity-enrich the answer through the local DB
+		// when we have a valid IP and the local MMDB is loaded.
+		// db-ip.com tends to give finer-grained city data than
+		// ip-api.com's free tier, and crucially it can never be
+		// poisoned by an in-flight Connect that hijacks the
+		// HTTP probe (which used to swap the egress city in).
+		if loc.IP != "" && geoip.HasLocalDB() {
+			if r, ok, _ := geoip.LookupLocal(context.Background(), loc.IP); ok {
+				loc.Lat = r.Lat
+				loc.Lon = r.Lon
+				if r.City != "" {
+					loc.City = r.City
+				}
+				if r.Country != "" {
+					loc.Country = r.Country
+				}
+			}
+		}
+
 		// Re-check connected state right before publishing — a
-		// Connect that landed during the HTTP round-trip means
-		// our resolved IP is the egress, not the user.  Drop.
+		// Connect that landed during the HTTP round-trip on a
+		// pre-rc48 daemon would have resolved to the egress IP.
+		// rc48 plumbs the geo hosts through SystemBypassDomains
+		// in the sing-box config, so the dial goes direct even
+		// while the tunnel is up; keep the guard anyway so an
+		// older / partial config (config-build error, sing-box
+		// crashed) cannot smuggle an egress IP back in.
 		if mgr.Status().State == proto.StateConnected {
 			logx.Warn("geo result discarded — connect happened mid-lookup, would mistake egress for home")
 			time.Sleep(minRetryGap)
@@ -405,6 +449,63 @@ func resolveMyLocation(mgr *state.Manager, st *store.Store) {
 			"lat", loc.Lat, "lon", loc.Lon, "ip", loc.IP)
 		time.Sleep(refreshGap / 2)
 	}
+}
+
+// tryOfflineMyLocation hits a cheap "what's my IP" endpoint and
+// geocodes the result against the local db-ip.com city DB. Returns
+// nil if no public IP could be obtained or the local DB is missing /
+// has no record for the IP. The endpoints used here are part of
+// state.SystemBypassDomains so the dial always goes through the
+// `direct` outbound, never through the active proxy.
+func tryOfflineMyLocation() *proto.GeoLocation {
+	if !geoip.HasLocalDB() {
+		return nil
+	}
+	const (
+		ipifyURL     = "https://api.ipify.org?format=text"
+		ifconfigURL  = "https://ifconfig.me/ip"
+		icanhazipURL = "https://icanhazip.com"
+	)
+	client := &http.Client{Timeout: 6 * time.Second}
+	for _, u := range []string{ipifyURL, ifconfigURL, icanhazipURL} {
+		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			cancel()
+			continue
+		}
+		req.Header.Set("User-Agent", "mosaicvpn/0.1 (geo-offline)")
+		resp, err := client.Do(req)
+		if err != nil {
+			cancel()
+			continue
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		cancel()
+		if readErr != nil {
+			continue
+		}
+		ipStr := strings.TrimSpace(string(body))
+		if net.ParseIP(ipStr) == nil {
+			continue
+		}
+		r, ok, _ := geoip.LookupLocal(context.Background(), ipStr)
+		if !ok {
+			continue
+		}
+		if r.Lat == 0 && r.Lon == 0 {
+			continue
+		}
+		return &proto.GeoLocation{
+			IP:      ipStr,
+			Lat:     r.Lat,
+			Lon:     r.Lon,
+			City:    r.City,
+			Country: r.Country,
+		}
+	}
+	return nil
 }
 
 // tryGeoEndpoints runs each endpoint in sequence with a short per-

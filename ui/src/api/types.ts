@@ -155,6 +155,9 @@ export interface Prefs {
   mcp_confirm: boolean;
   /** Verify (URL test) target.  Empty = gstatic-204 default. */
   url_test_endpoint?: string;
+  /** Speedtest target URL.  Empty falls back to the default
+   *  Cloudflare 10 MB → 5 MB → 1 MB ladder. */
+  speedtest_url?: string;
   /** Anti-DPI overrides — see store.Prefs for semantics. */
   dpi_fingerprint?: string;
   dpi_fragment?: string;

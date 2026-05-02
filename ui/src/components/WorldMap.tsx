@@ -553,10 +553,37 @@ export function WorldMap({
             >
               {youValid ? (
                 <g
-                  className="worldmap-pin you"
+                  className="worldmap-pin you clickable"
                   transform={`translate(${YOU.x},${YOU.y}) scale(${pinScale})`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setVousOpen((v) => !v);
+                  }}
+                  style={{ cursor: "pointer" }}
                 >
-                  <circle r={1.8} className="dot" />
+                  {/* rc48 — swap the bare 1.8-radius dot for a
+                      teardrop pin so the user can actually find
+                      themselves at any zoom level. The drop-tail
+                      anchors at (0,0) so the geographic accuracy
+                      survives the redesign. */}
+                  <path
+                    className="you-pin"
+                    d="M 0 0 C -4 -6 -4 -10 0 -14 C 4 -10 4 -6 0 0 Z"
+                  />
+                  <circle className="you-pin-core" cx={0} cy={-9} r={1.6} />
+                  {/* rc48 — the "vous" label lives in the same SVG
+                      coord space as the pin so letterboxing
+                      (preserveAspectRatio="xMidYMid meet") cannot
+                      drift the chip off the anchor like the rc40
+                      HTML-percent positioning did. */}
+                  <text
+                    className="you-pin-label"
+                    x={0}
+                    y={5}
+                    textAnchor="middle"
+                  >
+                    vous
+                  </text>
                 </g>
               ) : null}
 
@@ -626,32 +653,9 @@ export function WorldMap({
               })}
             </svg>
 
-            {youValid ? (
-              <div
-                className="worldmap-you-label clickable"
-                style={{
-                  left: `${((YOU.x - MAP_VB.x) / MAP_VB.w) * 100}%`,
-                  top: `${((YOU.y - MAP_VB.y) / MAP_VB.h) * 100}%`,
-                  /* rc40: chip sits flush below the dot regardless
-                   * of camera zoom.  The label stays at fixed
-                   * pixel size (no scale-with-zoom) — readability
-                   * matters more than cartographic faithfulness for
-                   * a UI label — and the offset is purely vertical,
-                   * 4 px below the geographic anchor.  The previous
-                   * `scale(pinScale)` formula stretched the chip
-                   * vertically and caused it to drift away from
-                   * the dot at high zoom. */
-                  transform: "translate(-50%, 4px)",
-                  transformOrigin: "center top",
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setVousOpen((v) => !v);
-                }}
-              >
-                vous
-              </div>
-            ) : null}
+            {/* rc48 — the "vous" label moved into the SVG pin layer
+                above so it shares the YOU coord space; no HTML
+                overlay is rendered. */}
           </TransformComponent>
         </TransformWrapper>
 

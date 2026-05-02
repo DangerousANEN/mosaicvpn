@@ -93,19 +93,34 @@ type EgressIface interface {
 
 // Server is the MCP JSON-RPC server.
 type Server struct {
-	store     *store.Store
-	mgr       *state.Manager
-	token     string
-	version   string
-	perm      Permission
-	confirm   bool
-	urlTest   URLTestFn
-	refresh   RefreshFn
-	egress    EgressIface
-	dataDir   string
+	store   *store.Store
+	mgr     *state.Manager
+	token   string
+	version string
+	urlTest URLTestFn
+	refresh RefreshFn
+	egress  EgressIface
+	dataDir string
 
 	listener net.Listener
 	http     *http.Server
+}
+
+// permission returns the live permission level read from the store on
+// every call. rc48: previously this was cached at Start() time, so a
+// user who flipped Settings → MCP from "connect" to "full" had to
+// restart the daemon for the change to take effect. Reads are cheap
+// (a single Snapshot()), and tools/list / tools/call already happen
+// at human-clickable cadence, so doing this live is the simplest
+// correct fix.
+func (s *Server) permission() Permission {
+	return parsePermission(s.store.Snapshot().Prefs.MCPPermission)
+}
+
+// confirmRequired reports whether destructive tools should ask for
+// user confirmation. Same live-read rationale as permission().
+func (s *Server) confirmRequired() bool {
+	return s.store.Snapshot().Prefs.MCPConfirm
 }
 
 // Config bundles the bits needed to construct a Server.
@@ -145,9 +160,6 @@ func (s *Server) Start(ctx context.Context) (func(context.Context) error, error)
 		_ = s.clearDiscovery()
 		return func(context.Context) error { return nil }, nil
 	}
-	s.perm = parsePermission(prefs.MCPPermission)
-	s.confirm = prefs.MCPConfirm
-
 	addr := strings.TrimSpace(prefs.MCPAddr)
 	if addr == "" {
 		addr = "127.0.0.1:8731"
@@ -186,6 +198,21 @@ func (s *Server) Start(ctx context.Context) (func(context.Context) error, error)
 	return s.http.Shutdown, nil
 }
 
+// RewriteDiscovery refreshes mcp.json with the live permission and
+// confirm values pulled from prefs. Called by mosaicd when the user
+// updates Settings → MCP so external agents inspecting the file see
+// the same view of "connect / full / read" the auth path now enforces.
+// Safe to call when the server is disabled — it removes the stale file.
+func (s *Server) RewriteDiscovery() {
+	if s.listener == nil {
+		_ = s.clearDiscovery()
+		return
+	}
+	if err := s.writeDiscovery(s.listener.Addr().String()); err != nil {
+		logx.Warn("mcp discovery rewrite failed", "err", err)
+	}
+}
+
 func isLoopbackAddr(addr string) bool {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -209,7 +236,7 @@ func (s *Server) writeDiscovery(actualAddr string) error {
 		"url":        "http://" + actualAddr + "/",
 		"token":      s.token,
 		"permission": s.permString(),
-		"confirm":    s.confirm,
+		"confirm":    s.confirmRequired(),
 		"version":    s.version,
 		"pid":        os.Getpid(),
 		"started":    time.Now().UTC().Format(time.RFC3339),
@@ -243,7 +270,7 @@ func MCPDiscoveryPath(dir string) string {
 }
 
 func (s *Server) permString() string {
-	switch s.perm {
+	switch s.permission() {
 	case PermRead:
 		return "read"
 	case PermConnect:
@@ -654,10 +681,11 @@ func (s *Server) toolStopEgress(ctx context.Context, args map[string]any) (any, 
 }
 
 func (s *Server) rpcToolsList(w http.ResponseWriter, _ *http.Request, req jsonRPCRequest) {
+	perm := s.permission()
 	all := s.tools()
 	out := make([]toolDef, 0, len(all))
 	for _, t := range all {
-		if t.minPerm > s.perm {
+		if t.minPerm > perm {
 			continue
 		}
 		out = append(out, t)
@@ -688,13 +716,14 @@ func (s *Server) rpcToolsCall(w http.ResponseWriter, r *http.Request, req jsonRP
 		writeJSONRPCError(w, req.ID, -32601, "unknown tool: "+params.Name)
 		return
 	}
-	if chosen.minPerm > s.perm {
+	perm := s.permission()
+	if chosen.minPerm > perm {
 		writeJSONRPCError(w, req.ID, -32000, fmt.Sprintf(
 			"tool %q requires %s permission, but MCP permission is %s — change in Settings → MCP",
 			chosen.Name, permLabel(chosen.minPerm), s.permString()))
 		return
 	}
-	if s.confirm && chosen.minPerm >= PermConnect {
+	if s.confirmRequired() && chosen.minPerm >= PermConnect {
 		// Confirm-required flow not yet wired to renderer; surface a
 		// clear error so agents know what to tell the user.
 		writeJSONRPCError(w, req.ID, -32000, fmt.Sprintf(

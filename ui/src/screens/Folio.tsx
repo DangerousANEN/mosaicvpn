@@ -440,6 +440,16 @@ export function Folio({ status }: { status?: Status | null }): JSX.Element {
                   placeholder="https://example.com/"
                 />
               </Opt>
+              <Opt
+                name="Speedtest URL override"
+                desc="Replaces the default Cloudflare ladder (10 MB → 5 MB → 1 MB) used by the Main-screen Speedtest button. Empty = ladder. Set to any __down-style endpoint when your ISP throttles or resets speed.cloudflare.com mid-download."
+              >
+                <Text
+                  value={draft.speedtest_url ?? ""}
+                  onChange={(v) => update("speedtest_url", v)}
+                  placeholder="https://speed.cloudflare.com/__down?bytes=5242880"
+                />
+              </Opt>
             </Chapter>
           ) : null}
 
@@ -896,6 +906,14 @@ function BypassChapter(): JSX.Element {
         <code> youtube.com </code>also matches<code> www.youtube.com</code>.
         IP entries accept CIDR (e.g.<code> 192.168.0.0/16</code>). Lines
         starting with <code>#</code> are treated as comments and ignored.
+      </p>
+      <p className="folio-prose italic-mute">
+        Mosaic already bypasses the public IP-detection hosts it uses to
+        place your <i>vous</i> pin — <code>ip-api.com</code>,{" "}
+        <code>ipapi.co</code>, <code>ipinfo.io</code>, <code>2ip.ru</code>,{" "}
+        <code>2ip.io</code>, <code>ifconfig.me</code> and a few more — at the
+        sing-box level, so you don't need to add them here. This list is for
+        your own splits (corporate VPN, banking, region-locked apps, etc.).
       </p>
 
       <div className="bypass-grid">

@@ -76,6 +76,14 @@ type Prefs struct {
 	// is rate-limiting or blocking the default endpoint while real
 	// internet still works through the same proxy.
 	URLTestEndpoint string `json:"url_test_endpoint,omitempty"`
+	// SpeedtestURL overrides the default Cloudflare __down endpoint
+	// used by the in-app Speedtest. Empty falls back to the
+	// historic 10 MB / 5 MB / 1 MB ladder against
+	// speed.cloudflare.com. Lets users point the test at a
+	// different CDN when their ISP / region throttles or blocks the
+	// Cloudflare edge mid-download (the symptom is "unexpected EOF"
+	// after a few hundred kilobytes).
+	SpeedtestURL string `json:"speedtest_url,omitempty"`
 	// DPIFingerprint overrides the per-server uTLS fingerprint with
 	// a global value.  "" / "auto" = use whatever the subscription
 	// declared; otherwise one of "chrome", "firefox", "safari",

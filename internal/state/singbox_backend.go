@@ -97,13 +97,25 @@ func (b *SingBoxBackend) Proxies() (string, string) {
 	return b.socks, b.http
 }
 
+// LogTail implements LogTailer. Returns the trailing n bytes of the
+// live sing-box stderr log so callers (Speedtest / Verify) can attach
+// the underlying cause when an HTTP probe through the proxy fails
+// with "unexpected EOF" / "connection reset" / similar opaque
+// network errors.
+func (b *SingBoxBackend) LogTail(n int) string {
+	if b.dataDir == "" {
+		return ""
+	}
+	return readTail(filepath.Join(b.dataDir, "singbox.err.log"), n)
+}
+
 // Stats implements Backend.
 func (b *SingBoxBackend) Stats() (uint64, uint64, int) {
 	return b.bytesIn.Load(), b.bytesOut.Load(), int(b.latencyMS.Load())
 }
 
 // Start implements Backend.
-func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, prefs store.Prefs, _ []proto.Rule) error {
+func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, prefs store.Prefs, rules []proto.Rule) error {
 	b.mu.Lock()
 	if b.cmd != nil {
 		b.mu.Unlock()
@@ -145,7 +157,7 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, prefs s
 		}
 	}
 
-	cfg, err := BuildSingBoxConfig(server, prefs, socksPort, httpPort, clashPort)
+	cfg, err := BuildSingBoxConfig(server, prefs, rules, socksPort, httpPort, clashPort)
 	if err != nil {
 		b.mu.Unlock()
 		return fmt.Errorf("build sing-box config: %w", err)
@@ -560,7 +572,16 @@ func readTail(path string, n int) string {
 // browser passthrough still work in TUN mode.
 //
 // Exposed for tests.
-func BuildSingBoxConfig(server proto.Server, prefs store.Prefs, socksPort, httpPort, clashPort int) ([]byte, error) {
+//
+// rc48 — `rules` is the user-defined rule chain pulled from
+// store.Snapshot().Rules. Rules with Action="direct" Enabled=true are
+// plumbed into the sing-box `route.rules` array as bypass entries
+// (their domain_suffix / ip_cidr targets skip the proxy outbound and
+// dial through `direct` instead). System bypass entries for the
+// geo-IP probe hosts mosaicd uses to detect the user's home
+// location are always prepended; that way the user's "vous" pin
+// keeps showing their real city even while the tunnel is up.
+func BuildSingBoxConfig(server proto.Server, prefs store.Prefs, rules []proto.Rule, socksPort, httpPort, clashPort int) ([]byte, error) {
 	out, err := outboundFor(server)
 	if err != nil {
 		return nil, err
@@ -680,15 +701,7 @@ func BuildSingBoxConfig(server proto.Server, prefs store.Prefs, socksPort, httpP
 			// can route into TUN and loop, which is the same
 			// failure mode the missing dns block produced in rc24.
 			"auto_detect_interface": true,
-			"rules": []any{
-				// All UDP/TCP DNS traffic captured by TUN gets
-				// handed to sing-box's internal DNS resolver.
-				map[string]any{"protocol": "dns", "outbound": "dns-out"},
-				// Belt-and-braces: anything destined for
-				// port 53 (e.g. apps that bypass the system
-				// resolver) also gets coerced into dns-out.
-				map[string]any{"port": []any{53}, "outbound": "dns-out"},
-			},
+			"rules": buildRouteRules(rules),
 		},
 	}
 	if clashPort > 0 {

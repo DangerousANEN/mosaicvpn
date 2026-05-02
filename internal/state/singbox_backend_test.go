@@ -29,7 +29,7 @@ func sampleVlessServer() proto.Server {
 func TestBuildSingBoxConfig_ProxyModeOmitsTunInbound(t *testing.T) {
 	prefs := store.DefaultPrefs()
 	prefs.TunnelMode = "proxy"
-	raw, err := BuildSingBoxConfig(sampleVlessServer(), prefs, 2080, 2081, 9090)
+	raw, err := BuildSingBoxConfig(sampleVlessServer(), prefs, nil, 2080, 2081, 9090)
 	if err != nil {
 		t.Fatalf("BuildSingBoxConfig: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestBuildSingBoxConfig_TunModeAddsTunInbound(t *testing.T) {
 	prefs := store.DefaultPrefs()
 	prefs.TunnelMode = "tun"
 	prefs.TunStack = "gvisor"
-	raw, err := BuildSingBoxConfig(sampleVlessServer(), prefs, 2080, 2081, 9090)
+	raw, err := BuildSingBoxConfig(sampleVlessServer(), prefs, nil, 2080, 2081, 9090)
 	if err != nil {
 		t.Fatalf("BuildSingBoxConfig: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestBuildSingBoxConfig_TunStackFallback(t *testing.T) {
 		prefs := store.DefaultPrefs()
 		prefs.TunnelMode = "tun"
 		prefs.TunStack = tc.in
-		raw, err := BuildSingBoxConfig(sampleVlessServer(), prefs, 2080, 2081, 0)
+		raw, err := BuildSingBoxConfig(sampleVlessServer(), prefs, nil, 2080, 2081, 0)
 		if err != nil {
 			t.Fatalf("BuildSingBoxConfig(%q): %v", tc.in, err)
 		}
@@ -116,7 +116,7 @@ func TestBuildSingBoxConfig_TunStackFallback(t *testing.T) {
 
 func TestBuildSingBoxConfig_ClashAPIDisabledWhenZero(t *testing.T) {
 	prefs := store.DefaultPrefs()
-	raw, err := BuildSingBoxConfig(sampleVlessServer(), prefs, 2080, 2081, 0)
+	raw, err := BuildSingBoxConfig(sampleVlessServer(), prefs, nil, 2080, 2081, 0)
 	if err != nil {
 		t.Fatalf("BuildSingBoxConfig: %v", err)
 	}

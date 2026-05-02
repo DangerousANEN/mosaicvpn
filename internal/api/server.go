@@ -69,6 +69,14 @@ type Server struct {
 	// tests). Set via SetEgressManager after construction so NewServer
 	// stays compatible with the historic four-argument signature.
 	egress EgressManager
+
+	// onPrefsChanged, when non-nil, is invoked synchronously after a
+	// successful PUT /v1/prefs. rc48 wires this to the MCP server so
+	// it can rewrite mcp.json with the live permission/confirm value
+	// (the MCP itself reads prefs live for auth gating, but agents
+	// inspect the discovery file once on startup, so we keep them in
+	// sync). Nil when no consumer wires it.
+	onPrefsChanged func()
 }
 
 // EgressManager is the subset of internal/egress.Manager the API needs
@@ -109,6 +117,13 @@ func (s *Server) Token() string { return s.token }
 // is computed alongside the API). Nil-safe — the egress endpoints
 // reject requests with 503 when no manager is wired.
 func (s *Server) SetEgressManager(m EgressManager) { s.egress = m }
+
+// SetPrefsChangedHook registers a callback fired after every
+// successful PUT /v1/prefs. Used by mosaicd to keep the MCP
+// discovery file in sync with the live permission level so external
+// agents see the same view of "connect / full / read" the renderer
+// just saved.
+func (s *Server) SetPrefsChangedHook(fn func()) { s.onPrefsChanged = fn }
 
 // Handler returns the underlying http.Handler, including the CORS,
 // auth, and logging middleware. CORS sits outermost so that preflight
@@ -961,6 +976,9 @@ func (s *Server) handleSetPrefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mgr.SetTunnelPrefs(p.TunnelMode, p.KillSwitch)
+	if s.onPrefsChanged != nil {
+		s.onPrefsChanged()
+	}
 	writeJSON(w, http.StatusOK, p)
 }
 
