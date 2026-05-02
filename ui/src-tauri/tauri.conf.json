@@ -58,7 +58,8 @@
       "binaries/sing-box"
     ],
     "resources": [
-      "binaries/wintun.dll"
+      "binaries/wintun.dll",
+      "binaries/libcronet.dll"
     ],
     "windows": {
       "nsis": {

@@ -81,6 +81,11 @@ func URLTestServer(ctx context.Context, binary, dataDir, target string, prefs st
 	// open a TUN inbound from an ephemeral helper.
 	utPrefs := prefs
 	utPrefs.TunnelMode = "proxy"
+	// rc49 — force the ephemeral config to log at trace level into a
+	// dedicated file alongside the wrapper script log.  At warn (the
+	// daemon default) sing-box stays silent during "upstream returned
+	// EOF" failures, which is exactly the case the user is hitting.
+	utPrefs.URLTestLogLevel = "trace"
 	// rc48 — Verify is an isolated probe; pass nil for user rules so
 	// the only bypass entries in the ephemeral config are the
 	// hard-coded system geo hosts. User-defined splits don't apply
@@ -102,6 +107,10 @@ func URLTestServer(ctx context.Context, binary, dataDir, target string, prefs st
 		return URLTestResult{Error: "write config: " + err.Error()}
 	}
 	defer os.Remove(cfgPath)
+	// rc49 — best-effort stage libcronet.dll alongside the
+	// ephemeral data dir so a naive Verify probe can actually
+	// LoadLibrary the Cronet runtime. Soft-fails when not bundled.
+	_ = EnsureLibcronetDLL(dataDir)
 
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -129,20 +138,28 @@ func URLTestServer(ctx context.Context, binary, dataDir, target string, prefs st
 		_, _ = cmd.Process.Wait()
 	}()
 
-	// rc48 — flushLog forces buffered sing-box stderr to disk before
-	// we slurp the tail. Without this, Windows hands us back an empty
-	// file because the OS cache hasn't been flushed yet, so the user
-	// sees the bare "unexpected EOF" the rc40 fix was supposed to
-	// dress up with sing-box context.
-	flushLog := func() {
+	// rc49 — stopAndDrain kills the ephemeral sing-box, waits for it
+	// to actually exit, then Sync()s our log handle so OS write-cache
+	// is flushed before we read the tail.  Reading while sing-box is
+	// still running gave us the rc48 "empty log" bug because Windows
+	// keeps inherited-handle writes buffered until the writer exits.
+	stopAndDrain := func() {
+		_ = killProcess(cmd)
+		if cmd.Process != nil {
+			_, _ = cmd.Process.Wait()
+		}
 		if logFile != nil {
 			_ = logFile.Sync()
 		}
 	}
 
 	if err := waitForListen(cctx, "127.0.0.1", socksPort, 5*time.Second); err != nil {
-		flushLog()
-		return URLTestResult{Error: "sing-box did not start: " + readURLTestTail(logPath, 600)}
+		stopAndDrain()
+		tail := readURLTestTail(logPath, 600)
+		if tail == "" {
+			return URLTestResult{Error: "sing-box did not start (no log written; check " + logPath + ")"}
+		}
+		return URLTestResult{Error: "sing-box did not start: " + tail}
 	}
 
 	// Use 204 endpoint — Google's well-known captive-portal probe; if
@@ -180,12 +197,13 @@ func URLTestServer(ctx context.Context, binary, dataDir, target string, prefs st
 		// failures, append the last ~600 bytes of the sing-box
 		// log so the user sees what really happened (TLS abort,
 		// server reset, no auth handshake, etc.) instead of a
-		// blank "Get …: unexpected EOF".  rc48: explicit Sync()
-		// before the read, plus we surface the log path on disk
-		// so the user can grab the full text manually if the
-		// 600-byte tail still doesn't show the cause.
-		flushLog()
-		if tail := readURLTestTail(logPath, 600); tail != "" {
+		// blank "Get …: unexpected EOF".  rc49 — stop sing-box
+		// and wait for it to exit before reading the tail; on
+		// Windows the inherited stdio handle stays write-buffered
+		// until the writer process actually exits, so reading
+		// mid-flight returned an empty file in rc48.
+		stopAndDrain()
+		if tail := readURLTestTail(logPath, 1200); tail != "" {
 			logx.Debug("url-test failed", "server", server.ID,
 				"err", base, "singbox_tail", tail)
 			base = base + " | singbox: " + condense(tail)

@@ -84,6 +84,17 @@ type Prefs struct {
 	// Cloudflare edge mid-download (the symptom is "unexpected EOF"
 	// after a few hundred kilobytes).
 	SpeedtestURL string `json:"speedtest_url,omitempty"`
+	// URLTestLogLevel is an internal pref the daemon sets when it
+	// builds an ephemeral sing-box config for Verify / URL test.
+	// "" = inherit the daemon-wide warn level. "trace" / "debug" /
+	// "info" / "warn" / "error" / "fatal" / "panic" are accepted.
+	// rc49 sets this to "trace" so the URL-test log captures every
+	// dial / handshake event regardless of the user's daemon log
+	// level — without this the log file ended up empty for the
+	// common "upstream EOF mid-stream" failure mode and the user
+	// got the bare "unexpected EOF" the rc40 fix was supposed to
+	// dress up. Not user-configurable: never written to disk.
+	URLTestLogLevel string `json:"-"`
 	// DPIFingerprint overrides the per-server uTLS fingerprint with
 	// a global value.  "" / "auto" = use whatever the subscription
 	// declared; otherwise one of "chrome", "firefox", "safari",

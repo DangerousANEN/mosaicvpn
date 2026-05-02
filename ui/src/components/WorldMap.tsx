@@ -571,15 +571,17 @@ export function WorldMap({
                     d="M 0 0 C -4 -6 -4 -10 0 -14 C 4 -10 4 -6 0 0 Z"
                   />
                   <circle className="you-pin-core" cx={0} cy={-9} r={1.6} />
-                  {/* rc48 — the "vous" label lives in the same SVG
-                      coord space as the pin so letterboxing
-                      (preserveAspectRatio="xMidYMid meet") cannot
-                      drift the chip off the anchor like the rc40
-                      HTML-percent positioning did. */}
+                  {/* rc49 — label sits below the teardrop tip
+                      (anchor is at y=0) at y=14 with font-size 14
+                      so the baseline clears the pin and the
+                      italic copy reads as a label, not a footnote.
+                      The rc48 y=5 + font-size 4.5 combination
+                      rendered the chip at ~7px on screen, which
+                      the user reported as "barely visible". */}
                   <text
                     className="you-pin-label"
                     x={0}
-                    y={5}
+                    y={14}
                     textAnchor="middle"
                   >
                     vous

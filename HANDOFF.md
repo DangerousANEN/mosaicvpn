@@ -1680,3 +1680,99 @@ Open hand-offs going into rc49:
   generating + displaying the credentials still need polish.
 
 — rc48 agent.
+
+---
+
+## rc49 — johndoedal2 follow-up (sing-box 1.13 + label + log fixes)
+
+User reported on rc48:
+- URL test "логи все пустые" — no `| singbox: …` decoration on Verify
+  EOF, only the bare error + log path.
+- Speedtest still bare "unexpected EOF" with no singbox tail.
+- naive servers fatal: `unknown outbound type: naive` from sing-box.
+- vous SVG label barely visible.
+
+Diagnosis:
+
+1. **URL test empty log** — rc48's `flushLog()` Sync()s OUR file
+   handle, but on Windows sing-box's *child* writes to the inherited
+   stdio handle stay buffered in the OS until the writer process
+   exits. Sync() on the parent handle does nothing for that buffer.
+   Plus the daemon-wide log level was `warn`, which silences the
+   common "upstream EOF mid-stream" failure mode entirely.
+
+2. **Speedtest empty tail** — same root cause for the main backend's
+   `singbox.err.log`: log level `warn` filters out connection drops
+   before they ever hit disk.
+
+3. **naive unknown** — bundled sing-box was 1.10.7. naive was
+   *removed* from sing-box in 1.10 and *re-added* in 1.13 via the
+   bundled libcronet runtime. 1.10.7 simply has no naive outbound
+   to register.
+
+4. **vous label** — `font-size: 4.5` in the map's 784×458 viewBox
+   is ~1 % of map height (≈ 7 px on screen at default zoom). The
+   stroke halo was thin too, so on dark continents the italic ink
+   disappeared into the geography.
+
+Fixes shipped in rc49:
+
+- **`internal/state/singbox_urltest.go`** — added `stopAndDrain()`
+  that Kill()'s sing-box, Wait()'s for it to exit, *then* Sync()'s
+  the parent log handle. Called inline before every
+  `readURLTestTail()` so the OS write buffer is flushed before we
+  read. Both the dial-fail and the http-fail paths use it.
+- **`internal/store/store.go`** — added internal `URLTestLogLevel`
+  pref (json:"-", never written to disk). The URL-test code sets
+  this to "trace" so the ephemeral sing-box config logs every dial
+  / handshake event. Without it the URL test log file stayed empty
+  for upstream-EOF failures.
+- **`internal/state/singbox_backend.go`** — bumped daemon-wide log
+  level default from "warn" to "info" (small log volume, captures
+  per-outbound dial + EOF events). Added `LogPath()` implementing
+  `LogPather` so Speedtest's `attachSingboxTail` can fall back to
+  surfacing the on-disk path when the live tail is empty.
+- **`internal/state/state.go`** — Speedtest `attachSingboxTail` now
+  attaches the `singbox.err.log` path as a fallback when LogTail
+  returns nothing (e.g. log not rotated yet, level still effectively
+  silent). Added `LogPather` interface.
+- **`.github/workflows/release.yml`** — `SINGBOX_VERSION` bumped
+  from 1.10.7 → 1.13.7. Added a libcronet.dll bundle step alongside
+  the sing-box.exe sidecar, with a clean warning when the upstream
+  zip stops shipping it. 1.13.7 still accepts the legacy DNS server
+  format (compat is removed only in 1.14), so existing configs
+  built by `BuildSingBoxConfig` should keep working.
+- **`ui/src-tauri/tauri.conf.json`** — added `binaries/libcronet.dll`
+  to `bundle.resources` so the NSIS installer drops it next to the
+  app exe on user machines.
+- **`internal/state/wintun.go`** — added `EnsureLibcronetDLL` mirror
+  of `EnsureWintunDLL`. Soft-fails when not bundled (legacy builds
+  + non-Windows hosts) so non-naive users don't get spurious
+  Connect failures. Wired into both `SingBoxBackend.Start()` and
+  `URLTestServer` so naive Verify probes also work.
+- **`ui/src/components/WorldMap.tsx`** — moved vous label `y` from 5
+  to 14 viewBox units so font-size:14 doesn't overlap the teardrop
+  pin tip.
+- **`ui/src/styles/app.css`** — `.you-pin-label`: font-size 4.5 → 14,
+  font-weight 600 → 700, stroke-width 1.2 → 3 (paper halo now wide
+  enough to cut through dark country fills).
+
+Sing-box version migration notes (rc49 → future):
+
+- 1.13.x **still accepts legacy DNS server format** ("address" /
+  "address_resolver" syntax we use in `BuildSingBoxConfig`). Compat
+  is removed in 1.14. When 1.14 ships we must migrate to the new
+  `dns.servers[].type` schema documented at
+  https://sing-box.sagernet.org/migration/#migrate-to-new-dns-servers.
+- 1.10 already merged TUN address fields; 1.13 does not regress.
+- naive outbound options (`username`, `password`, `tls{...}`) are
+  unchanged from 1.4-era schema — no config changes needed.
+
+Open hand-offs going into rc50:
+
+- TUN end-to-end stability still pending real-world repro logs.
+- DNS server format migration before 1.14.0 lands.
+- db-ip.com attribution in Folio About.
+- LAN share user/pass UI polish.
+
+— rc49 agent.

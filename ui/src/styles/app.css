@@ -493,16 +493,22 @@
   fill: var(--paper);
   stroke: none;
 }
+/* rc49 — font-size jumped from 4.5 → 14 viewBox units. The map's
+   viewBox is 784 × 458, so 4.5 was ~1% of map height (≈ 7px on
+   screen at default zoom — invisible against busy geography).
+   14 lands at ~3% which is roughly 25px on screen, matching the
+   visual weight of the country labels.  The stroke halo is widened
+   too so the italic ink stays readable on dark continents. */
 .worldmap-pin.you .you-pin-label {
   fill: var(--ink);
   font-family: "Atlas Serif", Georgia, serif;
   font-style: italic;
-  font-size: 4.5px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   paint-order: stroke fill;
   stroke: var(--paper);
-  stroke-width: 1.2px;
+  stroke-width: 3px;
   stroke-linejoin: round;
   pointer-events: none;
   user-select: none;

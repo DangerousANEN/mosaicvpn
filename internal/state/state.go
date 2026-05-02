@@ -48,6 +48,14 @@ type ProxyListener interface {
 	Proxies() (socks, http string)
 }
 
+// LogPather-aware backends expose the absolute path to their stderr
+// log so the daemon can surface it in error messages when LogTail
+// returns nothing (e.g. when sing-box is silent at the chosen
+// log level).  Mirrors the URL-test path-fallback added in rc48.
+type LogPather interface {
+	LogPath() string
+}
+
 // LogTailer-aware backends expose the trailing bytes of their stderr
 // log file. Used by Speedtest / Verify to attach sing-box context to
 // opaque "unexpected EOF" / "connection reset" failures so the UI
@@ -468,11 +476,20 @@ func (m *Manager) Speedtest(ctx context.Context, url string) (SpeedtestResult, e
 		if !ok {
 			return err
 		}
-		tail := lt.LogTail(600)
-		if tail == "" {
-			return err
+		tail := lt.LogTail(900)
+		if tail != "" {
+			return fmt.Errorf("%w | singbox: %s", err, condense(tail))
 		}
-		return fmt.Errorf("%w | singbox: %s", err, condense(tail))
+		// rc49 — when the log is silent (warn-level filter, mid-RC
+		// log rotation, etc.) point the user at the file on disk so
+		// they can grab the full text manually instead of staring at
+		// a bare "unexpected EOF".
+		if lp, ok := be.(LogPather); ok {
+			if p := lp.LogPath(); p != "" {
+				return fmt.Errorf("%w | log: %s", err, p)
+			}
+		}
+		return err
 	}
 
 	var lastErr error

@@ -67,6 +67,58 @@ func EnsureWintunDLL(dataDir string) error {
 	)
 }
 
+// EnsureLibcronetDLL stages libcronet.dll alongside the daemon
+// data dir.  Sing-box's `naive` outbound (re-added in 1.13 via
+// the bundled Cronet runtime) LoadLibrary's libcronet.dll from
+// the working directory at runtime; without it sing-box refuses
+// to load any config that references type:"naive" with a
+// "missing libcronet" diagnostic.  We always best-effort stage
+// it because the user may flip a non-naive server to naive at
+// any time and we don't want a surprise startup failure.
+//
+// Search order matches EnsureWintunDLL — the installer drops
+// libcronet.dll under the same `binaries/` path via
+// bundle.resources, plus a few historical Tauri layouts as
+// belt-and-braces.  Returns nil when the DLL is genuinely not
+// bundled (this build doesn't include it) so non-naive users
+// don't get spurious connect failures.
+func EnsureLibcronetDLL(dataDir string) error {
+	target := filepath.Join(dataDir, "libcronet.dll")
+	if fi, err := os.Stat(target); err == nil && !fi.IsDir() && fi.Size() > 0 {
+		return nil
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate mosaicd executable: %w", err)
+	}
+	exeDir := filepath.Dir(exe)
+	candidates := []string{
+		filepath.Join(exeDir, "binaries", "libcronet.dll"),
+		filepath.Join(exeDir, "libcronet.dll"),
+		filepath.Join(exeDir, "resources", "binaries", "libcronet.dll"),
+		filepath.Join(exeDir, "resources", "_up_", "binaries", "libcronet.dll"),
+		filepath.Join(exeDir, "..", "binaries", "libcronet.dll"),
+		filepath.Join(exeDir, "..", "resources", "binaries", "libcronet.dll"),
+		filepath.Join(exeDir, "..", "resources", "_up_", "binaries", "libcronet.dll"),
+	}
+	for _, src := range candidates {
+		if _, err := os.Stat(src); err != nil {
+			continue
+		}
+		if err := copyFile(src, target); err != nil {
+			logx.Warn("copy libcronet.dll failed", "src", src, "dst", target, "err", err)
+			continue
+		}
+		logx.Info("staged libcronet.dll for sing-box naive", "src", src, "dst", target)
+		return nil
+	}
+	// Soft-fail: not every build bundles libcronet, and only
+	// naive servers actually need it. The Connect path will
+	// surface a clean "naive requires libcronet.dll" error if
+	// the user does try a naive server.
+	return nil
+}
+
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {

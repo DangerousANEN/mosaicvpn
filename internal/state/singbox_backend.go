@@ -109,6 +109,17 @@ func (b *SingBoxBackend) LogTail(n int) string {
 	return readTail(filepath.Join(b.dataDir, "singbox.err.log"), n)
 }
 
+// LogPath implements LogPather. Returns the absolute path to the
+// live sing-box stderr log so callers can surface it in error
+// messages when LogTail comes back empty.  rc49 fallback for the
+// "Speedtest EOF, no singbox tail" case.
+func (b *SingBoxBackend) LogPath() string {
+	if b.dataDir == "" {
+		return ""
+	}
+	return filepath.Join(b.dataDir, "singbox.err.log")
+}
+
 // Stats implements Backend.
 func (b *SingBoxBackend) Stats() (uint64, uint64, int) {
 	return b.bytesIn.Load(), b.bytesOut.Load(), int(b.latencyMS.Load())
@@ -156,6 +167,14 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, prefs s
 			return fmt.Errorf("tun:wintun_missing: %w", err)
 		}
 	}
+	// rc49 — best-effort stage libcronet.dll for the naive
+	// outbound (re-added in sing-box 1.13).  Soft-fails when the
+	// DLL is not bundled (legacy builds, non-Windows hosts) — we
+	// only need to actually fail the connect when the *server*
+	// is naive and the DLL is missing.  EnsureLibcronetDLL
+	// returns nil in both the "staged ok" and "not bundled, who
+	// cares" cases, so we just log and move on.
+	_ = EnsureLibcronetDLL(b.dataDir)
 
 	cfg, err := BuildSingBoxConfig(server, prefs, rules, socksPort, httpPort, clashPort)
 	if err != nil {
@@ -673,9 +692,21 @@ func BuildSingBoxConfig(server proto.Server, prefs store.Prefs, rules []proto.Ru
 	// being routed through the half-up proxy. Symptom on the user's
 	// rc25 install: "Не удалось найти IP-адрес сервера 2ip.io".
 	dnsFinal := "local"
+	// rc49 — bumped the daemon-wide level from "warn" to "info" so
+	// `singbox.err.log` actually contains a useful tail when
+	// Speedtest decorates an "unexpected EOF" with `| singbox: …`.
+	// At warn sing-box stays silent for connection drops; at info it
+	// emits one line per outbound dial and per EOF, which is exactly
+	// the diagnostic data the user asked for.  The URL-test path
+	// overrides this to "trace" via prefs.URLTestLogLevel so the
+	// ephemeral log captures every TLS / handshake event.
+	logLevel := "info"
+	if prefs.URLTestLogLevel != "" {
+		logLevel = prefs.URLTestLogLevel
+	}
 	cfg := map[string]any{
 		"log": map[string]any{
-			"level":     "warn",
+			"level":     logLevel,
 			"timestamp": true,
 		},
 		"dns": map[string]any{
