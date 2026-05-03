@@ -50,16 +50,22 @@ jobs:
           go build -ldflags="-s -w" -o ui/src-tauri/binaries/mosaicd-x86_64-pc-windows-msvc.exe ./cmd/mosaicd
           go build -ldflags="-s -w" -o bin/mosaic.exe ./cmd/mosaic
 
-      - name: bundle sing-box sidecar (+ libcronet.dll for naive)
+      - name: bundle sing-box sidecar
         shell: pwsh
         env:
-          # rc49 — bumped from 1.10.7 to 1.13.7 so the bundled
-          # sing-box actually understands the `naive` outbound
-          # type. naive was removed from sing-box in 1.10 and
-          # re-added in 1.13 via the bundled libcronet runtime;
-          # 1.13.x Windows zips ship libcronet.dll alongside
-          # sing-box.exe and we need both at install time.
-          SINGBOX_VERSION: 1.13.7
+          # rc50 — rolled back from rc49's 1.13.7 to the last 1.12
+          # release. Reason: 1.13 removed legacy special outbounds
+          # `block` / `dns` and the `wireguard` outbound entirely
+          # (replaced by rule actions and the endpoints block),
+          # which our `BuildSingBoxConfig` still emits — so 1.13.7
+          # rejected every config we generated and "ничего не
+          # коннектилось" on the user's box. 1.12.10 is the
+          # last release that still accepts the legacy schema.
+          # Tradeoff: naive outbound stays unsupported (it was
+          # removed in 1.10 and re-added only in 1.13 via the
+          # bundled libcronet runtime). A future rc will migrate
+          # the config to 1.13 idioms and bump the version again.
+          SINGBOX_VERSION: 1.12.10
         run: |
           $ErrorActionPreference = 'Stop'
           $version = $env:SINGBOX_VERSION
@@ -74,17 +80,6 @@ jobs:
           if (-not $exe) { throw "sing-box.exe not found inside the release zip" }
           New-Item -ItemType Directory -Force -Path ui/src-tauri/binaries | Out-Null
           Copy-Item $exe.FullName "ui/src-tauri/binaries/sing-box-x86_64-pc-windows-msvc.exe"
-          # libcronet.dll is the Cronet runtime that powers the
-          # `naive` outbound on Windows since sing-box 1.13.0.
-          # Without it sing-box will refuse to start configs that
-          # reference type:"naive" with a "missing libcronet" error.
-          $cronet = Get-ChildItem -Recurse -Path $tmp -Filter "libcronet.dll" | Select-Object -First 1
-          if ($cronet) {
-            Copy-Item $cronet.FullName "ui/src-tauri/binaries/libcronet.dll"
-            Write-Host "Bundled libcronet.dll alongside sing-box.exe"
-          } else {
-            Write-Warning "libcronet.dll not found inside the release zip; naive outbound will not work"
-          }
           Get-ChildItem ui/src-tauri/binaries
 
       - name: bundle wintun.dll for TUN inbound
