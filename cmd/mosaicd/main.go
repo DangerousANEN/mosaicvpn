@@ -386,14 +386,17 @@ func resolveMyLocation(mgr *state.Manager, st *store.Store) {
 		loc := tryGeoEndpoints(endpoints)
 		if loc == nil {
 			// rc48 — last-ditch offline path: hit a cheap
-			// "what's my IP" endpoint (these are in
-			// SystemBypassDomains so they go direct even
-			// while the tunnel is up) and resolve the IP
+			// "what's my IP" endpoint and resolve the IP
 			// against the local db-ip.com city DB. Lets us
 			// keep "vous" accurate when ip-api / ipapi /
 			// ipinfo are all blocked or rate-limited but
 			// the user still has internet through the
-			// fallback chain.
+			// fallback chain.  Safe to dial directly: the
+			// outer loop only runs while the tunnel is in
+			// a non-Connected state (see `if connected`
+			// gate above), so Go's default HTTP client
+			// goes through the host network without
+			// touching sing-box.
 			loc = tryOfflineMyLocation()
 		}
 		if loc == nil {
@@ -426,13 +429,13 @@ func resolveMyLocation(mgr *state.Manager, st *store.Store) {
 		}
 
 		// Re-check connected state right before publishing — a
-		// Connect that landed during the HTTP round-trip on a
-		// pre-rc48 daemon would have resolved to the egress IP.
-		// rc48 plumbs the geo hosts through SystemBypassDomains
-		// in the sing-box config, so the dial goes direct even
-		// while the tunnel is up; keep the guard anyway so an
-		// older / partial config (config-build error, sing-box
-		// crashed) cannot smuggle an egress IP back in.
+		// Connect that landed during the HTTP round-trip would
+		// have resolved to the egress IP, so we discard the
+		// reading and let the next iteration retry while
+		// disconnected.  rc53: this guard is the *only* line
+		// of defence now that the route.rules system bypass
+		// has been removed (it was leaking the real IP back to
+		// browser apps pointed at our SOCKS port).
 		if mgr.Status().State == proto.StateConnected {
 			logx.Warn("geo result discarded — connect happened mid-lookup, would mistake egress for home")
 			time.Sleep(minRetryGap)
@@ -454,9 +457,9 @@ func resolveMyLocation(mgr *state.Manager, st *store.Store) {
 // tryOfflineMyLocation hits a cheap "what's my IP" endpoint and
 // geocodes the result against the local db-ip.com city DB. Returns
 // nil if no public IP could be obtained or the local DB is missing /
-// has no record for the IP. The endpoints used here are part of
-// state.SystemBypassDomains so the dial always goes through the
-// `direct` outbound, never through the active proxy.
+// has no record for the IP.  Called only from resolveMyLocation's
+// disconnected-state branch, so dials use the host's real network
+// rather than tunnelling through sing-box.
 func tryOfflineMyLocation() *proto.GeoLocation {
 	if !geoip.HasLocalDB() {
 		return nil

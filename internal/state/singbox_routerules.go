@@ -1,24 +1,21 @@
-// rc48 — buildRouteRules generates the `route.rules` array of a
-// sing-box config from the user's rule chain plus a hard-coded list
-// of "system bypass" hosts that always skip the tunnel.
+// rc48/rc53 — buildRouteRules generates the `route.rules` array of
+// a sing-box config from the user's rule chain.
 //
-// Why a system bypass?  mosaicd resolves the user's home-IP location
-// by hitting ip-api.com / ipapi.co / ipinfo.io while the tunnel is
-// disconnected.  In TUN mode with auto_route the OS routing table
-// captures every outbound socket — including the daemon's own
-// HTTP probes — so once a user reconnects after their first launch
-// the next geo refresh would resolve to the egress IP and the "vous"
-// pin would jump to whatever country their server lives in.
+// Historical note: rc48 used to inject a hard-coded "system bypass"
+// list (ip-api.com / 2ip.ru / ifconfig.me / ...) here so that
+// mosaicd's home-IP probes always escaped the tunnel.  rc53 strips
+// that out — the in-process geo loop already runs only while the
+// daemon is in a non-Connected state and goes through Go's default
+// HTTP transport (not via SOCKS), so the rule was redundant.  Worse,
+// it was an active leak: any user app pointed at our SOCKS inbound
+// at 127.0.0.1:2080 also matched the rule, so visiting 2ip.ru in a
+// browser configured to use Mosaic-as-proxy resolved to the *real*
+// IP instead of the tunnelled one.
 //
-// Sending those probe hosts straight through the `direct` outbound
-// (which uses auto_detect_interface=true to escape its own TUN
-// capture) keeps the daemon talking to the real internet regardless
-// of tunnel state, so the user's location stays accurate.
-//
-// User-defined Rules with Action="direct" Enabled=true are appended
-// after the system list so personal additions (corporate VPN
-// endpoints, banking IPs, anything the user wants to skip the
-// tunnel for) take effect alongside the built-in bypass.
+// User-defined Rules with Action="direct" Enabled=true are still
+// honoured here so personal additions (corporate VPN endpoints,
+// banking IPs, RU domain bypass preset, anything the user wants to
+// skip the tunnel for) take effect.
 
 package state
 
@@ -28,23 +25,17 @@ import (
 	"github.com/DangerousANEN/mosaicvpn/internal/proto"
 )
 
-// SystemBypassDomains is the set of domain suffixes that always skip
-// the tunnel.  The list mirrors mosaicd's geo-resolution chain plus a
-// small set of user-recognisable IP-check sites the user is likely to
-// open in their browser to verify "am I leaking my home IP?".
-//
-// Exposed so the renderer can show the same list in the Folio Bypass
-// chapter as a read-only "system" group, and so tests can assert the
-// invariant.
+// SystemBypassDomains is the historic set of "always-direct"
+// domains that the daemon hits to figure out the user's real IP.
+// Kept here as a Go-level constant so the in-process geo loop and
+// the offline IP probe can consult it (e.g. "is this URL one we
+// expect to bypass the proxy?"), but it is no longer injected into
+// sing-box's route.rules — see the package comment above.
 var SystemBypassDomains = []string{
-	// mosaicd's own geo-resolution chain
 	"ip-api.com",
 	"ipapi.co",
 	"ipinfo.io",
-	// db-ip.com city-lite download (rc47 offline GeoIP)
 	"db-ip.com",
-	// user-recognisable "what's my IP" sites that double as a
-	// reality-check for VOUS positioning
 	"2ip.ru",
 	"2ip.io",
 	"ifconfig.me",
@@ -55,7 +46,7 @@ var SystemBypassDomains = []string{
 }
 
 // buildRouteRules assembles the sing-box `route.rules` array.  Order
-// matters: DNS rules first, system bypass next, user direct rules
+// matters: sniff first, DNS-hijack rules next, user direct rules
 // after, then the implicit `final: proxy` fallthrough.
 //
 // rc51 — migrated from legacy `outbound: "dns-out"` / `outbound: "block"`
@@ -64,6 +55,11 @@ var SystemBypassDomains = []string{
 // (they used to be `{type: "block"}` / `{type: "dns"}` entries in the
 // `outbounds` array); rule actions are the only way to hijack DNS or
 // drop traffic from 1.13 onwards.
+//
+// rc53 — the hard-coded SystemBypassDomains entry was dropped: it
+// affected all SOCKS / HTTP / TUN inbound traffic, which let user-
+// driven browser hits to e.g. 2ip.ru leak the real IP whenever the
+// browser was using Mosaic as its proxy.  See package comment above.
 func buildRouteRules(userRules []proto.Rule) []any {
 	rules := []any{
 		// rc51 — sniff every inbound flow.  The legacy
@@ -81,13 +77,6 @@ func buildRouteRules(userRules []proto.Rule) []any {
 		// apps that bypass the system resolver) also gets
 		// coerced into the internal resolver.
 		map[string]any{"port": []any{53}, "action": "hijack-dns"},
-		// System bypass: geo-resolution + IP-check hosts always
-		// dial through `direct` so the user's home-IP detection
-		// keeps working while the tunnel is up.
-		map[string]any{
-			"domain_suffix": stringsToAny(SystemBypassDomains),
-			"outbound":      "direct",
-		},
 	}
 
 	for _, r := range userRules {

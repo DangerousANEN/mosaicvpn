@@ -155,6 +155,14 @@ export interface Prefs {
   mcp_confirm: boolean;
   /** Verify (URL test) target.  Empty = gstatic-204 default. */
   url_test_endpoint?: string;
+  /** SOCKS5 inbound listen port.  0 / undefined keeps the historical
+   *  "try 2080, fall back to ephemeral if taken" behaviour.  A
+   *  non-zero value pins the port — connect fails loudly when it's
+   *  already in use instead of moving to a random ephemeral. */
+  socks_port?: number;
+  /** HTTP proxy inbound listen port.  Same semantics as socks_port;
+   *  0 / undefined = auto (try 2081, fall back). */
+  http_port?: number;
   /** Speedtest target URL.  Empty falls back to the default
    *  Cloudflare 10 MB → 5 MB → 1 MB ladder. */
   speedtest_url?: string;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import type { Action, Logic, Match, Rule, Server } from "../api/types";
 import { romanLower as toRomanLower } from "../components/numerals";
@@ -164,6 +164,69 @@ export function Routing(): JSX.Element {
     }
   };
 
+  /* rc53 — import rules from a .json file.  Accepted shapes:
+   *   { "rules": [ <Rule>, ... ] }     // bundle (preferred)
+   *   [ <Rule>, ... ]                  // bare array
+   *   <Rule>                           // single rule
+   * Each entry is appended via POST /v1/rules at the next priority,
+   * with id stripped (the daemon mints a fresh one).  The bundled
+   * preset files in `presets/` use the "rules" shape. */
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const onImportClick = () => importInputRef.current?.click();
+  const onImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = ""; // reset so the same file can be picked twice
+    if (!f) return;
+    setBusy("import");
+    setErr(null);
+    try {
+      const text = await f.text();
+      const parsed = JSON.parse(text);
+      const list: Partial<Rule>[] = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray((parsed as { rules?: unknown }).rules)
+          ? ((parsed as { rules: Partial<Rule>[] }).rules)
+          : [parsed as Partial<Rule>];
+      if (list.length === 0) {
+        setErr("import: no rules in file");
+        return;
+      }
+      let basePriority = rules.length;
+      let imported = 0;
+      const skipped: string[] = [];
+      for (const r of list) {
+        if (!r || !r.action || !r.match) {
+          skipped.push(r?.name || "(unnamed)");
+          continue;
+        }
+        await api.addRule({
+          name: r.name?.trim() || "imported rule",
+          action: r.action,
+          target:
+            r.action === "proxy"
+              ? typeof r.target === "string" && r.target.length > 0
+                ? r.target
+                : undefined
+              : undefined,
+          enabled: r.enabled ?? true,
+          priority: basePriority++,
+          match: r.match,
+        });
+        imported++;
+      }
+      await reload();
+      if (skipped.length > 0) {
+        setErr(
+          `imported ${imported} rule(s); skipped ${skipped.length} (missing action / match): ${skipped.join(", ")}`,
+        );
+      }
+    } catch (err) {
+      setErr(`import failed: ${(err as Error).message}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <div className="routing-frame">
       <header className="pool-mast">
@@ -177,6 +240,21 @@ export function Routing(): JSX.Element {
           </div>
         </div>
         <div className="routing-mast-actions">
+          <button
+            className="btn ghost"
+            onClick={onImportClick}
+            disabled={busy === "import"}
+            title="Import a rule bundle from a .json file (e.g. presets/ru-bypass.json)"
+          >
+            {busy === "import" ? "importing…" : "Import .json"}
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            style={{ display: "none" }}
+            onChange={onImportFile}
+          />
           <button
             className="btn ghost"
             onClick={onCreate}

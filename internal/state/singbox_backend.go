@@ -145,15 +145,22 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, prefs s
 		return fmt.Errorf("sing-box binary %q: %w", bin, err)
 	}
 
-	// Pick free SOCKS / HTTP / clash-api loopback ports. Defaults are
-	// 2080 / 2081 / 9090 (the sing-box documented default for clash
-	// API) but each falls back to an ephemeral port if the default is
-	// already taken on the host.
-	socksPort := pickPort(2080)
-	httpPort := pickPort(2081)
+	// Pick SOCKS / HTTP / clash-api loopback ports.  Historical
+	// defaults are 2080 / 2081 / 9090 with an ephemeral fallback
+	// when the well-known port is already taken.  rc53 lets the
+	// user pin a specific port via Prefs.SocksPort / HTTPPort —
+	// when set we bind exactly that port (no fallback) so any app
+	// the user pre-configured for "127.0.0.1:<my port>" stays
+	// pointing at the running sing-box, instead of silently
+	// landing on a random ephemeral that breaks the chain.
+	socksPort := pickProxyPort(prefs.SocksPort, 2080)
+	httpPort := pickProxyPort(prefs.HTTPPort, 2081)
 	clashPort := pickPort(9090)
 	if socksPort == 0 || httpPort == 0 {
 		b.mu.Unlock()
+		if prefs.SocksPort != 0 || prefs.HTTPPort != 0 {
+			return fmt.Errorf("pinned proxy port already in use (socks=%d http=%d) — pick a different one in Folio → Verify → SOCKS / HTTP port", prefs.SocksPort, prefs.HTTPPort)
+		}
 		return errors.New("could not bind a free loopback port for sing-box proxies")
 	}
 
@@ -542,6 +549,37 @@ func pickPort(preferred int) int {
 	_, portStr, _ := net.SplitHostPort(l.Addr().String())
 	port, _ := strconv.Atoi(portStr)
 	return port
+}
+
+// pickPortStrict binds exactly preferred or returns 0; never falls back
+// to an ephemeral port.  Used when the user explicitly pinned a SOCKS /
+// HTTP port via Prefs — falling back silently would leave them with
+// downstream apps pointed at the wrong listener.
+func pickPortStrict(preferred int) int {
+	if preferred <= 0 {
+		return 0
+	}
+	l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", preferred))
+	if err != nil {
+		return 0
+	}
+	_ = l.Close()
+	return preferred
+}
+
+// pickProxyPort returns the SOCKS / HTTP inbound port to bind, with
+// strict-vs-fallback semantics driven by Prefs:
+//   - prefs pinned (>0): bind exactly that port, never fall back; returns 0
+//     when the pinned port is taken so the caller can surface a
+//     pinned-port error.
+//   - prefs unset (=0):  try the historical default first, fall back to an
+//     ephemeral loopback port (preserves the rc24 behaviour for users
+//     who never opened the new "SOCKS port" / "HTTP port" textboxes).
+func pickProxyPort(pinned, fallback int) int {
+	if pinned > 0 {
+		return pickPortStrict(pinned)
+	}
+	return pickPort(fallback)
 }
 
 // waitForListen polls the given loopback host:port until something is

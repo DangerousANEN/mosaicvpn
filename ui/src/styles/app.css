@@ -2260,6 +2260,21 @@
   cursor: default;
 }
 
+/* rc53 — re-enable hit-testing on every interactive element inside
+ * .sidepanel-card.  The card itself keeps `pointer-events: none` so
+ * map hover doesn't flicker against the panel (see rc41 comment in
+ * `.worldmap-sidepanel .sidepanel-card` above), but that propagated
+ * to every child and silently swallowed clicks on the popover's
+ * "fastest", "zoom", "connect" and "×" buttons.  Each opts back in
+ * here so the buttons in the click-popover actually fire. */
+.worldmap-sidepanel .popover-card .pop-fast-btn,
+.worldmap-sidepanel .popover-card .pop-zoom-btn,
+.worldmap-sidepanel .popover-card .pop-go,
+.worldmap-sidepanel .popover-card .pop-list,
+.worldmap-sidepanel .sidepanel-close {
+  pointer-events: auto;
+}
+
 /* rc39 — leftover pin badge / hex layer rules removed.
  * The diamond pin and the choropleth shapes carry the entire
  * pipeline now; nothing else paints in worldmap-pins or as a

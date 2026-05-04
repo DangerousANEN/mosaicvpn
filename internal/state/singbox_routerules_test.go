@@ -6,19 +6,19 @@ import (
 	"github.com/DangerousANEN/mosaicvpn/internal/proto"
 )
 
-func TestBuildRouteRules_AlwaysIncludesSystemBypass(t *testing.T) {
+func TestBuildRouteRules_BaselineHasSniffAndHijackDNS(t *testing.T) {
 	rules := buildRouteRules(nil)
-	// rc51 — sniff + DNS-by-protocol + DNS-by-port + system bypass = 4 entries.
-	if len(rules) < 4 {
-		t.Fatalf("want >=4 baseline rules, got %d: %#v", len(rules), rules)
+	// rc53 — baseline is sniff + DNS-by-protocol + DNS-by-port = 3 entries.
+	// rc48's "system bypass" entry was removed because it leaked the
+	// real IP whenever a user app routed 2ip.ru / ipinfo.io / etc
+	// through Mosaic-as-proxy.
+	if len(rules) != 3 {
+		t.Fatalf("want 3 baseline rules, got %d: %#v", len(rules), rules)
 	}
 	sniff, ok := rules[0].(map[string]any)
 	if !ok || sniff["action"] != "sniff" {
 		t.Fatalf("rule[0] not a sniff entry: %#v", rules[0])
 	}
-	// rc51 — sing-box 1.13 removed the `dns` special outbound, so
-	// the DNS-hijack entries now use `action: "hijack-dns"` instead
-	// of `outbound: "dns-out"`.  Verify both forms are present.
 	for i := 1; i <= 2; i++ {
 		dns, ok := rules[i].(map[string]any)
 		if !ok || dns["action"] != "hijack-dns" {
@@ -28,30 +28,17 @@ func TestBuildRouteRules_AlwaysIncludesSystemBypass(t *testing.T) {
 			t.Errorf("rule[%d] still has legacy outbound field: %#v", i, dns)
 		}
 	}
-	bypass, ok := rules[3].(map[string]any)
-	if !ok || bypass["outbound"] != "direct" {
-		t.Fatalf("rule[3] not a direct bypass entry: %#v", rules[3])
-	}
-	doms, ok := bypass["domain_suffix"].([]any)
-	if !ok || len(doms) == 0 {
-		t.Fatalf("bypass entry missing domain_suffix: %#v", bypass)
-	}
-	wantHosts := map[string]bool{
-		"ip-api.com":   false,
-		"2ip.ru":       false,
-		"ifconfig.me":  false,
-		"api.ipify.org": false,
-	}
-	for _, d := range doms {
-		if s, ok := d.(string); ok {
-			if _, want := wantHosts[s]; want {
-				wantHosts[s] = true
-			}
-		}
-	}
-	for h, found := range wantHosts {
-		if !found {
-			t.Errorf("system bypass missing %q", h)
+}
+
+func TestBuildRouteRules_NoSystemBypassDirectRule(t *testing.T) {
+	// rc53 regression — make sure we never re-introduce the global
+	// system-bypass direct rule.  Any rule with outbound:"direct"
+	// must come from a user-defined Rule, never from baseline.
+	rules := buildRouteRules(nil)
+	for i, r := range rules {
+		m, _ := r.(map[string]any)
+		if m["outbound"] == "direct" {
+			t.Fatalf("baseline rule[%d] is a direct-outbound rule (leak): %#v", i, m)
 		}
 	}
 }
@@ -91,11 +78,11 @@ func TestBuildRouteRules_AppendsEnabledDirectUserRules(t *testing.T) {
 		},
 	}
 	rules := buildRouteRules(user)
-	// rc51 — 4 baseline (sniff + 2 dns + system bypass) + 1 valid user rule = 5
-	if len(rules) != 5 {
-		t.Fatalf("want 5 rules, got %d: %#v", len(rules), rules)
+	// rc53 — 3 baseline (sniff + 2 dns) + 1 valid user rule = 4
+	if len(rules) != 4 {
+		t.Fatalf("want 4 rules, got %d: %#v", len(rules), rules)
 	}
-	last, _ := rules[4].(map[string]any)
+	last, _ := rules[3].(map[string]any)
 	if last["outbound"] != "direct" {
 		t.Errorf("user rule outbound = %v, want direct", last["outbound"])
 	}

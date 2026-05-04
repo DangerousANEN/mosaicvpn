@@ -46,7 +46,7 @@ const CHAPTERS: { id: ChapterId; num: string; title: string; sub: string }[] = [
     id: "verify",
     num: "iv",
     title: "Verify",
-    sub: "URL test target",
+    sub: "URL test + proxy ports",
   },
   {
     id: "antidpi",
@@ -381,8 +381,8 @@ export function Folio({ status }: { status?: Status | null }): JSX.Element {
           {chapter === "verify" ? (
             <Chapter
               num="iv"
-              title="Verify — URL test"
-              desc="what the per-server Verify probe fetches through the proxy"
+              title="Verify & proxy ports"
+              desc="what the per-server Verify probe fetches through the proxy, plus the SOCKS / HTTP listen ports sing-box exposes on 127.0.0.1"
             >
               <Opt
                 name="Target URL"
@@ -448,6 +448,46 @@ export function Folio({ status }: { status?: Status | null }): JSX.Element {
                   value={draft.speedtest_url ?? ""}
                   onChange={(v) => update("speedtest_url", v)}
                   placeholder="https://speed.cloudflare.com/__down?bytes=5242880"
+                />
+              </Opt>
+              <Opt
+                name="SOCKS port"
+                desc="Pins the SOCKS5 inbound that sing-box exposes on 127.0.0.1.  Empty / 0 = auto (try 2080, fall back to a random port if it's already taken).  A pinned value forces sing-box to bind exactly that port — Connect fails with an error when it's busy, instead of silently moving to a random port your apps don't know about."
+              >
+                <Text
+                  value={
+                    draft.socks_port && draft.socks_port > 0
+                      ? String(draft.socks_port)
+                      : ""
+                  }
+                  onChange={(v) => {
+                    const n = parseInt(v.trim(), 10);
+                    update(
+                      "socks_port",
+                      Number.isFinite(n) && n > 0 && n < 65536 ? n : 0,
+                    );
+                  }}
+                  placeholder="2080"
+                />
+              </Opt>
+              <Opt
+                name="HTTP port"
+                desc="Pins the HTTP proxy inbound on 127.0.0.1.  Same semantics as the SOCKS port: empty = auto (try 2081, fall back), pinned = bind exactly that or fail loudly."
+              >
+                <Text
+                  value={
+                    draft.http_port && draft.http_port > 0
+                      ? String(draft.http_port)
+                      : ""
+                  }
+                  onChange={(v) => {
+                    const n = parseInt(v.trim(), 10);
+                    update(
+                      "http_port",
+                      Number.isFinite(n) && n > 0 && n < 65536 ? n : 0,
+                    );
+                  }}
+                  placeholder="2081"
                 />
               </Opt>
             </Chapter>

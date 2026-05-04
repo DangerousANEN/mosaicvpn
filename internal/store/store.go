@@ -76,6 +76,18 @@ type Prefs struct {
 	// is rate-limiting or blocking the default endpoint while real
 	// internet still works through the same proxy.
 	URLTestEndpoint string `json:"url_test_endpoint,omitempty"`
+	// SocksPort overrides the SOCKS5 inbound listen port that the
+	// connect path picks for sing-box.  0 (default) keeps the
+	// historical "try 2080, fall back to ephemeral if taken"
+	// behaviour.  A non-zero value forces sing-box to bind exactly
+	// that port — the connect attempt fails loudly if the port is
+	// already in use, instead of silently moving to a random one
+	// that the user's downstream apps will not be configured for.
+	SocksPort int `json:"socks_port,omitempty"`
+	// HTTPPort is the same idea for the HTTP proxy inbound; pairs
+	// with SocksPort so users who pin one usually also want to pin
+	// the other.  0 = auto (try 2081, fall back).
+	HTTPPort int `json:"http_port,omitempty"`
 	// SpeedtestURL overrides the default Cloudflare __down endpoint
 	// used by the in-app Speedtest. Empty falls back to the
 	// historic 10 MB / 5 MB / 1 MB ladder against
