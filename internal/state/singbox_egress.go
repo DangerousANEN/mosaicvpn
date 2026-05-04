@@ -82,11 +82,15 @@ func BuildEgressConfig(eg proto.EgressConfig, server proto.Server, prefs store.P
 					"server": "1.1.1.1",
 					"detour": "proxy",
 				},
+				// rc52 fixup — see BuildSingBoxConfig for context;
+				// 1.13.7 forbids `detour: "direct"` on a DNS server
+				// when the direct outbound has no custom dialer
+				// options.  `type: "local"` uses the OS resolver
+				// without going through any outbound and is the
+				// modern idiom for "bypass the proxy".
 				map[string]any{
-					"type":   "udp",
-					"tag":    "local",
-					"server": "8.8.8.8",
-					"detour": "direct",
+					"type": "local",
+					"tag":  "local",
 				},
 			},
 			"final":             "local",

@@ -660,18 +660,28 @@ func BuildSingBoxConfig(server proto.Server, prefs store.Prefs, rules []proto.Ru
 	// The historic `block` rcode server is gone — we no longer
 	// reference it from any rule and the block special outbound is
 	// removed in 1.13 anyway.
+	//
+	// rc52 fixup — local DNS now uses sing-box's built-in
+	// `type: "local"` transport instead of `type: "udp"` over
+	// 8.8.8.8 with `detour: "direct"`.  Reason: 1.13.7 added the
+	// "detour to an empty direct outbound makes no sense"
+	// validation, which FATALs at startup whenever a DNS server
+	// detours to a `direct` outbound that has no custom dialer
+	// options (commit SagerNet/sing-box@02727c2e5e).  The new
+	// `type: "local"` transport delegates lookups to the OS
+	// resolver (Windows: GetAddrInfoEx, Linux: /etc/resolv.conf)
+	// without going through any outbound, which is the modern
+	// idiom for "bypass the proxy for this DNS server".
 	dnsServers := []any{
 		map[string]any{
-			"type":    "https",
-			"tag":     "remote-doh",
-			"server":  "1.1.1.1",
-			"detour":  "proxy",
+			"type":   "https",
+			"tag":    "remote-doh",
+			"server": "1.1.1.1",
+			"detour": "proxy",
 		},
 		map[string]any{
-			"type":   "udp",
-			"tag":    "local",
-			"server": "8.8.8.8",
-			"detour": "direct",
+			"type": "local",
+			"tag":  "local",
 		},
 	}
 	// Default DNS strategy: hand every captured DNS query to the
