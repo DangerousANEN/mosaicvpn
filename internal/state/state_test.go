@@ -96,9 +96,20 @@ func TestSubscribeReceivesEvents(t *testing.T) {
 	ch, cancel := mgr.Subscribe()
 	defer cancel()
 
+	// rc53 — wait for the Connect goroutine before returning so
+	// t.TempDir()'s RemoveAll cleanup doesn't race the in-flight
+	// store.json.tmp write that Manager.Connect kicks off.  The
+	// previous version (with no done-channel) flaked under
+	// `go test -count=N` whenever the cleanup unlinked the .tmp
+	// file mid-rename.
+	done := make(chan struct{})
 	go func() {
 		_ = mgr.Connect(context.Background(), srv.ID)
+		close(done)
 	}()
+	t.Cleanup(func() {
+		<-done
+	})
 
 	want := map[proto.State]bool{
 		proto.StateConnecting: false,
