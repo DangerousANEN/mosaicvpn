@@ -46,12 +46,15 @@ func BuildEgressConfig(eg proto.EgressConfig, server proto.Server, prefs store.P
 		return nil, fmt.Errorf("egress %q: port must be > 0", eg.ID)
 	}
 
+	// rc51 — `sniff: true` was a legacy inbound field removed in
+	// sing-box 1.13.  See singbox_backend.go for context; the
+	// route below now carries an `{action: "sniff"}` rule which
+	// has the same effect inbound-listener-agnostically.
 	inbound := map[string]any{
 		"type":        inboundType,
 		"tag":         "egress-in",
 		"listen":      listen,
 		"listen_port": eg.Port,
-		"sniff":       true,
 	}
 	if eg.ShareLAN && eg.ShareUser != "" && eg.SharePass != "" {
 		inbound["users"] = []any{map[string]any{
@@ -60,6 +63,12 @@ func BuildEgressConfig(eg proto.EgressConfig, server proto.Server, prefs store.P
 		}}
 	}
 
+	// rc51 — same DNS / outbound / endpoint migration as
+	// BuildSingBoxConfig: typed DNS servers, no `outbound: "any"`
+	// DNS rule, no `block` outbound, and wireguard / amneziawg go
+	// to the `endpoints` array.  See singbox_backend.go for the
+	// rationale; both builders feed the same sing-box binary, so
+	// the schema has to match.
 	cfg := map[string]any{
 		"log": map[string]any{
 			"level":     "warn",
@@ -68,22 +77,16 @@ func BuildEgressConfig(eg proto.EgressConfig, server proto.Server, prefs store.P
 		"dns": map[string]any{
 			"servers": []any{
 				map[string]any{
-					"tag":              "remote-doh",
-					"address":          "https://1.1.1.1/dns-query",
-					"address_resolver": "local",
-					"detour":           "proxy",
-					"strategy":         "ipv4_only",
+					"type":   "https",
+					"tag":    "remote-doh",
+					"server": "1.1.1.1",
+					"detour": "proxy",
 				},
 				map[string]any{
-					"tag":     "local",
-					"address": "8.8.8.8",
-					"detour":  "direct",
-				},
-			},
-			"rules": []any{
-				map[string]any{
-					"outbound": "any",
-					"server":   "local",
+					"type":   "udp",
+					"tag":    "local",
+					"server": "8.8.8.8",
+					"detour": "direct",
 				},
 			},
 			"final":             "local",
@@ -91,15 +94,21 @@ func BuildEgressConfig(eg proto.EgressConfig, server proto.Server, prefs store.P
 			"independent_cache": true,
 		},
 		"inbounds": []any{inbound},
-		"outbounds": []any{
-			out,
-			map[string]any{"type": "direct", "tag": "direct"},
-			map[string]any{"type": "block", "tag": "block"},
-		},
 		"route": map[string]any{
-			"final":                 "proxy",
-			"auto_detect_interface": true,
+			"final":                   "proxy",
+			"auto_detect_interface":   true,
+			"default_domain_resolver": "local",
+			"rules": []any{
+				map[string]any{"action": "sniff"},
+			},
 		},
+	}
+	directOut := map[string]any{"type": "direct", "tag": "direct"}
+	if IsEndpointProtocol(server.Protocol) {
+		cfg["endpoints"] = []any{out}
+		cfg["outbounds"] = []any{directOut}
+	} else {
+		cfg["outbounds"] = []any{out, directOut}
 	}
 	return json.MarshalIndent(cfg, "", "  ")
 }

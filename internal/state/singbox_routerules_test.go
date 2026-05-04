@@ -8,13 +8,29 @@ import (
 
 func TestBuildRouteRules_AlwaysIncludesSystemBypass(t *testing.T) {
 	rules := buildRouteRules(nil)
-	// DNS-by-protocol, DNS-by-port, then system bypass = at least 3 entries.
-	if len(rules) < 3 {
-		t.Fatalf("want >=3 baseline rules, got %d: %#v", len(rules), rules)
+	// rc51 — sniff + DNS-by-protocol + DNS-by-port + system bypass = 4 entries.
+	if len(rules) < 4 {
+		t.Fatalf("want >=4 baseline rules, got %d: %#v", len(rules), rules)
 	}
-	bypass, ok := rules[2].(map[string]any)
+	sniff, ok := rules[0].(map[string]any)
+	if !ok || sniff["action"] != "sniff" {
+		t.Fatalf("rule[0] not a sniff entry: %#v", rules[0])
+	}
+	// rc51 — sing-box 1.13 removed the `dns` special outbound, so
+	// the DNS-hijack entries now use `action: "hijack-dns"` instead
+	// of `outbound: "dns-out"`.  Verify both forms are present.
+	for i := 1; i <= 2; i++ {
+		dns, ok := rules[i].(map[string]any)
+		if !ok || dns["action"] != "hijack-dns" {
+			t.Fatalf("rule[%d] not a hijack-dns entry: %#v", i, rules[i])
+		}
+		if _, hasOutbound := dns["outbound"]; hasOutbound {
+			t.Errorf("rule[%d] still has legacy outbound field: %#v", i, dns)
+		}
+	}
+	bypass, ok := rules[3].(map[string]any)
 	if !ok || bypass["outbound"] != "direct" {
-		t.Fatalf("rule[2] not a direct bypass entry: %#v", rules[2])
+		t.Fatalf("rule[3] not a direct bypass entry: %#v", rules[3])
 	}
 	doms, ok := bypass["domain_suffix"].([]any)
 	if !ok || len(doms) == 0 {
@@ -75,11 +91,11 @@ func TestBuildRouteRules_AppendsEnabledDirectUserRules(t *testing.T) {
 		},
 	}
 	rules := buildRouteRules(user)
-	// 3 baseline + 1 valid user rule = 4
-	if len(rules) != 4 {
-		t.Fatalf("want 4 rules, got %d: %#v", len(rules), rules)
+	// rc51 — 4 baseline (sniff + 2 dns + system bypass) + 1 valid user rule = 5
+	if len(rules) != 5 {
+		t.Fatalf("want 5 rules, got %d: %#v", len(rules), rules)
 	}
-	last, _ := rules[3].(map[string]any)
+	last, _ := rules[4].(map[string]any)
 	if last["outbound"] != "direct" {
 		t.Errorf("user rule outbound = %v, want direct", last["outbound"])
 	}

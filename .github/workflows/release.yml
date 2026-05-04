@@ -53,19 +53,20 @@ jobs:
       - name: bundle sing-box sidecar
         shell: pwsh
         env:
-          # rc50 — rolled back from rc49's 1.13.7 to the last 1.12
-          # release. Reason: 1.13 removed legacy special outbounds
-          # `block` / `dns` and the `wireguard` outbound entirely
-          # (replaced by rule actions and the endpoints block),
-          # which our `BuildSingBoxConfig` still emits — so 1.13.7
-          # rejected every config we generated and "ничего не
-          # коннектилось" on the user's box. 1.12.10 is the
-          # last release that still accepts the legacy schema.
-          # Tradeoff: naive outbound stays unsupported (it was
-          # removed in 1.10 and re-added only in 1.13 via the
-          # bundled libcronet runtime). A future rc will migrate
-          # the config to 1.13 idioms and bump the version again.
-          SINGBOX_VERSION: 1.12.10
+          # rc51 — bumped back from 1.12.10 to 1.13.x after a full
+          # config-schema migration in BuildSingBoxConfig. The new
+          # config drops the `block` / `dns` special outbounds
+          # (replaced by rule actions hijack-dns / reject), moves
+          # wireguard from `outbounds` into `endpoints`, and rewrites
+          # the DNS section to the typed-server form
+          # ({type:"https", server:"1.1.1.1"} instead of
+          # address:"https://1.1.1.1/dns-query").  All three were
+          # FATAL in 1.13 without ENABLE_DEPRECATED_* env vars.
+          # 1.13 also re-added the `naive` outbound via the bundled
+          # libcronet runtime — which is the actual reason for the
+          # bump. libcronet.dll is staged alongside sing-box.exe by
+          # the `bundle libcronet.dll` step below.
+          SINGBOX_VERSION: 1.13.7
         run: |
           $ErrorActionPreference = 'Stop'
           $version = $env:SINGBOX_VERSION
@@ -80,6 +81,18 @@ jobs:
           if (-not $exe) { throw "sing-box.exe not found inside the release zip" }
           New-Item -ItemType Directory -Force -Path ui/src-tauri/binaries | Out-Null
           Copy-Item $exe.FullName "ui/src-tauri/binaries/sing-box-x86_64-pc-windows-msvc.exe"
+          # Naive outbound depends on libcronet.dll shipping in the
+          # same release zip as sing-box.exe — copy whichever variant
+          # the upstream archive provides (file name has changed
+          # between 1.13.x patch releases).  Soft-fail when the dll
+          # is missing so older 1.13 archives still build cleanly.
+          $cronet = Get-ChildItem -Recurse -Path $tmp -Filter "libcronet*.dll" | Select-Object -First 1
+          if ($cronet) {
+            Copy-Item $cronet.FullName "ui/src-tauri/binaries/libcronet.dll"
+            Write-Host "Bundled $($cronet.FullName) -> libcronet.dll"
+          } else {
+            Write-Host "WARNING: libcronet.dll not found in sing-box archive — naive outbound will fail at runtime"
+          }
           Get-ChildItem ui/src-tauri/binaries
 
       - name: bundle wintun.dll for TUN inbound

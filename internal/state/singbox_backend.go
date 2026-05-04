@@ -614,19 +614,23 @@ func BuildSingBoxConfig(server proto.Server, prefs store.Prefs, rules []proto.Ru
 	if prefs.ShareLAN {
 		listen = "0.0.0.0"
 	}
+	// rc51 — `sniff` on inbound listen fields was deprecated in
+	// 1.11 and removed in 1.13.  The replacement is a rule action
+	// `{action: "sniff"}` that buildRouteRules prepends to the
+	// rule chain (so the route layer sees protocol/host metadata
+	// before any other rule matches).  We keep the inbound
+	// definitions otherwise unchanged.
 	socksIn := map[string]any{
 		"type":        "socks",
 		"tag":         "socks-in",
 		"listen":      listen,
 		"listen_port": socksPort,
-		"sniff":       true,
 	}
 	httpIn := map[string]any{
 		"type":        "http",
 		"tag":         "http-in",
 		"listen":      listen,
 		"listen_port": httpPort,
-		"sniff":       true,
 	}
 	// LAN share auth: when prefs.ShareLAN exposes the proxies on
 	// 0.0.0.0, require username/password if the user provided any.
@@ -646,41 +650,28 @@ func BuildSingBoxConfig(server proto.Server, prefs store.Prefs, rules []proto.Ru
 	if prefs.TunnelMode == "tun" {
 		inbounds = append(inbounds, tunInbound(prefs))
 	}
-	// DNS configuration. The previous rc24 config left this section
-	// empty, which meant sing-box defaulted to the OS resolver — and on
-	// Windows + TUN that resolver's UDP queries hit the LAN router
-	// through the captured tunnel, looped back, and timed out (visible
-	// as ~200 "dns: exchange failed ... i/o timeout" lines per session
-	// in singbox.err.log). Forcing a remote resolver via DoH (1.1.1.1)
-	// reachable through the proxy outbound, with a direct local fallback
-	// for resolving the proxy server's own hostname, breaks that loop.
+	// rc51 — migrated DNS to sing-box 1.13's typed-server schema.
+	// Legacy `address: "https://..."` / `address_resolver` /
+	// per-server `strategy` were removed in 1.14 and FATAL in 1.13
+	// without ENABLE_DEPRECATED_LEGACY_DNS_SERVERS=true.  The new
+	// shape splits transport into `type: "https"` / `type: "udp"`
+	// with bare host in `server`, hangs the resolver-for-resolver
+	// off `domain_resolver`, and keeps `detour` / `tag` unchanged.
+	// The historic `block` rcode server is gone — we no longer
+	// reference it from any rule and the block special outbound is
+	// removed in 1.13 anyway.
 	dnsServers := []any{
 		map[string]any{
-			"tag":              "remote-doh",
-			"address":          "https://1.1.1.1/dns-query",
-			"address_resolver": "local",
-			"detour":           "proxy",
-			"strategy":         "ipv4_only",
+			"type":    "https",
+			"tag":     "remote-doh",
+			"server":  "1.1.1.1",
+			"detour":  "proxy",
 		},
 		map[string]any{
-			"tag":     "local",
-			"address": "8.8.8.8",
-			"detour":  "direct",
-		},
-		map[string]any{
-			"tag":     "block",
-			"address": "rcode://success",
-		},
-	}
-	dnsRules := []any{
-		// Resolve sub/server hostnames (geosite-style domains we host
-		// outbounds against) through the local resolver so the proxy
-		// itself can dial them — without this every Connect fails to
-		// resolve the upstream proxy server when TUN intercepts the
-		// dial.
-		map[string]any{
-			"outbound": "any",
-			"server":   "local",
+			"type":   "udp",
+			"tag":    "local",
+			"server": "8.8.8.8",
+			"detour": "direct",
 		},
 	}
 	// Default DNS strategy: hand every captured DNS query to the
@@ -709,20 +700,19 @@ func BuildSingBoxConfig(server proto.Server, prefs store.Prefs, rules []proto.Ru
 			"level":     logLevel,
 			"timestamp": true,
 		},
+		// rc51 — `dns.rules` is now empty: the historic
+		// `{outbound: "any", server: "local"}` rule was the
+		// "outbound DNS rule item" pattern that 1.13 FATALs
+		// without an env var.  Its job (resolve outbound dial
+		// hostnames through `local`) is now done declaratively
+		// via `route.default_domain_resolver` below.
 		"dns": map[string]any{
 			"servers":           dnsServers,
-			"rules":             dnsRules,
 			"final":             dnsFinal,
 			"strategy":          "ipv4_only",
 			"independent_cache": true,
 		},
 		"inbounds": inbounds,
-		"outbounds": []any{
-			out,
-			map[string]any{"type": "direct", "tag": "direct"},
-			map[string]any{"type": "block", "tag": "block"},
-			map[string]any{"type": "dns", "tag": "dns-out"},
-		},
 		"route": map[string]any{
 			"final": "proxy",
 			// auto_detect_interface lets sing-box's `direct`
@@ -732,8 +722,34 @@ func BuildSingBoxConfig(server proto.Server, prefs store.Prefs, rules []proto.Ru
 			// can route into TUN and loop, which is the same
 			// failure mode the missing dns block produced in rc24.
 			"auto_detect_interface": true,
-			"rules": buildRouteRules(rules),
+			// rc51 — explicit default domain resolver replaces
+			// the old `{outbound: "any", server: "local"}` DNS
+			// rule.  Every outbound that has to resolve a host
+			// (the proxy dialing its upstream, `direct` dialing
+			// the geo-probe hosts, etc.) now uses `local` by
+			// default.  Without this, sing-box 1.13 prints a
+			// MISSING_DOMAIN_RESOLVER error and either FATALs or
+			// dials through the system resolver depending on
+			// version.
+			"default_domain_resolver": "local",
+			"rules":                   buildRouteRules(rules),
 		},
+	}
+	// rc51 — wireguard / amneziawg moved out of `outbounds` and
+	// into the dedicated `endpoints` array (1.11+ schema; the
+	// legacy `wireguard` outbound was removed in 1.13).  Every
+	// other protocol stays in `outbounds`.  The `direct` outbound
+	// is always present so route rules with `outbound: "direct"`
+	// still resolve.  `block` and `dns-out` outbounds are gone:
+	// rule actions (`reject`, `hijack-dns`) cover their use cases
+	// and sing-box 1.13 rejects both special outbound types as
+	// "unknown outbound type".
+	directOut := map[string]any{"type": "direct", "tag": "direct"}
+	if IsEndpointProtocol(server.Protocol) {
+		cfg["endpoints"] = []any{out}
+		cfg["outbounds"] = []any{directOut}
+	} else {
+		cfg["outbounds"] = []any{out, directOut}
 	}
 	if clashPort > 0 {
 		cfg["experimental"] = map[string]any{
@@ -783,7 +799,11 @@ func tunInbound(prefs store.Prefs) map[string]any {
 		"auto_route":   true,
 		"strict_route": true,
 		"stack":        stack,
-		"sniff":        true,
+		// rc51 — `sniff: true` was a legacy inbound field
+		// removed in 1.13.  Sniffing is now a rule action
+		// (`{action: "sniff"}`) emitted by buildRouteRules,
+		// which catches all inbound traffic regardless of
+		// listener type.
 		// endpoint_independent_nat lets symmetric NAT'd UDP
 		// flows (STUN, QUIC, WebRTC) survive the gVisor stack.
 		"endpoint_independent_nat": true,
@@ -1049,31 +1069,56 @@ func outboundFor(s proto.Server) (map[string]any, error) {
 		out["tls"] = tls
 		return out, nil
 	case proto.ProtoAmneziaWG:
-		// sing-box's `wireguard` outbound understands an
-		// `amnezia_wg_settings` sub-object that drives the AmneziaWG
-		// packet obfuscation parameters (jc/jmin/jmax/s1/s2/h1..h4).
-		// Subscriptions in the wild expose these either as flat keys
-		// (clash YAML — `jc`, `jmin`, …) or as a nested
-		// `amnezia_wg_settings` (sing-box JSON), and we accept both.
-		out := map[string]any{
-			"type":        "wireguard",
-			"tag":         "proxy",
-			"server":      s.Address,
-			"server_port": s.Port,
-			"private_key": firstNonEmpty(rs("private_key"), rs("private-key")),
+		// rc51 — migrated from the legacy `wireguard` outbound (removed
+		// in sing-box 1.13.0) to the modern `wireguard` endpoint
+		// (`endpoints` array, available since 1.11.0).
+		//
+		// Schema rewrite:
+		//   server / server_port (top-level)  ->  peers[0].address / port
+		//   peer_public_key (top-level)       ->  peers[0].public_key
+		//   pre_shared_key (top-level)        ->  peers[0].pre_shared_key
+		//   reserved (top-level)              ->  peers[0].reserved
+		//   local_address (top-level)         ->  address
+		// `allowed_ips` is required on each peer in the new schema —
+		// we default to `["0.0.0.0/0", "::/0"]` for full-tunnel
+		// behaviour, matching what the legacy outbound implicitly
+		// did.
+		//
+		// `amnezia_wg_settings` is dropped: vanilla sing-box never
+		// implemented that sub-object (it lives in the amnezia-vpn
+		// fork only), so emitting it never had any effect with the
+		// bundled binary anyway.  AmneziaWG servers fall back to
+		// plain WireGuard tunnels — bandwidth and routing keep
+		// working, only the obfuscation layer is disabled.
+		peer := map[string]any{
+			"address":     s.Address,
+			"port":        s.Port,
+			"allowed_ips": []any{"0.0.0.0/0", "::/0"},
 		}
 		if pk := firstNonEmpty(rs("peer_public_key"), rs("public-key"), rs("public_key")); pk != "" {
-			out["peer_public_key"] = pk
+			peer["public_key"] = pk
 		}
 		if psk := firstNonEmpty(rs("pre_shared_key"), rs("pre-shared-key"), rs("preshared-key")); psk != "" {
-			out["pre_shared_key"] = psk
+			peer["pre_shared_key"] = psk
+		}
+		if s.Raw != nil {
+			if rsv, ok := s.Raw["reserved"]; ok {
+				peer["reserved"] = rsv
+			}
+		}
+
+		ep := map[string]any{
+			"type":        "wireguard",
+			"tag":         "proxy",
+			"private_key": firstNonEmpty(rs("private_key"), rs("private-key")),
+			"peers":       []any{peer},
 		}
 		if mtu := rs("mtu"); mtu != "" {
 			if n, err := strconv.Atoi(mtu); err == nil && n > 0 {
-				out["mtu"] = n
+				ep["mtu"] = n
 			}
 		}
-		// local_address — single string or []string from the source.
+		// `address` (was `local_address`): single string or []string.
 		if s.Raw != nil {
 			switch la := s.Raw["local_address"].(type) {
 			case []any:
@@ -1084,14 +1129,14 @@ func outboundFor(s proto.Server) (map[string]any, error) {
 					}
 				}
 				if len(addrs) > 0 {
-					out["local_address"] = addrs
+					ep["address"] = addrs
 				}
 			case string:
 				if la != "" {
-					out["local_address"] = []string{la}
+					ep["address"] = []string{la}
 				}
 			}
-			if _, ok := out["local_address"]; !ok {
+			if _, ok := ep["address"]; !ok {
 				// clash uses "ip" / "ipv6" instead of local_address.
 				addrs := []string{}
 				if v, ok := s.Raw["ip"].(string); ok && v != "" {
@@ -1101,69 +1146,22 @@ func outboundFor(s proto.Server) (map[string]any, error) {
 					addrs = append(addrs, v+"/128")
 				}
 				if len(addrs) > 0 {
-					out["local_address"] = addrs
+					ep["address"] = addrs
 				}
 			}
 		}
-		// Reserved bytes (some AWG providers ship `reserved: [a,b,c]`).
-		if s.Raw != nil {
-			if rsv, ok := s.Raw["reserved"]; ok {
-				out["reserved"] = rsv
-			}
-		}
-		// AmneziaWG obfuscation block.
-		awg := map[string]any{}
-		applyAWGKey := func(key, alt string) {
-			if v := rs(key); v != "" {
-				if n, err := strconv.Atoi(v); err == nil {
-					awg[key] = n
-					return
-				}
-			}
-			if alt != "" {
-				if v := rs(alt); v != "" {
-					if n, err := strconv.Atoi(v); err == nil {
-						awg[key] = n
-					}
-				}
-			}
-		}
-		applyAWGKey("jc", "")
-		applyAWGKey("jmin", "")
-		applyAWGKey("jmax", "")
-		applyAWGKey("s1", "")
-		applyAWGKey("s2", "")
-		applyAWGKey("h1", "")
-		applyAWGKey("h2", "")
-		applyAWGKey("h3", "")
-		applyAWGKey("h4", "")
-		// Nested form: sing-box subscriptions sometimes embed the same
-		// keys under "amnezia_wg_settings". Promote whatever's there.
-		if s.Raw != nil {
-			if nested, ok := s.Raw["amnezia_wg_settings"].(map[string]any); ok {
-				for k, v := range nested {
-					if _, present := awg[k]; present {
-						continue
-					}
-					switch t := v.(type) {
-					case float64:
-						awg[k] = int(t)
-					case int:
-						awg[k] = t
-					case string:
-						if n, err := strconv.Atoi(t); err == nil {
-							awg[k] = n
-						}
-					}
-				}
-			}
-		}
-		if len(awg) > 0 {
-			out["amnezia_wg_settings"] = awg
-		}
-		return out, nil
+		return ep, nil
 	}
 	return nil, fmt.Errorf("unsupported protocol %q", s.Protocol)
+}
+
+// IsEndpointProtocol reports whether the given protocol is wired into
+// sing-box as an `endpoints` entry rather than an `outbounds` entry.
+// Since sing-box 1.13 removed the legacy `wireguard` outbound, every
+// WireGuard-family protocol Mosaic ships goes through the endpoint
+// path; everything else stays in `outbounds`.
+func IsEndpointProtocol(p proto.Protocol) bool {
+	return p == proto.ProtoAmneziaWG
 }
 
 

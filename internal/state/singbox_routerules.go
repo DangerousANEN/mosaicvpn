@@ -57,15 +57,30 @@ var SystemBypassDomains = []string{
 // buildRouteRules assembles the sing-box `route.rules` array.  Order
 // matters: DNS rules first, system bypass next, user direct rules
 // after, then the implicit `final: proxy` fallthrough.
+//
+// rc51 — migrated from legacy `outbound: "dns-out"` / `outbound: "block"`
+// to rule actions `action: "hijack-dns"` / `action: "reject"`.  The
+// `block` and `dns` special outbounds were removed in sing-box 1.13.0
+// (they used to be `{type: "block"}` / `{type: "dns"}` entries in the
+// `outbounds` array); rule actions are the only way to hijack DNS or
+// drop traffic from 1.13 onwards.
 func buildRouteRules(userRules []proto.Rule) []any {
 	rules := []any{
+		// rc51 — sniff every inbound flow.  The legacy
+		// per-inbound `sniff: true` listen field was removed
+		// in sing-box 1.13; the only way to populate
+		// `metadata.protocol` / `metadata.host` (used by
+		// downstream domain_suffix matchers in the user's
+		// bypass list) is via an explicit `{action: "sniff"}`
+		// rule that runs first.
+		map[string]any{"action": "sniff"},
 		// All UDP/TCP DNS traffic captured by TUN gets handed to
 		// sing-box's internal DNS resolver.
-		map[string]any{"protocol": "dns", "outbound": "dns-out"},
+		map[string]any{"protocol": "dns", "action": "hijack-dns"},
 		// Belt-and-braces: anything destined for port 53 (e.g.
 		// apps that bypass the system resolver) also gets
-		// coerced into dns-out.
-		map[string]any{"port": []any{53}, "outbound": "dns-out"},
+		// coerced into the internal resolver.
+		map[string]any{"port": []any{53}, "action": "hijack-dns"},
 		// System bypass: geo-resolution + IP-check hosts always
 		// dial through `direct` so the user's home-IP detection
 		// keeps working while the tunnel is up.
