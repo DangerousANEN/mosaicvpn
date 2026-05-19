@@ -856,6 +856,10 @@ func tunInbound(prefs store.Prefs) map[string]any {
 		// flows (STUN, QUIC, WebRTC) survive the gVisor stack.
 		"endpoint_independent_nat": true,
 	}
+	if runtime.GOOS == "windows" {
+		m["auto_redirect"] = true
+	}
+	return m
 }
 
 // applyAntiDPI mutates the outbound config in-place to apply the

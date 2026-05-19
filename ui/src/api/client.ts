@@ -103,6 +103,21 @@ export const api = {
       ),
     ),
 
+  // Ping replaces the old Test/Verify buttons.  Method is read from
+  // prefs on the daemon side; the UI just calls ping and gets back
+  // rtt_ms + error.
+  pingServer: (id: string) =>
+    request<{ rtt_ms: number; error?: string }>("POST", `/v1/servers/${id}/ping`),
+  pingAllServers: async (subscriptionId?: string) =>
+    arr(
+      await request<Server[]>(
+        "POST",
+        subscriptionId
+          ? `/v1/servers/ping-all?subscription_id=${encodeURIComponent(subscriptionId)}`
+          : "/v1/servers/ping-all",
+      ),
+    ),
+
   listSubscriptions: async () =>
     arr(await request<Subscription[]>("GET", "/v1/subscriptions")),
   addSubscription: (url: string, name?: string) =>

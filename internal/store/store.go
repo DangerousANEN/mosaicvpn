@@ -126,6 +126,11 @@ type Prefs struct {
 	// Requires the upstream server to publish an ECHConfigList in
 	// its DNS HTTPS RR or be configured statically; off by default.
 	DPIECH bool `json:"dpi_ech,omitempty"`
+	// PingMethod selects how the per-server latency probe works.
+	// "url" = HTTP HEAD via proxy (was Verify), "tcp" = TCP connect,
+	// "icmp" = native ICMP ping, "via_proxy_head" = HEAD through proxy,
+	// "via_proxy_get" = GET through proxy.
+	PingMethod string `json:"ping_method,omitempty"`
 }
 
 // DefaultPrefs returns the prefs Mosaic ships with on a fresh install.

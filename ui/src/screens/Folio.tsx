@@ -490,6 +490,27 @@ export function Folio({ status }: { status?: Status | null }): JSX.Element {
                   placeholder="2081"
                 />
               </Opt>
+              <Opt
+                name="Ping method"
+                desc="How Mosaic measures server latency. TCP = raw TCP connect (fastest). URL = HEAD request via proxy. ICMP = native ping (requires admin on Windows). Via-proxy modes test through the active tunnel."
+              >
+                <Seg
+                  value={(draft.ping_method || "tcp") as
+                    | "tcp"
+                    | "url"
+                    | "icmp"
+                    | "via_proxy_head"
+                    | "via_proxy_get"}
+                  options={[
+                    { v: "tcp", lab: "TCP" },
+                    { v: "url", lab: "URL" },
+                    { v: "icmp", lab: "ICMP" },
+                    { v: "via_proxy_head", lab: "VIA PROXY HEAD" },
+                    { v: "via_proxy_get", lab: "VIA PROXY GET" },
+                  ]}
+                  onChange={(v) => update("ping_method", v)}
+                />
+              </Opt>
             </Chapter>
           ) : null}
 

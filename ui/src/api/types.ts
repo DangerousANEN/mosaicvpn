@@ -18,6 +18,7 @@ export type Format =
   | "clash"
   | "v2ray-base64"
   | "sip008"
+  | "naive"
   | "unknown";
 
 export type Logic = "and" | "or";
@@ -171,6 +172,8 @@ export interface Prefs {
   dpi_fragment?: string;
   dpi_mux?: string;
   dpi_ech?: boolean;
+  /** Ping method — how server latency is measured. */
+  ping_method?: "tcp" | "url" | "icmp" | "via_proxy_head" | "via_proxy_get";
 }
 
 export interface DaemonEndpoint {

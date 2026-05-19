@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,6 +33,7 @@ import (
 	"github.com/DangerousANEN/mosaicvpn/internal/state"
 	"github.com/DangerousANEN/mosaicvpn/internal/store"
 	"github.com/DangerousANEN/mosaicvpn/internal/subs"
+	"golang.org/x/net/proxy"
 )
 
 // FetchResult is everything the fetcher managed to extract from one
@@ -172,6 +175,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/servers/{id}/test", s.handleTestServer)
 	s.mux.HandleFunc("POST /v1/servers/{id}/url-test", s.handleURLTestServer)
 	s.mux.HandleFunc("POST /v1/servers/test-all", s.handleTestAll)
+	s.mux.HandleFunc("POST /v1/servers/{id}/ping", s.handlePingServer)
+	s.mux.HandleFunc("POST /v1/servers/ping-all", s.handlePingAll)
 
 	s.mux.HandleFunc("GET /v1/rules", s.handleListRules)
 	s.mux.HandleFunc("POST /v1/rules", s.handleAddRule)
@@ -894,6 +899,192 @@ func (s *Server) handleTestAll(w http.ResponseWriter, r *http.Request) {
 		out = []proto.Server{}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handlePingServer(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	srv, ok := s.store.FindServer(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "server not found")
+		return
+	}
+	prefs := s.store.Snapshot().Prefs
+	method := prefs.PingMethod
+	if method == "" {
+		method = "tcp"
+	}
+
+	switch method {
+	case "url":
+		if s.mgr.Status().State == proto.StateConnected {
+			writeError(w, http.StatusConflict, "url ping unavailable while connected; disconnect first")
+			return
+		}
+		dataDir := paths.DataDir()
+		res := state.URLTestServer(r.Context(), state.LocateSingBox(), dataDir, prefs.URLTestEndpoint, prefs, srv, 12*time.Second)
+		_ = s.store.RecordURLTest(id, res.RTTMS, res.Status, res.Error)
+		writeJSON(w, http.StatusOK, res)
+	case "icmp":
+		ms, errMsg := probeICMP(r.Context(), srv.Address, 5*time.Second)
+		_ = s.store.RecordServerProbe(id, ms, errMsg)
+		updated, _ := s.store.FindServer(id)
+		writeJSON(w, http.StatusOK, updated)
+	case "via_proxy_head", "via_proxy_get":
+		ms, errMsg := probeViaProxy(r.Context(), srv, prefs, method == "via_proxy_head", 12*time.Second)
+		_ = s.store.RecordServerProbe(id, ms, errMsg)
+		updated, _ := s.store.FindServer(id)
+		writeJSON(w, http.StatusOK, updated)
+	default: // tcp
+		connected := s.mgr.Status().State == proto.StateConnected
+		dialIP := ""
+		if !connected {
+			if ip := geoip.ResolveHost(r.Context(), srv.Address); ip != "" {
+				_ = s.store.RecordServerResolved(id, ip)
+				dialIP = ip
+			}
+		} else {
+			dialIP = srv.ResolvedIP
+		}
+		ms, errMsg := probeServerNet(r.Context(), probeNetworkFor(srv.Protocol), srv.Address, srv.Port, dialIP, 5*time.Second)
+		if err := s.store.RecordServerProbe(id, ms, errMsg); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !connected {
+			resolveServerGeo(r.Context(), s.store, srv)
+		}
+		updated, _ := s.store.FindServer(id)
+		writeJSON(w, http.StatusOK, updated)
+	}
+}
+
+func (s *Server) handlePingAll(w http.ResponseWriter, r *http.Request) {
+	subID := r.URL.Query().Get("subscription_id")
+	snap := s.store.Snapshot()
+	targets := make([]proto.Server, 0, len(snap.Servers))
+	for _, sv := range snap.Servers {
+		if subID == "" || sv.SubscriptionID == subID {
+			targets = append(targets, sv)
+		}
+	}
+	prefs := snap.Prefs
+	method := prefs.PingMethod
+	if method == "" {
+		method = "tcp"
+	}
+
+	connected := s.mgr.Status().State == proto.StateConnected
+	if connected && (method == "url" || method == "via_proxy_head" || method == "via_proxy_get") {
+		writeError(w, http.StatusConflict, "proxy ping unavailable while connected; disconnect first")
+		return
+	}
+
+	const concurrency = 16
+	sem := make(chan struct{}, concurrency)
+	done := make(chan struct{}, len(targets))
+	for _, sv := range targets {
+		sv := sv
+		sem <- struct{}{}
+		go func() {
+			defer func() { <-sem; done <- struct{}{} }()
+			switch method {
+			case "url":
+				dataDir := paths.DataDir()
+				res := state.URLTestServer(r.Context(), state.LocateSingBox(), dataDir, prefs.URLTestEndpoint, prefs, sv, 12*time.Second)
+				_ = s.store.RecordURLTest(sv.ID, res.RTTMS, res.Status, res.Error)
+			case "icmp":
+				ms, errMsg := probeICMP(r.Context(), sv.Address, 5*time.Second)
+				_ = s.store.RecordServerProbe(sv.ID, ms, errMsg)
+			case "via_proxy_head", "via_proxy_get":
+				ms, errMsg := probeViaProxy(r.Context(), sv, prefs, method == "via_proxy_head", 12*time.Second)
+				_ = s.store.RecordServerProbe(sv.ID, ms, errMsg)
+			default: // tcp
+				dialIP := ""
+				if !connected {
+					if ip := geoip.ResolveHost(r.Context(), sv.Address); ip != "" {
+						_ = s.store.RecordServerResolved(sv.ID, ip)
+						dialIP = ip
+					}
+				} else {
+					dialIP = sv.ResolvedIP
+				}
+				ms, errMsg := probeServerNet(r.Context(), probeNetworkFor(sv.Protocol), sv.Address, sv.Port, dialIP, 4*time.Second)
+				_ = s.store.RecordServerProbe(sv.ID, ms, errMsg)
+			}
+		}()
+	}
+	for range targets {
+		<-done
+	}
+	if !connected && method == "tcp" {
+		resolveServerGeoBatch(r.Context(), s.store, targets)
+	}
+	out := s.store.Snapshot().Servers
+	if subID != "" {
+		filtered := out[:0]
+		for _, sv := range out {
+			if sv.SubscriptionID == subID {
+				filtered = append(filtered, sv)
+			}
+		}
+		out = filtered
+	}
+	if out == nil {
+		out = []proto.Server{}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func probeICMP(ctx context.Context, addr string, timeout time.Duration) (int, string) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "ping", "-c", "1", "-W", fmt.Sprintf("%d", int(timeout.Seconds())), addr)
+	if runtime.GOOS == "windows" {
+		cmd = exec.CommandContext(ctx, "ping", "-n", "1", "-w", fmt.Sprintf("%d", int(timeout.Seconds()*1000)), addr)
+	}
+	start := time.Now()
+	out, err := cmd.CombinedOutput()
+	ms := int(time.Since(start).Milliseconds())
+	if err != nil {
+		return -1, fmt.Sprintf("icmp: %v (%s)", err, string(out))
+	}
+	return ms, ""
+}
+
+func probeViaProxy(ctx context.Context, srv proto.Server, prefs store.Prefs, head bool, timeout time.Duration) (int, string) {
+	proxyAddr := "127.0.0.1:2080"
+	if prefs.SocksAddr != "" {
+		proxyAddr = prefs.SocksAddr
+	}
+	dialer, err := proxy.SOCKS5("tcp", proxyAddr, nil, proxy.Direct)
+	if err != nil {
+		return -1, "proxy dialer: " + err.Error()
+	}
+	transport := &http.Transport{Dial: dialer.Dial}
+	client := &http.Client{Transport: transport, Timeout: timeout}
+	method := "GET"
+	if head {
+		method = "HEAD"
+	}
+	url := prefs.URLTestEndpoint
+	if url == "" {
+		url = "https://www.gstatic.com/generate_204"
+	}
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
+	if err != nil {
+		return -1, "request: " + err.Error()
+	}
+	start := time.Now()
+	res, err := client.Do(req)
+	ms := int(time.Since(start).Milliseconds())
+	if err != nil {
+		return -1, "proxy request: " + err.Error()
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 204 && res.StatusCode != 200 {
+		return -1, fmt.Sprintf("proxy request: HTTP %d", res.StatusCode)
+	}
+	return ms, ""
 }
 
 func (s *Server) handleListRules(w http.ResponseWriter, _ *http.Request) {
