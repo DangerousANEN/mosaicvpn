@@ -121,6 +121,19 @@ export function Pool({
     }
   };
 
+  const onRename = async (id: string, name: string) => {
+    setBusy(`ren:${id}`);
+    setErr(null);
+    try {
+      await api.renameSubscription(id, name);
+      await reload();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const totals = useMemo(() => {
     const live = servers.filter(
       (s) => (s.last_test_ms ?? 0) > 0 && !s.last_test_error,
@@ -172,9 +185,11 @@ export function Pool({
             onTestAll={() => onTestAll(sub.id)}
             onTestOne={onTestOne}
             onConnect={onConnect}
+            onRename={(name) => onRename(sub.id, name)}
             refreshing={busy === `refresh:${sub.id}`}
             deleting={busy === `del:${sub.id}`}
             testing={busy === `test:${sub.id}`}
+            renaming={busy === `ren:${sub.id}`}
           />
         ))}
         {subs.length === 0 ? (
@@ -236,9 +251,11 @@ function PoolCard({
   onTestAll,
   onTestOne,
   onConnect,
+  onRename,
   refreshing,
   deleting,
   testing,
+  renaming,
 }: {
   num: string;
   sub: Subscription;
@@ -252,11 +269,32 @@ function PoolCard({
   onTestAll: () => void;
   onTestOne: (id: string) => void;
   onConnect: (id: string) => void;
+  onRename: (name: string) => void;
   refreshing: boolean;
   deleting: boolean;
   testing: boolean;
+  renaming: boolean;
 }): JSX.Element {
   const isCur = servers.some((s) => s.id === activeServerId);
+  const [editing, setEditing] = useState(false);
+  const [editVal, setEditVal] = useState("");
+
+  const startEdit = () => {
+    setEditVal(sub.name || "");
+    setEditing(true);
+  };
+
+  const commitEdit = () => {
+    const trimmed = editVal.trim();
+    setEditing(false);
+    if (trimmed && trimmed !== sub.name) {
+      onRename(trimmed);
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+  };
   const live = servers.filter(
     (s) => (s.last_test_ms ?? 0) > 0 && !s.last_test_error,
   );
@@ -279,10 +317,32 @@ function PoolCard({
       <div>
         <div className="pool-head">
           <div>
-            <div className="pool-card-name">
-              {sub.name || hostFrom(sub.url)}
-              {isCur ? <em> — in service</em> : null}
-            </div>
+            {editing ? (
+              <div className="pool-card-name">
+                <input
+                  autoFocus
+                  className="rename-input"
+                  value={editVal}
+                  onChange={(e) => setEditVal(e.target.value)}
+                  onBlur={commitEdit}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitEdit();
+                    if (e.key === "Escape") cancelEdit();
+                  }}
+                  placeholder={hostFrom(sub.url)}
+                  disabled={renaming}
+                />
+              </div>
+            ) : (
+              <div
+                className="pool-card-name"
+                onDoubleClick={startEdit}
+                title="Double-click to rename"
+              >
+                {sub.name || hostFrom(sub.url)}
+                {isCur ? <em> — in service</em> : null}
+              </div>
+            )}
             <div className="pool-src">
               ⌖ <b>{redactedURL(sub.url)}</b> · {fmtFormat(sub.format)}
             </div>
@@ -348,6 +408,13 @@ function PoolCard({
             disabled={refreshing || deleting}
           >
             {expanded ? "Hide stations" : "Browse stations"}
+          </button>
+          <button
+            className="btn ghost"
+            onClick={startEdit}
+            disabled={refreshing || deleting || testing || renaming}
+          >
+            {renaming ? "Renaming…" : "Rename"}
           </button>
           <button
             className="btn ghost danger"

@@ -102,6 +102,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/subscriptions", s.handleListSubs)
 	s.mux.HandleFunc("POST /v1/subscriptions", s.handleAddSub)
 	s.mux.HandleFunc("POST /v1/subscriptions/{id}/refresh", s.handleRefreshSub)
+	s.mux.HandleFunc("PATCH /v1/subscriptions/{id}", s.handleRenameSub)
 	s.mux.HandleFunc("DELETE /v1/subscriptions/{id}", s.handleDeleteSub)
 
 	s.mux.HandleFunc("GET /v1/servers", s.handleListServers)
@@ -230,6 +231,23 @@ func (s *Server) handleDeleteSub(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleRenameSub(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	saved, err := s.store.RenameSubscription(id, req.Name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, saved)
 }
 
 func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
@@ -424,6 +442,23 @@ func (s *Server) handleSetPrefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mgr.SetTunnelPrefs(p.TunnelMode, p.KillSwitch)
+
+	// If the tunnel is currently active, reconnect so the new prefs
+	// (tunnel mode, kill switch, TUN stack) take effect immediately.
+	st := s.mgr.Status()
+	if st.State == proto.StateConnected || st.State == proto.StateConnecting {
+		if st.Server != nil {
+			serverID := st.Server.ID
+			// Disconnect first, then reconnect in a goroutine so the
+			// HTTP response is not blocked.  We use a fresh context
+			// because r.Context() is cancelled once the handler returns.
+			go func() {
+				_ = s.mgr.Disconnect(context.Background())
+				_ = s.mgr.Connect(context.Background(), serverID)
+			}()
+		}
+	}
+
 	writeJSON(w, http.StatusOK, p)
 }
 

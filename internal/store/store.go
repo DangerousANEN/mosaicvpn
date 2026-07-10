@@ -160,27 +160,44 @@ func (s *Store) persistLocked() error {
 	return os.Rename(tmp, s.path)
 }
 
-// AddOrUpdateSubscription stores a subscription, replacing any existing
-// entry with the same URL. Returns the stored subscription.
+// AddOrUpdateSubscription stores a subscription. If sub.ID is non-empty it
+// updates the existing entry with that ID; otherwise a new subscription is
+// always appended (duplicate URLs are allowed). Returns the stored sub.
 func (s *Store) AddOrUpdateSubscription(sub proto.Subscription) (proto.Subscription, error) {
 	var saved proto.Subscription
 	err := s.Update(func(st *State) error {
-		for i, existing := range st.Subscriptions {
-			if existing.URL == sub.URL {
-				if sub.ID == "" {
-					sub.ID = existing.ID
+		if sub.ID != "" {
+			for i, existing := range st.Subscriptions {
+				if existing.ID == sub.ID {
+					st.Subscriptions[i] = sub
+					saved = sub
+					return nil
 				}
-				st.Subscriptions[i] = sub
-				saved = sub
-				return nil
 			}
 		}
-		if sub.ID == "" {
-			sub.ID = fmt.Sprintf("sub-%d", time.Now().UnixNano())
-		}
+		// New subscription — always append, even if URL duplicates an
+		// existing one.  The user may legitimately add the same feed twice
+		// under different names.
+		sub.ID = fmt.Sprintf("sub-%d", time.Now().UnixNano())
 		st.Subscriptions = append(st.Subscriptions, sub)
 		saved = sub
 		return nil
+	})
+	return saved, err
+}
+
+// RenameSubscription updates only the display name of a subscription.
+func (s *Store) RenameSubscription(subID, name string) (proto.Subscription, error) {
+	var saved proto.Subscription
+	err := s.Update(func(st *State) error {
+		for i, existing := range st.Subscriptions {
+			if existing.ID == subID {
+				st.Subscriptions[i].Name = name
+				saved = st.Subscriptions[i]
+				return nil
+			}
+		}
+		return fmt.Errorf("subscription %q not found", subID)
 	})
 	return saved, err
 }
@@ -190,7 +207,7 @@ func (s *Store) AddOrUpdateSubscription(sub proto.Subscription) (proto.Subscript
 func (s *Store) ReplaceServersFor(subID string, servers []proto.Server) error {
 	return s.Update(func(st *State) error {
 		// keep servers from other subscriptions
-		filtered := st.Servers[:0]
+		filtered := make([]proto.Server, 0, len(st.Servers))
 		for _, sv := range st.Servers {
 			if sv.SubscriptionID != subID {
 				filtered = append(filtered, sv)
@@ -345,7 +362,7 @@ func (s *Store) ReplaceRules(rules []proto.Rule) error {
 // DeleteRule removes a rule by id.
 func (s *Store) DeleteRule(id string) error {
 	return s.Update(func(st *State) error {
-		out := st.Rules[:0]
+		out := make([]proto.Rule, 0, len(st.Rules))
 		for _, r := range st.Rules {
 			if r.ID != id {
 				out = append(out, r)
@@ -359,7 +376,7 @@ func (s *Store) DeleteRule(id string) error {
 // DeleteSubscription removes a subscription and all its servers.
 func (s *Store) DeleteSubscription(subID string) error {
 	return s.Update(func(st *State) error {
-		subs := st.Subscriptions[:0]
+		subs := make([]proto.Subscription, 0, len(st.Subscriptions))
 		for _, sub := range st.Subscriptions {
 			if sub.ID != subID {
 				subs = append(subs, sub)

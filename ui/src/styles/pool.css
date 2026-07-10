@@ -104,6 +104,10 @@
   font-size: 24px;
   line-height: 1.05;
   letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 .pool.cur .pool-card-name em {
   font-style: italic;
@@ -112,6 +116,28 @@
 .pool-card-name.italic-mute {
   font-style: italic;
   color: var(--ink-mute);
+}
+
+.rename-input {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--copper);
+  outline: none;
+  font-family: "Atlas Serif", Georgia, serif;
+  font-weight: 500;
+  font-size: 24px;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  width: 100%;
+  padding: 0 0 2px 0;
+}
+.rename-input::placeholder {
+  color: var(--ink-mute);
+  font-style: italic;
+}
+.rename-input:disabled {
+  opacity: 0.5;
 }
 
 .pool-src {
