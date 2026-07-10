@@ -1,0 +1,139 @@
+// MosaicVPN native GUI — main Slint component
+
+import { Button, Switch, LineEdit } from "std-widgets.slint";
+
+// ── Atlas palette ──────────────────────────────────────────
+// Light theme
+global AtlasTheme {
+    out property<color> paper:   #F4EFE3;
+    out property<color> ink:     #2B2A27;
+    out property<color> ink-2:   #5C5A55;
+    out property<color> ink-mute: #9A978F;
+    out property<color> copper:  #C85A32;
+    out property<color> rule:     #D8D2C4;
+    out property<color> leaf:     #5A8C5A;
+}
+
+// ── App component ─────────────────────────────────────────
+export component App inherits Window {
+    title: "MosaicVPN";
+    preferred-width: 960px;
+    preferred-height: 600px;
+    background: AtlasTheme.paper;
+
+    // State
+    in-out property<string> connection-state: "disconnected";
+    in-out property<string> current-server: "—";
+    in-out property<int> latency-ms: 0;
+    in-out property<bool> connected: false;
+
+    // Layout
+    HorizontalLayout {
+        // Sidebar tabs
+        Rectangle {
+            width: 180px;
+            background: AtlasTheme.ink;
+
+            Text {
+                text: "Mosaic";
+                color: AtlasTheme.paper;
+                font-size: 22px;
+                font-weight: 700;
+                x: 20px;
+                y: 24px;
+            }
+
+            VerticalLayout {
+                y: 80px;
+                spacing: 4px;
+
+                Text {
+                    text: "◆ Main";
+                    color: AtlasTheme.copper;
+                    font-size: 14px;
+                    x: 20px;
+                }
+                Text {
+                    text: "◇ Pool";
+                    color: AtlasTheme.paper;
+                    font-size: 14px;
+                    x: 20px;
+                }
+                Text {
+                    text: "◇ Folio";
+                    color: AtlasTheme.paper;
+                    font-size: 14px;
+                    x: 20px;
+                }
+            }
+        }
+
+        // Main content area
+        Rectangle {
+            background: AtlasTheme.paper;
+
+            VerticalLayout {
+                padding: 40px;
+                spacing: 24px;
+
+                // Header
+                Text {
+                    text: "Mosaic Atlas";
+                    color: AtlasTheme.ink;
+                    font-size: 30px;
+                    font-weight: 500;
+                }
+
+                // Connection status
+                Rectangle {
+                    height: 200px;
+                    background: AtlasTheme.rule;
+                    border-radius: 8px;
+
+                    Text {
+                        text: root.connected ? "● Connected" : "○ Disconnected";
+                        color: root.connected ? AtlasTheme.leaf : AtlasTheme.ink-mute;
+                        font-size: 18px;
+                        x: 24px;
+                        y: 24px;
+                    }
+
+                    Text {
+                        text: "Station: " + root.current-server;
+                        color: AtlasTheme.ink;
+                        font-size: 14px;
+                        x: 24px;
+                        y: 56px;
+                    }
+
+                    Text {
+                        text: root.latency-ms > 0 ? "Latency: " + root.latency-ms + "ms" : "Latency: —";
+                        color: AtlasTheme.ink-2;
+                        font-size: 12px;
+                        x: 24px;
+                        y: 80px;
+                    }
+
+                    Button {
+                        text: root.connected ? "Disconnect" : "Engage tunnel »";
+                        x: 24px;
+                        y: 120px;
+                        width: 180px;
+                        height: 40px;
+                        clicked => {
+                            root.connected = !root.connected;
+                        }
+                    }
+                }
+
+                // Placeholder text
+                Text {
+                    text: "World map will render here";
+                    color: AtlasTheme.ink-mute;
+                    font-size: 12px;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+    }
+}
