@@ -1,6 +1,6 @@
 # Binaries / test outputs
 bin/
-dist/
+/dist/
 *.exe
 *.test
 *.out
