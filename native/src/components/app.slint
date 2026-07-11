@@ -1,137 +1,879 @@
-// MosaicVPN native GUI — main Slint component
-
-import { Button, Switch, LineEdit } from "std-widgets.slint";
+import { Button, Switch, LineEdit, ScrollView } from "std-widgets.slint";
 
 // ── Atlas palette ──────────────────────────────────────────
-// Light theme
-global AtlasTheme {
-    out property<color> paper:   #F4EFE3;
-    out property<color> ink:     #2B2A27;
-    out property<color> ink-2:   #5C5A55;
-    out property<color> ink-mute: #9A978F;
-    out property<color> copper:  #C85A32;
-    out property<color> rule:     #D8D2C4;
-    out property<color> leaf:     #5A8C5A;
+export global AtlasTheme {
+    out property<color> paper:      #F4EFE3; // Background
+    out property<color> ink:        #2B2A27; // Main text / dark panels
+    out property<color> ink-2:      #5C5A55; // Secondary text
+    out property<color> ink-mute:   #9A978F; // Muted info
+    out property<color> copper:     #C85A32; // Accent
+    out property<color> rule:       #D8D2C4; // Borders / inactive areas
+    out property<color> leaf:       #5A8C5A; // Connected State (Greenish-teal)
+    out property<color> dark-bg:    #1E1D1B; // Left Panel Dark
 }
 
-// ── App component ─────────────────────────────────────────
+// ── Slint structures matching Rust models ─────────────────
+export struct SlintServer {
+    id: string,
+    name: string,
+    protocol: string,
+    address: string,
+    port: int,
+    latency_ms: int,
+    country: string,
+    city: string,
+}
+
+export struct SlintSubscription {
+    id: string,
+    name: string,
+    url: string,
+    format: string,
+    server_count: int,
+    last_error: string,
+    is_expanded: bool,
+    editing: bool,
+}
+
+export struct SlintPrefs {
+    tunnel_mode: string,      // "tun" | "proxy"
+    kill_switch: bool,
+    allow_lan: bool,
+    block_ipv6: bool,
+    dns_mode: string,         // "fake-ip" | "real-ip"
+    auto_start: string,       // "service" | "user" | "manual"
+    mcp_enabled: bool,
+    mcp_addr: string,
+}
+
 export component App inherits Window {
-    title: "MosaicVPN";
-    preferred-width: 960px;
-    preferred-height: 600px;
+    title: "MosaicVPN Atlas";
+    preferred-width: 1000px;
+    preferred-height: 680px;
+    min-width: 900px;
+    min-height: 600px;
     background: AtlasTheme.paper;
+    default-font-family: "Atlas Serif";
 
-    // State
-    in-out property<string> connection-state: "disconnected";
-    in-out property<string> current-server: "—";
-    in-out property<int> latency-ms: 0;
-    in-out property<bool> connected: false;
+    // ── Application State ────────────────────────────────
+    in-out property<string> active-tab: "main"; // "main" | "pool" | "folio"
+    
+    // Connection status
+    in-out property<string> conn-state: "disconnected"; // "disconnected", "connecting", "connected", "error"
+    in-out property<string> conn-server-name: "—";
+    in-out property<string> conn-server-protocol: "—";
+    in-out property<string> conn-latency: "—";
+    in-out property<string> conn-traffic-in: "0 B";
+    in-out property<string> conn-traffic-out: "0 B";
+    in-out property<string> conn-since: "—";
+    
+    // Dynamic lists populated from Rust
+    in-out property<[SlintSubscription]> subs: [];
+    in-out property<[SlintServer]> servers: []; // Current active/filtered servers
+    in-out property<SlintPrefs> prefs: {
+        tunnel_mode: "tun",
+        kill_switch: true,
+        allow_lan: true,
+        block_ipv6: false,
+        dns_mode: "fake-ip",
+        auto_start: "manual",
+        mcp_enabled: true,
+        mcp_addr: "127.0.0.1:20128",
+    };
 
-    // Layout
+    in-out property<string> add-sub-url: "";
+    in-out property<string> new-sub-name: "";
+    in-out property<string> active-server-id: "";
+
+    // Global loading/busy indicators
+    in-out property<bool> busy: false;
+    in-out property<string> error-msg: "";
+
+    // ── Callbacks → Rust ─────────────────────────────────
+    callback tab-changed(string);
+    callback connect-server(string);
+    callback disconnect-tunnel();
+    
+    callback add-subscription(string);
+    callback delete-subscription(string);
+    callback rename-subscription(string, string);
+    callback refresh-subscription(string);
+    
+    callback test-station(string);
+    callback test-all-stations(string);
+    
+    callback save-preferences(SlintPrefs);
+
+    // Internal function to clean URLs for display
+    pure function clean-url(u: string) -> string {
+        // Simple mock of URL formatting
+        return u;
+    }
+
     HorizontalLayout {
-        // Sidebar tabs
-        Rectangle {
-            width: 180px;
-            background: AtlasTheme.ink;
+        spacing: 0;
 
-            Text {
-                text: "Mosaic";
-                color: AtlasTheme.paper;
-                font-size: 22px;
-                font-weight: 700;
-                x: 20px;
-                y: 24px;
-            }
+        // ── Sidebar Menu ─────────────────────────────────────
+        Rectangle {
+            width: 220px;
+            background: AtlasTheme.dark-bg;
 
             VerticalLayout {
-                y: 80px;
-                spacing: 4px;
+                padding-top: 30px;
+                padding-bottom: 20px;
+                padding-left: 24px;
+                padding-right: 24px;
+                spacing: 0;
 
+                // Brand Header
                 Text {
-                    text: "◆ Main";
-                    color: AtlasTheme.copper;
-                    font-size: 14px;
-                    x: 20px;
-                }
-                Text {
-                    text: "◇ Pool";
+                    text: "MOSAIC ◆ ATLAS";
                     color: AtlasTheme.paper;
-                    font-size: 14px;
-                    x: 20px;
+                    font-size: 20px;
+                    font-weight: 700;
+                    letter-spacing: 2px;
                 }
+
                 Text {
-                    text: "◇ Folio";
-                    color: AtlasTheme.paper;
-                    font-size: 14px;
-                    x: 20px;
-                }
-            }
-        }
-
-        // Main content area
-        Rectangle {
-            background: AtlasTheme.paper;
-
-            VerticalLayout {
-                padding: 40px;
-                spacing: 24px;
-
-                // Header
-                Text {
-                    text: "Mosaic Atlas";
-                    color: AtlasTheme.ink;
-                    font-size: 30px;
-                    font-weight: 500;
+                    text: "native client v0.1.0";
+                    color: AtlasTheme.ink-mute;
+                    font-size: 11px;
+                    height: 40px;
                 }
 
-                // Connection status
-                Rectangle {
-                    height: 200px;
-                    background: AtlasTheme.rule;
-                    border-radius: 8px;
+                // Vertical spacing
+                Rectangle { height: 30px; }
 
-                    Text {
-                        text: root.connected ? "● Connected" : "○ Disconnected";
-                        color: root.connected ? AtlasTheme.leaf : AtlasTheme.ink-mute;
-                        font-size: 18px;
-                        x: 24px;
-                        y: 24px;
+                // Navigation Tabs
+                VerticalLayout {
+                    spacing: 12px;
+
+                    // Tab: Main
+                    Rectangle {
+                        height: 38px;
+                        background: root.active-tab == "main" ? AtlasTheme.paper : transparent;
+                        border-radius: 4px;
+                        TouchArea {
+                            clicked => {
+                                root.active-tab = "main";
+                                root.tab-changed("main");
+                            }
+                        }
+                        Text {
+                            text: root.active-tab == "main" ? "◆ Station Command" : "◇ Station Command";
+                            color: root.active-tab == "main" ? AtlasTheme.ink : AtlasTheme.paper;
+                            font-size: 14px;
+                            font-weight: 500;
+                            x: 12px;
+                            y: (parent.height - self.height) / 2;
+                        }
                     }
 
-                    Text {
-                        text: "Station: " + root.current-server;
-                        color: AtlasTheme.ink;
-                        font-size: 14px;
-                        x: 24px;
-                        y: 56px;
+                    // Tab: Pool
+                    Rectangle {
+                        height: 38px;
+                        background: root.active-tab == "pool" ? AtlasTheme.paper : transparent;
+                        border-radius: 4px;
+                        TouchArea {
+                            clicked => {
+                                root.active-tab = "pool";
+                                root.tab-changed("pool");
+                            }
+                        }
+                        Text {
+                            text: root.active-tab == "pool" ? "◆ Subscriptions" : "◇ Subscriptions";
+                            color: root.active-tab == "pool" ? AtlasTheme.ink : AtlasTheme.paper;
+                            font-size: 14px;
+                            font-weight: 500;
+                            x: 12px;
+                            y: (parent.height - self.height) / 2;
+                        }
                     }
 
-                    Text {
-                        text: root.latency-ms > 0 ? "Latency: " + root.latency-ms + "ms" : "Latency: —";
-                        color: AtlasTheme.ink-2;
-                        font-size: 12px;
-                        x: 24px;
-                        y: 80px;
-                    }
-
-                    Button {
-                        text: root.connected ? "Disconnect" : "Engage tunnel »";
-                        x: 24px;
-                        y: 120px;
-                        width: 180px;
-                        height: 40px;
-                        clicked => {
-                            root.connected = !root.connected;
+                    // Tab: Folio
+                    Rectangle {
+                        height: 38px;
+                        background: root.active-tab == "folio" ? AtlasTheme.paper : transparent;
+                        border-radius: 4px;
+                        TouchArea {
+                            clicked => {
+                                root.active-tab = "folio";
+                                root.tab-changed("folio");
+                            }
+                        }
+                        Text {
+                            text: root.active-tab == "folio" ? "◆ Folio Settings" : "◇ Folio Settings";
+                            color: root.active-tab == "folio" ? AtlasTheme.ink : AtlasTheme.paper;
+                            font-size: 14px;
+                            font-weight: 500;
+                            x: 12px;
+                            y: (parent.height - self.height) / 2;
                         }
                     }
                 }
 
-                // Placeholder text
+                // Push bottom content down
+                Rectangle { }
+
+                // Small connection badge at sidebar bottom
+                Rectangle {
+                    height: 50px;
+                    border-width: 1px;
+                    border-color: AtlasTheme.rule;
+                    border-radius: 4px;
+                    background: AtlasTheme.ink;
+
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        spacing: 10px;
+                        alignment: center;
+
+                        Rectangle {
+                            width: 16px;
+                            height: 16px;
+                            border-radius: 8px;
+                            background: root.conn-state == "connected" ? AtlasTheme.leaf :
+                                        root.conn-state == "connecting" ? AtlasTheme.copper :
+                                        AtlasTheme.ink-mute;
+                        }
+                        Text {
+                            text: root.conn-state == "connected" ? "Tunnel On" :
+                                  root.conn-state == "connecting" ? "Connecting" : "Tunnel Off";
+                            color: AtlasTheme.paper;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Main Content Plate ───────────────────────────────
+        Rectangle {
+            background: AtlasTheme.paper;
+
+            // ── Error Alert Banner ──
+            if root.error-msg != "" : Rectangle {
+                y: 15px;
+                x: 25px;
+                width: parent.width - 50px;
+                height: 48px;
+                background: #E8D3C4;
+                border-color: AtlasTheme.copper;
+                border-width: 1px;
+                border-radius: 4px;
+                z: 100;
+
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    spacing: 10px;
+                    Text {
+                        text: "!" + root.error-msg;
+                        color: AtlasTheme.copper;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { } // Spacer
+                    Text {
+                        text: "[ Dismiss ]";
+                        color: AtlasTheme.ink;
+                        font-size: 12px;
+                        font-weight: 500;
+                        vertical-alignment: center;
+                        TouchArea {
+                            clicked => { root.error-msg = ""; }
+                        }
+                    }
+                }
+            }
+
+            // ── TAB: MAIN COMAND ─────────────────────────────
+            if root.active-tab == "main" : VerticalLayout {
+                padding: 40px;
+                spacing: 24px;
+
                 Text {
-                    text: "World map will render here";
-                    color: AtlasTheme.ink-mute;
-                    font-size: 12px;
-                    horizontal-alignment: center;
+                    text: "Station Command";
+                    font-size: 32px;
+                    font-weight: 600;
+                    color: AtlasTheme.ink;
+                }
+
+                // Grid stats
+                HorizontalLayout {
+                    spacing: 20px;
+                    height: 140px;
+
+                    // Large Toggle Card
+                    Rectangle {
+                        width: 320px;
+                        border-width: 1px;
+                        border-color: AtlasTheme.rule;
+                        background: AtlasTheme.paper;
+
+                        VerticalLayout {
+                            padding: 20px;
+                            alignment: space-between;
+                            HorizontalLayout {
+                                Text {
+                                    text: "TUNNEL STATUS";
+                                    font-size: 11px;
+                                    color: AtlasTheme.ink-mute;
+                                    font-weight: 700;
+                                }
+                                Rectangle {}
+                                Text {
+                                    text: root.conn-state == "connected" ? "ACTIVE" : "STANDBY";
+                                    font-size: 11px;
+                                    color: root.conn-state == "connected" ? AtlasTheme.leaf : AtlasTheme.ink-mute;
+                                    font-weight: 700;
+                                }
+                            }
+                            
+                            Text {
+                                text: root.conn-state == "connected" ? "◆ CONNECTED" : 
+                                      root.conn-state == "connecting" ? "◇ CONNECTING" : "◇ DISCONNECTED";
+                                font-size: 22px;
+                                font-weight: 700;
+                                color: root.conn-state == "connected" ? AtlasTheme.leaf : 
+                                       root.conn-state == "connecting" ? AtlasTheme.copper : AtlasTheme.ink;
+                            }
+
+                            Button {
+                                text: root.conn-state == "connected" ? "Disconnect Tunnel" : "Engage Tunnel";
+                                height: 38px;
+                                clicked => {
+                                    if (root.conn-state == "connected" || root.conn-state == "connecting") {
+                                        root.disconnect-tunnel();
+                                    } else {
+                                        // Connect to active selected server from list
+                                        root.connect-server(root.active-server-id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Network Stats Panel
+                    Rectangle {
+                        border-width: 1px;
+                        border-color: AtlasTheme.rule;
+                        background: AtlasTheme.paper;
+
+                        VerticalLayout {
+                            padding: 16px;
+                            spacing: 8px;
+                            Text {
+                                text: "EGRESS STATION CHRONICLE";
+                                font-size: 10px;
+                                color: AtlasTheme.ink-mute;
+                                font-weight: 700;
+                            }
+                            
+                            HorizontalLayout {
+                                Text { text: "Active Server:"; color: AtlasTheme.ink-2; font-size: 13px; }
+                                Rectangle {}
+                                Text { text: root.conn-server-name; color: AtlasTheme.ink; font-weight: 700; font-size: 13px; }
+                            }
+                            HorizontalLayout {
+                                Text { text: "Protocol:"; color: AtlasTheme.ink-2; font-size: 13px; }
+                                Rectangle {}
+                                Text { text: root.conn-server-protocol; color: AtlasTheme.ink; font-size: 13px; }
+                            }
+                            HorizontalLayout {
+                                Text { text: "Latency / Port:"; color: AtlasTheme.ink-2; font-size: 13px; }
+                                Rectangle {}
+                                Text { text: root.conn-latency; color: AtlasTheme.copper; font-weight: 700; font-size: 13px; }
+                            }
+                            HorizontalLayout {
+                                Text { text: "Traffic In/Out:"; color: AtlasTheme.ink-2; font-size: 13px; }
+                                Rectangle {}
+                                Text { text: root.conn-traffic-in + " / " + root.conn-traffic-out; color: AtlasTheme.ink; font-size: 13px; }
+                            }
+                        }
+                    }
+                }
+
+                // Station Directory label
+                Text {
+                    text: "Station Gazetteer";
+                    font-size: 20px;
+                    font-weight: 600;
+                    color: AtlasTheme.ink;
+                }
+
+                // Servers list (Gazetteer)
+                Rectangle {
+                    border-width: 1px;
+                    border-color: AtlasTheme.rule;
+                    background: AtlasTheme.paper;
+
+                    ScrollView {
+                        VerticalLayout {
+                            padding: 12px;
+                            spacing: 8px;
+
+                            for s in root.servers : Rectangle {
+                                height: 42px;
+                                background: root.active-server-id == s.id ? AtlasTheme.rule : transparent;
+                                border-radius: 4px;
+
+                                TouchArea {
+                                    clicked => {
+                                        root.active-server-id = s.id;
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    padding-left: 12px;
+                                    padding-right: 12px;
+                                    spacing: 12px;
+                                    alignment: center;
+
+                                    Text {
+                                        text: root.active-server-id == s.id ? "◆" : "◇";
+                                        color: AtlasTheme.copper;
+                                        vertical-alignment: center;
+                                    }
+
+                                    Text {
+                                        text: s.name;
+                                        color: AtlasTheme.ink;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
+
+                                    Rectangle {} // Spacer
+
+                                    Text {
+                                        text: s.protocol;
+                                        color: AtlasTheme.ink-2;
+                                        font-size: 12px;
+                                        vertical-alignment: center;
+                                        width: 80px;
+                                    }
+
+                                    Text {
+                                        text: s.latency-ms == 0 ? "—" : 
+                                              s.latency-ms < 0 ? "timeout" : s.latency-ms + " ms";
+                                        color: s.latency-ms < 0 ? AtlasTheme.copper : 
+                                               s.latency-ms > 0 && s.latency-ms < 150 ? AtlasTheme.leaf : AtlasTheme.ink;
+                                        font-weight: 700;
+                                        font-size: 12px;
+                                        vertical-alignment: center;
+                                        horizontal-alignment: right;
+                                        width: 80px;
+                                    }
+
+                                    Button {
+                                        text: "Engage";
+                                        width: 70px;
+                                        height: 28px;
+                                        clicked => {
+                                            root.active-server-id = s.id;
+                                            root.connect-server(s.id);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── TAB: POOL (SUBSCRIPTIONS) ────────────────────
+            if root.active-tab == "pool" : VerticalLayout {
+                padding: 40px;
+                spacing: 24px;
+
+                HorizontalLayout {
+                    Text {
+                        text: "Subscriptions pool";
+                        font-size: 32px;
+                        font-weight: 600;
+                        color: AtlasTheme.ink;
+                    }
+                    Rectangle {}
+                    Button {
+                        text: "Sync All";
+                        width: 100px;
+                        clicked => {
+                            // Sync all subs
+                        }
+                    }
+                }
+
+                // Add subscription bar
+                Rectangle {
+                    height: 52px;
+                    border-width: 1px;
+                    border-color: AtlasTheme.rule;
+                    background: AtlasTheme.paper;
+
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 12px;
+                        alignment: center;
+                        
+                        Text {
+                            text: "Add subscription URL:";
+                            color: AtlasTheme.ink-2;
+                            vertical-alignment: center;
+                        }
+
+                        LineEdit {
+                            text: root.add-sub-url;
+                            placeholder-text: "https://example.com/sub.txt";
+                            height: 32px;
+                            edited(val) => { root.add-sub-url = val; }
+                        }
+
+                        Button {
+                            text: "Add Station";
+                            width: 110px;
+                            height: 32px;
+                            clicked => {
+                                root.add-subscription(root.add-sub-url);
+                                root.add-sub-url = "";
+                            }
+                        }
+                    }
+                }
+
+                // Subscriptions List
+                Rectangle {
+                    border-width: 1px;
+                    border-color: AtlasTheme.rule;
+                    background: AtlasTheme.paper;
+
+                    ScrollView {
+                        VerticalLayout {
+                            padding: 16px;
+                            spacing: 16px;
+
+                            for sub in root.subs : Rectangle {
+                                border-width: 1px;
+                                border-color: AtlasTheme.rule;
+                                background: AtlasTheme.paper;
+                                border-radius: 4px;
+                                height: sub.is-expanded ? 320px : 86px;
+
+                                VerticalLayout {
+                                    padding: 16px;
+                                    spacing: 12px;
+
+                                    HorizontalLayout {
+                                        spacing: 16px;
+
+                                        VerticalLayout {
+                                            spacing: 4px;
+                                            
+                                            // Handle Inline Editing / Normal rendering
+                                            if sub.editing : HorizontalLayout {
+                                                spacing: 8px;
+                                                LineEdit {
+                                                    text: sub.name;
+                                                    height: 28px;
+                                                    edited(v) => { root.new-sub-name = v; }
+                                                }
+                                                Button {
+                                                    text: "OK";
+                                                    width: 40px;
+                                                    clicked => {
+                                                        root.rename-subscription(sub.id, root.new-sub-name);
+                                                    }
+                                                }
+                                            }
+                                            if !sub.editing : Text {
+                                                text: sub.name != "" ? sub.name : root.clean-url(sub.url);
+                                                font-size: 16px;
+                                                font-weight: 700;
+                                                color: AtlasTheme.ink;
+                                            }
+
+                                            Text {
+                                                text: "Url: " + sub.url;
+                                                font-size: 12px;
+                                                color: AtlasTheme.ink-mute;
+                                            }
+                                        }
+
+                                        Rectangle {} // Spacer
+
+                                        // Subscription Statistics
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Text {
+                                                text: sub.server-count + " Stations";
+                                                font-size: 12px;
+                                                color: AtlasTheme.ink-2;
+                                                horizontal-alignment: right;
+                                            }
+                                        }
+
+                                        // Actions
+                                        HorizontalLayout {
+                                            spacing: 8px;
+                                            alignment: center;
+
+                                            Button {
+                                                text: sub.is-expanded ? "Hide stations" : "Browse stations";
+                                                width: 120px;
+                                                clicked => {
+                                                    // Toggle expand logic in Rust by callback
+                                                    sub.is-expanded = !sub.is-expanded;
+                                                }
+                                            }
+
+                                            Button {
+                                                text: "Sync";
+                                                width: 50px;
+                                                clicked => {
+                                                    root.refresh-subscription(sub.id);
+                                                }
+                                            }
+
+                                            Button {
+                                                text: "Rename";
+                                                width: 70px;
+                                                clicked => {
+                                                    root.new-sub-name = sub.name;
+                                                    sub.editing = !sub.editing;
+                                                }
+                                            }
+
+                                            Button {
+                                                text: "Delete";
+                                                width: 60px;
+                                                clicked => {
+                                                    root.delete-subscription(sub.id);
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Extended Station List within Subscription
+                                    if sub.is-expanded : Rectangle {
+                                        border-width: 1px;
+                                        border-color: AtlasTheme.rule;
+                                        background: AtlasTheme.paper;
+
+                                        ScrollView {
+                                            VerticalLayout {
+                                                padding: 8px;
+                                                spacing: 4px;
+
+                                                // Load servers belonging to this sub
+                                                for s in root.servers : Rectangle {
+                                                    height: 38px;
+                                                    HorizontalLayout {
+                                                        padding-left: 8px;
+                                                        padding-right: 8px;
+                                                        Text {
+                                                            text: s.name;
+                                                            vertical-alignment: center;
+                                                            font-weight: 500;
+                                                        }
+                                                        Rectangle {}
+                                                        Text {
+                                                            text: s.protocol;
+                                                            vertical-alignment: center;
+                                                            color: AtlasTheme.ink-mute;
+                                                            font-size: 11px;
+                                                            width: 80px;
+                                                        }
+                                                        Text {
+                                                            text: s.latency-ms == 0 ? "—" : 
+                                                                  s.latency-ms < 0 ? "time" : s.latency-ms + " ms";
+                                                            vertical-alignment: center;
+                                                            font-size: 11px;
+                                                            width: 60px;
+                                                        }
+                                                        Button {
+                                                            text: "Test";
+                                                            width: 50px;
+                                                            height: 24px;
+                                                            clicked => {
+                                                                root.test-station(s.id);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── TAB: FOLIO (SETTINGS) ────────────────────────
+            if root.active-tab == "folio" : VerticalLayout {
+                padding: 40px;
+                spacing: 24px;
+
+                Text {
+                    text: "Folio Settings";
+                    font-size: 32px;
+                    font-weight: 600;
+                    color: AtlasTheme.ink;
+                }
+
+                // Settings items scroll
+                Rectangle {
+                    border-width: 1px;
+                    border-color: AtlasTheme.rule;
+                    background: AtlasTheme.paper;
+
+                    ScrollView {
+                        VerticalLayout {
+                            padding: 24px;
+                            spacing: 20px;
+
+                            // Mode toggle
+                            HorizontalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "Tunnel Mode (TUN Stack / Proxy)";
+                                    font-size: 14px;
+                                    color: AtlasTheme.ink;
+                                    vertical-alignment: center;
+                                }
+                                Rectangle {}
+                                Button {
+                                    text: root.prefs.tunnel_mode == "tun" ? "TUN stack (SYSTEM)" : "Proxy listener only";
+                                    width: 200px;
+                                    clicked => {
+                                        if root.prefs.tunnel_mode == "tun" {
+                                            root.prefs.tunnel_mode = "proxy";
+                                        } else {
+                                            root.prefs.tunnel_mode = "tun";
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rectangle { height: 1px; background: AtlasTheme.rule; }
+
+                            // Kill Switch toggle
+                            HorizontalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "Block leaked traffic (Kill Switch)";
+                                    font-size: 14px;
+                                    color: AtlasTheme.ink;
+                                    vertical-alignment: center;
+                                }
+                                Rectangle {}
+                                Switch {
+                                    checked: root.prefs.kill_switch;
+                                    toggled => {
+                                        root.prefs.kill_switch = !root.prefs.kill_switch;
+                                    }
+                                }
+                            }
+
+                            Rectangle { height: 1px; background: AtlasTheme.rule; }
+
+                            // Allow LAN traffic
+                            HorizontalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "Allow LAN traffic (bypass tunnel)";
+                                    font-size: 14px;
+                                    color: AtlasTheme.ink;
+                                    vertical-alignment: center;
+                                }
+                                Rectangle {}
+                                Switch {
+                                    checked: root.prefs.allow_lan;
+                                    toggled => {
+                                        root.prefs.allow_lan = !root.prefs.allow_lan;
+                                    }
+                                }
+                            }
+
+                            Rectangle { height: 1px; background: AtlasTheme.rule; }
+
+                            // Block IPv6 traffic
+                            HorizontalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "Enforce IPv6 Blocking";
+                                    font-size: 14px;
+                                    color: AtlasTheme.ink;
+                                    vertical-alignment: center;
+                                }
+                                Rectangle {}
+                                Switch {
+                                    checked: root.prefs.block_ipv6;
+                                    toggled => {
+                                        root.prefs.block_ipv6 = !root.prefs.block_ipv6;
+                                    }
+                                }
+                            }
+
+                            Rectangle { height: 1px; background: AtlasTheme.rule; }
+
+                            // DNS Selection Mode
+                            HorizontalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "DNS Mode";
+                                    font-size: 14px;
+                                    color: AtlasTheme.ink;
+                                    vertical-alignment: center;
+                                }
+                                Rectangle {}
+                                Button {
+                                    text: root.prefs.dns_mode == "fake-ip" ? "Fake-IP mode (Recommended)" : "Real-IP mode";
+                                    width: 200px;
+                                    clicked => {
+                                        if root.prefs.dns_mode == "fake-ip" {
+                                            root.prefs.dns_mode = "real-ip";
+                                        } else {
+                                            root.prefs.dns_mode = "fake-ip";
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rectangle { height: 1px; background: AtlasTheme.rule; }
+
+                            // MCP Integration Address
+                            HorizontalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "Agent integration (MCP daemon TCP)";
+                                    font-size: 14px;
+                                    color: AtlasTheme.ink;
+                                    vertical-alignment: center;
+                                }
+                                Rectangle {}
+                                LineEdit {
+                                    text: root.prefs.mcp_addr;
+                                    width: 200px;
+                                    height: 30px;
+                                    edited(v) => { root.prefs.mcp_addr = v; }
+                                }
+                            }
+
+                            Rectangle { height: 20px; }
+
+                            Button {
+                                text: "Apply Folio Specs";
+                                height: 42px;
+                                clicked => {
+                                    root.save-preferences(root.prefs);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
