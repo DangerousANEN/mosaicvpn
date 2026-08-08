@@ -74,6 +74,124 @@ const (
 	TierVIP  UserTier = "vip"
 )
 
+// GroupSource defines the origin of server group nodes.
+type GroupSource string
+
+const (
+	GroupSourcePool      GroupSource = "pool"
+	GroupSourceUser      GroupSource = "user"
+	GroupSourceEmergency GroupSource = "emergency"
+)
+
+// GroupStrategy defines how a group selects nodes.
+type GroupStrategy string
+
+const (
+	GroupStrategyURLTest            GroupStrategy = "urltest"
+	GroupStrategyWeightedRoundRobin GroupStrategy = "weighted_round_robin"
+	GroupStrategyFallback           GroupStrategy = "fallback"
+	GroupStrategyDirectNode         GroupStrategy = "direct_node"
+)
+
+// GroupCriterion defines the filter/selection criterion for group nodes.
+type GroupCriterion string
+
+const (
+	GroupCriterionAuto     GroupCriterion = "auto"
+	GroupCriterionMinPing  GroupCriterion = "min_ping"
+	GroupCriterionLocation GroupCriterion = "location"
+	GroupCriterionMinLoad  GroupCriterion = "min_load"
+	GroupCriterionMaxSpeed GroupCriterion = "max_speed"
+)
+
+// NodeRef references a physical node within a ServerGroup along with load and health telemetry.
+type NodeRef struct {
+	ServerID  string  `json:"server_id"`
+	Weight    int     `json:"weight"`               // 1..100, static weight
+	Load      float64 `json:"load"`                 // 0..1, current load
+	LatencyMs int     `json:"latency_ms"`           // last latency probe
+	Alive     bool    `json:"alive"`
+	LastSeen  int64   `json:"last_seen"`            // unix timestamp
+	Country   string  `json:"country,omitempty"`
+	City      string  `json:"city,omitempty"`
+}
+
+// ServerGroup is the unified group entity for user node selection.
+type ServerGroup struct {
+	ID             string         `json:"id"`
+	Title          string         `json:"title"`
+	Source         GroupSource    `json:"source"`
+	Strategy       GroupStrategy  `json:"strategy"`
+	Criterion      GroupCriterion `json:"criterion"`
+	CriterionValue string         `json:"criterion_value,omitempty"`
+	Nodes          []NodeRef      `json:"nodes"`
+	RequiredTier   UserTier       `json:"required_tier,omitempty"`
+
+	// health
+	PingInterval  int `json:"ping_interval"`  // sec, default 30
+	MaxRetries    int `json:"max_retries"`    // default 3
+	FailoverDelay int `json:"failover_delay"` // sec, default 2
+
+	// display
+	Badge       string `json:"badge,omitempty"`
+	Description string `json:"description,omitempty"`
+	Icon        string `json:"icon,omitempty"`
+}
+
+// SetDefaults applies default values to ServerGroup health check parameters if unassigned.
+func (g *ServerGroup) SetDefaults() {
+	if g.PingInterval <= 0 {
+		g.PingInterval = 30
+	}
+	if g.MaxRetries <= 0 {
+		g.MaxRetries = 3
+	}
+	if g.FailoverDelay <= 0 {
+		g.FailoverDelay = 2
+	}
+}
+
+// NewServerGroup creates a new ServerGroup with default health check parameters set.
+func NewServerGroup() *ServerGroup {
+	g := &ServerGroup{}
+	g.SetDefaults()
+	return g
+}
+
+// ToServerGroup converts a ManifestGroup to a ServerGroup.
+func (m ManifestGroup) ToServerGroup() ServerGroup {
+	nodes := make([]NodeRef, 0, len(m.Nodes))
+	for _, n := range m.Nodes {
+		weight := n.Weight
+		if weight <= 0 {
+			weight = 10
+		}
+		nodes = append(nodes, NodeRef{
+			ServerID: n.ID,
+			Weight:   weight,
+			Alive:    true,
+		})
+	}
+
+	g := ServerGroup{
+		ID:            m.ID,
+		Title:         m.Title,
+		Source:        GroupSourceUser,
+		Strategy:      GroupStrategy(m.Type),
+		Criterion:     GroupCriterionAuto,
+		Nodes:         nodes,
+		RequiredTier:  m.UserTier,
+		PingInterval:  m.PingInterval,
+		MaxRetries:    m.MaxRetries,
+		FailoverDelay: m.FailoverDelay,
+		Badge:         m.Badge,
+		Description:   m.Description,
+		Icon:          m.Icon,
+	}
+	g.SetDefaults()
+	return g
+}
+
 // ManifestNode references a physical node within a group.
 type ManifestNode struct {
 	ID       string `json:"id"`

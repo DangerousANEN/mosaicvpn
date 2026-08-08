@@ -6,12 +6,13 @@ Emits JSON so failures are unambiguous.
 import json
 import os
 import subprocess
+import sys
 import time
 from urllib.request import urlopen
 
 import websocket
 
-URL = "https://sub.zxc1x1.ru/"
+URL = sys.argv[1] if len(sys.argv) > 1 else "https://sub.zxc1x1.ru/"
 PORT = 9333
 VIEWPORTS = [("mobile", 390, 844), ("tablet", 768, 1024), ("desktop", 1440, 900)]
 

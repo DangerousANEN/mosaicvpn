@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ru" dir="ltr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Условия возврата и отмены платежа — MosaicVPN</title>
+<meta name="description" content="Условия предоставления доступа, правила возврата денежных средств и отмены платежей в сервисе MosaicVPN." />
+<meta name="robots" content="index, follow" />
+<link rel="canonical" href="https://sub.zxc1x1.ru/refund.html" />
+<meta name="theme-color" content="#F4EFE6" />
+
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Условия возврата и отмены платежа — MosaicVPN" />
+<meta property="og:description" content="Правила возврата денежных средств, отмены подписки и заморозки баланса в сервисе MosaicVPN." />
+<meta property="og:url" content="https://sub.zxc1x1.ru/refund.html" />
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23B85C38'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23F4EFE6' stroke-width='2'/%3E%3Cpath d='M16 5 L19 16 L16 27 L13 16 Z' fill='%23F4EFE6'/%3E%3C/svg%3E" />
+
+<style>
+  :root{
+    --bg:#F4EFE6; --card:#EDE5D6; --elev:#E4DAC6; --ink:#2B2620; --hover:#D9CFB8;
+    --border:#C4B89E; --border-light:#D4C9B0; --border-ink:#5C4E3A;
+    --text:#2B2620; --text-2:#6B5D4A; --muted:#9A8B72; --on-ink:#F4EFE6;
+    --accent:#B85C38; --accent-hi:#D4724A; --success:#5B7A3A; --warn:#C47830;
+    --serif:'Iowan Old Style','Palatino Linotype','Book Antiqua',Georgia,serif;
+    --mono:'JetBrains Mono','SFMono-Regular',Consolas,'Liberation Mono',monospace;
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    --maxw:1120px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg); color:var(--text); font-family:var(--sans);
+    line-height:1.6; -webkit-font-smoothing:antialiased;
+    background-image:
+      linear-gradient(rgba(196,184,158,.14) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(196,184,158,.14) 1px, transparent 1px);
+    background-size:32px 32px;
+  }
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 24px}
+  a{color:inherit}
+
+  /* header */
+  header{
+    position:sticky; top:0; z-index:50; backdrop-filter:blur(8px);
+    background:rgba(244,239,230,.86); border-bottom:1px solid var(--border);
+  }
+  .nav{display:flex; align-items:center; gap:16px; height:64px}
+  .brand{display:flex; align-items:center; gap:10px; font-family:var(--serif); font-size:20px; font-weight:600; letter-spacing:.2px; text-decoration:none}
+  .brand .dot{color:var(--accent)}
+  .nav-links{margin-left:auto; display:flex; gap:22px; font-size:14px; color:var(--text-2)}
+  .nav-links a{text-decoration:none}
+  .nav-links a:hover{color:var(--accent)}
+  @media(max-width:720px){ .nav-links{display:none} }
+
+  /* content area */
+  .main-content{padding:48px 0 64px}
+  .page-head{margin-bottom:32px}
+  .fig{font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-bottom:8px}
+  h1{font-family:var(--serif); font-size:clamp(28px,5vw,42px); font-weight:600; line-height:1.2; margin-bottom:12px}
+  .lead{font-size:16px; color:var(--text-2); max-width:720px}
+
+  .content-card{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:32px; margin-bottom:24px}
+  .content-card h2{font-family:var(--serif); font-size:22px; font-weight:600; margin-bottom:16px; border-bottom:1px solid var(--border-light); padding-bottom:8px}
+  .content-card p{color:var(--text); margin-bottom:14px; font-size:15px; line-height:1.6}
+  .content-card ul{margin-left:20px; margin-bottom:16px; color:var(--text)}
+  .content-card li{margin-bottom:8px; font-size:15px}
+
+  .badge-delivery{
+    display:inline-flex; align-items:center; gap:8px; background:var(--elev); border:1px solid var(--border);
+    padding:8px 14px; border-radius:6px; font-family:var(--mono); font-size:13px; color:var(--text); margin-bottom:16px;
+  }
+
+  .highlight-box{
+    background:var(--elev); border-left:4px solid var(--accent); padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0;
+  }
+  .highlight-box p{margin-bottom:0; font-size:14px; color:var(--text-2)}
+  .highlight-box strong{color:var(--text)}
+
+  .btn-tg{
+    display:inline-flex; align-items:center; gap:8px; background:var(--ink); color:var(--on-ink);
+    padding:10px 18px; border-radius:8px; text-decoration:none; font-size:14px; font-weight:500;
+    margin-top:8px; transition:background .15s ease;
+  }
+  .btn-tg:hover{background:#3a332b}
+
+  /* footer */
+  footer{border-top:1px solid var(--border); background:var(--card); padding:40px 0; margin-top:48px}
+  .footer-links{display:flex; justify-content:center; flex-wrap:wrap; gap:16px; font-size:14px; color:var(--text-2); margin:16px 0}
+  .footer-links a{text-decoration:none}
+  .footer-links a:hover{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a href="index.html" class="brand">
+      <svg width="24" height="24" viewBox="0 0 32 32" style="flex:none;">
+        <circle cx="16" cy="16" r="14" fill="#B85C38"/>
+        <circle cx="16" cy="16" r="9" fill="none" stroke="#F4EFE6" stroke-width="2"/>
+        <path d="M16 5 L19 16 L16 27 L13 16 Z" fill="#F4EFE6"/>
+      </svg>
+      <span>Mosaic<span class="dot">.</span>VPN</span>
+    </a>
+    <nav class="nav-links">
+      <a href="index.html">Главная</a>
+      <a href="contacts.html">Контакты</a>
+      <a href="refund.html">Возврат</a>
+      <a href="offer.html">Оферта</a>
+      <a href="privacy.html">Конфиденциальность</a>
+      <a href="terms.html">Условия</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap main-content">
+  <div class="page-head">
+    <div class="fig">Раздел / Правила сервиса</div>
+    <h1>Условия возврата и отмены платежа</h1>
+    <p class="lead">Порядок предоставления доступа, условия возврата неиспользованных средств и заморозки подписки в сервисе MosaicVPN.</p>
+  </div>
+
+  <!-- Доставка услуги -->
+  <div class="content-card">
+    <h2>1. Условия предоставления цифровой услуги (доставка)</h2>
+    <div class="badge-delivery">⚡ Цифровой товар · Доставка не требуется</div>
+    <p>MosaicVPN предоставляет услуги передачи данных и доступа к сети в электронном виде:</p>
+    <ul>
+      <li>Физическая доставка товара <strong>не осуществляется</strong>.</li>
+      <li>Доступ к услуге (персональная ссылка на подпись/конфигурацию) активируется <strong>мгновенно</strong> сразу после совершения платежа в Telegram-боте.</li>
+      <li>Каждому новому пользователю предоставляется <strong>3 дня бесплатного тестового периода</strong> для проверки качества связи и скорости работы до первой оплаты.</li>
+    </ul>
+  </div>
+
+  <!-- Особенности посуточной тарификации -->
+  <div class="content-card">
+    <h2>2. Особенности посуточного тарифа и списаний</h2>
+    <p>Сервис работает по гибкой посуточной модели тарификации:</p>
+    <ul>
+      <li>Стоимость использования составляет <strong>1 рубль в сутки</strong>.</li>
+      <li>Списание происходит ежедневно с вашего внутреннего баланса в сервисе.</li>
+      <li><strong>Списанная плата за прошедшие сутки возврату не подлежит</strong>, так как услуга за этот период считается фактически оказанной в полном объёме.</li>
+      <li><strong>Неиспользованный остаток баланса подлежит возврату</strong> по первому требованию пользователя на условиях, описанных ниже.</li>
+    </ul>
+  </div>
+
+  <!-- Приостановка списаний (Заморозка) -->
+  <div class="content-card">
+    <h2>3. Как приостановить списание средств</h2>
+    <p>Если вы временно не планируете пользоваться сервисом, вы можете приостановить посуточные списания без списания средств:</p>
+    <div class="highlight-box">
+      <p>В Telegram-боте <a href="https://t.me/mosaic_tf_bot" target="_blank" rel="noopener" style="color:var(--accent); font-weight:600;">@mosaic_tf_bot</a> доступна функция <strong>«Заморозка»</strong>. При её активации ежедневно 1 ₽ не списывается, а неиспользованный остаток баланса сохраняется на вашем счёте до возобновления работы.</p>
+    </div>
+  </div>
+
+  <!-- Порядок и правила возврата -->
+  <div class="content-card">
+    <h2>4. Порядок и правила возврата средств</h2>
+    <p>Пользователь имеет право в любой момент потребовать возврат неиспользованного остатка денежных средств с внутреннего баланса.</p>
+    
+    <p><strong>Шаги для оформления возврата:</strong></p>
+    <ul>
+      <li>Направьте обращение в службу поддержки через Telegram-бота <strong>@mosaic_tf_bot</strong> или по контактам, указанным на странице <a href="contacts.html" style="color:var(--accent);">Контакты</a>.</li>
+      <li>В обращении укажите ваш Telegram ID (Telegram username) и причину возврата.</li>
+    </ul>
+
+    <p><strong>Сроки рассмотрения и зачисления:</strong></p>
+    <ul>
+      <li>Заявка на возврат обрабатывается службой поддержки в течение <strong>24 часов</strong>.</li>
+      <li>Возврат денежных средств производится на ту же банковскую карту или электронный кошелёк, с которого было проведено пополнение.</li>
+      <li>Фактический срок зачисления средств на карту составляет от <strong>1 до 10 рабочих дней</strong> (зависит от банка-эмитента карты).</li>
+    </ul>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap" style="text-align:center;">
+    <div style="font-family:var(--serif); font-size:16px; font-weight:600; color:var(--text); margin-bottom:12px;">MosaicVPN · Атлас приватных маршрутов</div>
+    <div class="footer-links">
+      <a href="index.html">Главная</a> ·
+      <a href="contacts.html">Контакты</a> ·
+      <a href="offer.html">Оферта</a> ·
+      <a href="privacy.html">Политика конфиденциальности</a> ·
+      <a href="refund.html">Условия возврата</a> ·
+      <a href="terms.html">Условия использования</a>
+    </div>
+    <div style="margin-top:16px; font-family:var(--mono); font-size:12px; color:var(--muted);">
+      Поддержка в Telegram: <a href="https://t.me/mosaic_tf_bot" target="_blank" rel="noopener" style="color:var(--accent);">@mosaic_tf_bot</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="ru" dir="ltr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Политика обработки персональных данных — MosaicVPN</title>
+<meta name="description" content="Политика обработки персональных данных сервиса защиты сетевого соединения MosaicVPN. Принципы отсутствия логов трафика, защита данных." />
+<meta name="robots" content="index, follow" />
+<link rel="canonical" href="https://sub.zxc1x1.ru/privacy.html" />
+<meta name="theme-color" content="#F4EFE6" />
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23B85C38'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23F4EFE6' stroke-width='2'/%3E%3Cpath d='M16 5 L19 16 L16 27 L13 16 Z' fill='%23F4EFE6'/%3E%3C/svg%3E" />
+
+<style>
+  :root{
+    --bg:#F4EFE6; --card:#EDE5D6; --elev:#E4DAC6; --ink:#2B2620; --hover:#D9CFB8;
+    --border:#C4B89E; --border-light:#D4C9B0; --border-ink:#5C4E3A;
+    --text:#2B2620; --text-2:#6B5D4A; --muted:#9A8B72; --on-ink:#F4EFE6;
+    --accent:#B85C38; --accent-hi:#D4724A; --success:#5B7A3A; --warn:#C47830;
+    --serif:'Iowan Old Style','Palatino Linotype','Book Antiqua',Georgia,serif;
+    --mono:'JetBrains Mono','SFMono-Regular',Consolas,'Liberation Mono',monospace;
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    --maxw:1120px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg); color:var(--text); font-family:var(--sans);
+    line-height:1.6; -webkit-font-smoothing:antialiased;
+    background-image:
+      linear-gradient(rgba(196,184,158,.14) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(196,184,158,.14) 1px, transparent 1px);
+    background-size:32px 32px;
+  }
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 24px}
+  a{color:inherit}
+
+  /* header */
+  header{
+    position:sticky; top:0; z-index:50; backdrop-filter:blur(8px);
+    background:rgba(244,239,230,.86); border-bottom:1px solid var(--border);
+  }
+  .nav{display:flex; align-items:center; gap:16px; height:64px}
+  .brand{display:flex; align-items:center; gap:10px; font-family:var(--serif); font-size:20px; font-weight:600; letter-spacing:.2px; text-decoration:none}
+  .brand .dot{color:var(--accent)}
+  .nav-links{margin-left:auto; display:flex; gap:22px; font-size:14px; color:var(--text-2)}
+  .nav-links a{text-decoration:none}
+  .nav-links a:hover{color:var(--accent)}
+  @media(max-width:720px){ .nav-links{display:none} }
+
+  /* document styles */
+  .doc-container{
+    max-width:860px;
+    margin:40px auto 64px;
+    padding:0 24px;
+  }
+  .notice-banner{
+    background:#FFF8E7;
+    border:1px dashed var(--warn);
+    border-radius:8px;
+    padding:16px 20px;
+    margin-bottom:32px;
+    font-size:14px;
+    color:var(--text);
+    line-height:1.5;
+  }
+  .notice-banner strong{color:var(--warn)}
+  .highlight-card{
+    background:var(--card);
+    border:1px solid var(--accent);
+    border-radius:12px;
+    padding:24px;
+    margin:24px 0;
+  }
+  .highlight-card h3{
+    font-family:var(--serif);
+    font-size:18px;
+    color:var(--accent);
+    margin-bottom:8px;
+  }
+  .doc-header{
+    margin-bottom:32px;
+    padding-bottom:20px;
+    border-bottom:1px solid var(--border);
+  }
+  .doc-header h1{
+    font-family:var(--serif);
+    font-size:clamp(28px, 5vw, 40px);
+    font-weight:600;
+    line-height:1.2;
+    margin-bottom:12px;
+    color:var(--ink);
+  }
+  .doc-meta{
+    font-family:var(--mono);
+    font-size:13px;
+    color:var(--text-2);
+    display:flex;
+    gap:16px;
+    flex-wrap:wrap;
+  }
+  .doc-body{
+    font-size:15px;
+    line-height:1.75;
+    color:var(--text);
+  }
+  .doc-body h2{
+    font-family:var(--serif);
+    font-size:22px;
+    margin:32px 0 14px;
+    font-weight:600;
+    color:var(--ink);
+    border-bottom:1px solid var(--border-light);
+    padding-bottom:6px;
+  }
+  .doc-body h3{
+    font-family:var(--serif);
+    font-size:17px;
+    margin:22px 0 10px;
+    font-weight:600;
+    color:var(--ink);
+  }
+  .doc-body p{
+    margin-bottom:14px;
+    color:var(--text-2);
+  }
+  .doc-body ul, .doc-body ol{
+    margin:0 0 16px 24px;
+    color:var(--text-2);
+  }
+  .doc-body li{
+    margin-bottom:6px;
+  }
+  .doc-body code{
+    font-family:var(--mono);
+    font-size:13px;
+    background:var(--elev);
+    padding:2px 6px;
+    border-radius:4px;
+    color:var(--ink);
+  }
+  .todo{
+    background:#FFF3CD;
+    border:1px dashed #856404;
+    color:#856404;
+    padding:2px 8px;
+    border-radius:4px;
+    font-family:var(--mono);
+    font-size:13px;
+    font-weight:600;
+    display:inline-block;
+    word-break:break-word;
+  }
+  .requisites-card{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:24px;
+    margin-top:20px;
+  }
+  .req-row{
+    display:grid;
+    grid-template-columns:200px 1fr;
+    gap:12px;
+    padding:8px 0;
+    border-bottom:1px solid var(--border-light);
+    font-size:14px;
+  }
+  .req-row:last-child{border-bottom:none}
+  .req-label{
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:.05em;
+  }
+  @media(max-width:640px){
+    .req-row{grid-template-columns:1fr; gap:4px}
+  }
+
+  footer{
+    border-top:1px solid var(--border);
+    padding:34px 0;
+    text-align:center;
+    color:var(--muted);
+    font-size:13px;
+  }
+  footer a{color:var(--text-2); text-decoration:none}
+  footer a:hover{color:var(--accent)}
+  .footer-links{
+    margin-top:12px;
+    display:flex;
+    gap:14px;
+    justify-content:center;
+    flex-wrap:wrap;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a href="index.html" class="brand">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="14" fill="#B85C38"/>
+        <circle cx="16" cy="16" r="9" fill="none" stroke="#F4EFE6" stroke-width="2"/>
+        <path d="M16 5 L19 16 L16 27 L13 16 Z" fill="#F4EFE6"/>
+      </svg>
+      MosaicVPN<span class="dot">.</span>
+    </a>
+    <nav class="nav-links">
+      <a href="index.html">Главная</a>
+      <a href="offer.html">Оферта</a>
+      <a href="privacy.html" style="color:var(--accent)">Конфиденциальность</a>
+      <a href="terms.html">Условия</a>
+      <a href="contacts.html">Контакты</a>
+      <a href="refund.html">Возврат</a>
+    </nav>
+  </div>
+</header>
+
+<main class="doc-container">
+
+  <div class="notice-banner">
+    <strong>Юридическое предупреждение для проверяющего / владельца:</strong><br/>
+    Данный документ представляет собой проект Политики обработки персональных данных и подготовлен для прохождения модерации платёжного провайдера. Документ подлежит обязательной правовой проверке юридической службой владельца и заполнению реальных реквизитов (ИП/ООО, ИНН, ОГРН, адрес) перед публикацией на коммерческом домене.
+  </div>
+
+  <header class="doc-header">
+    <h1>Политика обработки персональных данных</h1>
+    <div class="doc-meta">
+      <span>Дата публикации: 8 августа 2026 г.</span>
+      <span>Редакция: 1.0</span>
+    </div>
+  </header>
+
+  <article class="doc-body">
+
+    <div class="highlight-card">
+      <h3>Главный принцип privacy-first архитектуры MosaicVPN:</h3>
+      <p style="color:var(--text); margin-bottom:0;">
+        <strong>СЕРВИС НЕ ВЕДЁТ И НЕ ХРАНИТ ЛОГИ ТРАФИКА (NO-LOGS POLICY).</strong> Мы не отслеживаем, не записываем, не анализируем и не сохраняем историю посещаемых вами веб-сайтов, IP-адреса назначения, передаваемое содержимое файлов, DNS-запросы или время сетевых сессий.
+      </p>
+    </div>
+
+    <h2>1. Общие положения</h2>
+    <p>
+      1.1. Настоящая Политика обработки персональных данных (далее — «Политика») определяет порядок обработки и защиты персональной информации пользователей сервиса MosaicVPN (далее — «Оператор»).
+    </p>
+    <p>
+      1.2. Соблюдение прав и свобод человека при обработке его персональных данных является обязательным условием деятельности Оператора. Настоящая Политика разработана в соответствии с Федеральным законом РФ № 152-ФЗ «О персональных данных» и международными стандартами конфиденциальности.
+    </p>
+
+    <h2>2. Состав и категории обрабатываемых данных</h2>
+    <p>
+      2.1. Для обеспечения работы Сервиса Оператор обрабатывает исключительно минимальный набор технических данных, необходимых для функционирования личного кабинета и контроля лимитов:
+    </p>
+    <ul>
+      <li><strong>Идентификатор Telegram (Telegram ID):</strong> используется для создания и идентификации учетной записи пользователя в интерфейсе Telegram-бота <code>@mosaic_tf_bot</code>;</li>
+      <li><strong>Аппаратный идентификатор устройства (HWID):</strong> хэшированный идентификатор устройства, используется исключительно для контроля соблюдения технического лимита (не более 5 одновременно привязанных устройств на один аккаунт);</li>
+      <li><strong>История финансовых операций и баланс:</strong> суммы пополнения баланса, даты транзакций и текущий остаток средств на счете в Сервисе для корректного посуточного списания.</li>
+    </ul>
+    <p>
+      2.2. Оператор <strong>НЕ собирает и НЕ обрабатывает</strong>:
+    </p>
+    <ul>
+      <li>Фамилию, имя, отчество, паспортные данные или адрес проживания;</li>
+      <li>Номера банковских карт или полные платежные реквизиты (обработка платежей происходит на стороне уполномоченного платежного провайдера);</li>
+      <li>Историю просмотров в сети Интернет, содержимое сетевого трафика, вызовы и DNS-запросы.</li>
+    </ul>
+
+    <h2>3. Цели и правовые основания обработки данных</h2>
+    <p>
+      3.1. Обработка данных осуществляется со следующими целями:
+    </p>
+    <ul>
+      <li>предоставление доступа к Сервису и авторизация пользователя через Telegram;</li>
+      <li>технический учет подключенных устройств (контроль лимита 5 HWID);</li>
+      <li>проведение финансовых расчетов, учет пополнений и списаний баланса;</li>
+      <li>предоставление технической поддержки пользователю по его запросу.</li>
+    </ul>
+    <p>
+      3.2. Правовым основанием обработки данных является акцепт пользователем Договора публичной оферты и Условий использования Сервиса MosaicVPN.
+    </p>
+
+    <h2>4. Передача данных третьим лицам</h2>
+    <p>
+      4.1. Оператор не продает, не передает и не предоставляет доступ к персональным данным пользователей третьим лицам в коммерческих или маркетинговых целях.
+    </p>
+    <p>
+      4.2. Передача данных третьим лицам допускается исключительно в следующих случаях:
+    </p>
+    <ul>
+      <li><strong>Платежным провайдерам:</strong> техническая передача идентификатора транзакции и суммы для проведения платежа на стороне процессингового центра;</li>
+      <li><strong>Требование законодательства:</strong> в случаях, прямо предусмотренных действующим законодательством РФ, по официальным запросам уполномоченных государственных органов. При этом следует учитывать, что Оператор не располагает логами трафика или историями посещений пользователей.</li>
+    </ul>
+
+    <h2>5. Сроки хранения и порядок удаления данных</h2>
+    <p>
+      5.1. Данные аккаунта (Telegram ID, привязанные HWID) хранятся в течение всего срока активного использования Сервиса пользователем.
+    </p>
+    <p>
+      5.2. Пользователь имеет право в любой момент потребовать полного удаления своего аккаунта и связанных данных, направив соответствующий запрос в службу поддержки через Telegram-бота <code>@mosaic_tf_bot</code> или по электронной почте Оператора.
+    </p>
+
+    <h2>6. Права субъекта персональных данных</h2>
+    <p>
+      6.1. Пользователь имеет право:
+    </p>
+    <ul>
+      <li>получать информацию об обрабатываемых Оператором данных, касающихся пользователя;</li>
+      <li>требовать уточнения, блокирования или уничтожения своих персональных данных;</li>
+      <li>отозвать согласие на обработку персональных данных путем прекращения использования Сервиса и направления запроса Оператору.</li>
+    </ul>
+
+    <h2>7. Контактные данные Оператора персональных данных</h2>
+
+    <div class="requisites-card">
+      <div class="req-row">
+        <div class="req-label">Оператор</div>
+        <div><span class="todo">[ТРЕБУЕТСЯ ОТ ВЛАДЕЛЬЦА: Наименование ИП / ООО]</span></div>
+      </div>
+      <div class="req-row">
+        <div class="req-label">ИНН</div>
+        <div><span class="todo">[ТРЕБУЕТСЯ ОТ ВЛАДЕЛЬЦА: ИНН]</span></div>
+      </div>
+      <div class="req-row">
+        <div class="req-label">ОГРН / ОГРНИП</div>
+        <div><span class="todo">[ТРЕБУЕТСЯ ОТ ВЛАДЕЛЬЦА: ОГРН / ОГРНИП]</span></div>
+      </div>
+      <div class="req-row">
+        <div class="req-label">Адрес</div>
+        <div><span class="todo">[ТРЕБУЕТСЯ ОТ ВЛАДЕЛЬЦА: Юридический адрес]</span></div>
+      </div>
+      <div class="req-row">
+        <div class="req-label">Email по ПДн</div>
+        <div><span class="todo">[ТРЕБУЕТСЯ ОТ ВЛАДЕЛЬЦА: Email для запросов по ПДн]</span></div>
+      </div>
+      <div class="req-row">
+        <div class="req-label">Telegram-бот</div>
+        <div><a href="https://t.me/mosaic_tf_bot" target="_blank" rel="noopener">@mosaic_tf_bot</a></div>
+      </div>
+    </div>
+
+  </article>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    MosaicVPN · Atlas of routes · Edition I<br/>
+    <div class="footer-links">
+      <a href="index.html">Главная</a> ·
+      <a href="offer.html">Публичная оферта</a> ·
+      <a href="privacy.html">Политика конфиденциальности</a> ·
+      <a href="terms.html">Условия использования</a> ·
+      <a href="contacts.html">Контакты</a> ·
+      <a href="refund.html">Условия возврата</a> ·
+      <a href="https://t.me/mosaic_tf_bot" target="_blank" rel="noopener">@mosaic_tf_bot</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

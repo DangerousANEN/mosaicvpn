@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="ru" dir="ltr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MosaicVPN для провайдеров — манифест, группы и профили</title>
+<meta name="description" content="Документация для владельцев VPN-сервисов: как подключить свой сервис к клиенту MosaicVPN через манифест подписки. Смарт-группы, брендирование, биллинг, тарифные уровни." />
+<meta name="robots" content="index, follow" />
+<link rel="canonical" href="https://sub.zxc1x1.ru/docs.html" />
+<meta name="theme-color" content="#F4EFE6" />
+
+<meta property="og:type" content="article" />
+<meta property="og:title" content="MosaicVPN для провайдеров — документация по интеграции" />
+<meta property="og:description" content="Подключите свой VPN-сервис к клиенту MosaicVPN: смарт-группы, профиль провайдера, брендирование и биллинг через один JSON-манифест." />
+<meta property="og:url" content="https://sub.zxc1x1.ru/docs.html" />
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23B85C38'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23F4EFE6' stroke-width='2'/%3E%3Cpath d='M16 5 L19 16 L16 27 L13 16 Z' fill='%23F4EFE6'/%3E%3C/svg%3E" />
+
+<style>
+  :root{
+    --bg:#F4EFE6; --card:#FBF8F3; --elev:#EFE8DC; --border:#D9CFBE;
+    --text:#241F1A; --text-2:#4A413A; --muted:#8A7D6D; --accent:#B85C38;
+    --serif:'Playfair Display',Georgia,'Times New Roman',serif;
+    --mono:'Fira Mono',ui-monospace,'SF Mono',Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  body{
+    background:var(--bg); color:var(--text); font-family:var(--sans);
+    font-size:15px; line-height:1.7; -webkit-font-smoothing:antialiased;
+    background-image:
+      linear-gradient(rgba(217,207,190,.25) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(217,207,190,.25) 1px, transparent 1px);
+    background-size:32px 32px;
+  }
+  .wrap{max-width:1000px; margin:0 auto; padding:0 24px}
+
+  header{
+    position:sticky; top:0; z-index:50; background:rgba(244,239,230,.92);
+    backdrop-filter:blur(8px); border-bottom:1px solid var(--border);
+  }
+  .hd{display:flex; align-items:center; justify-content:space-between; padding:14px 0; gap:16px}
+  .logo{font-family:var(--serif); font-size:20px; font-weight:700; text-decoration:none; color:var(--text); white-space:nowrap}
+  .logo .dot{color:var(--accent)}
+  .nav-links{display:flex; gap:20px; flex-wrap:wrap}
+  .nav-links a{color:var(--text-2); text-decoration:none; font-size:13.5px}
+  .nav-links a:hover{color:var(--accent)}
+  @media (max-width:860px){ .nav-links{display:none} }
+
+  .hero{padding:56px 0 32px; border-bottom:1px solid var(--border)}
+  .eyebrow{
+    font-family:var(--mono); font-size:11px; letter-spacing:.18em;
+    text-transform:uppercase; color:var(--muted); display:block; margin-bottom:14px;
+  }
+  h1{font-family:var(--serif); font-size:clamp(30px,5vw,46px); line-height:1.15; font-weight:700; margin-bottom:16px}
+  h1 .accent{color:var(--accent)}
+  .lede{font-size:16.5px; color:var(--text-2); max-width:70ch}
+
+  section{padding:44px 0; border-bottom:1px solid var(--border)}
+  h2{font-family:var(--serif); font-size:clamp(22px,3.4vw,30px); font-weight:700; margin-bottom:8px}
+  h3{font-family:var(--serif); font-size:19px; font-weight:600; margin:26px 0 10px}
+  h4{font-size:14.5px; font-weight:600; margin:18px 0 8px; color:var(--text)}
+  .fig{font-family:var(--mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); margin-bottom:8px}
+  p{margin-bottom:14px; color:var(--text-2); max-width:78ch}
+  ul,ol{margin:0 0 16px 22px; color:var(--text-2)}
+  li{margin-bottom:7px}
+  a{color:var(--accent)}
+  strong{color:var(--text); font-weight:600}
+
+  code{
+    font-family:var(--mono); font-size:12.5px; background:var(--elev);
+    padding:2px 6px; border-radius:4px; color:var(--text);
+    border:1px solid var(--border); word-break:break-word;
+  }
+  pre{
+    background:#1E1A16; color:#E8DFD2; padding:18px; border-radius:10px;
+    overflow-x:auto; margin:14px 0 20px; border:1px solid #332C24;
+    font-family:var(--mono); font-size:12.5px; line-height:1.65;
+  }
+  pre code{background:none; border:none; padding:0; color:inherit; font-size:inherit}
+
+  .tbl-wrap{overflow-x:auto; margin:14px 0 20px; border:1px solid var(--border); border-radius:10px; background:var(--card)}
+  table{width:100%; border-collapse:collapse; min-width:520px}
+  th,td{padding:11px 14px; text-align:left; border-bottom:1px solid var(--border); font-size:13.5px}
+  th{background:var(--elev); font-family:var(--mono); font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--text-2)}
+  tr:last-child td{border-bottom:none}
+  td.mono{font-family:var(--mono); font-size:12.5px}
+
+  .callout{
+    background:var(--card); border:1px solid var(--border); border-left:3px solid var(--accent);
+    border-radius:8px; padding:16px 18px; margin:18px 0;
+  }
+  .callout .t{font-weight:600; color:var(--text); margin-bottom:6px; font-size:14px}
+  .callout p{margin-bottom:0; font-size:14px}
+
+  .cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; margin:18px 0}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:10px; padding:18px}
+  .card h4{margin-top:0}
+  .card p{font-size:13.5px; margin-bottom:0}
+  .card .mono-t{font-family:var(--mono); font-size:13px; color:var(--accent); margin-bottom:6px}
+
+  .toc{background:var(--card); border:1px solid var(--border); border-radius:10px; padding:20px 22px; margin:24px 0}
+  .toc h4{margin:0 0 10px}
+  .toc ol{margin:0 0 0 20px}
+  .toc li{margin-bottom:5px; font-size:14px}
+
+  footer{padding:34px 0 46px; text-align:center; color:var(--muted); font-size:13px}
+  footer a{color:var(--text-2); text-decoration:none; margin:0 6px}
+  footer a:hover{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap hd">
+    <a class="logo" href="/">MosaicVPN<span class="dot">.</span></a>
+    <nav class="nav-links">
+      <a href="#quickstart">Быстрый старт</a>
+      <a href="#manifest">Манифест</a>
+      <a href="#groups">Группы</a>
+      <a href="#profile">Профиль</a>
+      <a href="#reference">Справочник</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap hero">
+  <span class="eyebrow">Документация · для владельцев VPN-сервисов</span>
+  <h1>Подключите свой сервис<br/>к клиенту <span class="accent">MosaicVPN</span></h1>
+  <p class="lede">
+    MosaicVPN — клиент с открытым исходным кодом на движке sing-box. Если вы держите
+    собственный VPN-сервис, вы можете отдавать своим пользователям этот клиент вместо
+    того, чтобы писать свой: смарт-группы, автовыбор узла, брендирование и биллинг
+    настраиваются одним JSON-манифестом на вашей стороне. Кода писать не нужно.
+  </p>
+</div>
+
+<div class="wrap">
+  <div class="toc">
+    <h4>Содержание</h4>
+    <ol>
+      <li><a href="#quickstart">Быстрый старт за 5 минут</a></li>
+      <li><a href="#manifest">Манифест подписки</a></li>
+      <li><a href="#groups">Смарт-группы: стратегии выбора узла</a></li>
+      <li><a href="#profile">Профиль провайдера: брендирование и биллинг</a></li>
+      <li><a href="#tiers">Тарифные уровни</a></li>
+      <li><a href="#reference">Полный справочник полей</a></li>
+      <li><a href="#faq">Частые вопросы</a></li>
+    </ol>
+  </div>
+</div>
+
+<!-- ─── QUICKSTART ────────────────────────────────────────── -->
+<section id="quickstart">
+  <div class="wrap">
+    <div class="fig">Раздел I</div>
+    <h2>Быстрый старт за 5 минут</h2>
+    <p>
+      Клиент понимает обычные форматы подписок «из коробки» — sing-box JSON, Clash YAML,
+      v2ray base64 и SIP008. Если у вас уже есть подписка в любом из них, клиент заработает
+      без изменений на вашей стороне.
+    </p>
+    <p>
+      Всё, что описано ниже, — это <strong>дополнительный слой</strong>. Он включается,
+      когда ваша подписка отдаёт манифест, и даёт то, чего нет в обычных подписках:
+      группы с автовыбором, ваш бренд и ваш биллинг внутри клиента.
+    </p>
+
+    <h3>Шаг 1. Отдайте манифест по ссылке подписки</h3>
+    <p>
+      На тот же URL, что пользователь вставляет в клиент, отвечайте JSON-манифестом
+      с заголовком <code>Content-Type: application/json</code>. Минимальный рабочий вариант:
+    </p>
+<pre><code>{
+  "provider_name": "Ваш Сервис",
+  "user_tier": "pro",
+  "groups": [
+    {
+      "id": "auto",
+      "title": "Автовыбор",
+      "type": "urltest",
+      "badge": "Рекомендуется",
+      "nodes": [
+        { "id": "de-01" },
+        { "id": "nl-01" },
+        { "id": "fi-01" }
+      ]
+    }
+  ]
+}</code></pre>
+
+    <h3>Шаг 2. Убедитесь, что ID узлов совпадают</h3>
+    <p>
+      Поле <code>nodes[].id</code> должно совпадать с идентификаторами серверов, которые
+      вы отдаёте в конфигурации подписки. Если узел с таким ID не найден, он молча
+      выпадет из группы — это самая частая ошибка при интеграции.
+    </p>
+
+    <h3>Шаг 3. Проверьте</h3>
+    <p>
+      Добавьте подписку в клиент. На вкладке «Группы» появится ваша группа
+      «Автовыбор» с бейджем. Нажатие на неё замерит задержку до каждого узла и подключит
+      к самому быстрому.
+    </p>
+
+    <div class="callout">
+      <div class="t">Обратная совместимость гарантирована</div>
+      <p>
+        Манифест — необязательное расширение. Клиенты старых версий и другие приложения
+        (Hiddify, NekoBox) продолжат читать вашу подписку как обычно, игнорируя
+        неизвестные им поля.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ─── MANIFEST ─────────────────────────────────────────── -->
+<section id="manifest">
+  <div class="wrap">
+    <div class="fig">Раздел II</div>
+    <h2>Манифест подписки</h2>
+    <p>
+      Манифест — корневой объект, которым вы управляете поведением клиента у своих
+      пользователей. Он состоит из четырёх независимых частей, каждая необязательна.
+    </p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Поле</th><th>Тип</th><th>Назначение</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="mono">provider_name</td><td class="mono">string</td><td>Название сервиса в интерфейсе клиента</td></tr>
+          <tr><td class="mono">user_tier</td><td class="mono">string</td><td>Уровень пользователя: <code>free</code>, <code>pro</code>, <code>vip</code></td></tr>
+          <tr><td class="mono">telemetry_url</td><td class="mono">string</td><td>Куда клиент шлёт статистику узлов (необязательно)</td></tr>
+          <tr><td class="mono">groups</td><td class="mono">array</td><td>Смарт-группы — см. раздел III</td></tr>
+          <tr><td class="mono">routing_rules</td><td class="mono">array</td><td>Правила маршрутизации по домену/IP/приложению</td></tr>
+          <tr><td class="mono">profile</td><td class="mono">object</td><td>Брендирование и биллинг — см. раздел IV</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Как клиент получает манифест</h3>
+    <p>
+      Клиент запрашивает манифест по URL подписки и кэширует его локально. Если ваш
+      сервер недоступен, пользователь продолжит работать на последней сохранённой версии —
+      подключение не сломается из-за недоступности вашего API.
+    </p>
+  </div>
+</section>
+
+<!-- ─── GROUPS ───────────────────────────────────────────── -->
+<section id="groups">
+  <div class="wrap">
+    <div class="fig">Раздел III</div>
+    <h2>Смарт-группы</h2>
+    <p>
+      Группа — это набор узлов плюс правило, по которому клиент выбирает из них один.
+      Вместо длинного списка серверов пользователь видит несколько понятных вариантов:
+      «Автовыбор», «Германия», «Для стриминга».
+    </p>
+
+    <h3>Четыре стратегии выбора</h3>
+    <div class="cards">
+      <div class="card">
+        <div class="mono-t">urltest</div>
+        <h4>По наименьшей задержке</h4>
+        <p>Клиент замеряет пинг до каждого узла и берёт самый быстрый. Универсальный вариант по умолчанию.</p>
+      </div>
+      <div class="card">
+        <div class="mono-t">weighted_round_robin</div>
+        <h4>Распределение нагрузки</h4>
+        <p>Учитывает вес узла: чем больше вес, тем чаще узел выбирается. Разгружает популярные серверы.</p>
+      </div>
+      <div class="card">
+        <div class="mono-t">fallback</div>
+        <h4>По порядку</h4>
+        <p>Берётся первый живой узел из списка. Порядок задаёте вы полем <code>priority</code>.</p>
+      </div>
+      <div class="card">
+        <div class="mono-t">direct_node</div>
+        <h4>Фиксированный узел</h4>
+        <p>Без автовыбора — всегда конкретный сервер. Для выделенных или премиальных узлов.</p>
+      </div>
+    </div>
+
+    <h3>Пример: три группы под разные задачи</h3>
+<pre><code>{
+  "provider_name": "Ваш Сервис",
+  "user_tier": "pro",
+  "groups": [
+    {
+      "id": "auto",
+      "title": "Автовыбор",
+      "type": "urltest",
+      "badge": "Рекомендуется",
+      "category": "smart",
+      "icon": "lightning",
+      "description": "Самый быстрый узел прямо сейчас",
+      "ping_interval": 30,
+      "max_retries": 3,
+      "failover_delay": 2,
+      "nodes": [
+        { "id": "de-01" },
+        { "id": "nl-01" },
+        { "id": "fi-01" }
+      ]
+    },
+    {
+      "id": "balanced",
+      "title": "Распределённая нагрузка",
+      "type": "weighted_round_robin",
+      "description": "Мощные узлы принимают больше подключений",
+      "nodes": [
+        { "id": "de-01", "weight": 50 },
+        { "id": "de-02", "weight": 30 },
+        { "id": "nl-01", "weight": 20 }
+      ]
+    },
+    {
+      "id": "vip-de",
+      "title": "Германия VIP",
+      "type": "fallback",
+      "user_tier": "vip",
+      "badge": "VIP",
+      "nodes": [
+        { "id": "de-vip-01", "priority": 1 },
+        { "id": "de-vip-02", "priority": 2 }
+      ]
+    }
+  ]
+}</code></pre>
+
+    <h3>Поля группы</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Поле</th><th>Тип</th><th>По умолчанию</th><th>Описание</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="mono">id</td><td class="mono">string</td><td>—</td><td>Обязательное. Уникальный идентификатор группы</td></tr>
+          <tr><td class="mono">title</td><td class="mono">string</td><td>—</td><td>Обязательное. Название для пользователя</td></tr>
+          <tr><td class="mono">type</td><td class="mono">string</td><td><code>urltest</code></td><td>Стратегия выбора узла</td></tr>
+          <tr><td class="mono">nodes</td><td class="mono">array</td><td>—</td><td>Обязательное. Узлы группы</td></tr>
+          <tr><td class="mono">user_tier</td><td class="mono">string</td><td>—</td><td>Минимальный уровень для доступа к группе</td></tr>
+          <tr><td class="mono">badge</td><td class="mono">string</td><td>—</td><td>Короткая метка на карточке</td></tr>
+          <tr><td class="mono">category</td><td class="mono">string</td><td>—</td><td><code>smart</code>, <code>whitelist</code>, <code>raw</code></td></tr>
+          <tr><td class="mono">icon</td><td class="mono">string</td><td>—</td><td>Например <code>shield</code>, <code>lightning</code>, <code>flag_de</code></td></tr>
+          <tr><td class="mono">description</td><td class="mono">string</td><td>—</td><td>Пояснение под названием</td></tr>
+          <tr><td class="mono">ping_interval</td><td class="mono">int</td><td><code>30</code></td><td>Секунды между проверками живости</td></tr>
+          <tr><td class="mono">max_retries</td><td class="mono">int</td><td><code>3</code></td><td>Неудач подряд до пометки «мёртв»</td></tr>
+          <tr><td class="mono">failover_delay</td><td class="mono">int</td><td><code>2</code></td><td>Секунды до переключения на следующий узел</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Поля узла</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Поле</th><th>Тип</th><th>Применяется</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="mono">id</td><td class="mono">string</td><td>Всегда. Должен совпадать с ID сервера в подписке</td></tr>
+          <tr><td class="mono">weight</td><td class="mono">int</td><td>Только для <code>weighted_round_robin</code></td></tr>
+          <tr><td class="mono">priority</td><td class="mono">int</td><td>Только для <code>fallback</code>: меньше — раньше</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ─── PROFILE ──────────────────────────────────────────── -->
+<section id="profile">
+  <div class="wrap">
+    <div class="fig">Раздел IV</div>
+    <h2>Профиль провайдера</h2>
+    <p>
+      Профиль превращает клиент в витрину вашего сервиса: ваш логотип, ваш акцентный цвет,
+      ваш тариф и ваша кнопка оплаты. Пользователю не нужно уходить на сайт, чтобы
+      пополнить баланс.
+    </p>
+
+    <h3>Брендирование</h3>
+<pre><code>{
+  "profile": {
+    "branding": {
+      "logo_url": "https://example.com/logo.svg",
+      "accent_color": "#B85C38",
+      "support_url": "https://t.me/your_support_bot",
+      "provider_description": "Быстрый доступ без ограничений"
+    }
+  }
+}</code></pre>
+
+    <h3>Биллинг через Telegram-бота</h3>
+    <p>
+      Клиент умеет показывать баланс, тариф и кнопку пополнения, связываясь с вашим ботом.
+      Ключи и токены остаются на вашей стороне — клиент только открывает ссылки и читает
+      статус по вашим эндпоинтам.
+    </p>
+<pre><code>{
+  "profile": {
+    "billing": {
+      "type": "telegram_bot",
+      "bot_username": "your_billing_bot",
+      "pricing_model": "daily",
+      "price_per_day": { "RUB": 1.0, "USDT": 0.01 },
+      "trial_days": 3,
+      "payment_methods": ["card", "crypto"],
+      "endpoints": {
+        "profile": "https://api.example.com/v1/profile",
+        "topup":   "https://api.example.com/v1/topup",
+        "status":  "https://api.example.com/v1/status"
+      }
+    }
+  }
+}</code></pre>
+
+    <div class="callout">
+      <div class="t">Секреты не передаются в манифесте</div>
+      <p>
+        В манифест попадают только публичные URL. API-ключи, токены бота и подписи вебхуков
+        остаются у вас на сервере — клиент их не видит и не хранит.
+      </p>
+    </div>
+
+    <h3>Свои блоки в интерфейсе</h3>
+    <p>
+      Секции <code>services</code> и <code>widgets</code> позволяют добавить в клиент
+      собственные элементы: выбор прокси, показатель трафика, кнопку действия или
+      ссылку на ваш ресурс.
+    </p>
+<pre><code>{
+  "profile": {
+    "services": [
+      {
+        "id": "streaming",
+        "type": "proxy_picker",
+        "title": "Разблокировка стриминга",
+        "description": "Отдельные узлы под видеосервисы",
+        "icon": "play",
+        "config": { "group_id": "streaming" }
+      }
+    ],
+    "widgets": [
+      {
+        "id": "traffic",
+        "type": "progress_bar",
+        "title": "Трафик за месяц",
+        "data_source": "billing.profile",
+        "fields": ["used_gb", "limit_gb"]
+      }
+    ]
+  }
+}</code></pre>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Тип сервиса</th><th>Что показывает</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="mono">proxy_picker</td><td>Выбор узла из указанной группы</td></tr>
+          <tr><td class="mono">value_display</td><td>Значение из вашего API (баланс, срок)</td></tr>
+          <tr><td class="mono">action</td><td>Кнопка, вызывающая ваш эндпоинт</td></tr>
+          <tr><td class="mono">web_view</td><td>Встроенная страница</td></tr>
+          <tr><td class="mono">link</td><td>Внешняя ссылка</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ─── TIERS ────────────────────────────────────────────── -->
+<section id="tiers">
+  <div class="wrap">
+    <div class="fig">Раздел V</div>
+    <h2>Тарифные уровни</h2>
+    <p>
+      Уровень пользователя задаётся в корне манифеста полем <code>user_tier</code>,
+      а требование группы — полем <code>user_tier</code> внутри группы. Группа
+      с более высоким требованием пользователю недоступна.
+    </p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Уровень</th><th>Порядок</th><th>Типичное применение</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="mono">free</td><td>1</td><td>Общий пул, ограниченная скорость</td></tr>
+          <tr><td class="mono">pro</td><td>2</td><td>Основной платный тариф</td></tr>
+          <tr><td class="mono">vip</td><td>3</td><td>Выделенные узлы, приоритет</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>
+      Проверка выполняется на стороне демона: попытка подключиться к группе выше своего
+      уровня возвращает <code>403</code>. Группы, недоступные по уровню, показываются
+      в интерфейсе с пометкой — это работает как апселл, а не как скрытая ошибка.
+    </p>
+
+    <div class="callout">
+      <div class="t">Уровень — не замена авторизации</div>
+      <p>
+        Тир управляет отображением и доступом к группам внутри клиента. Реальное
+        ограничение доступа к узлам обеспечивается вашим сервером: не отдавайте в подписке
+        те узлы, к которым пользователь не должен подключаться.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ─── REFERENCE ────────────────────────────────────────── -->
+<section id="reference">
+  <div class="wrap">
+    <div class="fig">Раздел VI</div>
+    <h2>Полный справочник</h2>
+
+    <h3>Поддерживаемые протоколы</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Протокол</th><th>Транспорт</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>VLESS</td><td class="mono">TLS · Reality · ws · grpc · xhttp</td></tr>
+          <tr><td>VMess</td><td class="mono">TCP · ws · grpc</td></tr>
+          <tr><td>Hysteria2</td><td class="mono">QUIC</td></tr>
+          <tr><td>Shadowsocks</td><td class="mono">TCP · UDP</td></tr>
+          <tr><td>Trojan</td><td class="mono">TLS</td></tr>
+          <tr><td>Naive</td><td class="mono">HTTP/2</td></tr>
+          <tr><td>AmneziaWG</td><td class="mono">WireGuard</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Форматы подписок</h3>
+    <p>
+      Формат определяется автоматически, указывать его не нужно:
+      <code>sing-box JSON</code>, <code>Clash YAML</code>, <code>v2ray base64</code>,
+      <code>SIP008</code>. Дубликаты узлов отсеиваются при импорте.
+    </p>
+
+    <h3>Локальное API демона</h3>
+    <p>
+      Демон <code>mosaicd</code> поднимает HTTP-API на петлевом интерфейсе.
+      Оно полезно, если вы делаете свою обвязку поверх клиента.
+    </p>
+    <p>
+      <strong>Порт назначается динамически.</strong> Демон слушает <code>127.0.0.1:0</code>,
+      то есть ОС выдаёт свободный порт при старте. Адрес, PID и токен доступа
+      записываются в lockfile, откуда их читает клиент:
+    </p>
+<pre><code>{
+  "host": "127.0.0.1",
+  "port": 51734,
+  "token": "&lt;токен доступа&gt;",
+  "pid": 12480,
+  "version": "0.2.0",
+  "started": "2026-08-08T21:30:00Z"
+}</code></pre>
+    <p>
+      Расположение lockfile: <code>%LOCALAPPDATA%\Mosaic</code> на Windows,
+      <code>$XDG_DATA_HOME/mosaic</code> или <code>~/.local/share/mosaic</code> на Linux,
+      <code>~/Library/Application Support/Mosaic</code> на macOS.
+      Каталог можно переопределить переменной <code>MOSAIC_DATA_DIR</code>.
+      Порт из предыдущего запуска не переиспользуется — читайте lockfile каждый раз,
+      а не кэшируйте значение.
+    </p>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Метод и путь</th><th>Назначение</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="mono">GET /v1/manifest</td><td>Текущий манифест провайдера</td></tr>
+          <tr><td class="mono">GET /v1/groups/{id}/select</td><td>Выбрать узел по стратегии группы</td></tr>
+          <tr><td class="mono">GET /v1/groups/{id}/health</td><td>Состояние узлов группы</td></tr>
+          <tr><td class="mono">GET /v1/servers</td><td>Список серверов</td></tr>
+          <tr><td class="mono">POST /v1/subscriptions</td><td>Добавить подписку</td></tr>
+          <tr><td class="mono">POST /v1/connect</td><td>Подключиться к узлу</td></tr>
+          <tr><td class="mono">GET /v1/status</td><td>Статус подключения</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <div class="t">API привязано к localhost и защищено токеном</div>
+      <p>
+        Демон слушает только петлевой интерфейс и не принимает внешние подключения.
+        Запросы требуют токен из lockfile — это осознанное ограничение безопасности.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ─── FAQ ──────────────────────────────────────────────── -->
+<section id="faq">
+  <div class="wrap">
+    <div class="fig">Раздел VII</div>
+    <h2>Частые вопросы</h2>
+
+    <h3>Нужно ли форкать клиент?</h3>
+    <p>
+      Нет. Брендирование, группы и биллинг задаются манифестом с вашего сервера.
+      Форк нужен только если вы хотите менять саму логику приложения.
+    </p>
+
+    <h3>Что будет, если мой сервер недоступен?</h3>
+    <p>
+      Клиент использует последний сохранённый манифест. Пользователь продолжит
+      подключаться к узлам, которые уже знает.
+    </p>
+
+    <h3>Можно ли использовать клиент в коммерческом сервисе?</h3>
+    <p>
+      Да. Клиент построен на sing-box под лицензией <strong>GPL-3.0</strong>, поэтому
+      коммерческое использование разрешено, но при распространении собственной сборки
+      вы обязаны раскрыть исходный код своей производной работы и сохранить лицензию.
+      Использование оригинальных сборок с вашим манифестом никаких дополнительных
+      обязательств не создаёт.
+    </p>
+
+    <h3>Где взять исходный код?</h3>
+    <p>
+      <a href="https://github.com/DangerousANEN/mosaicvpn" target="_blank" rel="noopener">github.com/DangerousANEN/mosaicvpn</a>
+      — исходники клиента, демона и готовые сборки под Windows, Linux и Android.
+    </p>
+
+    <h3>Как протестировать манифест до выката?</h3>
+    <p>
+      Поднимите его на любом статическом хостинге, добавьте ссылку как подписку
+      в клиент и проверьте вкладку «Группы». Ошибки разбора видны в разделе
+      «Логи» внутри приложения.
+    </p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    MosaicVPN · Документация для провайдеров<br/>
+    <a href="/">Главная</a> ·
+    <a href="/docs.html">Документация</a> ·
+    <a href="/contacts.html">Контакты</a> ·
+    <a href="/offer.html">Оферта</a> ·
+    <a href="/privacy.html">Политика ПДн</a> ·
+    <a href="/refund.html">Возврат</a> ·
+    <a href="/terms.html">Условия</a> ·
+    <a href="https://github.com/DangerousANEN/mosaicvpn" target="_blank" rel="noopener">GitHub</a>
+  </div>
+</footer>
+
+</body>
+</html>

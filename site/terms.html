@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="ru" dir="ltr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Условия использования и лицензии — MosaicVPN</title>
+<meta name="description" content="Условия использования сервиса MosaicVPN, правила допустимого использования, информация о лицензиях открытого исходного кода (GPL-3.0, BSD-3-Clause)." />
+<meta name="robots" content="index, follow" />
+<link rel="canonical" href="https://sub.zxc1x1.ru/terms.html" />
+<meta name="theme-color" content="#F4EFE6" />
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23B85C38'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23F4EFE6' stroke-width='2'/%3E%3Cpath d='M16 5 L19 16 L16 27 L13 16 Z' fill='%23F4EFE6'/%3E%3C/svg%3E" />
+
+<style>
+  :root{
+    --bg:#F4EFE6; --card:#EDE5D6; --elev:#E4DAC6; --ink:#2B2620; --hover:#D9CFB8;
+    --border:#C4B89E; --border-light:#D4C9B0; --border-ink:#5C4E3A;
+    --text:#2B2620; --text-2:#6B5D4A; --muted:#9A8B72; --on-ink:#F4EFE6;
+    --accent:#B85C38; --accent-hi:#D4724A; --success:#5B7A3A; --warn:#C47830;
+    --serif:'Iowan Old Style','Palatino Linotype','Book Antiqua',Georgia,serif;
+    --mono:'JetBrains Mono','SFMono-Regular',Consolas,'Liberation Mono',monospace;
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    --maxw:1120px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg); color:var(--text); font-family:var(--sans);
+    line-height:1.6; -webkit-font-smoothing:antialiased;
+    background-image:
+      linear-gradient(rgba(196,184,158,.14) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(196,184,158,.14) 1px, transparent 1px);
+    background-size:32px 32px;
+  }
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 24px}
+  a{color:inherit}
+
+  /* header */
+  header{
+    position:sticky; top:0; z-index:50; backdrop-filter:blur(8px);
+    background:rgba(244,239,230,.86); border-bottom:1px solid var(--border);
+  }
+  .nav{display:flex; align-items:center; gap:16px; height:64px}
+  .brand{display:flex; align-items:center; gap:10px; font-family:var(--serif); font-size:20px; font-weight:600; letter-spacing:.2px; text-decoration:none}
+  .brand .dot{color:var(--accent)}
+  .nav-links{margin-left:auto; display:flex; gap:22px; font-size:14px; color:var(--text-2)}
+  .nav-links a{text-decoration:none}
+  .nav-links a:hover{color:var(--accent)}
+  @media(max-width:720px){ .nav-links{display:none} }
+
+  /* document styles */
+  .doc-container{
+    max-width:860px;
+    margin:40px auto 64px;
+    padding:0 24px;
+  }
+  .notice-banner{
+    background:#FFF8E7;
+    border:1px dashed var(--warn);
+    border-radius:8px;
+    padding:16px 20px;
+    margin-bottom:32px;
+    font-size:14px;
+    color:var(--text);
+    line-height:1.5;
+  }
+  .notice-banner strong{color:var(--warn)}
+  .doc-header{
+    margin-bottom:32px;
+    padding-bottom:20px;
+    border-bottom:1px solid var(--border);
+  }
+  .doc-header h1{
+    font-family:var(--serif);
+    font-size:clamp(28px, 5vw, 40px);
+    font-weight:600;
+    line-height:1.2;
+    margin-bottom:12px;
+    color:var(--ink);
+  }
+  .doc-meta{
+    font-family:var(--mono);
+    font-size:13px;
+    color:var(--text-2);
+    display:flex;
+    gap:16px;
+    flex-wrap:wrap;
+  }
+  .doc-body{
+    font-size:15px;
+    line-height:1.75;
+    color:var(--text);
+  }
+  .doc-body h2{
+    font-family:var(--serif);
+    font-size:22px;
+    margin:32px 0 14px;
+    font-weight:600;
+    color:var(--ink);
+    border-bottom:1px solid var(--border-light);
+    padding-bottom:6px;
+  }
+  .doc-body h3{
+    font-family:var(--serif);
+    font-size:17px;
+    margin:22px 0 10px;
+    font-weight:600;
+    color:var(--ink);
+  }
+  .doc-body p{
+    margin-bottom:14px;
+    color:var(--text-2);
+  }
+  .doc-body ul, .doc-body ol{
+    margin:0 0 16px 24px;
+    color:var(--text-2);
+  }
+  .doc-body li{
+    margin-bottom:6px;
+  }
+  .doc-body code{
+    font-family:var(--mono);
+    font-size:13px;
+    background:var(--elev);
+    padding:2px 6px;
+    border-radius:4px;
+    color:var(--ink);
+  }
+  .license-box{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:18px 20px;
+    margin:14px 0 20px;
+  }
+  .license-box h4{
+    font-family:var(--serif);
+    font-size:16px;
+    margin-bottom:6px;
+    color:var(--ink);
+  }
+  .license-meta{
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--accent);
+    margin-bottom:8px;
+  }
+  .todo{
+    background:#FFF3CD;
+    border:1px dashed #856404;
+    color:#856404;
+    padding:2px 8px;
+    border-radius:4px;
+    font-family:var(--mono);
+    font-size:13px;
+    font-weight:600;
+    display:inline-block;
+    word-break:break-word;
+  }
+
+  footer{
+    border-top:1px solid var(--border);
+    padding:34px 0;
+    text-align:center;
+    color:var(--muted);
+    font-size:13px;
+  }
+  footer a{color:var(--text-2); text-decoration:none}
+  footer a:hover{color:var(--accent)}
+  .footer-links{
+    margin-top:12px;
+    display:flex;
+    gap:14px;
+    justify-content:center;
+    flex-wrap:wrap;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a href="index.html" class="brand">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="14" fill="#B85C38"/>
+        <circle cx="16" cy="16" r="9" fill="none" stroke="#F4EFE6" stroke-width="2"/>
+        <path d="M16 5 L19 16 L16 27 L13 16 Z" fill="#F4EFE6"/>
+      </svg>
+      MosaicVPN<span class="dot">.</span>
+    </a>
+    <nav class="nav-links">
+      <a href="index.html">Главная</a>
+      <a href="offer.html">Оферта</a>
+      <a href="privacy.html">Конфиденциальность</a>
+      <a href="terms.html" style="color:var(--accent)">Условия</a>
+      <a href="contacts.html">Контакты</a>
+      <a href="refund.html">Возврат</a>
+    </nav>
+  </div>
+</header>
+
+<main class="doc-container">
+
+  <div class="notice-banner">
+    <strong>Юридическое предупреждение для проверяющего / владельца:</strong><br/>
+    Данный документ представляет собой проект Условий использования и подготовлен для прохождения модерации платёжного провайдера. Документ подлежит обязательной правовой проверке юридической службой владельца и согласованию перед публикацией на коммерческом домене.
+  </div>
+
+  <header class="doc-header">
+    <h1>Условия использования сервиса</h1>
+    <div class="doc-meta">
+      <span>Дата публикации: 8 августа 2026 г.</span>
+      <span>Редакция: 1.0</span>
+    </div>
+  </header>
+
+  <article class="doc-body">
+
+    <h2>1. Общие правила использования</h2>
+    <p>
+      1.1. Настоящие Условия использования (далее — «Условия») регулируют порядок взаимодействия пользователя с сервисом MosaicVPN, его клиентскими приложениями, ботом и сетевой инфраструктурой.
+    </p>
+    <p>
+      1.2. Начиная использовать Сервис, вы подтверждаете полное согласие с данными Условиями, Публичной офертой и Политикой обработки персональных данных.
+    </p>
+
+    <h2>2. Допустимое и недопустимое использование (Acceptable Use Policy)</h2>
+    <p>
+      2.1. Сервис MosaicVPN предназначен исключительно для законных целей обеспечения личной безопасности, шифрования передаваемого трафика и защиты сетевых подключений.
+    </p>
+    <p>
+      2.2. <strong>Категорически запрещается использовать Сервис для следующих целей:</strong>
+    </p>
+    <ul>
+      <li>Осуществление любых действий, нарушающих действующее законодательство Российской Федерации или страны нахождения пользователя;</li>
+      <li>Проведение сетевых атак, включая DDoS-атаки, сканирование портов, попытки несанкционированного доступа к чужим серверам, базам данных и информационным системам;</li>
+      <li>Массовая рассылка нежелательных сообщений (спам), распространение вредоносного программного обеспечения, фишинговых ресурсов;</li>
+      <li>Нарушение исключительных и авторских прав третьих лиц, распространение запрещенных и вредоносных материалов;</li>
+      <li>Любая деятельность, создающая чрезмерную и паразитарную нагрузку на сетевую инфраструктуру Сервиса и мешающая другим пользователям.</li>
+    </ul>
+
+    <h2>3. Технические лимиты и блокировка аккаунтов</h2>
+    <p>
+      3.1. <strong>Лимит устройств:</strong> на одну учетную запись (подписку) пользователя разрешается привязка не более <strong>5 (пяти) активных устройств</strong>. Учет осуществляется по уникальному аппаратному хэшу устройства (HWID).
+    </p>
+    <p>
+      3.2. В случае превышения лимита устройств подключение нового устройства возможно только после удаления одного из ранее зарегистрированных устройств через интерфейс бота или приложения.
+    </p>
+    <p>
+      3.3. <strong>Основания для блокировки:</strong> Администрация оставляет за собой право немедленно приостановить доступ или заблокировать учетную запись пользователя без возврата средств в случаях:
+    </p>
+    <ul>
+      <li>Обнаружения фактов совершения сетевых атак, спам-рассылок или иной противоправной деятельности с использованием инфраструктуры Сервиса;</li>
+      <li>Попыток взлома, декомпиляции серверной части или нарушения стабильности работы Сервиса;</li>
+      <li>Передачи аккаунта третьим лицам или перепродажи доступа без согласования с Администрацией.</li>
+    </ul>
+
+    <h2>4. Лицензии на открытое программное обеспечение (Open Source)</h2>
+    <p>
+      4.1. Клиентское программное обеспечение MosaicVPN разработано Правообладателем, его исходный код доступен для аудита в публичном репозитории: <a href="https://github.com/DangerousANEN/mosaicvpn" target="_blank" rel="noopener">https://github.com/DangerousANEN/mosaicvpn</a>.
+    </p>
+    <p>
+      4.2. В составе клиентского приложения и инфраструктуры используются сторонние свободные программные компоненты с открытым исходным кодом. Сервис выражает благодарность авторам проектов и строго соблюдает условия соответствующих открытых лицензий:
+    </p>
+
+    <div class="license-box">
+      <h4>sing-box</h4>
+      <div class="license-meta">Лицензия: GNU General Public License v3.0 (GPL-3.0)</div>
+      <p>Универсальный сетевой движок проксирования и маршрутизации трафика.</p>
+      <p>Текст лицензии: <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener">https://www.gnu.org/licenses/gpl-3.0.html</a></p>
+      <p>Исходный код проекта: <a href="https://github.com/SagerNet/sing-box" target="_blank" rel="noopener">https://github.com/SagerNet/sing-box</a></p>
+    </div>
+
+    <div class="license-box">
+      <h4>Flutter Framework & Engine</h4>
+      <div class="license-meta">Лицензия: BSD 3-Clause "New" or "Revised" License</div>
+      <p>Кроссплатформенный инструментарий для разработки графического интерфейса пользователя.</p>
+      <p>Текст лицензии: <a href="https://opensource.org/licenses/BSD-3-Clause" target="_blank" rel="noopener">https://opensource.org/licenses/BSD-3-Clause</a></p>
+      <p>Исходный код проекта: <a href="https://github.com/flutter/flutter" target="_blank" rel="noopener">https://github.com/flutter/flutter</a></p>
+    </div>
+
+    <div class="license-box">
+      <h4>The Go Programming Language</h4>
+      <div class="license-meta">Лицензия: BSD 3-Clause "New" or "Revised" License</div>
+      <p>Язык программирования и стандартная библиотека системных вызовов.</p>
+      <p>Текст лицензии: <a href="https://opensource.org/licenses/BSD-3-Clause" target="_blank" rel="noopener">https://opensource.org/licenses/BSD-3-Clause</a></p>
+      <p>Исходный код проекта: <a href="https://github.com/golang/go" target="_blank" rel="noopener">https://github.com/golang/go</a></p>
+    </div>
+
+    <p>
+      4.3. Оплата, взимаемая Сервисом MosaicVPN, является платой за услуги поддержания серверной сетевой инфраструктуры, каналов связи и вычислительных мощностей, а не за право использования стороннего свободного программного обеспечения.
+    </p>
+
+    <h2>5. Отказ от гарантий и ограничение ответственности</h2>
+    <p>
+      5.1. Сервис предоставляется по принципу «как есть» (as is). Администрация предпринимает все разумные меры для обеспечения стабильной и бесперебойной работы узлов, но не предоставляет абсолютных гарантий доступности всех сторонних ресурсов сети Интернет.
+    </p>
+    <p>
+      5.2. Администрация не несет ответственности за сбои в работе магистральных провайдеров связи, блокировки со стороны сторонних сетевых операторов или недоступность отдельных удаленных веб-серверов.
+    </p>
+
+  </article>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    MosaicVPN · Atlas of routes · Edition I<br/>
+    <div class="footer-links">
+      <a href="index.html">Главная</a> ·
+      <a href="offer.html">Публичная оферта</a> ·
+      <a href="privacy.html">Политика конфиденциальности</a> ·
+      <a href="terms.html">Условия использования</a> ·
+      <a href="contacts.html">Контакты</a> ·
+      <a href="refund.html">Условия возврата</a> ·
+      <a href="https://t.me/mosaic_tf_bot" target="_blank" rel="noopener">@mosaic_tf_bot</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

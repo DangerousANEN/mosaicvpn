@@ -81,6 +81,9 @@ class _WorldMapWidgetState extends State<WorldMapWidget> {
         final availW = constraints.maxWidth;
         final availH = constraints.maxHeight;
 
+        final mapW = math.min(availW, availH * 2.0);
+        final mapH = mapW / 2.0;
+
         return ClipRect(
           child: SizedBox(
             width: availW,
@@ -94,12 +97,13 @@ class _WorldMapWidgetState extends State<WorldMapWidget> {
                     minScale: 1.0,
                     maxScale: 8.0,
                     boundaryMargin: const EdgeInsets.all(double.infinity),
-                    child: SizedBox(
-                      width: availW,
-                      height: availH,
-                      child: Stack(
+                    child: Center(
+                      child: SizedBox(
+                        width: mapW,
+                        height: mapH,
+                        child: Stack(
                           children: [
-                            // SVG continent layer — fill entire viewport
+                            // SVG continent layer
                             Positioned.fill(
                               child: SvgPicture.asset(
                                 'assets/maps/world.svg',
@@ -121,14 +125,14 @@ class _WorldMapWidgetState extends State<WorldMapWidget> {
                                   // Pin tap → tooltip
                                   onTapDown: (details) {
                                     _handleTap(
-                                        details.localPosition, availW, availH);
+                                        details.localPosition, mapW, mapH);
                                   },
                                   child: CustomPaint(
                                     painter: _OverlayPainter(
                                       pins: widget.pins,
                                       youPin: widget.youPin,
-                                      mapW: availW,
-                                      mapH: availH,
+                                      mapW: mapW,
+                                      mapH: mapH,
                                       connected: widget.connected,
                                       hoveredPin: _hoveredPin,
                                       c: c,
@@ -141,10 +145,10 @@ class _WorldMapWidgetState extends State<WorldMapWidget> {
                             // Hover tooltip
                             if (_hoveredPin != null)
                               Positioned(
-                                left: (_hoveredPin!.nx * availW)
-                                    .clamp(8.0, availW - 8.0),
-                                top: (_hoveredPin!.ny * availH)
-                                        .clamp(8.0, availH - 8.0) -
+                                left: (_hoveredPin!.nx * mapW)
+                                    .clamp(8.0, mapW - 8.0),
+                                top: (_hoveredPin!.ny * mapH)
+                                        .clamp(8.0, mapH - 8.0) -
                                     30,
                                 child: FractionalTranslation(
                                   translation: const Offset(-0.5, 0),
@@ -153,6 +157,7 @@ class _WorldMapWidgetState extends State<WorldMapWidget> {
                               ),
                           ],
                         ),
+                      ),
                     ),
                   ),
                 ),
