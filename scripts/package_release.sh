@@ -29,6 +29,16 @@ if [ -f "$WIN_SRC/mosaic_vpn.exe" ]; then
   cp -r "$WIN_SRC"/* "$D"/
   [ -f "$ROOT/build/mosaicd.exe" ] && cp "$ROOT/build/mosaicd.exe" "$D"/
   [ -f "$ROOT/build/mosaic.exe" ]  && cp "$ROOT/build/mosaic.exe"  "$D"/
+  # The sing-box engine must sit next to mosaicd — LocateSingBox() looks for it
+  # alongside the daemon binary first (internal/state/singbox_backend.go).
+  # Without it Connect fails at runtime, so treat a missing engine as fatal.
+  if [ -f "$ROOT/dist/MosaicVPN/sing-box.exe" ]; then
+    cp "$ROOT/dist/MosaicVPN/sing-box.exe" "$D"/
+    [ -f "$ROOT/dist/MosaicVPN/libcronet.dll" ] && cp "$ROOT/dist/MosaicVPN/libcronet.dll" "$D"/
+  else
+    echo "FAIL windows  (sing-box.exe not found — archive would ship without the VPN engine)" >&2
+    exit 1
+  fi
   ( cd "$STAGE" && \
     if command -v zip >/dev/null 2>&1; then
       zip -qr "$OUT/MosaicVPN-windows-x64.zip" MosaicVPN
@@ -52,6 +62,13 @@ if [ -d "$LIN_SRC" ]; then
   cp -r "$LIN_SRC"/* "$D"/
   [ -f "$ROOT/build/mosaicd_linux_amd64" ] && cp "$ROOT/build/mosaicd_linux_amd64" "$D/mosaicd" && chmod +x "$D/mosaicd"
   [ -f "$ROOT/build/mosaic_linux_amd64" ]  && cp "$ROOT/build/mosaic_linux_amd64"  "$D/mosaic"  && chmod +x "$D/mosaic"
+  # Same engine requirement as Windows — see the note in the block above.
+  if [ -f "$ROOT/build/sing-box_linux_amd64" ]; then
+    cp "$ROOT/build/sing-box_linux_amd64" "$D/sing-box" && chmod +x "$D/sing-box"
+  else
+    echo "FAIL linux    (sing-box_linux_amd64 not found — archive would ship without the VPN engine)" >&2
+    exit 1
+  fi
   ( cd "$STAGE" && tar -czf "$OUT/MosaicVPN-linux-x86_64.tar.gz" MosaicVPN )
   rm -rf "$D"
   echo "OK   linux    -> MosaicVPN-linux-x86_64.tar.gz"
