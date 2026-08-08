@@ -44,6 +44,7 @@ type Server struct {
 	token          string
 	fetcher        Fetcher
 	billing        *billing.Client
+	lava           billing.PaymentProvider
 	activeManifest *proto.SubscriptionManifest
 	manifestMu     sync.RWMutex
 	pool           *subs.PoolEngine
@@ -62,6 +63,7 @@ func NewServer(s *store.Store, mgr *state.Manager, fetcher Fetcher) *Server {
 		token:   newToken(),
 		fetcher: fetcher,
 		billing: billing.NewClient(billing.Config{}),
+		lava:    billing.NewLavaProvider(),
 		pool:    subs.NewPoolEngine(),
 		mux:     http.NewServeMux(),
 	}
@@ -75,6 +77,10 @@ func (s *Server) SetBillingConfig(cfg billing.Config) {
 	if s.billing != nil {
 		s.billing.UpdateConfig(cfg)
 	}
+}
+// SetLavaProvider replaces the Lava payment provider instance.
+func (s *Server) SetLavaProvider(p billing.PaymentProvider) {
+	s.lava = p
 }
 
 // Token returns the secret bearer token. It is written into the lockfile
@@ -169,6 +175,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/billing/yookassa/create", s.handleYookassaCreate)
 	s.mux.HandleFunc("GET /v1/billing/yookassa/status", s.handleYookassaStatus)
 	s.mux.HandleFunc("POST /v1/billing/yookassa/webhook", s.handleYookassaWebhook)
+
+	// Lava payment endpoints
+	s.mux.HandleFunc("POST /v1/billing/lava/create", s.handleLavaCreate)
+	s.mux.HandleFunc("GET /v1/billing/lava/status/{id}", s.handleLavaStatus)
+	s.mux.HandleFunc("POST /v1/billing/lava/webhook", s.handleLavaWebhook)
 
 	// Promo codes
 	s.mux.HandleFunc("POST /v1/promo/create", s.handlePromoCreate)
