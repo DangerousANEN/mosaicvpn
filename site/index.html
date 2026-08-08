@@ -157,6 +157,7 @@
     <nav class="nav-links">
       <a href="#downloads">Загрузки</a>
       <a href="#features">Возможности</a>
+      <a href="#groups">Группы</a>
       <a href="#protocols">Протоколы</a>
       <a href="#install">Установка</a>
     </nav>
@@ -198,16 +199,16 @@
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5 10 4.6v6.9H3V5.5Zm0 13L10 19.4v-6.8H3v5.9Zm8-14.1L21 3v8.5h-10V4.4Zm0 15.2L21 21v-8.4h-10v7Z"/></svg>
           <h3>Windows</h3>
         </div>
-        <div class="dl-meta">x64 · Windows 10/11 <span class="badge">Установщик</span></div>
+        <div class="dl-meta">x64 · Windows 10/11 <span class="badge">ZIP-архив</span></div>
         <p class="dl-desc">
-          Полный установщик: GUI-клиент, демон <code>mosaicd</code> и движок sing-box.
-          Kill switch на WFP, автозапуск, иконка в системном трее.
+          Портативный архив: GUI-клиент, демон <code>mosaicd</code>, CLI <code>mosaic</code>
+          и движок sing-box. Kill switch на WFP, автозапуск, иконка в системном трее.
         </p>
-        <a class="dl-btn" href="/downloads/MosaicVPN-Setup-windows-x64.exe" download>
+        <a class="dl-btn" href="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.2.0/MosaicVPN-windows-x64.zip">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Скачать .exe
+          Скачать .zip
         </a>
-        <div class="dl-note" id="note-win">MosaicVPN-Setup-windows-x64.exe</div>
+        <div class="dl-note" id="note-win">MosaicVPN-windows-x64.zip · 40 МБ</div>
       </div>
 
       <!-- Linux -->
@@ -218,14 +219,14 @@
         </div>
         <div class="dl-meta">x86_64 · glibc 2.31+ <span class="badge">tar.gz</span></div>
         <p class="dl-desc">
-          Архив с GTK-клиентом, демоном и CLI <code>mosaic</code>.
+          Архив с GTK-клиентом, демоном, CLI <code>mosaic</code> и движком sing-box.
           Автозапуск через <code>~/.config/autostart</code>, локальный SOCKS/HTTP-прокси.
         </p>
-        <a class="dl-btn" href="/downloads/MosaicVPN-linux-x86_64.tar.gz" download>
+        <a class="dl-btn" href="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.2.0/MosaicVPN-linux-x86_64.tar.gz">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Скачать .tar.gz
         </a>
-        <div class="dl-note" id="note-linux">MosaicVPN-linux-x86_64.tar.gz</div>
+        <div class="dl-note" id="note-linux">MosaicVPN-linux-x86_64.tar.gz · 37 МБ</div>
       </div>
 
       <!-- Android -->
@@ -234,16 +235,16 @@
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.6 9.5c-.5 0-.9.4-.9.9v4.4c0 .5.4.9.9.9s.9-.4.9-.9v-4.4c0-.5-.4-.9-.9-.9Zm-11.2 0c-.5 0-.9.4-.9.9v4.4c0 .5.4.9.9.9s.9-.4.9-.9v-4.4c0-.5-.4-.9-.9-.9Zm1.5 0v6.2c0 .4.3.8.8.8h.8v2.1c0 .5.4.9.9.9s.9-.4.9-.9v-2.1h1.4v2.1c0 .5.4.9.9.9s.9-.4.9-.9v-2.1h.8c.4 0 .8-.3.8-.8V9.5H7.9Zm6.6-4.9.7-1.2a.2.2 0 0 0-.1-.3.2.2 0 0 0-.3.1l-.7 1.2a4.9 4.9 0 0 0-3.8 0l-.7-1.2a.2.2 0 0 0-.3-.1.2.2 0 0 0-.1.3l.7 1.2A4.2 4.2 0 0 0 7.9 8.4h8.2a4.2 4.2 0 0 0-1.6-3.8ZM10 6.9a.4.4 0 1 1 0-.8.4.4 0 0 1 0 .8Zm4 0a.4.4 0 1 1 0-.8.4.4 0 0 1 0 .8Z"/></svg>
           <h3>Android</h3>
         </div>
-        <div class="dl-meta">arm64-v8a · Android 6.0+ <span class="badge">APK</span></div>
+        <div class="dl-meta">arm64 · arm32 · x86_64 · Android 7.0+ <span class="badge">APK</span></div>
         <p class="dl-desc">
           Мобильный клиент MosaicBox. Тот же интерфейс и подписки, что и на десктопе,
           адаптированные под сенсорный ввод.
         </p>
-        <a class="dl-btn" href="/downloads/MosaicBox-android.apk" download>
+        <a class="dl-btn" href="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.2.0/MosaicBox-android.apk">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Скачать .apk
         </a>
-        <div class="dl-note" id="note-android">MosaicBox-android.apk</div>
+        <div class="dl-note" id="note-android">MosaicBox-android.apk · 66 МБ</div>
       </div>
 
     </div>
@@ -290,10 +291,51 @@
     </div>
   </section>
 
+  <!-- ─── GROUPS ────────────────────────────────────────────── -->
+  <section id="groups">
+    <div class="sec-head">
+      <div class="fig">Раздел III</div>
+      <h2>Смарт-группы</h2>
+      <p>Провайдер описывает пул станций — клиент сам выбирает лучшую</p>
+    </div>
+    <div class="feat-grid">
+      <div class="feat">
+        <span class="ico">🎯</span>
+        <h3>urltest</h3>
+        <p>Станция с наименьшей задержкой. Клиент периодически пингует весь пул и переключается на самую быструю.</p>
+      </div>
+      <div class="feat">
+        <span class="ico">⚖️</span>
+        <h3>weighted_round_robin</h3>
+        <p>Распределение по весам: нагруженные станции получают меньше подключений. Оценка считается как задержка, делённая на вес.</p>
+      </div>
+      <div class="feat">
+        <span class="ico">🪂</span>
+        <h3>fallback</h3>
+        <p>Строгий приоритет по списку. Пока первая станция жива — трафик идёт через неё, при падении подхватывает следующая.</p>
+      </div>
+      <div class="feat">
+        <span class="ico">📍</span>
+        <h3>direct_node</h3>
+        <p>Одна конкретная станция без балансировки. Если она недоступна, группа честно возвращает ошибку вместо тихой подмены.</p>
+      </div>
+      <div class="feat">
+        <span class="ico">🔑</span>
+        <h3>Уровни доступа</h3>
+        <p>Группа помечается тиром <code>free</code>, <code>pro</code> или <code>vip</code>. Станции выше своего уровня клиенту не отдаются.</p>
+      </div>
+      <div class="feat">
+        <span class="ico">📡</span>
+        <h3>Проверка живости</h3>
+        <p>Интервал пинга, число попыток и задержка переключения задаются на каждую группу отдельно. Манифест кэшируется — без сети клиент работает на последнем известном.</p>
+      </div>
+    </div>
+  </section>
+
   <!-- ─── PROTOCOLS ─────────────────────────────────────────── -->
   <section id="protocols">
     <div class="sec-head">
-      <div class="fig">Раздел III</div>
+      <div class="fig">Раздел IV</div>
       <h2>Протоколы и форматы</h2>
       <p>Что клиент понимает из коробки</p>
     </div>
@@ -304,11 +346,12 @@
         </thead>
         <tbody>
           <tr><td>VLESS</td><td class="mono">TLS · Reality · ws · grpc · xhttp</td><td>Поддерживается</td></tr>
+          <tr><td>VMess</td><td class="mono">TCP · ws · grpc</td><td>Поддерживается</td></tr>
           <tr><td>Hysteria2</td><td class="mono">QUIC</td><td>Поддерживается</td></tr>
           <tr><td>Shadowsocks</td><td class="mono">TCP · UDP</td><td>Поддерживается</td></tr>
           <tr><td>Trojan</td><td class="mono">TLS</td><td>Поддерживается</td></tr>
-          <tr><td>Naive</td><td class="mono">HTTP/2</td><td>В планах</td></tr>
-          <tr><td>AmneziaWG</td><td class="mono">WireGuard</td><td>В планах</td></tr>
+          <tr><td>Naive</td><td class="mono">HTTP/2</td><td>Поддерживается</td></tr>
+          <tr><td>AmneziaWG</td><td class="mono">WireGuard</td><td>Поддерживается</td></tr>
         </tbody>
       </table>
     </div>
@@ -317,7 +360,7 @@
   <!-- ─── INSTALL ───────────────────────────────────────────── -->
   <section id="install">
     <div class="sec-head">
-      <div class="fig">Раздел IV</div>
+      <div class="fig">Раздел V</div>
       <h2>Установка</h2>
       <p>Три шага до первого подключения</p>
     </div>
@@ -325,7 +368,7 @@
       <div class="step">
         <div class="n">1</div>
         <h4>Установите клиент</h4>
-        <p>Windows — запустите установщик. Android — разрешите установку из этого источника. Linux — распакуйте архив:</p>
+        <p>Windows — распакуйте архив и запустите <code>mosaic_vpn.exe</code>. Android — разрешите установку из этого источника. Linux — распакуйте архив:</p>
         <pre>tar -xzf MosaicVPN-linux-x86_64.tar.gz
 cd MosaicVPN
 ./mosaic_vpn</pre>
