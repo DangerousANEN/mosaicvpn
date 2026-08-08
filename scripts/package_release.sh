@@ -60,16 +60,31 @@ if [ -d "$LIN_SRC" ]; then
   D="$STAGE/MosaicVPN"
   mkdir -p "$D"
   cp -r "$LIN_SRC"/* "$D"/
-  [ -f "$ROOT/build/mosaicd_linux_amd64" ] && cp "$ROOT/build/mosaicd_linux_amd64" "$D/mosaicd" && chmod +x "$D/mosaicd"
-  [ -f "$ROOT/build/mosaic_linux_amd64" ]  && cp "$ROOT/build/mosaic_linux_amd64"  "$D/mosaic"  && chmod +x "$D/mosaic"
+  # Exec bits are set by make_linux_tar.py below, not here: chmod is a no-op on
+  # NTFS under git-bash.
+  [ -f "$ROOT/build/mosaicd_linux_amd64" ] && cp "$ROOT/build/mosaicd_linux_amd64" "$D/mosaicd"
+  [ -f "$ROOT/build/mosaic_linux_amd64" ]  && cp "$ROOT/build/mosaic_linux_amd64"  "$D/mosaic"
   # Same engine requirement as Windows — see the note in the block above.
   if [ -f "$ROOT/build/sing-box_linux_amd64" ]; then
-    cp "$ROOT/build/sing-box_linux_amd64" "$D/sing-box" && chmod +x "$D/sing-box"
+    cp "$ROOT/build/sing-box_linux_amd64" "$D/sing-box"
   else
     echo "FAIL linux    (sing-box_linux_amd64 not found — archive would ship without the VPN engine)" >&2
     exit 1
   fi
-  ( cd "$STAGE" && tar -czf "$OUT/MosaicVPN-linux-x86_64.tar.gz" MosaicVPN )
+  # NTFS under git-bash does not carry a POSIX exec bit, so `chmod +x` above is
+  # a no-op and a plain `tar -czf` records 0644 — leaving users with
+  # "Permission denied" after extracting. Build the archive in Python so the
+  # four executables get 0755 while data/ and lib/ payload stays 0644.
+  #
+  # Paths go through cygpath: this may be Windows python, which cannot read
+  # MSYS-style /c/... paths.
+  winpath() { cygpath -w "$1" 2>/dev/null || printf '%s' "$1"; }
+  if ! python "$(winpath "$ROOT/scripts/make_linux_tar.py")" \
+              "$(winpath "$D")" \
+              "$(winpath "$OUT/MosaicVPN-linux-x86_64.tar.gz")"; then
+    echo "FAIL linux    (tar build failed)" >&2
+    exit 1
+  fi
   rm -rf "$D"
   echo "OK   linux    -> MosaicVPN-linux-x86_64.tar.gz"
   ok=$((ok+1))
