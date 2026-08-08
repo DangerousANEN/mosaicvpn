@@ -66,19 +66,16 @@ func TestAddSubscriptionAndServers(t *testing.T) {
 	}
 }
 
-func TestUpdateSubscriptionByURLDeduplicates(t *testing.T) {
+func TestSubscriptionByURLAllowsDuplicates(t *testing.T) {
 	s := newStore(t)
 	a, _ := s.AddOrUpdateSubscription(proto.Subscription{URL: "u", Name: "A"})
 	b, _ := s.AddOrUpdateSubscription(proto.Subscription{URL: "u", Name: "B"})
-	if a.ID != b.ID {
-		t.Fatalf("expected stable ID across same-URL adds, got %q vs %q", a.ID, b.ID)
+	if a.ID == b.ID {
+		t.Fatalf("expected different IDs for same-URL adds, got same: %q", a.ID)
 	}
 	snap := s.Snapshot()
-	if len(snap.Subscriptions) != 1 {
-		t.Fatalf("expected 1 subscription, got %d", len(snap.Subscriptions))
-	}
-	if snap.Subscriptions[0].Name != "B" {
-		t.Fatalf("expected updated name B, got %q", snap.Subscriptions[0].Name)
+	if len(snap.Subscriptions) != 2 {
+		t.Fatalf("expected 2 subscriptions, got %d", len(snap.Subscriptions))
 	}
 }
 
@@ -124,3 +121,124 @@ func TestRules(t *testing.T) {
 		t.Fatalf("expected only r2 after deletion: %+v", snap.Rules)
 	}
 }
+
+func TestProfilesRouteProfilesAndWARP(t *testing.T) {
+	s := newStore(t)
+
+	// 1. Initial State / Default check for Profiles / RouteProfiles / WARP
+	snap := s.Snapshot()
+	if len(snap.Profiles) != 0 {
+		t.Fatalf("expected empty initial profiles, got %d", len(snap.Profiles))
+	}
+	if len(snap.RouteProfiles) != 0 {
+		t.Fatalf("expected empty initial route profiles, got %d", len(snap.RouteProfiles))
+	}
+	if snap.WARP.Enabled {
+		t.Fatal("expected WARP to be disabled by default")
+	}
+
+	// 2. Profile CRUD
+	p, err := s.AddOrUpdateProfile(proto.Profile{
+		Name:       "Test Profile",
+		TunnelMode: "tun",
+		KillSwitch: true,
+	})
+	if err != nil {
+		t.Fatalf("AddProfile: %v", err)
+	}
+	if p.ID == "" {
+		t.Fatal("expected profile ID to be generated")
+	}
+	if p.CreatedAt.IsZero() || p.UpdatedAt.IsZero() {
+		t.Fatal("expected profile timestamps to be set")
+	}
+
+	found, ok := s.FindProfile(p.ID)
+	if !ok || found.Name != "Test Profile" {
+		t.Fatalf("FindProfile failed: found=%t, val=%+v", ok, found)
+	}
+
+	// Update Profile
+	p.Name = "Updated Profile Name"
+	p2, err := s.AddOrUpdateProfile(p)
+	if err != nil {
+		t.Fatalf("UpdateProfile: %v", err)
+	}
+	if p2.Name != "Updated Profile Name" {
+		t.Fatalf("expected updated name, got %q", p2.Name)
+	}
+	if p2.UpdatedAt.Before(p.UpdatedAt) {
+		t.Fatal("expected UpdatedAt to be updated")
+	}
+
+	// Set/Get Active Profile
+	if err := s.SetActiveProfile(p2.ID); err != nil {
+		t.Fatalf("SetActiveProfile failed: %v", err)
+	}
+	snap = s.Snapshot()
+	if snap.ActiveProfileID != p2.ID {
+		t.Fatalf("expected active profile ID %q, got %q", p2.ID, snap.ActiveProfileID)
+	}
+
+	// 3. RouteProfile CRUD
+	rp, err := s.AddOrUpdateRouteProfile(proto.RouteProfile{
+		Name:        "Test Route Profile",
+		Description: "A test route profile",
+		RuleIDs:     []string{"rule-1", "rule-2"},
+	})
+	if err != nil {
+		t.Fatalf("AddRouteProfile: %v", err)
+	}
+	if rp.ID == "" {
+		t.Fatal("expected route profile ID to be generated")
+	}
+	if rp.CreatedAt.IsZero() || rp.UpdatedAt.IsZero() {
+		t.Fatal("expected route profile timestamps to be set")
+	}
+
+	// Update RouteProfile
+	rp.Name = "Updated Route Profile"
+	rp2, err := s.AddOrUpdateRouteProfile(rp)
+	if err != nil {
+		t.Fatalf("UpdateRouteProfile: %v", err)
+	}
+	if rp2.Name != "Updated Route Profile" {
+		t.Fatalf("expected updated route profile name, got %q", rp2.Name)
+	}
+
+	// 4. WARP CRUD
+	warpSetting := proto.WARPConfig{
+		Enabled:    true,
+		Mode:       "warp+",
+		LicenseKey: "somekey",
+	}
+	if err := s.SetWARP(warpSetting); err != nil {
+		t.Fatalf("SetWARP: %v", err)
+	}
+	gotWarp := s.GetWARP()
+	if !gotWarp.Enabled || gotWarp.Mode != "warp+" || gotWarp.LicenseKey != "somekey" {
+		t.Fatalf("GetWARP returned incorrect data: %+v", gotWarp)
+	}
+
+	// 5. Deletions
+	if err := s.DeleteProfile(p2.ID); err != nil {
+		t.Fatalf("DeleteProfile: %v", err)
+	}
+	if _, ok := s.FindProfile(p2.ID); ok {
+		t.Fatal("expected profile to be deleted")
+	}
+	// Active profile should be cleared if the active profile was deleted
+	snap = s.Snapshot()
+	if snap.ActiveProfileID != "" {
+		t.Fatalf("expected active profile to be cleared after deletion, got %q", snap.ActiveProfileID)
+	}
+
+	if err := s.DeleteRouteProfile(rp2.ID); err != nil {
+		t.Fatalf("DeleteRouteProfile: %v", err)
+	}
+	snap = s.Snapshot()
+	if len(snap.RouteProfiles) != 0 {
+		t.Fatal("expected route profile to be deleted")
+	}
+}
+

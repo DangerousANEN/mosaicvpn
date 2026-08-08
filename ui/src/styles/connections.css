@@ -1,0 +1,180 @@
+/* ----- connections screen ------------------------------------------------ */
+
+.conn-frame {
+  padding: 24px 32px 48px;
+  max-width: 1100px;
+}
+
+.conn-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.conn-toolbar .spacer { flex: 1; }
+
+.conn-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-mute, #888);
+  cursor: pointer;
+  user-select: none;
+}
+
+.conn-toggle input { accent-color: var(--accent, #c47); }
+
+.conn-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.conn-table th {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--hair, rgba(255,255,255,0.08));
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-mute, #888);
+  font-weight: 400;
+}
+
+.conn-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--hair, rgba(255,255,255,0.04));
+}
+
+.conn-table tr:hover td {
+  background: rgba(255,255,255,0.02);
+}
+
+.conn-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.conn-badge.tcp {
+  background: rgba(100, 149, 237, 0.15);
+  color: #6495ed;
+}
+
+.conn-badge.udp {
+  background: rgba(218, 165, 32, 0.15);
+  color: #daa520;
+}
+
+.conn-outbound {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.conn-outbound.proxy { color: #6cf; }
+.conn-outbound.direct { color: #6c6; }
+.conn-outbound.block { color: #f66; }
+
+.conn-dim { color: var(--ink-mute, #888); font-size: 11px; }
+
+.conn-empty {
+  text-align: center;
+  padding: 64px 0;
+  color: var(--ink-mute, #888);
+  font-size: 13px;
+  font-style: italic;
+}
+
+.conn-close-btn {
+  font-size: 10px;
+  color: var(--ink-mute, #888);
+  background: none;
+  border: 1px solid var(--hair, rgba(255,255,255,0.08));
+  border-radius: 3px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.conn-close-btn:hover {
+  color: #f66;
+  border-color: rgba(255, 80, 80, 0.3);
+}
+
+/* ----- stats screen ------------------------------------------------------ */
+
+.stats-frame {
+  padding: 24px 32px 48px;
+  max-width: 900px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.stat-card {
+  padding: 16px 18px;
+  border: 1px solid var(--hair, rgba(255,255,255,0.08));
+  border-radius: 6px;
+  background: rgba(255,255,255,0.02);
+}
+
+.stat-card .lab {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-mute, #888);
+  margin-bottom: 6px;
+}
+
+.stat-card .val {
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-card .sub {
+  font-size: 10px;
+  color: var(--ink-mute, #888);
+  margin-top: 2px;
+}
+
+.stats-chart {
+  margin-bottom: 24px;
+}
+
+.stats-chart .lab {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-mute, #888);
+  margin-bottom: 8px;
+}
+
+.stats-chart svg {
+  width: 100%;
+  height: 120px;
+}
+
+.stats-bar { fill: rgba(100, 200, 255, 0.5); }
+.stats-bar.up { fill: rgba(218, 165, 32, 0.5); }
+
+.stats-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.stats-actions .spacer { flex: 1; }

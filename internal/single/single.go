@@ -8,9 +8,10 @@
 //  2. The lockfile content also includes the daemon endpoint (host, port,
 //     token, pid). Clients read this file to discover where the daemon
 //     listens and to authenticate.
-//  3. On Windows the daemon additionally creates a named mutex
-//     `Global\Mosaic.daemon` (see single_windows.go); on other platforms
-//     the flock is sufficient.
+//  3. On Windows the daemon additionally creates a named mutex derived from
+//     the lockfile path — `Global\Mosaic.daemon.<hash>` (see
+//     single_windows.go) — so that instances using different data dirs do
+//     not falsely collide; on other platforms the flock is sufficient.
 //
 // If another instance is already running, Acquire returns ErrAlreadyRunning
 // along with the previous endpoint info parsed from the lockfile.

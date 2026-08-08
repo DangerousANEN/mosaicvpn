@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="ru" dir="ltr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MosaicVPN — атлас приватных маршрутов</title>
+<meta name="description" content="MosaicVPN — кроссплатформенный VPN-клиент: VLESS/Reality, Hysteria2, Shadowsocks. Локальный демон sing-box, kill switch, карта станций. Windows, Linux, Android." />
+<meta name="robots" content="index, follow" />
+<link rel="canonical" href="https://sub.zxc1x1.ru/" />
+<meta name="theme-color" content="#F4EFE6" />
+
+<meta property="og:type" content="website" />
+<meta property="og:title" content="MosaicVPN — атлас приватных маршрутов" />
+<meta property="og:description" content="Кроссплатформенный VPN-клиент на sing-box: VLESS/Reality, Hysteria2, Shadowsocks. Windows, Linux, Android." />
+<meta property="og:url" content="https://sub.zxc1x1.ru/" />
+<meta name="twitter:card" content="summary_large_image" />
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23B85C38'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23F4EFE6' stroke-width='2'/%3E%3Cpath d='M16 5 L19 16 L16 27 L13 16 Z' fill='%23F4EFE6'/%3E%3C/svg%3E" />
+
+<style>
+  :root{
+    --bg:#F4EFE6; --card:#EDE5D6; --elev:#E4DAC6; --ink:#2B2620; --hover:#D9CFB8;
+    --border:#C4B89E; --border-light:#D4C9B0; --border-ink:#5C4E3A;
+    --text:#2B2620; --text-2:#6B5D4A; --muted:#9A8B72; --on-ink:#F4EFE6;
+    --accent:#B85C38; --accent-hi:#D4724A; --success:#5B7A3A; --warn:#C47830;
+    --serif:'Iowan Old Style','Palatino Linotype','Book Antiqua',Georgia,serif;
+    --mono:'JetBrains Mono','SFMono-Regular',Consolas,'Liberation Mono',monospace;
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    --maxw:1120px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg); color:var(--text); font-family:var(--sans);
+    line-height:1.6; -webkit-font-smoothing:antialiased;
+    background-image:
+      linear-gradient(rgba(196,184,158,.14) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(196,184,158,.14) 1px, transparent 1px);
+    background-size:32px 32px;
+  }
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 24px}
+  a{color:inherit}
+
+  /* header */
+  header{
+    position:sticky; top:0; z-index:50; backdrop-filter:blur(8px);
+    background:rgba(244,239,230,.86); border-bottom:1px solid var(--border);
+  }
+  .nav{display:flex; align-items:center; gap:16px; height:64px}
+  .brand{display:flex; align-items:center; gap:10px; font-family:var(--serif); font-size:20px; font-weight:600; letter-spacing:.2px}
+  .brand .dot{color:var(--accent)}
+  .nav-links{margin-left:auto; display:flex; gap:22px; font-size:14px; color:var(--text-2)}
+  .nav-links a{text-decoration:none}
+  .nav-links a:hover{color:var(--accent)}
+  @media(max-width:720px){ .nav-links{display:none} }
+
+  /* hero */
+  .hero{padding:76px 0 56px; text-align:center}
+  .eyebrow{
+    display:inline-block; font-family:var(--mono); font-size:12px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--accent);
+    border:1px solid var(--border); background:var(--card);
+    padding:6px 14px; border-radius:999px; margin-bottom:22px;
+  }
+  h1{font-family:var(--serif); font-size:clamp(34px,6vw,60px); line-height:1.1; font-weight:600; letter-spacing:-.5px}
+  h1 .accent{color:var(--accent)}
+  .sub{max-width:660px; margin:20px auto 0; font-size:clamp(15px,2vw,18px); color:var(--text-2)}
+  .cta{display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top:34px}
+  .btn{
+    display:inline-flex; align-items:center; gap:9px; padding:13px 24px; border-radius:8px;
+    font-size:15px; font-weight:500; text-decoration:none; border:1px solid transparent;
+    transition:transform .12s ease, background .15s ease, box-shadow .15s ease;
+  }
+  .btn:hover{transform:translateY(-1px)}
+  .btn-primary{background:var(--ink); color:var(--on-ink); box-shadow:0 2px 0 var(--border-ink)}
+  .btn-primary:hover{background:#3a332b}
+  .btn-ghost{background:var(--card); color:var(--text); border-color:var(--border)}
+  .btn-ghost:hover{background:var(--hover)}
+
+  /* sections */
+  section{padding:64px 0; border-top:1px solid var(--border-light)}
+  .sec-head{text-align:center; margin-bottom:42px}
+  .sec-head h2{font-family:var(--serif); font-size:clamp(26px,4vw,36px); font-weight:600}
+  .sec-head p{color:var(--text-2); margin-top:10px}
+  .fig{font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-bottom:8px}
+
+  /* downloads */
+  .dl-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:20px}
+  .dl-card{
+    background:var(--card); border:1px solid var(--border); border-radius:12px; padding:26px;
+    display:flex; flex-direction:column; transition:border-color .15s ease, transform .15s ease;
+  }
+  .dl-card:hover{border-color:var(--accent); transform:translateY(-2px)}
+  .dl-os{display:flex; align-items:center; gap:12px; margin-bottom:6px}
+  .dl-os svg{width:26px; height:26px; flex:none; color:var(--accent)}
+  .dl-os h3{font-family:var(--serif); font-size:21px; font-weight:600}
+  .dl-meta{font-family:var(--mono); font-size:12px; color:var(--muted); margin-bottom:14px}
+  .dl-desc{font-size:14px; color:var(--text-2); margin-bottom:18px; flex:1}
+  .dl-desc code{font-family:var(--mono); font-size:12px; background:var(--elev); padding:2px 6px; border-radius:4px}
+  .dl-btn{
+    display:flex; align-items:center; justify-content:center; gap:8px; width:100%;
+    padding:12px 16px; border-radius:8px; background:var(--ink); color:var(--on-ink);
+    text-decoration:none; font-size:14px; font-weight:500; transition:background .15s ease;
+  }
+  .dl-btn:hover{background:#3a332b}
+  .dl-note{margin-top:10px; font-family:var(--mono); font-size:11px; color:var(--muted); text-align:center}
+  .badge{
+    font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase;
+    padding:3px 8px; border-radius:999px; border:1px solid var(--border); color:var(--text-2); background:var(--elev);
+  }
+
+  /* features */
+  .feat-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:22px}
+  .feat{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:24px}
+  .feat h3{font-family:var(--serif); font-size:18px; margin-bottom:8px; font-weight:600}
+  .feat p{font-size:14px; color:var(--text-2)}
+  .feat .ico{font-size:22px; margin-bottom:12px; display:block}
+
+  /* specs table */
+  .specs{background:var(--card); border:1px solid var(--border); border-radius:12px; overflow:hidden}
+  table{width:100%; border-collapse:collapse; font-size:14px}
+  th,td{padding:13px 18px; text-align:left; border-bottom:1px solid var(--border-light)}
+  th{background:var(--elev); font-family:var(--mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-2)}
+  tr:last-child td{border-bottom:none}
+  td.mono{font-family:var(--mono); font-size:13px; color:var(--text-2)}
+
+  /* install steps */
+  .steps{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:20px}
+  .step{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:22px}
+  .step .n{
+    font-family:var(--mono); font-size:12px; color:var(--accent); border:1px solid var(--accent);
+    width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin-bottom:12px;
+  }
+  .step h4{font-family:var(--serif); font-size:16px; margin-bottom:8px; font-weight:600}
+  .step p{font-size:13.5px; color:var(--text-2)}
+  pre{
+    background:var(--ink); color:var(--on-ink); border-radius:8px; padding:14px 16px;
+    font-family:var(--mono); font-size:12.5px; overflow-x:auto; margin-top:12px; line-height:1.7;
+  }
+
+  footer{border-top:1px solid var(--border); padding:34px 0; text-align:center; color:var(--muted); font-size:13px}
+  footer a{color:var(--text-2)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <div class="brand">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="14" fill="#B85C38"/>
+        <circle cx="16" cy="16" r="9" fill="none" stroke="#F4EFE6" stroke-width="2"/>
+        <path d="M16 5 L19 16 L16 27 L13 16 Z" fill="#F4EFE6"/>
+      </svg>
+      MosaicVPN<span class="dot">.</span>
+    </div>
+    <nav class="nav-links">
+      <a href="#downloads">Загрузки</a>
+      <a href="#features">Возможности</a>
+      <a href="#protocols">Протоколы</a>
+      <a href="#install">Установка</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="hero">
+    <span class="eyebrow">Atlas of routes · Edition I</span>
+    <h1>Атлас приватных<br/><span class="accent">маршрутов</span></h1>
+    <p class="sub">
+      Кроссплатформенный VPN-клиент на движке sing-box. Импортирует любые подписки,
+      резолвит каждую станцию через GeoIP и наносит её на настоящую карту мира.
+      Локальный демон, kill switch, без централизованного релея.
+    </p>
+    <div class="cta">
+      <a class="btn btn-primary" href="#downloads">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Скачать клиент
+      </a>
+      <a class="btn btn-ghost" href="#features">Что внутри</a>
+    </div>
+  </div>
+
+  <!-- ─── DOWNLOADS ─────────────────────────────────────────── -->
+  <section id="downloads">
+    <div class="sec-head">
+      <div class="fig">Раздел I</div>
+      <h2>Загрузки</h2>
+      <p>Клиент MosaicBox и демон <code>mosaicd</code> для трёх платформ</p>
+    </div>
+
+    <div class="dl-grid">
+
+      <!-- Windows -->
+      <div class="dl-card">
+        <div class="dl-os">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5 10 4.6v6.9H3V5.5Zm0 13L10 19.4v-6.8H3v5.9Zm8-14.1L21 3v8.5h-10V4.4Zm0 15.2L21 21v-8.4h-10v7Z"/></svg>
+          <h3>Windows</h3>
+        </div>
+        <div class="dl-meta">x64 · Windows 10/11 <span class="badge">Установщик</span></div>
+        <p class="dl-desc">
+          Полный установщик: GUI-клиент, демон <code>mosaicd</code> и движок sing-box.
+          Kill switch на WFP, автозапуск, иконка в системном трее.
+        </p>
+        <a class="dl-btn" href="/downloads/MosaicVPN-Setup-windows-x64.exe" download>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Скачать .exe
+        </a>
+        <div class="dl-note" id="note-win">MosaicVPN-Setup-windows-x64.exe</div>
+      </div>
+
+      <!-- Linux -->
+      <div class="dl-card">
+        <div class="dl-os">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2c-2.2 0-3.6 1.8-3.5 4.2.1 1.6-.2 2.5-1 3.7-1.1 1.7-1.9 3.2-1.9 4.9 0 .9.3 1.6.8 2.2-.4.5-.6 1-.5 1.5.2 1 1.3 1.5 3 1.7 1 .1 1.7.5 2.4.9.6.4 1.2.6 1.9.6s1.3-.2 1.9-.6c.7-.4 1.4-.8 2.4-.9 1.7-.2 2.8-.7 3-1.7.1-.5-.1-1-.5-1.5.5-.6.8-1.3.8-2.2 0-1.7-.8-3.2-1.9-4.9-.8-1.2-1.1-2.1-1-3.7C15.6 3.8 14.2 2 12 2Zm-1.6 4.1c.4 0 .7.4.7.9s-.3.9-.7.9-.7-.4-.7-.9.3-.9.7-.9Zm3.2 0c.4 0 .7.4.7.9s-.3.9-.7.9-.7-.4-.7-.9.3-.9.7-.9ZM12 9.4c.9 0 1.8.4 1.8.9 0 .3-.4.6-.9.8-.3.1-.6.3-.9.3s-.6-.2-.9-.3c-.5-.2-.9-.5-.9-.8 0-.5.9-.9 1.8-.9Z"/></svg>
+          <h3>Linux</h3>
+        </div>
+        <div class="dl-meta">x86_64 · glibc 2.31+ <span class="badge">tar.gz</span></div>
+        <p class="dl-desc">
+          Архив с GTK-клиентом, демоном и CLI <code>mosaic</code>.
+          Автозапуск через <code>~/.config/autostart</code>, локальный SOCKS/HTTP-прокси.
+        </p>
+        <a class="dl-btn" href="/downloads/MosaicVPN-linux-x86_64.tar.gz" download>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Скачать .tar.gz
+        </a>
+        <div class="dl-note" id="note-linux">MosaicVPN-linux-x86_64.tar.gz</div>
+      </div>
+
+      <!-- Android -->
+      <div class="dl-card">
+        <div class="dl-os">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.6 9.5c-.5 0-.9.4-.9.9v4.4c0 .5.4.9.9.9s.9-.4.9-.9v-4.4c0-.5-.4-.9-.9-.9Zm-11.2 0c-.5 0-.9.4-.9.9v4.4c0 .5.4.9.9.9s.9-.4.9-.9v-4.4c0-.5-.4-.9-.9-.9Zm1.5 0v6.2c0 .4.3.8.8.8h.8v2.1c0 .5.4.9.9.9s.9-.4.9-.9v-2.1h1.4v2.1c0 .5.4.9.9.9s.9-.4.9-.9v-2.1h.8c.4 0 .8-.3.8-.8V9.5H7.9Zm6.6-4.9.7-1.2a.2.2 0 0 0-.1-.3.2.2 0 0 0-.3.1l-.7 1.2a4.9 4.9 0 0 0-3.8 0l-.7-1.2a.2.2 0 0 0-.3-.1.2.2 0 0 0-.1.3l.7 1.2A4.2 4.2 0 0 0 7.9 8.4h8.2a4.2 4.2 0 0 0-1.6-3.8ZM10 6.9a.4.4 0 1 1 0-.8.4.4 0 0 1 0 .8Zm4 0a.4.4 0 1 1 0-.8.4.4 0 0 1 0 .8Z"/></svg>
+          <h3>Android</h3>
+        </div>
+        <div class="dl-meta">arm64-v8a · Android 6.0+ <span class="badge">APK</span></div>
+        <p class="dl-desc">
+          Мобильный клиент MosaicBox. Тот же интерфейс и подписки, что и на десктопе,
+          адаптированные под сенсорный ввод.
+        </p>
+        <a class="dl-btn" href="/downloads/MosaicBox-android.apk" download>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Скачать .apk
+        </a>
+        <div class="dl-note" id="note-android">MosaicBox-android.apk</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ─── FEATURES ──────────────────────────────────────────── -->
+  <section id="features">
+    <div class="sec-head">
+      <div class="fig">Раздел II</div>
+      <h2>Возможности</h2>
+      <p>Реальный движок, а не обёртка над чужим приложением</p>
+    </div>
+    <div class="feat-grid">
+      <div class="feat">
+        <span class="ico">🗺️</span>
+        <h3>Карта станций</h3>
+        <p>Настоящая равнопромежуточная проекция мира с пином на каждую станцию. GeoIP резолвится автоматически и кэшируется локально.</p>
+      </div>
+      <div class="feat">
+        <span class="ico">⚙️</span>
+        <h3>Движок sing-box</h3>
+        <p>Кнопка «Подключить» реально поднимает локальный прокси на <code>127.0.0.1:2080</code> (SOCKS) и <code>:2081</code> (HTTP). Никаких заглушек.</p>
+      </div>
+      <div class="feat">
+        <span class="ico">📥</span>
+        <h3>Любые подписки</h3>
+        <p>Автоопределение формата: sing-box JSON, Clash YAML, v2ray base64 и SIP008. Дедупликация узлов при импорте.</p>
+      </div>
+      <div class="feat">
+        <span class="ico">🛡️</span>
+        <h3>Kill switch</h3>
+        <p>Блокировка трафика на уровне WFP, если туннель упал. Локальная сеть обходит туннель по настройке.</p>
+      </div>
+      <div class="feat">
+        <span class="ico">🧭</span>
+        <h3>Правила маршрутизации</h3>
+        <p>Домены, IP-CIDR, GeoSite, GeoIP, процессы и порты с логикой AND/OR. Перетаскиванием меняется приоритет.</p>
+      </div>
+      <div class="feat">
+        <span class="ico">📊</span>
+        <h3>Замер скорости</h3>
+        <p>Тест текущего подключения или всей группы разом. Задержка и пропускная способность по каждой станции.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── PROTOCOLS ─────────────────────────────────────────── -->
+  <section id="protocols">
+    <div class="sec-head">
+      <div class="fig">Раздел III</div>
+      <h2>Протоколы и форматы</h2>
+      <p>Что клиент понимает из коробки</p>
+    </div>
+    <div class="specs">
+      <table>
+        <thead>
+          <tr><th>Протокол</th><th>Транспорт</th><th>Статус</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>VLESS</td><td class="mono">TLS · Reality · ws · grpc · xhttp</td><td>Поддерживается</td></tr>
+          <tr><td>Hysteria2</td><td class="mono">QUIC</td><td>Поддерживается</td></tr>
+          <tr><td>Shadowsocks</td><td class="mono">TCP · UDP</td><td>Поддерживается</td></tr>
+          <tr><td>Trojan</td><td class="mono">TLS</td><td>Поддерживается</td></tr>
+          <tr><td>Naive</td><td class="mono">HTTP/2</td><td>В планах</td></tr>
+          <tr><td>AmneziaWG</td><td class="mono">WireGuard</td><td>В планах</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ─── INSTALL ───────────────────────────────────────────── -->
+  <section id="install">
+    <div class="sec-head">
+      <div class="fig">Раздел IV</div>
+      <h2>Установка</h2>
+      <p>Три шага до первого подключения</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="n">1</div>
+        <h4>Установите клиент</h4>
+        <p>Windows — запустите установщик. Android — разрешите установку из этого источника. Linux — распакуйте архив:</p>
+        <pre>tar -xzf MosaicVPN-linux-x86_64.tar.gz
+cd MosaicVPN
+./mosaic_vpn</pre>
+      </div>
+      <div class="step">
+        <div class="n">2</div>
+        <h4>Добавьте подписку</h4>
+        <p>На вкладке «Станции» нажмите «Добавить источник» и вставьте ссылку на подписку. Формат определится автоматически, узлы появятся на карте.</p>
+      </div>
+      <div class="step">
+        <div class="n">3</div>
+        <h4>Подключитесь</h4>
+        <p>Кнопка «Engage Tunnel» на панели управления или «Быстрое подключение» в шапке — клиент сам выберет станцию с наименьшей задержкой.</p>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    MosaicVPN · Atlas of routes · Edition I<br/>
+    <a href="#downloads">Загрузки</a> · <a href="#install">Установка</a>
+  </div>
+</footer>
+
+</body>
+</html>

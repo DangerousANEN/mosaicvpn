@@ -16,8 +16,10 @@ use serde::{Deserialize, Serialize};
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager, RunEvent, WindowEvent,
+    Emitter, Listener, Manager, RunEvent, WindowEvent,
 };
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use tauri_plugin_deep_link::DeepLinkExt;
 
 /// DaemonProcess wraps the mosaicd child process spawned by the shell
 /// at startup. We hold it inside the Tauri AppHandle as managed state
@@ -94,11 +96,6 @@ fn daemon_endpoint() -> Result<DaemonEndpoint, String> {
     let dir = data_dir().ok_or_else(|| "could not determine data dir".to_string())?;
     let lock = dir.join("daemon.lock");
 
-    // The bundled mosaicd is launched concurrently with the GUI in
-    // setup(); on a fresh install the renderer often calls this
-    // command before mosaicd has had a chance to bind its port and
-    // write the lockfile. Poll for ~6s before giving up so the splash
-    // screen sees the endpoint as soon as it's ready.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(6);
     let mut last_err: Option<String> = None;
     loop {
@@ -116,6 +113,59 @@ fn daemon_endpoint() -> Result<DaemonEndpoint, String> {
         std::thread::sleep(std::time::Duration::from_millis(150));
     }
     Err(last_err.unwrap_or_else(|| format!("timed out waiting for {}", lock.display())))
+}
+
+/// read_clipboard — Tauri command that reads the system clipboard text.
+/// The UI calls this via invoke("read_clipboard") when the user pastes
+/// a VPN link, then sends it to the daemon via api.importFromClipboard().
+#[tauri::command]
+fn read_clipboard(
+    app: &tauri::AppHandle,
+) -> Result<String, String> {
+    app.clipboard()
+        .read_text()
+        .map_err(|e| format!("clipboard read failed: {e}"))
+}
+
+/// parse_deep_link — extract the raw VPN link from a mosaic:// URL.
+/// Format: mosaic://import/<base64-encoded-link>
+/// Returns the decoded raw link string.
+fn parse_deep_link(url: &str) -> Option<String> {
+    let prefix = "mosaic://import/";
+    let encoded = url.strip_prefix(prefix)?;
+    use std::convert::TryFrom;
+    // Strip any trailing slash or query params
+    let encoded = encoded.split('&').next().unwrap_or(encoded);
+    let bytes = base64_decode(encoded)?;
+    String::from_utf8(bytes).ok()
+}
+
+/// Minimal base64 URL-safe decoder (no external dep).
+fn base64_decode(input: &str) -> Option<Vec<u8>> {
+    const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let input: String = input.chars().filter(|c| !c.is_whitespace()).collect();
+    let input = input.replace('-', "+").replace('_', "/");
+    let padded = match input.len() % 4 {
+        2 => format!("{input}=="),
+        3 => format!("{input}="),
+        _ => input,
+    };
+    let bytes = padded.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len() * 3 / 4);
+    for chunk in bytes.chunks(4) {
+        if chunk.len() < 4 { break; }
+        let b = |c: u8| -> Option<u8> {
+            TABLE.iter().position(|&t| t == c).map(|p| p as u8)
+        };
+        let b0 = b(chunk[0])?;
+        let b1 = b(chunk[1])?;
+        let b2 = if chunk[2] != b'=' { b(chunk[2])? } else { 0 };
+        let b3 = if chunk[3] != b'=' { b(chunk[3])? } else { 0 };
+        out.push((b0 << 2) | (b1 >> 4));
+        if chunk[2] != b'=' { out.push((b1 << 4) | (b2 >> 2)); }
+        if chunk[3] != b'=' { out.push((b2 << 6) | b3); }
+    }
+    Some(out)
 }
 
 /// resolve_runtime_data_dir returns the directory the daemon should
@@ -214,9 +264,59 @@ fn spawn_bundled_daemon(app: &tauri::AppHandle) -> Option<Child> {
 fn main() {
     let daemon = DaemonProcess::new();
     tauri::Builder::default()
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(daemon)
-        .invoke_handler(tauri::generate_handler![daemon_endpoint])
+        .invoke_handler(tauri::generate_handler![daemon_endpoint, read_clipboard])
         .setup(|app| {
+            // ---- Deep-link handler (mosaic://import/<base64>) ----
+            // When the OS launches us with a mosaic:// URL, decode it
+            // and emit an event the frontend listens for.
+            let handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                for url in event.urls() {
+                    if let Some(raw) = parse_deep_link(url.as_str()) {
+                        let _ = handle.emit("import-link", &raw);
+                    }
+                }
+            });
+
+            // ---- Global shortcuts ----
+            // Ctrl+Shift+M — toggle window visibility
+            // Ctrl+Shift+D — disconnect (emit to frontend)
+            let toggle_keys = "Ctrl+Shift+M";
+            let disconnect_keys = "Ctrl+Shift+D";
+            let shortcut = |keys: &str| -> Result<Shortcut, String> {
+                keys.parse::<Shortcut>()
+                    .map_err(|e| format!("invalid shortcut {keys}: {e}"))
+            };
+
+            if let Ok(sc) = shortcut(toggle_keys) {
+                let h = app.handle().clone();
+                let _ = app.global_shortcut().register(sc, move |_app, _hotkey, event| {
+                    if event.state == ShortcutState::Pressed {
+                        if let Some(w) = h.get_webview_window("main") {
+                            if w.is_visible().unwrap_or(false) {
+                                let _ = w.hide();
+                            } else {
+                                let _ = w.show();
+                                let _ = w.set_focus();
+                            }
+                        }
+                    }
+                });
+            }
+
+            if let Ok(sc) = shortcut(disconnect_keys) {
+                let h = app.handle().clone();
+                let _ = app.global_shortcut().register(sc, move |_app, _hotkey, event| {
+                    if event.state == ShortcutState::Pressed {
+                        let _ = h.emit("disconnect", ());
+                    }
+                });
+            }
+
             // In release builds we ship mosaicd alongside the GUI and
             // launch it ourselves; in dev builds the binary is absent
             // and we expect the developer to run `scripts/dev.sh`.

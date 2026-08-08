@@ -6,13 +6,17 @@ import { Pool } from "./screens/Pool";
 import { Routing } from "./screens/Routing";
 import { Folio } from "./screens/Folio";
 import { Tray } from "./screens/Tray";
+import { Connections } from "./screens/Connections";
+import { Stats } from "./screens/Stats";
 
-type Screen = "main" | "routing" | "pool" | "folio" | "tray";
+type Screen = "main" | "routing" | "pool" | "folio" | "tray" | "connections" | "stats";
 
 const SCREENS: { id: Screen; label: string }[] = [
   { id: "main", label: "Atlas" },
   { id: "pool", label: "Pool" },
   { id: "routing", label: "Routing" },
+  { id: "connections", label: "Links" },
+  { id: "stats", label: "Stats" },
   { id: "folio", label: "Folio" },
   { id: "tray", label: "Tray" },
 ];
@@ -65,6 +69,8 @@ export function App(): JSX.Element {
       {screen === "main" ? <Main status={status} /> : null}
       {screen === "pool" ? <Pool activeServerId={status.server?.id} /> : null}
       {screen === "routing" ? <Routing /> : null}
+      {screen === "connections" ? <Connections /> : null}
+      {screen === "stats" ? <Stats /> : null}
       {screen === "folio" ? <Folio /> : null}
       {screen === "tray" ? <Tray status={status} /> : null}
     </div>
@@ -72,7 +78,7 @@ export function App(): JSX.Element {
 }
 
 function plateFor(s: Screen): string {
-  return { main: "IV", pool: "II", routing: "III", folio: "V", tray: "I" }[s];
+  return { main: "IV", pool: "II", routing: "III", folio: "V", tray: "I", connections: "VI", stats: "VII" }[s];
 }
 
 function plateSubtitleFor(s: Screen): string {
@@ -80,6 +86,8 @@ function plateSubtitleFor(s: Screen): string {
     main: "The world, projected",
     pool: "Stations & subscriptions",
     routing: "Rules & priorities",
+    connections: "Live connections",
+    stats: "Traffic & throughput",
     folio: "Preferences",
     tray: "System tray",
   }[s];

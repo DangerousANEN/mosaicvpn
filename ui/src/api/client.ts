@@ -6,12 +6,22 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  Connection,
   DaemonEndpoint,
+  DNSConfig,
+  IPInfo,
   Prefs,
+  Profile,
   Rule,
+  RouteProfile,
   Server,
+  SpeedTestResult,
   Status,
   Subscription,
+  TestResult,
+  TrafficStats,
+  WARPConfig,
+  ClipboardImport,
 } from "./types";
 
 let cached: DaemonEndpoint | null = null;
@@ -104,6 +114,62 @@ export const api = {
 
   getPrefs: () => request<Prefs>("GET", "/v1/prefs"),
   setPrefs: (prefs: Prefs) => request<Prefs>("PUT", "/v1/prefs", prefs),
+
+  // ---- Profiles ----
+  listProfiles: async () =>
+    arr(await request<Profile[]>("GET", "/v1/profiles")),
+  createProfile: (p: Partial<Profile>) =>
+    request<Profile>("POST", "/v1/profiles", p),
+  updateProfile: (id: string, p: Partial<Profile>) =>
+    request<Profile>("PUT", `/v1/profiles/${id}`, p),
+  deleteProfile: (id: string) =>
+    request<void>("DELETE", `/v1/profiles/${id}`),
+  activateProfile: (id: string) =>
+    request<Status>("POST", `/v1/profiles/${id}/activate`),
+
+  // ---- Route Profiles ----
+  listRouteProfiles: async () =>
+    arr(await request<RouteProfile[]>("GET", "/v1/route-profiles")),
+  createRouteProfile: (rp: Partial<RouteProfile>) =>
+    request<RouteProfile>("POST", "/v1/route-profiles", rp),
+  updateRouteProfile: (id: string, rp: Partial<RouteProfile>) =>
+    request<RouteProfile>("PUT", `/v1/route-profiles/${id}`, rp),
+  deleteRouteProfile: (id: string) =>
+    request<void>("DELETE", `/v1/route-profiles/${id}`),
+
+  // ---- Connections ----
+  listConnections: async () =>
+    arr(await request<Connection[]>("GET", "/v1/connections")),
+  closeConnection: (id: string) =>
+    request<void>("POST", `/v1/connections/${id}/close`),
+  closeAllConnections: () =>
+    request<void>("POST", "/v1/connections/close-all"),
+
+  // ---- Stats ----
+  getStats: () => request<TrafficStats>("GET", "/v1/stats"),
+  resetStats: () => request<void>("POST", "/v1/stats/reset"),
+
+  // ---- DNS ----
+  getDNS: () => request<DNSConfig>("GET", "/v1/dns"),
+  setDNS: (dns: DNSConfig) => request<DNSConfig>("PUT", "/v1/dns", dns),
+
+  // ---- Tests ----
+  testURL: (url: string) =>
+    request<TestResult>("POST", "/v1/test/url", { url }),
+  testIP: () =>
+    request<IPInfo>("POST", "/v1/test/ip"),
+  speedTest: () =>
+    request<SpeedTestResult>("POST", "/v1/test/speed"),
+
+  // ---- WARP ----
+  getWARP: () => request<WARPConfig>("GET", "/v1/warp"),
+  setWARP: (w: WARPConfig) => request<WARPConfig>("PUT", "/v1/warp", w),
+
+  // ---- Clipboard import ----
+  importFromClipboard: () =>
+    request<ClipboardImport>("POST", "/v1/import/clipboard"),
+  importLink: (raw: string) =>
+    request<ClipboardImport>("POST", "/v1/import/link", { raw }),
 };
 
 /**

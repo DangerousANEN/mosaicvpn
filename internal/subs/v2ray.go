@@ -51,8 +51,45 @@ func parseShareURI(subID, raw string) (proto.Server, error) {
 		return parseHysteria2(subID, raw)
 	case strings.HasPrefix(low, "naive+https://") || strings.HasPrefix(low, "naive+quic://"):
 		return parseNaive(subID, raw)
+	case strings.HasPrefix(low, "trojan://"):
+		return parseTrojan(subID, raw)
+	case strings.HasPrefix(low, "tuic://"):
+		return parseTUIC(subID, raw)
+	case strings.HasPrefix(low, "wireguard://") || strings.HasPrefix(low, "wg://") || strings.HasPrefix(low, "amneziawg://") || strings.HasPrefix(low, "awg://"):
+		return parseWireGuard(subID, raw)
 	}
 	return proto.Server{}, fmt.Errorf("unknown scheme: %s", raw)
+}
+
+func parseTrojan(subID, raw string) (proto.Server, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return proto.Server{}, err
+	}
+	host, port := hostPort(u)
+	password := u.User.Username()
+	if password == "" {
+		password = u.User.String()
+	}
+	q := u.Query()
+	name := decodeFragment(u.Fragment, fmt.Sprintf("trojan://%s:%d", host, port))
+	return proto.Server{
+		ID:             serverID(subID, "trojan", host, fmt.Sprint(port, name), password),
+		Name:           name,
+		Protocol:       proto.ProtoTrojan,
+		Address:        host,
+		Port:           port,
+		Tag:            q.Get("sni"),
+		SubscriptionID: subID,
+		Raw: map[string]any{
+			"password": password,
+			"sni":      q.Get("sni"),
+			"security": "tls",
+			"type":     q.Get("type"),
+			"path":     q.Get("path"),
+			"host":     q.Get("host"),
+		},
+	}, nil
 }
 
 func parseVLESS(subID, raw string) (proto.Server, error) {
@@ -72,7 +109,7 @@ func parseVLESS(subID, raw string) (proto.Server, error) {
 	}
 
 	s := proto.Server{
-		ID:             serverID(subID, "vless", host, fmt.Sprint(port), uuid),
+		ID:             serverID(subID, "vless", host, fmt.Sprint(port, name), uuid),
 		Name:           name,
 		Protocol:       proto.ProtoVLESS,
 		Address:        host,
@@ -115,7 +152,7 @@ func parseVMess(subID, raw string) (proto.Server, error) {
 	}
 	// vmess maps to vless in our model with tls-mode tag
 	s := proto.Server{
-		ID:             serverID(subID, "vmess", host, fmt.Sprint(port), uuid),
+		ID:             serverID(subID, "vmess", host, fmt.Sprint(port, name), uuid),
 		Name:           name,
 		Protocol:       proto.ProtoVLESS,
 		Address:        host,
@@ -152,7 +189,7 @@ func parseSS(subID, raw string) (proto.Server, error) {
 		port, _ := strconv.Atoi(portStr)
 		name := decodeFragment(frag, fmt.Sprintf("ss://%s:%d", host, port))
 		return proto.Server{
-			ID:             serverID(subID, "ss", host, portStr, method, pass),
+			ID:             serverID(subID, "ss", host, portStr, method, pass, name),
 			Name:           name,
 			Protocol:       proto.ProtoShadowsocks,
 			Address:        host,
@@ -181,7 +218,7 @@ func parseSS(subID, raw string) (proto.Server, error) {
 	port, _ := strconv.Atoi(portStr)
 	name := decodeFragment(frag, fmt.Sprintf("ss://%s:%d", host, port))
 	return proto.Server{
-		ID:             serverID(subID, "ss", host, portStr, method, pass),
+		ID:             serverID(subID, "ss", host, portStr, method, pass, name),
 		Name:           name,
 		Protocol:       proto.ProtoShadowsocks,
 		Address:        host,
@@ -208,7 +245,7 @@ func parseHysteria2(subID, raw string) (proto.Server, error) {
 	q := u.Query()
 	name := decodeFragment(u.Fragment, fmt.Sprintf("hy2://%s:%d", host, port))
 	return proto.Server{
-		ID:             serverID(subID, "hy2", host, fmt.Sprint(port), password),
+		ID:             serverID(subID, "hy2", host, fmt.Sprint(port, name), password),
 		Name:           name,
 		Protocol:       proto.ProtoHysteria2,
 		Address:        host,
@@ -237,7 +274,7 @@ func parseNaive(subID, raw string) (proto.Server, error) {
 	pass, _ := u.User.Password()
 	name := decodeFragment(u.Fragment, fmt.Sprintf("naive://%s:%d", host, port))
 	return proto.Server{
-		ID:             serverID(subID, "naive", host, fmt.Sprint(port), user),
+		ID:             serverID(subID, "naive", host, fmt.Sprint(port, name), user),
 		Name:           name,
 		Protocol:       proto.ProtoNaive,
 		Address:        host,
@@ -247,6 +284,70 @@ func parseNaive(subID, raw string) (proto.Server, error) {
 			"username": user,
 			"password": pass,
 			"scheme":   u.Scheme, // https or quic
+		},
+	}, nil
+}
+
+func parseTUIC(subID, raw string) (proto.Server, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return proto.Server{}, err
+	}
+	host, port := hostPort(u)
+	uuid := u.User.Username()
+	pass, _ := u.User.Password()
+	q := u.Query()
+	name := decodeFragment(u.Fragment, fmt.Sprintf("tuic://%s:%d", host, port))
+	return proto.Server{
+		ID:             serverID(subID, "tuic", host, fmt.Sprint(port, name), uuid),
+		Name:           name,
+		Protocol:       proto.ProtoVLESS,
+		Address:        host,
+		Port:           port,
+		SubscriptionID: subID,
+		Raw: map[string]any{
+			"uuid":            uuid,
+			"password":        pass,
+			"congestion_control": q.Get("congestion_control"),
+			"udp_relay_mode":  q.Get("udp_relay_mode"),
+			"sni":             q.Get("sni"),
+			"alpn":            q.Get("alpn"),
+		},
+	}, nil
+}
+
+func parseWireGuard(subID, raw string) (proto.Server, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return proto.Server{}, err
+	}
+	host, port := hostPort(u)
+	q := u.Query()
+	privKey := u.User.Username()
+	if privKey == "" {
+		privKey = q.Get("private_key")
+	}
+	name := decodeFragment(u.Fragment, fmt.Sprintf("awg://%s:%d", host, port))
+	return proto.Server{
+		ID:             serverID(subID, "awg", host, fmt.Sprint(port, name), privKey),
+		Name:           name,
+		Protocol:       proto.ProtoAmneziaWG,
+		Address:        host,
+		Port:           port,
+		SubscriptionID: subID,
+		Raw: map[string]any{
+			"private_key": privKey,
+			"public_key":  q.Get("public_key"),
+			"ip":          q.Get("ip"),
+			"jc":          q.Get("jc"),
+			"jmin":        q.Get("jmin"),
+			"jmax":        q.Get("jmax"),
+			"s1":          q.Get("s1"),
+			"s2":          q.Get("s2"),
+			"h1":          q.Get("h1"),
+			"h2":          q.Get("h2"),
+			"h3":          q.Get("h3"),
+			"h4":          q.Get("h4"),
 		},
 	}, nil
 }

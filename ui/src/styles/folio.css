@@ -230,3 +230,11 @@
   opacity: 0.4;
   border-bottom-style: dashed;
 }
+
+/* WARP chapter */
+
+.folio-warp-actions {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+}

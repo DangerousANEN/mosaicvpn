@@ -16,3 +16,75 @@ Thumbs.db
 *.log
 mosaic-data/
 .mosaic-dev/
+
+# Agent workspace
+.hermes/
+
+# Go build output
+build/
+
+# Flutter / Dart build output
+flutter/build/
+flutter/.dart_tool/
+flutter/.flutter-plugins
+flutter/.flutter-plugins-dependencies
+flutter/android/.gradle/
+flutter/android/.kotlin/
+flutter/android/local.properties
+flutter/linux/flutter/ephemeral/
+flutter/windows/flutter/ephemeral/
+*.iml
+
+# Node / Tauri build output
+ui/node_modules/
+ui/dist/
+ui/src-tauri/target/
+
+# Rust build output
+native/target/
+target/
+
+# Native demo capture artifacts (not sources)
+native/*.gif
+native/*.png
+native/ss_*.png
+native/screenshot*.png
+
+# Source archives
+*.tar.gz
+*.zip
+
+# Media scratch files (voiceover / shorts experiments, not project sources)
+*.wav
+*.mp3
+*.mp4
+*.jpg
+*.jpeg
+render_stage/
+video_captures/
+media/
+infographic/
+
+# Screenshots from UI test runs
+final_*.png
+it_*.png
+mosaic_step*.png
+mosaic_final.png
+mosaic_nocache.png
+sandbox_*.png
+novnc_login.png
+windows_ui_test.png
+dashboard_*.png
+tab_*.png
+sidebar_crop.png
+v32_dash.png
+
+# One-off generator/test scripts
+build_omniroute_*.py
+generate_*_shorts.py
+render_*_shorts.py
+cdp_*.py
+run_cdp_test.py
+shorts_*.html
+atlas_template.html
+*.xlsx

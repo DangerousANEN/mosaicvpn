@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# Package built artifacts into distributable archives for the website.
+#
+# Produces, under dist/downloads/:
+#   MosaicVPN-windows-x64.zip      GUI + mosaicd.exe + mosaic.exe
+#   MosaicVPN-linux-x86_64.tar.gz  GUI + mosaicd + mosaic
+#   MosaicBox-android.apk          release APK
+#
+# Run from the repo root:  bash scripts/package_release.sh
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+OUT="$ROOT/dist/downloads"
+STAGE="$ROOT/dist/.stage"
+VERSION="$(grep -E '^version:' "$ROOT/flutter/pubspec.yaml" | head -1 | sed 's/version: *//' | tr -d '\r' | cut -d+ -f1)"
+VERSION="${VERSION:-0.0.0}"
+
+mkdir -p "$OUT"
+rm -rf "$STAGE"
+mkdir -p "$STAGE"
+
+ok=0; skip=0
+
+# ── Windows ────────────────────────────────────────────────────────
+WIN_SRC="$ROOT/flutter/build/windows/x64/runner/Release"
+if [ -f "$WIN_SRC/mosaic_vpn.exe" ]; then
+  D="$STAGE/MosaicVPN"
+  mkdir -p "$D"
+  cp -r "$WIN_SRC"/* "$D"/
+  [ -f "$ROOT/build/mosaicd.exe" ] && cp "$ROOT/build/mosaicd.exe" "$D"/
+  [ -f "$ROOT/build/mosaic.exe" ]  && cp "$ROOT/build/mosaic.exe"  "$D"/
+  ( cd "$STAGE" && \
+    if command -v zip >/dev/null 2>&1; then
+      zip -qr "$OUT/MosaicVPN-windows-x64.zip" MosaicVPN
+    else
+      # git-bash on Windows has no zip(1); fall back to PowerShell.
+      powershell -NoProfile -Command "Compress-Archive -Path 'MosaicVPN' -DestinationPath '$(cygpath -w "$OUT/MosaicVPN-windows-x64.zip" 2>/dev/null || echo "$OUT/MosaicVPN-windows-x64.zip")' -Force"
+    fi )
+  rm -rf "$D"
+  echo "OK   windows  -> MosaicVPN-windows-x64.zip"
+  ok=$((ok+1))
+else
+  echo "SKIP windows  (missing $WIN_SRC/mosaic_vpn.exe — run: flutter build windows --release)"
+  skip=$((skip+1))
+fi
+
+# ── Linux ──────────────────────────────────────────────────────────
+LIN_SRC="$ROOT/flutter/build/linux/x64/release/bundle"
+if [ -d "$LIN_SRC" ]; then
+  D="$STAGE/MosaicVPN"
+  mkdir -p "$D"
+  cp -r "$LIN_SRC"/* "$D"/
+  [ -f "$ROOT/build/mosaicd_linux_amd64" ] && cp "$ROOT/build/mosaicd_linux_amd64" "$D/mosaicd" && chmod +x "$D/mosaicd"
+  [ -f "$ROOT/build/mosaic_linux_amd64" ]  && cp "$ROOT/build/mosaic_linux_amd64"  "$D/mosaic"  && chmod +x "$D/mosaic"
+  ( cd "$STAGE" && tar -czf "$OUT/MosaicVPN-linux-x86_64.tar.gz" MosaicVPN )
+  rm -rf "$D"
+  echo "OK   linux    -> MosaicVPN-linux-x86_64.tar.gz"
+  ok=$((ok+1))
+else
+  echo "SKIP linux    (missing $LIN_SRC — run: flutter build linux --release)"
+  skip=$((skip+1))
+fi
+
+# ── Android ────────────────────────────────────────────────────────
+APK="$ROOT/flutter/build/app/outputs/flutter-apk/app-release.apk"
+if [ -f "$APK" ]; then
+  cp "$APK" "$OUT/MosaicBox-android.apk"
+  echo "OK   android  -> MosaicBox-android.apk"
+  ok=$((ok+1))
+else
+  echo "SKIP android  (missing $APK — run: flutter build apk --release)"
+  skip=$((skip+1))
+fi
+
+rm -rf "$STAGE"
+
+# ── Manifest ───────────────────────────────────────────────────────
+{
+  echo "{"
+  echo "  \"version\": \"$VERSION\","
+  echo "  \"generated\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
+  echo "  \"files\": ["
+  first=1
+  for f in "$OUT"/*; do
+    [ -f "$f" ] || continue
+    case "$(basename "$f")" in downloads.json) continue;; esac
+    [ $first -eq 0 ] && echo ","
+    first=0
+    printf '    {"name": "%s", "bytes": %s}' "$(basename "$f")" "$(wc -c < "$f" | tr -d ' ')"
+  done
+  echo ""
+  echo "  ]"
+  echo "}"
+} > "$OUT/downloads.json"
+
+echo ""
+echo "packaged=$ok skipped=$skip  ->  $OUT"
+ls -la "$OUT"

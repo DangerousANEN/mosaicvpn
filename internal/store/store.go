@@ -8,6 +8,8 @@
 package store
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,37 +26,113 @@ import (
 // It is the single source of truth for everything that survives a daemon
 // restart.
 type State struct {
-	Subscriptions []proto.Subscription `json:"subscriptions"`
-	Servers       []proto.Server       `json:"servers"`
-	Rules         []proto.Rule         `json:"rules"`
-	Prefs         Prefs                `json:"prefs"`
-	LastServerID  string               `json:"last_server_id,omitempty"`
-	Version       int                  `json:"version"`
+	Subscriptions   []proto.Subscription `json:"subscriptions"`
+	Servers         []proto.Server       `json:"servers"`
+	Rules           []proto.Rule         `json:"rules"`
+	Prefs           Prefs                `json:"prefs"`
+	LastServerID    string               `json:"last_server_id,omitempty"`
+	Profiles        []proto.Profile      `json:"profiles"`
+	RouteProfiles   []proto.RouteProfile `json:"route_profiles"`
+	WARP            proto.WARPConfig     `json:"warp"`
+	ActiveProfileID string               `json:"active_profile_id,omitempty"`
+	Egresses        []proto.Egress       `json:"egresses,omitempty"`
+	AntiDPI         proto.AntiDPIConfig  `json:"anti_dpi,omitempty"`
+	ActiveManifest *proto.SubscriptionManifest `json:"active_manifest,omitempty"`
+	Version        int                        `json:"version"`
+	Account         Account              `json:"account,omitempty"`
+
+	// Billing credentials persisted so the daemon can rebuild the
+	// billing.Client across restarts without requiring the user to
+	// re-enter them in the UI. Stored as plain strings to keep the
+	// store package free of a billing package import.
+	RemnawaveURL   string `json:"remnawave_url,omitempty"`
+	RemnawaveToken string `json:"remnawave_token,omitempty"`
+	CryptoBotToken string `json:"cryptobot_token,omitempty"`
+	CryptoBotURL   string `json:"cryptobot_url,omitempty"`
+
+	// YooKassa (ЮKassa) credentials for SBP/card payments.
+	YookassaShopID    string `json:"yookassa_shop_id,omitempty"`
+	YookassaSecretKey string `json:"yookassa_secret_key,omitempty"`
+
+	// Promo codes and redemption log
+	Promos      []PromoEntry      `json:"promos,omitempty"`
+	Redemptions []RedemptionEntry `json:"redemptions,omitempty"`
+}
+
+// PromoEntry is the store-level representation of a promo code.
+// Kept separate from billing.Promo to avoid import cycles.
+type PromoEntry struct {
+	Code      string    `json:"code"`
+	Type      string    `json:"type"`       // "days" | "balance"
+	Value     int       `json:"value"`
+	MaxUses   int       `json:"max_uses"`
+	UsedCount int       `json:"used_count"`
+	ExpiresAt time.Time `json:"expires_at,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	Active    bool      `json:"active"`
+}
+
+// RedemptionEntry records a single promo redemption.
+type RedemptionEntry struct {
+	Code       string    `json:"code"`
+	Username   string    `json:"username"`
+	TelegramID int64     `json:"telegram_id"`
+	RedeemedAt time.Time `json:"redeemed_at"`
+}
+
+// Account holds the Mosaic service billing state — the link between the
+// local daemon and the Remnawave user record. Populated after the user
+// links their Telegram account through the bot.
+type Account struct {
+	// TelegramID is the linking key. The user links the Flutter client to
+	// their Remnawave account via @mosaicvpnbot; the bot issues a session
+	// token that the daemon stores here.
+	TelegramID int64 `json:"telegram_id,omitempty"`
+	// SessionToken is the opaque token issued by the bot. Empty when no
+	// account is linked.
+	SessionToken string `json:"session_token,omitempty"`
+	// Username is the Remnawave username of the linked user, cached for
+	// fast display when the daemon starts offline.
+	Username string `json:"username,omitempty"`
+	// Cached profile fields — refreshed from Remnawave on demand.
+	ExpireAt time.Time `json:"expire_at,omitempty"`
 }
 
 // Prefs holds user-configurable behaviour of the daemon.
 type Prefs struct {
-	TunnelMode      string `json:"tunnel_mode"` // "tun" | "proxy"
-	SocksAddr       string `json:"socks_addr"`
-	HTTPAddr        string `json:"http_addr"`
-	MTU             int    `json:"mtu"`
-	KillSwitch      bool   `json:"kill_switch"`
-	AllowLAN        bool   `json:"allow_lan"`
-	BypassProcesses []string `json:"bypass_processes,omitempty"`
-	BlockIPv6       bool   `json:"block_ipv6"`
-	DNSMode         string `json:"dns_mode"` // "fake-ip" | "real-ip"
-	DNSProxied      string `json:"dns_proxied"`
-	DNSDirect       string `json:"dns_direct"`
-	ShareLAN        bool   `json:"share_lan"`
-	ShareAddr       string `json:"share_addr"`
-	ShareAllow      []string `json:"share_allow,omitempty"`
-	AutoStart       string `json:"auto_start"` // "service" | "user" | "manual"
-	AutoConnect     bool   `json:"auto_connect"`
-	ShowOnLaunch    bool   `json:"show_on_launch"`
-	MCPEnabled      bool   `json:"mcp_enabled"`
-	MCPAddr         string `json:"mcp_addr"`
-	MCPPermission   string `json:"mcp_permission"` // "read" | "connect" | "full"
-	MCPConfirm      bool   `json:"mcp_confirm"`
+	TunnelMode          string   `json:"tunnel_mode"` // "tun" | "proxy"
+	TunStack            string   `json:"tun_stack"`
+	SocksAddr           string   `json:"socks_addr"`
+	HTTPAddr            string   `json:"http_addr"`
+	MixedPort           int      `json:"mixed_port"`
+	MTU                 int      `json:"mtu"`
+	KillSwitch          bool     `json:"kill_switch"`
+	AllowLAN            bool     `json:"allow_lan"`
+	BypassProcesses     []string `json:"bypass_processes,omitempty"`
+	BlockIPv6           bool     `json:"block_ipv6"`
+	DNSMode             string   `json:"dns_mode"` // "fake-ip" | "real-ip"
+	DNSProxied          string   `json:"dns_proxied"`
+	DNSDirect           string   `json:"dns_direct"`
+	ShareLAN            bool     `json:"share_lan"`
+	ShareAddr           string   `json:"share_addr"`
+	ShareAllow          []string `json:"share_allow,omitempty"`
+	AutoStart           string   `json:"auto_start"` // "service" | "user" | "manual"
+	AutoConnect         bool     `json:"auto_connect"`
+	ShowOnLaunch        bool     `json:"show_on_launch"`
+	MCPEnabled          bool     `json:"mcp_enabled"`
+	MCPAddr             string   `json:"mcp_addr"`
+	MCPPermission       string   `json:"mcp_permission"` // "read" | "connect" | "full"
+	MCPConfirm          bool     `json:"mcp_confirm"`
+	ShowRawNodes        bool     `json:"show_raw_nodes"`
+	AdvancedMode        bool     `json:"advanced_mode"`
+	CompactMode         bool     `json:"compact_mode"`
+	ThemeMode           string   `json:"theme_mode"`
+	LastServerID        string   `json:"last_server_id"`
+	FavoriteServerIDs   []string `json:"favorite_server_ids,omitempty"`
+	MinimizeToTray      bool     `json:"minimize_to_tray"`
+	AutoConnectEgresses bool     `json:"auto_connect_egresses"`
+	TestURL             string   `json:"test_url"`
+	AlwaysRunAsAdmin    bool     `json:"always_run_as_admin"`
 }
 
 // DefaultPrefs returns the prefs Mosaic ships with on a fresh install.
@@ -86,6 +164,7 @@ func DefaultPrefs() Prefs {
 func Default() State {
 	return State{
 		Prefs:   DefaultPrefs(),
+		WARP:    proto.WARPConfig{},
 		Version: 1,
 	}
 }
@@ -121,6 +200,9 @@ func Open(path string) (*Store, error) {
 	if s.state.Prefs.SocksAddr == "" {
 		s.state.Prefs = DefaultPrefs()
 	}
+	if s.state.Profiles == nil {
+		s.state.Profiles = []proto.Profile{}
+	}
 	return s, nil
 }
 
@@ -134,6 +216,8 @@ func (s *Store) Snapshot() State {
 	cp.Subscriptions = append([]proto.Subscription(nil), s.state.Subscriptions...)
 	cp.Servers = append([]proto.Server(nil), s.state.Servers...)
 	cp.Rules = append([]proto.Rule(nil), s.state.Rules...)
+	cp.Profiles = append([]proto.Profile(nil), s.state.Profiles...)
+	cp.RouteProfiles = append([]proto.RouteProfile(nil), s.state.RouteProfiles...)
 	return cp
 }
 
@@ -154,10 +238,37 @@ func (s *Store) persistLocked() error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
+	// Strategy 1: write to tmp file + rename (atomic, preferred on Unix)
+	if err := os.WriteFile(tmp, data, 0o600); err == nil {
+		if err := os.Rename(tmp, s.path); err == nil {
+			return nil
+		}
+		// Rename failed — try remove + rename (Windows often refuses rename
+		// over an existing file that has restrictive ACL).
+		_ = os.Remove(s.path)
+		if err2 := os.Rename(tmp, s.path); err2 == nil {
+			return nil
+		}
+		// Fall through to Strategy 2
+		_ = os.Remove(tmp)
 	}
-	return os.Rename(tmp, s.path)
+	// Strategy 2: truncate-and-write the target file directly (works when
+	// the file's ACL allows the current user to write but not create new
+	// files in the directory).
+	if f, err := os.OpenFile(s.path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600); err == nil {
+		_, werr := f.Write(data)
+		f.Close()
+		if werr == nil {
+			return nil
+		}
+	}
+	// Strategy 3: remove the existing file (it may have been created by an
+	// elevated process with a restrictive ACL) and write a fresh one.
+	_ = os.Remove(s.path)
+	if err := os.WriteFile(s.path, data, 0o600); err != nil {
+		return fmt.Errorf("persist store: %w", err)
+	}
+	return nil
 }
 
 // AddOrUpdateSubscription stores a subscription. If sub.ID is non-empty it
@@ -292,6 +403,19 @@ func (s *Store) RecordServerProbe(id string, ms int, errMsg string) error {
 	})
 }
 
+// SetServerGroup assigns a server to a group (stored as Tag).
+func (s *Store) SetServerGroup(id, groupID string) error {
+	return s.Update(func(st *State) error {
+		for i := range st.Servers {
+			if st.Servers[i].ID == id {
+				st.Servers[i].Tag = groupID
+				return nil
+			}
+		}
+		return fmt.Errorf("server %q not found", id)
+	})
+}
+
 // RecordServerGeo updates the geographic metadata of a server. Call
 // with city/country/lat/lon resolved by an external GeoIP lookup; an
 // empty string or zero value leaves the field unchanged so partial
@@ -374,6 +498,14 @@ func (s *Store) DeleteRule(id string) error {
 }
 
 // DeleteSubscription removes a subscription and all its servers.
+func (s *Store) SaveManifest(m *proto.SubscriptionManifest) error {
+	return s.Update(func(st *State) error {
+		st.ActiveManifest = m
+		return nil
+	})
+}
+
+// DeleteSubscription removes a subscription and all its servers.
 func (s *Store) DeleteSubscription(subID string) error {
 	return s.Update(func(st *State) error {
 		subs := make([]proto.Subscription, 0, len(st.Subscriptions))
@@ -384,7 +516,7 @@ func (s *Store) DeleteSubscription(subID string) error {
 		}
 		st.Subscriptions = subs
 
-		servers := st.Servers[:0]
+		servers := make([]proto.Server, 0, len(st.Servers))
 		for _, sv := range st.Servers {
 			if sv.SubscriptionID != subID {
 				servers = append(servers, sv)
@@ -394,3 +526,404 @@ func (s *Store) DeleteSubscription(subID string) error {
 		return nil
 	})
 }
+
+// AddOrUpdateProfile stores or updates a profile. If p.ID is empty,
+// generates a new ID in the format "profile-<nanos>" and initializes CreatedAt/UpdatedAt.
+// On update, modifies the existing profile, updating its UpdatedAt timestamp.
+func (s *Store) AddOrUpdateProfile(p proto.Profile) (proto.Profile, error) {
+	var saved proto.Profile
+	err := s.Update(func(st *State) error {
+		now := time.Now().UTC()
+		if p.ID == "" {
+			p.ID = fmt.Sprintf("profile-%d", now.UnixNano())
+			p.CreatedAt = now
+			p.UpdatedAt = now
+			st.Profiles = append(st.Profiles, p)
+			saved = p
+			return nil
+		}
+		for i, existing := range st.Profiles {
+			if existing.ID == p.ID {
+				if p.CreatedAt.IsZero() {
+					p.CreatedAt = existing.CreatedAt
+				}
+				p.UpdatedAt = now
+				st.Profiles[i] = p
+				saved = p
+				return nil
+			}
+		}
+		if p.CreatedAt.IsZero() {
+			p.CreatedAt = now
+		}
+		p.UpdatedAt = now
+		st.Profiles = append(st.Profiles, p)
+		saved = p
+		return nil
+	})
+	return saved, err
+}
+
+// DeleteProfile removes a profile by id.
+func (s *Store) DeleteProfile(id string) error {
+	return s.Update(func(st *State) error {
+		out := make([]proto.Profile, 0, len(st.Profiles))
+		for _, p := range st.Profiles {
+			if p.ID != id {
+				out = append(out, p)
+			}
+		}
+		st.Profiles = out
+		if st.ActiveProfileID == id {
+			st.ActiveProfileID = ""
+		}
+		return nil
+	})
+}
+
+// SetActiveProfile sets the active profile ID.
+func (s *Store) SetActiveProfile(id string) error {
+	return s.Update(func(st *State) error {
+		st.ActiveProfileID = id
+		return nil
+	})
+}
+
+// FindProfile returns the profile with the given ID, if it exists.
+func (s *Store) FindProfile(id string) (proto.Profile, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, p := range s.state.Profiles {
+		if p.ID == id {
+			return p, true
+		}
+	}
+	return proto.Profile{}, false
+}
+
+// AddOrUpdateRouteProfile stores or updates a route profile. If rp.ID is empty,
+// generates a new ID in the format "route-<nanos>" and initializes CreatedAt/UpdatedAt.
+// On update, modifies the existing route profile, updating its UpdatedAt timestamp.
+func (s *Store) AddOrUpdateRouteProfile(rp proto.RouteProfile) (proto.RouteProfile, error) {
+	var saved proto.RouteProfile
+	err := s.Update(func(st *State) error {
+		now := time.Now().UTC()
+		if rp.ID == "" {
+			rp.ID = fmt.Sprintf("route-%d", now.UnixNano())
+			rp.CreatedAt = now
+			rp.UpdatedAt = now
+			st.RouteProfiles = append(st.RouteProfiles, rp)
+			saved = rp
+			return nil
+		}
+		for i, existing := range st.RouteProfiles {
+			if existing.ID == rp.ID {
+				if rp.CreatedAt.IsZero() {
+					rp.CreatedAt = existing.CreatedAt
+				}
+				rp.UpdatedAt = now
+				st.RouteProfiles[i] = rp
+				saved = rp
+				return nil
+			}
+		}
+		if rp.CreatedAt.IsZero() {
+			rp.CreatedAt = now
+		}
+		rp.UpdatedAt = now
+		st.RouteProfiles = append(st.RouteProfiles, rp)
+		saved = rp
+		return nil
+	})
+	return saved, err
+}
+
+// DeleteRouteProfile removes a route profile by id.
+func (s *Store) DeleteRouteProfile(id string) error {
+	return s.Update(func(st *State) error {
+		out := make([]proto.RouteProfile, 0, len(st.RouteProfiles))
+		for _, rp := range st.RouteProfiles {
+			if rp.ID != id {
+				out = append(out, rp)
+			}
+		}
+		st.RouteProfiles = out
+		return nil
+	})
+}
+
+// SetWARP stores the WARP configuration.
+func (s *Store) SetWARP(w proto.WARPConfig) error {
+	return s.Update(func(st *State) error {
+		st.WARP = w
+		return nil
+	})
+}
+
+// GetWARP retrieves the WARP configuration.
+func (s *Store) GetWARP() proto.WARPConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.state.WARP
+}
+
+// ---------- Billing / Account -----------------------------------------------
+
+// GetAccount returns the linked Mosaic service account (or the zero value
+// when no account is linked).
+func (s *Store) GetAccount() Account {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.state.Account
+}
+
+// SetAccount persists the linking state between the daemon and the
+// Remnawave user record.
+func (s *Store) SetAccount(a Account) error {
+	return s.Update(func(st *State) error {
+		st.Account = a
+		return nil
+	})
+}
+
+// ClearAccount unlinks the daemon from the Remnawave user.
+func (s *Store) ClearAccount() error {
+	return s.Update(func(st *State) error {
+		st.Account = Account{}
+		return nil
+	})
+}
+
+// GetBillingCredentials returns the persisted Remnawave and CryptoBot
+// credentials. All four strings are empty when no billing config has
+// been saved.
+func (s *Store) GetBillingCredentials() (remnawaveURL, remnawaveToken, cryptoBotURL, cryptoBotToken string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.state.RemnawaveURL, s.state.RemnawaveToken, s.state.CryptoBotURL, s.state.CryptoBotToken
+}
+
+// SetBillingCredentials persists the Remnawave and CryptoBot credentials
+// used to rebuild the billing.Client on daemon restart.
+func (s *Store) SetBillingCredentials(remnawaveURL, remnawaveToken, cryptoBotURL, cryptoBotToken string) error {
+	return s.Update(func(st *State) error {
+		st.RemnawaveURL = remnawaveURL
+		st.RemnawaveToken = remnawaveToken
+		st.CryptoBotURL = cryptoBotURL
+		st.CryptoBotToken = cryptoBotToken
+		return nil
+	})
+}
+
+// GetYookassaCredentials returns the persisted YooKassa shop ID and secret key.
+func (s *Store) GetYookassaCredentials() (shopID, secretKey string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.state.YookassaShopID, s.state.YookassaSecretKey
+}
+
+// SetYookassaCredentials persists the YooKassa credentials.
+func (s *Store) SetYookassaCredentials(shopID, secretKey string) error {
+	return s.Update(func(st *State) error {
+		st.YookassaShopID = shopID
+		st.YookassaSecretKey = secretKey
+		return nil
+	})
+}
+
+// ────────── Promo CRUD ──────────────────────────────────────────────
+
+// ListPromos returns a copy of all promo codes.
+func (s *Store) ListPromos() []PromoEntry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]PromoEntry(nil), s.state.Promos...)
+}
+
+// GetPromo returns a promo by its normalized code, or nil.
+func (s *Store) GetPromo(code string) *PromoEntry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for i := range s.state.Promos {
+		if s.state.Promos[i].Code == code {
+			p := s.state.Promos[i] // copy
+			return &p
+		}
+	}
+	return nil
+}
+
+// AddPromo persists a new promo code.
+func (s *Store) AddPromo(p PromoEntry) error {
+	return s.Update(func(st *State) error {
+		st.Promos = append(st.Promos, p)
+		return nil
+	})
+}
+
+// IncrementPromoUsage atomically increments UsedCount for a promo code.
+func (s *Store) IncrementPromoUsage(code string) error {
+	return s.Update(func(st *State) error {
+		for i := range st.Promos {
+			if st.Promos[i].Code == code {
+				st.Promos[i].UsedCount++
+				return nil
+			}
+		}
+		return nil
+	})
+}
+
+// HasRedeemed checks if a user (by telegram_id) already redeemed a promo.
+func (s *Store) HasRedeemed(code string, telegramID int64) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, r := range s.state.Redemptions {
+		if r.Code == code && r.TelegramID == telegramID {
+			return true
+		}
+	}
+	return false
+}
+
+// AddRedemption records a promo redemption.
+func (s *Store) AddRedemption(r RedemptionEntry) error {
+	return s.Update(func(st *State) error {
+		st.Redemptions = append(st.Redemptions, r)
+		return nil
+	})
+}
+
+// ---------- Egress CRUD ----------------------------------------------------
+
+// ListEgresses returns a copy of all egress listeners.
+func (s *Store) ListEgresses() []proto.Egress {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]proto.Egress(nil), s.state.Egresses...)
+}
+
+// AddEgress inserts a new egress listener, assigning it a UUID.
+func (s *Store) AddEgress(e proto.Egress) (proto.Egress, error) {
+	e.ID = uuid()
+	return e, s.Update(func(st *State) error {
+		st.Egresses = append(st.Egresses, e)
+		return nil
+	})
+}
+
+// UpdateEgress replaces an existing egress by ID.
+func (s *Store) UpdateEgress(e proto.Egress) error {
+	return s.Update(func(st *State) error {
+		for i, eg := range st.Egresses {
+			if eg.ID == e.ID {
+				st.Egresses[i] = e
+				return nil
+			}
+		}
+		return fmt.Errorf("egress %q not found", e.ID)
+	})
+}
+
+// DeleteEgress removes an egress by ID.
+func (s *Store) DeleteEgress(id string) error {
+	return s.Update(func(st *State) error {
+		out := make([]proto.Egress, 0, len(st.Egresses))
+		for _, eg := range st.Egresses {
+			if eg.ID != id {
+				out = append(out, eg)
+			}
+		}
+		st.Egresses = out
+		return nil
+	})
+}
+
+// ToggleEgress flips the active flag of an egress by ID.
+func (s *Store) ToggleEgress(id string, active bool) error {
+	return s.Update(func(st *State) error {
+		for i := range st.Egresses {
+			if st.Egresses[i].ID == id {
+				st.Egresses[i].Active = active
+				return nil
+			}
+		}
+		return fmt.Errorf("egress %q not found", id)
+	})
+}
+
+// ---------- Anti-DPI -------------------------------------------------------
+
+// SetAntiDPI stores the anti-DPI configuration.
+func (s *Store) SetAntiDPI(a proto.AntiDPIConfig) error {
+	return s.Update(func(st *State) error {
+		st.AntiDPI = a
+		return nil
+	})
+}
+
+// GetAntiDPI retrieves the anti-DPI configuration.
+func (s *Store) GetAntiDPI() proto.AntiDPIConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.state.AntiDPI
+}
+
+// ---------- Export / Import ------------------------------------------------
+
+// ExportState returns the full daemon state suitable for JSON export.
+// When includeSubscriptions is false, subscription URLs are blanked.
+func (s *Store) ExportState(includeSubscriptions bool) State {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	cp := s.state // shallow copy
+	if !includeSubscriptions {
+		subs := append([]proto.Subscription(nil), cp.Subscriptions...)
+		for i := range subs {
+			subs[i].URL = ""
+		}
+		cp.Subscriptions = subs
+	}
+	return cp
+}
+
+// ImportState merges or replaces the current state with the provided data.
+// mode "replace" wipes the current state; "merge" (default) overwrites only
+// the fields present in the import.
+func (s *Store) ImportState(data State, mode string) error {
+	return s.Update(func(st *State) error {
+		if mode == "replace" {
+			*st = data
+			st.Version = 2
+			return nil
+		}
+		// merge
+		if len(data.Subscriptions) > 0 {
+			st.Subscriptions = append(st.Subscriptions, data.Subscriptions...)
+		}
+		if len(data.Servers) > 0 {
+			st.Servers = append(st.Servers, data.Servers...)
+		}
+		if len(data.Rules) > 0 {
+			st.Rules = append(st.Rules, data.Rules...)
+		}
+		if len(data.Profiles) > 0 {
+			st.Profiles = append(st.Profiles, data.Profiles...)
+		}
+		if len(data.RouteProfiles) > 0 {
+			st.RouteProfiles = append(st.RouteProfiles, data.RouteProfiles...)
+		}
+		if len(data.Egresses) > 0 {
+			st.Egresses = append(st.Egresses, data.Egresses...)
+		}
+		return nil
+	})
+}
+
+// uuid generates a random hex ID for new records.
+func uuid() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+

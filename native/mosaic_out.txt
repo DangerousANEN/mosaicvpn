@@ -1,0 +1,3 @@
+[mosaicvpn] Window size: PhysicalSize { width: 1100, height: 700 }
+[mosaicvpn] Active tab: 0
+[mosaicvpn] Servers count: 0

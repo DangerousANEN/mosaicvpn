@@ -4,14 +4,7 @@
  * JSON tags exactly.
  */
 
-export type Protocol =
-  | "vless"
-  | "vmess"
-  | "shadowsocks"
-  | "hysteria2"
-  | "naive"
-  | "amneziawg"
-  | "trojan";
+export type Protocol = "vless" | "vmess" | "trojan" | "shadowsocks" | "hysteria2" | "naive" | "amneziawg";
 
 export type Format =
   | "singbox"
@@ -120,4 +113,119 @@ export interface DaemonEndpoint {
   pid: number;
   version: string;
   started: string;
+}
+
+export interface DNSConfig {
+  mode: "fake-ip" | "real-ip" | "disabled";
+  proxied?: string;
+  direct?: string;
+  fake_ip_range?: string;
+  fake_ip_exclude?: string[];
+  hosts?: Record<string, string>;
+  disable_cache?: boolean;
+  disable_fallback?: boolean;
+}
+
+export interface Profile {
+  id: string;
+  name: string;
+  icon?: string;
+  color?: string;
+  server_id?: string;
+  subscription_id?: string;
+  tunnel_mode: string;
+  kill_switch: boolean;
+  allow_lan: boolean;
+  dns: DNSConfig;
+  rule_ids?: string[];
+  auto_connect: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RouteProfile {
+  id: string;
+  name: string;
+  description?: string;
+  rule_ids: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Connection {
+  id: string;
+  network: "tcp" | "udp";
+  outbound: string;
+  domain?: string;
+  ip?: string;
+  port?: number;
+  source_ip?: string;
+  source_port?: number;
+  process?: string;
+  upload: number;
+  download: number;
+  start_at: string;
+  chain?: string;
+  rule?: string;
+}
+
+export interface TrafficPoint {
+  ts: string;
+  bin: number;
+  bout: number;
+  up?: number;
+  down?: number;
+}
+
+export interface TrafficStats {
+  total_bytes_in: number;
+  total_bytes_out: number;
+  series?: TrafficPoint[];
+  conn_count: number;
+  peak_conn_count?: number;
+  up_speed?: number;
+  down_speed?: number;
+}
+
+export interface TestResult {
+  server_id: string;
+  server_name?: string;
+  latency_ms: number;
+  error?: string;
+  tested_at: string;
+  ip_info?: IPInfo;
+}
+
+export interface IPInfo {
+  ip: string;
+  country?: string;
+  city?: string;
+  isp?: string;
+  asn?: string;
+}
+
+export interface SpeedTestResult {
+  download_bps: number;
+  upload_bps: number;
+  download_mbps: number;
+  upload_mbps: number;
+  latency_ms?: number;
+  tested_at: string;
+  error?: string;
+}
+
+export interface WARPConfig {
+  enabled: boolean;
+  mode?: string;
+  license_key?: string;
+  team_token?: string;
+  bind_addr?: string;
+}
+
+export interface ClipboardImport {
+  raw: string;
+  protocol?: Protocol;
+  format?: Format;
+  parsed: boolean;
+  error?: string;
 }

@@ -35,6 +35,30 @@ type Backend interface {
 	Stats() (bytesIn, bytesOut uint64, latencyMS int)
 }
 
+// ConnectionBackend is an optional interface a Backend can implement to
+// expose live connection tracking (sing-box Clash API). Backends that do
+// not implement it report empty connections.
+type ConnectionBackend interface {
+	Connections() []proto.Connection
+	CloseConnection(id string) error
+	CloseAllConnections() error
+}
+
+// StatsBackend is an optional interface for richer traffic statistics
+// beyond the simple byte counters in Stats(). Returns time-series data.
+type StatsBackend interface {
+	TrafficStats() proto.TrafficStats
+	ResetStats() error
+}
+
+// TestBackend is an optional interface for URL latency tests, IP egress
+// detection, and speed tests through the active tunnel.
+type TestBackend interface {
+	TestURL(ctx context.Context, url string) (proto.TestResult, error)
+	TestIP(ctx context.Context) (proto.IPInfo, error)
+	SpeedTest(ctx context.Context) (proto.SpeedTestResult, error)
+}
+
 // ProxyListener-aware backends expose loopback proxy endpoints (SOCKS
 // and HTTP) once Start has succeeded. Backends that do not actually
 // open ports (e.g. MockBackend) simply do not implement this and Status
@@ -232,6 +256,115 @@ func (m *Manager) PID() int { return m.pid }
 
 // Version returns the daemon version string.
 func (m *Manager) Version() string { return m.version }
+
+// Connections returns live connections if the backend supports it.
+func (m *Manager) Connections() []proto.Connection {
+	if cb, ok := m.backend.(ConnectionBackend); ok {
+		return cb.Connections()
+	}
+	return []proto.Connection{}
+}
+
+// CloseConnection closes a specific connection by id.
+func (m *Manager) CloseConnection(id string) error {
+	if cb, ok := m.backend.(ConnectionBackend); ok {
+		return cb.CloseConnection(id)
+	}
+	return errors.New("connection tracking not supported by current backend")
+}
+
+// CloseAllConnections closes all live connections.
+func (m *Manager) CloseAllConnections() error {
+	if cb, ok := m.backend.(ConnectionBackend); ok {
+		return cb.CloseAllConnections()
+	}
+	return errors.New("connection tracking not supported by current backend")
+}
+
+// Stats returns detailed traffic statistics if the backend supports it.
+// Falls back to a basic snapshot from Status() counters.
+func (m *Manager) Stats() proto.TrafficStats {
+	if sb, ok := m.backend.(StatsBackend); ok {
+		return sb.TrafficStats()
+	}
+	// Fallback: construct from basic Stats() counters.
+	st := m.Status()
+	return proto.TrafficStats{
+		TotalBytesIn:  st.BytesIn,
+		TotalBytesOut: st.BytesOut,
+	}
+}
+
+// ResetStats resets the traffic counters if the backend supports it.
+func (m *Manager) ResetStats() error {
+	if sb, ok := m.backend.(StatsBackend); ok {
+		return sb.ResetStats()
+	}
+	return errors.New("stats reset not supported by current backend")
+}
+
+// TestURL tests latency to a URL through the active tunnel.
+func (m *Manager) TestURL(ctx context.Context, url string) (proto.TestResult, error) {
+	if tb, ok := m.backend.(TestBackend); ok {
+		return tb.TestURL(ctx, url)
+	}
+	return proto.TestResult{}, errors.New("URL testing not supported by current backend")
+}
+
+// TestIP queries the apparent egress IP through the active tunnel.
+func (m *Manager) TestIP(ctx context.Context) (proto.IPInfo, error) {
+	if tb, ok := m.backend.(TestBackend); ok {
+		return tb.TestIP(ctx)
+	}
+	return proto.IPInfo{}, errors.New("IP testing not supported by current backend")
+}
+
+// SpeedTest runs a download/upload speed test through the active tunnel.
+func (m *Manager) SpeedTest(ctx context.Context) (proto.SpeedTestResult, error) {
+	if tb, ok := m.backend.(TestBackend); ok {
+		return tb.SpeedTest(ctx)
+	}
+	return proto.SpeedTestResult{}, errors.New("speed testing not supported by current backend")
+}
+
+// HotReload reloads the running backend configuration without dropping the tunnel.
+func (m *Manager) HotReload(ctx context.Context) error {
+	m.mu.Lock()
+	if m.st.State != proto.StateConnected || m.st.Server == nil {
+		m.mu.Unlock()
+		return nil
+	}
+	serverID := m.st.Server.ID
+	m.mu.Unlock()
+
+	server, ok := m.store.FindServer(serverID)
+	if !ok {
+		snap := m.store.Snapshot()
+		if len(snap.Servers) > 0 {
+			server = snap.Servers[0]
+			serverID = server.ID
+		} else {
+			return nil
+		}
+	}
+
+	snap := m.store.Snapshot()
+	if hb, ok := m.backend.(interface {
+		HotReload(ctx context.Context, server proto.Server, prefs store.Prefs, rules []proto.Rule) error
+	}); ok {
+		if err := hb.HotReload(ctx, server, snap.Prefs, snap.Rules); err != nil {
+			logx.Warn("hot reload failed, reconnecting", "err", err)
+			return m.Connect(ctx, serverID)
+		}
+	} else {
+		return m.Connect(ctx, serverID)
+	}
+
+	m.mu.Lock()
+	m.st.Server = &server
+	m.mu.Unlock()
+	return nil
+}
 
 func (m *Manager) transitionLocked(next proto.Status) {
 	m.st = next

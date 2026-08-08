@@ -57,7 +57,7 @@ func clashVLESS(subID string, p map[string]any) proto.Server {
 	s := clashCommon(p, proto.ProtoVLESS)
 	s.SubscriptionID = subID
 	uuid, _ := p["uuid"].(string)
-	s.ID = serverID(subID, "clash-vless", s.Address, fmt.Sprint(s.Port), uuid)
+	s.ID = serverID(subID, "clash-vless", s.Address, fmt.Sprint(s.Port, s.Name), uuid)
 	if flow, _ := p["flow"].(string); flow != "" {
 		s.Tag = flow
 	}
@@ -68,7 +68,7 @@ func clashHysteria2(subID string, p map[string]any) proto.Server {
 	s := clashCommon(p, proto.ProtoHysteria2)
 	s.SubscriptionID = subID
 	pw, _ := p["password"].(string)
-	s.ID = serverID(subID, "clash-hy2", s.Address, fmt.Sprint(s.Port), pw)
+	s.ID = serverID(subID, "clash-hy2", s.Address, fmt.Sprint(s.Port, s.Name), pw)
 	return s
 }
 
@@ -78,7 +78,7 @@ func clashSS(subID string, p map[string]any) proto.Server {
 	cipher, _ := p["cipher"].(string)
 	pw, _ := p["password"].(string)
 	s.Tag = cipher
-	s.ID = serverID(subID, "clash-ss", s.Address, fmt.Sprint(s.Port), cipher, pw)
+	s.ID = serverID(subID, "clash-ss", s.Address, fmt.Sprint(s.Port, s.Name), cipher, pw)
 	return s
 }
 
@@ -86,6 +86,6 @@ func clashWG(subID string, p map[string]any) proto.Server {
 	s := clashCommon(p, proto.ProtoAmneziaWG)
 	s.SubscriptionID = subID
 	pk, _ := p["private-key"].(string)
-	s.ID = serverID(subID, "clash-wg", s.Address, fmt.Sprint(s.Port), pk)
+	s.ID = serverID(subID, "clash-wg", s.Address, fmt.Sprint(s.Port, s.Name), pk)
 	return s
 }

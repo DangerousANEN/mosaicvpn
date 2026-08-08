@@ -36,7 +36,7 @@ func ParseSIP008(subID string, payload []byte) ([]proto.Server, error) {
 		}
 		id := s.ID
 		if id == "" {
-			id = serverID(subID, "sip008", s.Server, fmt.Sprint(s.ServerPort), s.Method, s.Password)
+			id = serverID(subID, "sip008", s.Server, fmt.Sprint(s.ServerPort, name), s.Method, s.Password)
 		}
 		out = append(out, proto.Server{
 			ID:             id,

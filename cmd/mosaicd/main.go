@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/pupspochta-cpu/mosaicvpn/internal/api"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/billing"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/logx"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/paths"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
@@ -52,10 +53,17 @@ func main() {
 func run(dataDirOverride string) error {
 	dataDir := dataDirOverride
 	if dataDir == "" {
-		dataDir = paths.DataDir()
-	}
-	if err := paths.EnsureDir(dataDir); err != nil {
-		return fmt.Errorf("create data dir: %w", err)
+		// Use EnsureDataDir which falls back to %LOCALAPPDATA% if
+		// %ProgramData%\Mosaic is not writable (non-elevated daemon).
+		dir, err := paths.EnsureDataDir()
+		if err != nil {
+			return fmt.Errorf("create data dir: %w", err)
+		}
+		dataDir = dir
+	} else {
+		if err := paths.EnsureDir(dataDir); err != nil {
+			return fmt.Errorf("create data dir: %w", err)
+		}
 	}
 
 	store, err := store.Open(paths.StoreFile(dataDir))
@@ -66,7 +74,7 @@ func run(dataDirOverride string) error {
 	var backend state.Backend
 	if bin := state.LocateSingBox(); bin != "" {
 		logx.Info("sing-box backend enabled", "bin", bin)
-		backend = state.NewSingBoxBackend(bin, dataDir)
+		backend = state.NewSingBoxBackend(bin, dataDir, store)
 	} else {
 		logx.Warn("sing-box not found next to mosaicd or on PATH; falling back to mock backend (Connect will pretend to work but no proxy is opened)")
 		backend = state.NewMockBackend()
@@ -75,8 +83,29 @@ func run(dataDirOverride string) error {
 
 	apiSrv := api.NewServer(store, mgr, nil)
 
+	// Load persisted billing credentials so the billing.Client is seeded
+	// with the user's previously-saved Remnawave/CryptoBot settings on
+	// startup — not just when the UI re-POSTs them.
+	if rURL, rTok, cURL, cTok := store.GetBillingCredentials(); rURL != "" || cURL != "" {
+		yShop, yKey := store.GetYookassaCredentials()
+		apiSrv.SetBillingConfig(billing.Config{
+			Remnawave: billing.RemnawaveConfig{BaseURL: rURL, APIToken: rTok},
+			CryptoBot: billing.CryptoBotConfig{APIToken: cTok, BaseURL: cURL},
+			Yookassa:  billing.YookassaConfig{ShopID: yShop, SecretKey: yKey},
+		})
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Start background auto-update & sync loop (startup sync + 4h periodic refresh)
+	go apiSrv.StartAutoUpdate(ctx)
+
+	// Start background auto-renew loop (expiry checks every 1h)
+	go apiSrv.StartAutoRenew(ctx)
+
+	// Start pool health-check loop (node selection for manifest groups)
+	go apiSrv.StartPool(ctx)
 
 	addr, shutdown, err := apiSrv.Listen(ctx)
 	if err != nil {

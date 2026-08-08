@@ -75,22 +75,41 @@ func Detect(payload []byte) proto.Format {
 // subscription does not churn IDs.
 func Parse(subID string, payload []byte) (Result, error) {
 	format := Detect(payload)
+	var rawServers []proto.Server
+	var err error
+
 	switch format {
 	case proto.FormatSingbox:
-		servers, err := ParseSingbox(subID, payload)
-		return Result{Format: format, Servers: servers}, err
+		rawServers, err = ParseSingbox(subID, payload)
 	case proto.FormatV2RayB64:
-		servers, err := ParseV2RayBase64(subID, payload)
-		return Result{Format: format, Servers: servers}, err
+		rawServers, err = ParseV2RayBase64(subID, payload)
 	case proto.FormatClash:
-		servers, err := ParseClash(subID, payload)
-		return Result{Format: format, Servers: servers}, err
+		rawServers, err = ParseClash(subID, payload)
 	case proto.FormatSIP008:
-		servers, err := ParseSIP008(subID, payload)
-		return Result{Format: format, Servers: servers}, err
-	default:
+		rawServers, err = ParseSIP008(subID, payload)
+	}
+
+	// Fallback sequence if detected parser returned 0 servers or failed
+	if len(rawServers) == 0 {
+		if s, e := ParseV2RayBase64(subID, payload); e == nil && len(s) > 0 {
+			rawServers, format = s, proto.FormatV2RayB64
+		} else if s, e := ParseSingbox(subID, payload); e == nil && len(s) > 0 {
+			rawServers, format = s, proto.FormatSingbox
+		} else if s, e := ParseClash(subID, payload); e == nil && len(s) > 0 {
+			rawServers, format = s, proto.FormatClash
+		} else if s, e := ParseSIP008(subID, payload); e == nil && len(s) > 0 {
+			rawServers, format = s, proto.FormatSIP008
+		}
+	}
+
+	if len(rawServers) == 0 {
+		if err != nil {
+			return Result{Format: proto.FormatUnknown}, err
+		}
 		return Result{Format: proto.FormatUnknown}, ErrUnknownFormat
 	}
+
+	return Result{Format: format, Servers: rawServers}, nil
 }
 
 // ParseAs forces a specific format. Useful when the user explicitly specifies

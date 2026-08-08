@@ -2,18 +2,26 @@ package state
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/net/proxy"
 
 	"github.com/pupspochta-cpu/mosaicvpn/internal/logx"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
@@ -29,23 +37,31 @@ type SingBoxBackend struct {
 	mu      sync.Mutex
 	binary  string // resolved path to sing-box.exe
 	dataDir string
+	store   *store.Store
 
-	cmd       *exec.Cmd
-	cancel    context.CancelFunc
-	doneCh    chan struct{}
-	socks     string
-	http      string
-	bytesIn   atomic.Uint64
-	bytesOut  atomic.Uint64
-	latencyMS atomic.Int32
+	cmd        *exec.Cmd
+	cancel     context.CancelFunc
+	doneCh     chan struct{}
+	socks      string
+	http       string
+	clashApi   string // loopback address of the clash-api (e.g. "127.0.0.1:9090")
+	clashSecret string
+	bytesIn    atomic.Uint64
+	bytesOut   atomic.Uint64
+	latencyMS  atomic.Int32
+
+	// Rolling traffic series (for StatsBackend)
+	seriesMu   sync.Mutex
+	series     []proto.TrafficPoint
+	peakConns  atomic.Int32
 }
 
 // NewSingBoxBackend constructs a backend rooted at dataDir (where the
 // generated config and stdout/stderr logs live). Pass an empty binary
 // to auto-resolve via LocateSingBox; pass an explicit path (e.g. from a
 // CLI flag or env var) to override.
-func NewSingBoxBackend(binary, dataDir string) *SingBoxBackend {
-	return &SingBoxBackend{binary: binary, dataDir: dataDir}
+func NewSingBoxBackend(binary, dataDir string, s *store.Store) *SingBoxBackend {
+	return &SingBoxBackend{binary: binary, dataDir: dataDir, store: s}
 }
 
 // LocateSingBox returns the first sing-box executable found next to
@@ -83,7 +99,7 @@ func (b *SingBoxBackend) Stats() (uint64, uint64, int) {
 }
 
 // Start implements Backend.
-func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, _ store.Prefs, _ []proto.Rule) error {
+func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, prefs store.Prefs, rules []proto.Rule) error {
 	b.mu.Lock()
 	if b.cmd != nil {
 		b.mu.Unlock()
@@ -102,16 +118,36 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, _ store
 		return fmt.Errorf("sing-box binary %q: %w", bin, err)
 	}
 
-	// Pick free SOCKS / HTTP loopback ports. Default to 2080/2081 but
-	// fall back to ephemeral if those are taken.
+	// Pick free SOCKS / HTTP / clash-api loopback ports.
 	socksPort := pickPort(2080)
 	httpPort := pickPort(2081)
-	if socksPort == 0 || httpPort == 0 {
+	clashPort := pickPort(9090)
+	if socksPort == 0 || httpPort == 0 || clashPort == 0 {
 		b.mu.Unlock()
 		return errors.New("could not bind a free loopback port for sing-box proxies")
 	}
 
-	cfg, err := BuildSingBoxConfig(server, socksPort, httpPort)
+	// Generate a random clash-api secret so only we can query it.
+	secret := genClashSecret()
+
+	// Construct DNS config from prefs.
+	dns := proto.DNSConfig{
+		Mode:    prefs.DNSMode,
+		Proxied: prefs.DNSProxied,
+		Direct:  prefs.DNSDirect,
+	}
+	if dns.Mode == "" {
+		dns.Mode = "fake-ip"
+	}
+
+	var allServers []proto.Server
+	var egresses []proto.Egress
+	if b.store != nil {
+		allServers = b.store.Snapshot().Servers
+		egresses = b.store.Snapshot().Egresses
+	}
+
+	cfg, err := BuildSingBoxConfigWithServers(server, socksPort, httpPort, prefs, rules, dns, clashPort, secret, allServers, egresses)
 	if err != nil {
 		b.mu.Unlock()
 		return fmt.Errorf("build sing-box config: %w", err)
@@ -148,9 +184,15 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, _ store
 	b.doneCh = make(chan struct{})
 	b.socks = fmt.Sprintf("127.0.0.1:%d", socksPort)
 	b.http = fmt.Sprintf("127.0.0.1:%d", httpPort)
+	b.clashApi = fmt.Sprintf("127.0.0.1:%d", clashPort)
+	b.clashSecret = secret
 	b.bytesIn.Store(0)
 	b.bytesOut.Store(0)
 	b.latencyMS.Store(0)
+	b.seriesMu.Lock()
+	b.series = b.series[:0]
+	b.seriesMu.Unlock()
+	b.peakConns.Store(0)
 	doneCh := b.doneCh
 	b.mu.Unlock()
 
@@ -184,18 +226,73 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, _ store
 	return nil
 }
 
+// HotReload updates the sing-box config file in place without restarting the process or dropping TUN.
+func (b *SingBoxBackend) HotReload(ctx context.Context, server proto.Server, prefs store.Prefs, rules []proto.Rule) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.cmd == nil || b.cmd.Process == nil {
+		return errors.New("sing-box process is not running")
+	}
+
+	socksPort := 2080
+	httpPort := 2081
+	clashPort := 9090
+	if b.socks != "" {
+		if _, p, err := net.SplitHostPort(b.socks); err == nil {
+			socksPort, _ = strconv.Atoi(p)
+		}
+	}
+
+	dns := proto.DNSConfig{
+		Mode:    prefs.DNSMode,
+		Proxied: prefs.DNSProxied,
+		Direct:  prefs.DNSDirect,
+	}
+
+	var allServers []proto.Server
+	var egresses []proto.Egress
+	if b.store != nil {
+		allServers = b.store.Snapshot().Servers
+		egresses = b.store.Snapshot().Egresses
+	}
+
+	cfg, err := BuildSingBoxConfigWithServers(server, socksPort, httpPort, prefs, rules, dns, clashPort, b.clashSecret, allServers, egresses)
+	if err != nil {
+		return fmt.Errorf("build sing-box config for hot reload: %w", err)
+	}
+
+	cfgPath := filepath.Join(b.dataDir, "singbox-current.json")
+	if err := os.WriteFile(cfgPath, cfg, 0o600); err != nil {
+		return fmt.Errorf("write sing-box config for hot reload: %w", err)
+	}
+
+	_ = b.reloadClashConfig(cfgPath)
+
+	logx.Info("sing-box configuration updated in-memory (hot-reload)", "server", server.Name)
+	return nil
+}
+
 // Stop implements Backend.
 func (b *SingBoxBackend) Stop(_ context.Context) error {
 	b.mu.Lock()
 	cancel := b.cancel
 	doneCh := b.doneCh
-	b.cmd = nil
+	// Keep b.cmd non-nil while the process is shutting down so that a
+	// concurrent Start() sees "already running" instead of racing on
+	// port allocation. Cleared after the process has actually exited.
 	b.cancel = nil
 	b.doneCh = nil
 	b.socks = ""
 	b.http = ""
+	b.clashApi = ""
+	b.clashSecret = ""
 	b.mu.Unlock()
 	if cancel == nil {
+		// Ensure stale cmd is cleared.
+		b.mu.Lock()
+		b.cmd = nil
+		b.mu.Unlock()
 		return nil
 	}
 	cancel()
@@ -206,6 +303,9 @@ func (b *SingBoxBackend) Stop(_ context.Context) error {
 			// Ignore; process will be reaped by the OS.
 		}
 	}
+	b.mu.Lock()
+	b.cmd = nil
+	b.mu.Unlock()
 	return nil
 }
 
@@ -260,54 +360,441 @@ func readTail(path string, n int) string {
 }
 
 // BuildSingBoxConfig translates a Mosaic Server into a sing-box config
-// document with a SOCKS and HTTP inbound on loopback and a single
-// proxy outbound. Exposed for tests.
-func BuildSingBoxConfig(server proto.Server, socksPort, httpPort int) ([]byte, error) {
-	out, err := outboundFor(server)
-	if err != nil {
-		return nil, err
+// document with a SOCKS and HTTP inbound on loopback, a single proxy
+// outbound, optional DNS section, and routing rules derived from the
+// Mosaic ruleset. Exposed for tests.
+func BuildSingBoxConfig(server proto.Server, socksPort, httpPort int, prefs store.Prefs, rules []proto.Rule, dns proto.DNSConfig, clashPort int, clashSecret string) ([]byte, error) {
+	return BuildSingBoxConfigWithServers(server, socksPort, httpPort, prefs, rules, dns, clashPort, clashSecret, nil, nil)
+}
+
+func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int, prefs store.Prefs, rules []proto.Rule, dns proto.DNSConfig, clashPort int, clashSecret string, allServers []proto.Server, egresses []proto.Egress) ([]byte, error) {
+	var proxyOutbounds []any
+
+	if server.IsVirtualGroup {
+		targetURL := "https://cp.cloudflare.com/generate_204"
+		if server.Category == "whitelist" || server.GroupTag == "auto-whitelist" || server.Country == "RU" {
+			targetURL = "https://yandex.ru/generate_204"
+		}
+
+		var childNodes []proto.Server
+		targetCountry := server.Country
+		if targetCountry == "" {
+			gt := strings.ToLower(server.GroupTag + " " + server.ID)
+			switch {
+			case strings.Contains(gt, "de"):
+				targetCountry = "DE"
+			case strings.Contains(gt, "nl"):
+				targetCountry = "NL"
+			case strings.Contains(gt, "us"):
+				targetCountry = "US"
+			case strings.Contains(gt, "ca"):
+				targetCountry = "CA"
+			case strings.Contains(gt, "fr"):
+				targetCountry = "FR"
+			case strings.Contains(gt, "sg"):
+				targetCountry = "SG"
+			case strings.Contains(gt, "gb") || strings.Contains(gt, "uk"):
+				targetCountry = "GB"
+			case strings.Contains(gt, "fi"):
+				targetCountry = "FI"
+			case strings.Contains(gt, "ru"):
+				targetCountry = "RU"
+			}
+		}
+
+		for _, sv := range allServers {
+			if sv.IsVirtualGroup {
+				continue
+			}
+			if server.SubscriptionID != "" && sv.SubscriptionID != server.SubscriptionID {
+				continue
+			}
+			if server.GroupTag == "rg-all" || server.GroupTag == "" {
+				childNodes = append(childNodes, sv)
+			} else if server.GroupTag == "auto-whitelist" || server.Category == "whitelist" {
+				nameLower := strings.ToLower(sv.Name + " " + sv.Tag)
+				if strings.Contains(nameLower, "whitelist") || strings.Contains(nameLower, "4g") || strings.Contains(nameLower, "tspu") || sv.Protocol == "vless" {
+					childNodes = append(childNodes, sv)
+				}
+			} else if targetCountry != "" && matchServerCountry(sv, targetCountry) {
+				childNodes = append(childNodes, sv)
+			}
+		}
+
+		if len(childNodes) == 0 {
+			for _, sv := range allServers {
+				if !sv.IsVirtualGroup {
+					childNodes = append(childNodes, sv)
+				}
+			}
+		}
+
+		var nodeTags []string
+		for i, node := range childNodes {
+			nodeTag := fmt.Sprintf("node-%s-%d", node.ID, i)
+			nodeOut, err := outboundForWithTag(node, nodeTag)
+			if err == nil {
+				proxyOutbounds = append(proxyOutbounds, nodeOut)
+				nodeTags = append(nodeTags, nodeTag)
+			}
+		}
+
+		if len(nodeTags) == 0 {
+			nodeTags = []string{"direct"}
+		}
+
+		groupOut := map[string]any{
+			"type":                        "urltest",
+			"tag":                         "proxy",
+			"outbounds":                   nodeTags,
+			"url":                         targetURL,
+			"interval":                    "15s",
+			"tolerance":                   30,
+			"idle_timeout":                "30m",
+			"interrupt_exist_connections": false,
+		}
+		proxyOutbounds = append([]any{groupOut}, proxyOutbounds...)
+	} else {
+		out, err := outboundForWithTag(server, "proxy")
+		if err != nil {
+			return nil, err
+		}
+		proxyOutbounds = append(proxyOutbounds, out)
 	}
+
+	listenAddr := "127.0.0.1"
+	if prefs.AllowLAN || prefs.ShareLAN {
+		listenAddr = "0.0.0.0"
+	}
+
+	inbounds := []any{
+		map[string]any{
+			"type":        "socks",
+			"tag":         "socks-in",
+			"listen":      listenAddr,
+			"listen_port": socksPort,
+		},
+		map[string]any{
+			"type":        "http",
+			"tag":         "http-in",
+			"listen":      listenAddr,
+			"listen_port": httpPort,
+		},
+	}
+
+	if prefs.TunnelMode == "tun" || prefs.TunnelMode == "" {
+		inbounds = append(inbounds, map[string]any{
+			"type":        "tun",
+			"tag":         "tun-in",
+			"address":     []string{"172.19.0.1/30"},
+			"auto_route":  true,
+			"strict_route": true,
+			"stack":       "gvisor",
+		})
+	}
+
+	allOutbounds := append(proxyOutbounds,
+		map[string]any{"type": "direct", "tag": "direct"},
+		map[string]any{"type": "block", "tag": "block"},
+	)
+
+	// ---- Egress listeners (additional inbounds with per-egress routing) ----
+	var egressRouteRules []any
+	if len(egresses) > 0 {
+		for _, eg := range egresses {
+			if !eg.Active || eg.Port == 0 {
+				continue
+			}
+			egressTag := fmt.Sprintf("egress-%s", eg.ID)
+			egressOutboundTag := fmt.Sprintf("egress-out-%s", eg.ID)
+
+			// Inbound: SOCKS5 or HTTP or mixed on the egress port
+			egListen := eg.Listen
+			if egListen == "" {
+				egListen = "127.0.0.1"
+			}
+			switch eg.Type {
+			case "socks", "socks5":
+				inbounds = append(inbounds, map[string]any{
+					"type":        "socks",
+					"tag":         egressTag,
+					"listen":      egListen,
+					"listen_port": eg.Port,
+				})
+			case "http":
+				inbounds = append(inbounds, map[string]any{
+					"type":        "http",
+					"tag":         egressTag,
+					"listen":      egListen,
+					"listen_port": eg.Port,
+				})
+			default: // "mixed" or empty
+				inbounds = append(inbounds, map[string]any{
+					"type":        "mixed",
+					"tag":         egressTag,
+					"listen":      egListen,
+					"listen_port": eg.Port,
+				})
+			}
+
+			// Outbound: if GroupID set → urltest group with matching servers,
+			// else if ServerID set → specific server outbound, else → "proxy" (default)
+			if eg.GroupID != "" {
+				// Find servers matching this group tag
+				var groupNodes []string
+				for i, sv := range allServers {
+					if sv.IsVirtualGroup {
+						continue
+					}
+					if sv.GroupTag == eg.GroupID || sv.SubscriptionID == eg.GroupID {
+						nodeTag := fmt.Sprintf("en-%s-%d", eg.ID, i)
+						nodeOut, err := outboundForWithTag(sv, nodeTag)
+						if err == nil {
+							allOutbounds = append(allOutbounds, nodeOut)
+							groupNodes = append(groupNodes, nodeTag)
+						}
+					}
+				}
+				if len(groupNodes) == 0 {
+					groupNodes = []string{"direct"}
+				}
+				allOutbounds = append(allOutbounds, map[string]any{
+					"type":                        "urltest",
+					"tag":                         egressOutboundTag,
+					"outbounds":                   groupNodes,
+					"url":                         "https://cp.cloudflare.com/generate_204",
+					"interval":                    "15s",
+					"tolerance":                   30,
+					"interrupt_exist_connections": false,
+				})
+			} else if eg.ServerID != "" {
+				// Find the specific server
+				var found *proto.Server
+				for i, sv := range allServers {
+					if sv.ID == eg.ServerID {
+						found = &allServers[i]
+						break
+					}
+				}
+				if found != nil {
+					egOut, err := outboundForWithTag(*found, egressOutboundTag)
+					if err == nil {
+						allOutbounds = append(allOutbounds, egOut)
+					} else {
+						egressOutboundTag = "proxy"
+					}
+				} else {
+					egressOutboundTag = "proxy"
+				}
+			} else {
+				// Default → use main proxy
+				egressOutboundTag = "proxy"
+			}
+
+			// Route rule: traffic from this egress inbound → egress outbound
+			egressRouteRules = append(egressRouteRules, map[string]any{
+				"inbound":  egressTag,
+				"outbound": egressOutboundTag,
+			})
+		}
+	}
+
 	cfg := map[string]any{
 		"log": map[string]any{
 			"level":     "warn",
 			"timestamp": true,
 		},
-		"inbounds": []any{
-			map[string]any{
-				"type":        "socks",
-				"tag":         "socks-in",
-				"listen":      "127.0.0.1",
-				"listen_port": socksPort,
-				"sniff":       true,
-			},
-			map[string]any{
-				"type":        "http",
-				"tag":         "http-in",
-				"listen":      "127.0.0.1",
-				"listen_port": httpPort,
-				"sniff":       true,
-			},
-		},
-		"outbounds": []any{
-			out,
-			map[string]any{"type": "direct", "tag": "direct"},
-			map[string]any{"type": "block", "tag": "block"},
-			map[string]any{"type": "dns", "tag": "dns-out"},
-		},
-		"route": map[string]any{
-			"final": "proxy",
-			"rules": []any{
-				map[string]any{"protocol": "dns", "outbound": "dns-out"},
+		"inbounds":  inbounds,
+		"outbounds": allOutbounds,
+		"experimental": map[string]any{
+			"clash_api": map[string]any{
+				"external_controller": fmt.Sprintf("127.0.0.1:%d", clashPort),
+				"secret":              clashSecret,
 			},
 		},
 	}
+
+	// ---- DNS section (sing-box 1.13+ server format) ----
+	dnsServerTag := "dns-direct"
+	if dns.Mode != "disabled" {
+		servers := []any{}
+		// Primary resolver (direct / real DNS)
+		primaryTag := "dns-primary"
+		if dns.Direct != "" {
+			servers = append(servers, map[string]any{
+				"type":   "udp",
+				"tag":    primaryTag,
+				"server": dns.Direct,
+			})
+		} else {
+			servers = append(servers, map[string]any{
+				"type":   "udp",
+				"tag":    primaryTag,
+				"server": "1.1.1.1",
+			})
+		}
+		// Proxied resolver (used for domains going through proxy)
+		if dns.Proxied != "" {
+			servers = append(servers, map[string]any{
+				"type":   "udp",
+				"tag":    "dns-proxied",
+				"server": dns.Proxied,
+			})
+		}
+		// FakeIP server (new format: standalone server object)
+		if dns.Mode == "fake-ip" {
+			fakeIPEntry := map[string]any{
+				"type":       "fakeip",
+				"tag":        "dns-fakeip",
+				"inet4_range": "198.18.0.0/15",
+			}
+			if dns.FakeIPRange != "" {
+				fakeIPEntry["inet4_range"] = dns.FakeIPRange
+			}
+			servers = append(servers, fakeIPEntry)
+		}
+		dnsRules := []any{}
+		if dns.Mode == "fake-ip" {
+			dnsRules = append(dnsRules, map[string]any{
+				"query_type": []string{"A", "AAAA"},
+				"server":     "dns-fakeip",
+			})
+		}
+		dnsBlock := map[string]any{
+			"servers": servers,
+		}
+		if len(dnsRules) > 0 {
+			dnsBlock["rules"] = dnsRules
+		}
+		if dns.DisableCache {
+			dnsBlock["cache"] = false
+		}
+		if dns.DisableFallback {
+			dnsBlock["disable_fallback"] = true
+		}
+		if len(dns.Hosts) > 0 {
+			dnsBlock["hosts"] = dns.Hosts
+		}
+		cfg["dns"] = dnsBlock
+		// Use the primary DNS server as the default domain resolver
+		dnsServerTag = primaryTag
+	}
+
+	// ---- Route rules ----
+	routeRules := []any{
+		map[string]any{"protocol": "dns", "action": "hijack-dns"},
+	}
+	if len(prefs.BypassProcesses) > 0 {
+		routeRules = append(routeRules, map[string]any{
+			"process_name": prefs.BypassProcesses,
+			"outbound":     "direct",
+		})
+	}
+	if prefs.BlockIPv6 {
+		routeRules = append(routeRules, map[string]any{
+			"ip_version": 6,
+			"outbound":   "block",
+		})
+	}
+	for _, r := range rules {
+		sr := ruleToSingBox(r)
+		if sr != nil {
+			routeRules = append(routeRules, sr)
+		}
+	}
+	// Egress routing rules must come BEFORE the final "proxy" fallback
+	// so traffic from egress inbounds goes to their dedicated outbounds.
+	if len(egressRouteRules) > 0 {
+		routeRules = append(egressRouteRules, routeRules...)
+	}
+
+	routeBlock := map[string]any{
+		"final":                  "proxy",
+		"rules":                  routeRules,
+		"default_domain_resolver": dnsServerTag,
+	}
+	if dns.Mode == "disabled" {
+		delete(routeBlock, "default_domain_resolver")
+	}
+	cfg["route"] = routeBlock
+
 	return json.MarshalIndent(cfg, "", "  ")
 }
 
+// ruleToSingBox converts a proto.Rule into a sing-box route rule map.
+// Returns nil if the rule has no match conditions.
+func ruleToSingBox(r proto.Rule) map[string]any {
+	if r.ID == "" && r.Match.Empty() {
+		return nil
+	}
+
+	outbound := "proxy"
+	switch r.Action {
+	case proto.ActionDirect:
+		outbound = "direct"
+	case proto.ActionBlock:
+		outbound = "block"
+	}
+
+	rule := map[string]any{"outbound": outbound}
+
+	// Match fields
+	m := r.Match
+	if len(m.DomainSuffix) > 0 {
+		rule["domain_suffix"] = m.DomainSuffix
+	}
+	if len(m.Domain) > 0 {
+		rule["domain"] = m.Domain
+	}
+	if len(m.DomainKeyword) > 0 {
+		rule["domain_keyword"] = m.DomainKeyword
+	}
+	if len(m.IPCIDR) > 0 {
+		rule["ip_cidr"] = m.IPCIDR
+	}
+	if len(m.Process) > 0 {
+		rule["process_name"] = m.Process
+	}
+	if len(m.Port) > 0 {
+		rule["port"] = m.Port
+	}
+	if len(m.GeoSite) > 0 {
+		rule["geosite"] = m.GeoSite
+	}
+	if len(m.GeoIP) > 0 {
+		rule["geoip"] = m.GeoIP
+	}
+
+	return rule
+}
+
 // outboundFor builds the sing-box outbound block matching the server's
-// protocol. Unknown / partial inputs return a descriptive error so the
-// user sees something more helpful than "json: cannot unmarshal …".
+// protocol with tag "proxy".
 func outboundFor(s proto.Server) (map[string]any, error) {
+	return outboundForWithTag(s, "proxy")
+}
+
+// outboundForWithTag builds a sing-box outbound block with a custom tag name.
+func outboundForWithTag(s proto.Server, tag string) (map[string]any, error) {
+	if tag == "" {
+		tag = "proxy"
+	}
+	if s.IsVirtualGroup {
+		targetURL := "https://cp.cloudflare.com/generate_204"
+		if s.Category == "whitelist" || s.GroupTag == "auto-whitelist" || s.Country == "RU" {
+			targetURL = "https://yandex.ru/generate_204"
+		}
+		return map[string]any{
+			"type":                        "urltest",
+			"tag":                         tag,
+			"url":                         targetURL,
+			"interval":                    "15s",
+			"tolerance":                   30,
+			"idle_timeout":                "30m",
+			"interrupt_exist_connections": false,
+		}, nil
+	}
+
 	rs := func(k string) string {
 		if s.Raw == nil {
 			return ""
@@ -330,7 +817,7 @@ func outboundFor(s proto.Server) (map[string]any, error) {
 	case proto.ProtoVLESS:
 		out := map[string]any{
 			"type":        "vless",
-			"tag":         "proxy",
+			"tag":         tag,
 			"server":      s.Address,
 			"server_port": s.Port,
 			"uuid":        rs("uuid"),
@@ -392,7 +879,7 @@ func outboundFor(s proto.Server) (map[string]any, error) {
 	case proto.ProtoHysteria2:
 		out := map[string]any{
 			"type":        "hysteria2",
-			"tag":         "proxy",
+			"tag":         tag,
 			"server":      s.Address,
 			"server_port": s.Port,
 			"password":    rs("password"),
@@ -415,22 +902,183 @@ func outboundFor(s proto.Server) (map[string]any, error) {
 	case proto.ProtoShadowsocks:
 		out := map[string]any{
 			"type":        "shadowsocks",
-			"tag":         "proxy",
+			"tag":         tag,
 			"server":      s.Address,
 			"server_port": s.Port,
 			"method":      rs("method"),
 			"password":    rs("password"),
 		}
 		return out, nil
+	case proto.ProtoVMess:
+		out := map[string]any{
+			"type":        "vmess",
+			"tag":         tag,
+			"server":      s.Address,
+			"server_port": s.Port,
+			"uuid":        rs("uuid"),
+		}
+		if aid := rs("alter_id"); aid != "" {
+			if n, err := strconv.Atoi(aid); err == nil {
+				out["alter_id"] = n
+			}
+		}
+		if sec := rs("security"); sec != "" {
+			out["security"] = sec
+		}
+		network := rs("network")
+		// TLS block — same pattern as vless
+		tlsBlock := map[string]any{}
+		if rs("sni") != "" || rs("tls") == "tls" {
+			tlsBlock["enabled"] = true
+			if sni := rs("sni"); sni != "" {
+				tlsBlock["server_name"] = sni
+			}
+			if fp := rs("fingerprint"); fp != "" {
+				tlsBlock["utls"] = map[string]any{
+					"enabled":     true,
+					"fingerprint": fp,
+				}
+			}
+			if rs("insecure") == "true" || rs("skip-cert-verify") == "true" {
+				tlsBlock["insecure"] = true
+			}
+		}
+		if len(tlsBlock) > 0 {
+			out["tls"] = tlsBlock
+		}
+		switch network {
+		case "ws":
+			ws := map[string]any{}
+			if path := rs("path"); path != "" {
+				ws["path"] = path
+			}
+			if host := rs("host"); host != "" {
+				ws["headers"] = map[string]any{"Host": host}
+			}
+			out["transport"] = mergeMap(map[string]any{"type": "ws"}, ws)
+		case "grpc":
+			out["transport"] = map[string]any{
+				"type":         "grpc",
+				"service_name": rs("path"),
+			}
+		case "http":
+			t := map[string]any{"type": "http"}
+			if path := rs("path"); path != "" {
+				t["path"] = path
+			}
+			if host := rs("host"); host != "" {
+				t["host"] = []any{host}
+			}
+			out["transport"] = t
+		}
+		return out, nil
+
+	case proto.ProtoTrojan:
+		out := map[string]any{
+			"type":        "trojan",
+			"tag":         tag,
+			"server":      s.Address,
+			"server_port": s.Port,
+			"password":    rs("password"),
+		}
+		// TLS block — Trojan always uses TLS
+		tlsBlock := map[string]any{"enabled": true}
+		if sni := rs("sni"); sni != "" {
+			tlsBlock["server_name"] = sni
+		}
+		if fp := rs("fingerprint"); fp != "" {
+			tlsBlock["utls"] = map[string]any{
+				"enabled":     true,
+				"fingerprint": fp,
+			}
+		}
+		if rs("insecure") == "true" || rs("skip-cert-verify") == "true" {
+			tlsBlock["insecure"] = true
+		}
+		out["tls"] = tlsBlock
+		// Transport — same ws/grpc/http patterns as vless
+		network := rs("network")
+		switch network {
+		case "ws":
+			ws := map[string]any{}
+			if path := rs("path"); path != "" {
+				ws["path"] = path
+			}
+			if host := rs("host"); host != "" {
+				ws["headers"] = map[string]any{"Host": host}
+			}
+			out["transport"] = mergeMap(map[string]any{"type": "ws"}, ws)
+		case "grpc":
+			out["transport"] = map[string]any{
+				"type":         "grpc",
+				"service_name": rs("path"),
+			}
+		case "http":
+			t := map[string]any{"type": "http"}
+			if path := rs("path"); path != "" {
+				t["path"] = path
+			}
+			if host := rs("host"); host != "" {
+				t["host"] = []any{host}
+			}
+			out["transport"] = t
+		}
+		return out, nil
+
 	case proto.ProtoNaive:
-		// sing-box doesn't ship a native naive client; we proxy via a
-		// chained http-tunnel. The real fix is to bundle naïve too,
-		// but that's out of scope for rc10.
-		return nil, errors.New("naive proxy not yet supported by bundled sing-box; pick another station")
+		out := map[string]any{
+			"type":        "naive",
+			"tag":         tag,
+			"server":      s.Address,
+			"server_port": s.Port,
+			"username":    rs("username"),
+			"password":    rs("password"),
+		}
+		if tlsSNI := rs("sni"); tlsSNI != "" {
+			out["tls"] = map[string]any{
+				"enabled":     true,
+				"server_name": tlsSNI,
+			}
+		}
+		return out, nil
 	case proto.ProtoAmneziaWG:
-		return nil, errors.New("amneziawg not yet supported; pick another station")
+		return nil, fmt.Errorf("protocol %s not supported by sing-box; use a different station", s.Protocol)
 	}
 	return nil, fmt.Errorf("unsupported protocol %q", s.Protocol)
+}
+
+func matchServerCountry(sv proto.Server, targetCountry string) bool {
+	if targetCountry == "" {
+		return false
+	}
+	if sv.Country != "" && strings.EqualFold(sv.Country, targetCountry) {
+		return true
+	}
+	tc := strings.ToLower(targetCountry)
+	haystack := strings.ToLower(sv.Name + " " + sv.Tag + " " + sv.Address + " " + sv.City)
+
+	switch tc {
+	case "de":
+		return strings.Contains(haystack, "de") || strings.Contains(haystack, "germany") || strings.Contains(haystack, "frankfurt") || strings.Contains(haystack, "berlin") || strings.Contains(haystack, "nuremberg")
+	case "nl":
+		return strings.Contains(haystack, "nl") || strings.Contains(haystack, "netherlands") || strings.Contains(haystack, "amsterdam")
+	case "us":
+		return strings.Contains(haystack, "us") || strings.Contains(haystack, "usa") || strings.Contains(haystack, "united states") || strings.Contains(haystack, "new york") || strings.Contains(haystack, "los angeles") || strings.Contains(haystack, "miami") || strings.Contains(haystack, "dallas") || strings.Contains(haystack, "chicago") || strings.Contains(haystack, "ashburn") || strings.Contains(haystack, "seattle")
+	case "ca":
+		return strings.Contains(haystack, "ca") || strings.Contains(haystack, "canada") || strings.Contains(haystack, "toronto") || strings.Contains(haystack, "montreal")
+	case "fr":
+		return strings.Contains(haystack, "fr") || strings.Contains(haystack, "france") || strings.Contains(haystack, "paris")
+	case "sg":
+		return strings.Contains(haystack, "sg") || strings.Contains(haystack, "singapore")
+	case "gb", "uk":
+		return strings.Contains(haystack, "gb") || strings.Contains(haystack, "uk") || strings.Contains(haystack, "london") || strings.Contains(haystack, "united kingdom")
+	case "fi":
+		return strings.Contains(haystack, "fi") || strings.Contains(haystack, "finland") || strings.Contains(haystack, "helsinki")
+	case "ru":
+		return strings.Contains(haystack, "ru") || strings.Contains(haystack, "russia") || strings.Contains(haystack, "moscow") || strings.Contains(haystack, "spb") || strings.Contains(haystack, "saint petersburg")
+	default:
+		return strings.Contains(haystack, tc)
+	}
 }
 
 func mergeMap(a, b map[string]any) map[string]any {
@@ -438,4 +1086,431 @@ func mergeMap(a, b map[string]any) map[string]any {
 		a[k] = v
 	}
 	return a
+}
+
+// genClashSecret returns a 16-byte hex string used as the clash-api bearer
+// secret.  It is generated per-session so external processes on the same
+// machine cannot query the running sing-box instance.
+func genClashSecret() string {
+	var buf [16]byte
+	_, _ = rand.Read(buf[:])
+	return hex.EncodeToString(buf[:])
+}
+
+// ---------------------------------------------------------------------------
+// Clash API client helpers
+// ---------------------------------------------------------------------------
+
+// clashGet performs an authenticated GET to the running sing-box clash-api.
+func (b *SingBoxBackend) clashGet(path string) ([]byte, error) {
+	b.mu.Lock()
+	addr := b.clashApi
+	secret := b.clashSecret
+	b.mu.Unlock()
+	if addr == "" {
+		return nil, errors.New("sing-box is not running")
+	}
+	req, err := http.NewRequest("GET", "http://"+addr+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	if secret != "" {
+		req.Header.Set("Authorization", "Bearer "+secret)
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("clash-api %s: %s", path, resp.Status)
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+}
+
+// reloadClashConfig tells the running sing-box process via Clash REST API to reload configuration.
+func (b *SingBoxBackend) reloadClashConfig(cfgPath string) error {
+	b.mu.Lock()
+	addr := b.clashApi
+	secret := b.clashSecret
+	b.mu.Unlock()
+	if addr == "" {
+		return errors.New("sing-box is not running")
+	}
+
+	body, err := json.Marshal(map[string]any{"path": cfgPath})
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("PUT", "http://"+addr+"/configs?force=true", strings.NewReader(string(body)))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if secret != "" {
+		req.Header.Set("Authorization", "Bearer "+secret)
+	}
+
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
+// clashPost performs an authenticated POST (no body) to the clash-api.
+func (b *SingBoxBackend) clashPost(path string) error {
+	b.mu.Lock()
+	addr := b.clashApi
+	secret := b.clashSecret
+	b.mu.Unlock()
+	if addr == "" {
+		return errors.New("sing-box is not running")
+	}
+	req, err := http.NewRequest("POST", "http://"+addr+path, nil)
+	if err != nil {
+		return err
+	}
+	if secret != "" {
+		req.Header.Set("Authorization", "Bearer "+secret)
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 && resp.StatusCode != 204 {
+		return fmt.Errorf("clash-api %s: %s", path, resp.Status)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// ConnectionBackend implementation
+// ---------------------------------------------------------------------------
+
+// clashConn is the JSON shape returned by clash-api /connections.
+type clashConn struct {
+	ID       string `json:"id"`
+	Network  string `json:"network"`
+	Metadata struct {
+		Network      string `json:"network"`
+		DestinationIP string `json:"destinationIP"`
+		DestinationPort string `json:"destinationPort"`
+		SourceIP     string `json:"sourceIP"`
+		SourcePort   string `json:"sourcePort"`
+		ProcessPath  string `json:"processPath"`
+		Host         string `json:"host"`
+	} `json:"metadata"`
+	Upload   int64  `json:"upload"`
+	Download int64  `json:"download"`
+	Start    string `json:"start"`
+	Chains   []string `json:"chains"`
+	Rule     string `json:"rule"`
+}
+
+type clashConnsResp struct {
+	Connections []clashConn `json:"connections"`
+	Upload      int64       `json:"upload"`
+	Download    int64       `json:"download"`
+}
+
+// Connections implements ConnectionBackend.
+func (b *SingBoxBackend) Connections() []proto.Connection {
+	data, err := b.clashGet("/connections")
+	if err != nil {
+		return []proto.Connection{}
+	}
+	var resp clashConnsResp
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return []proto.Connection{}
+	}
+
+	conns := make([]proto.Connection, 0, len(resp.Connections))
+	for _, c := range resp.Connections {
+		net := c.Network
+		if net == "" {
+			net = c.Metadata.Network
+		}
+		domain := c.Metadata.Host
+		ip := c.Metadata.DestinationIP
+		port, _ := strconv.Atoi(c.Metadata.DestinationPort)
+		chain := ""
+		if len(c.Chains) > 0 {
+			chain = strings.Join(c.Chains, " → ")
+		}
+		conns = append(conns, proto.Connection{
+			ID:         c.ID,
+			Network:    net,
+			Outbound:   chain,
+			Domain:     domain,
+			IP:         ip,
+			Port:       port,
+			SourceIP:   c.Metadata.SourceIP,
+			SourcePort: func() int { p, _ := strconv.Atoi(c.Metadata.SourcePort); return p }(),
+			Process:    c.Metadata.ProcessPath,
+			Upload:     uint64(c.Upload),
+			Download:   uint64(c.Download),
+			StartAt:    func() time.Time { t, _ := time.Parse(time.RFC3339, c.Start); return t }(),
+			Chain:      chain,
+			Rule:       c.Rule,
+		})
+	}
+
+	// Track peak connection count.
+	n := int32(len(conns))
+	for {
+		peak := b.peakConns.Load()
+		if n <= peak || b.peakConns.CompareAndSwap(peak, n) {
+			break
+		}
+	}
+
+	return conns
+}
+
+// CloseConnection implements ConnectionBackend.
+func (b *SingBoxBackend) CloseConnection(id string) error {
+	return b.clashPost("/connections/" + url.PathEscape(id))
+}
+
+// CloseAllConnections implements ConnectionBackend.
+func (b *SingBoxBackend) CloseAllConnections() error {
+	return b.clashPost("/connections")
+}
+
+// ---------------------------------------------------------------------------
+// StatsBackend implementation
+// ---------------------------------------------------------------------------
+
+// TrafficStats implements StatsBackend.
+func (b *SingBoxBackend) TrafficStats() proto.TrafficStats {
+	in := b.bytesIn.Load()
+	out := b.bytesOut.Load()
+
+	// Try to enrich from clash-api realtime traffic.
+	var connCount int
+	if data, err := b.clashGet("/connections"); err == nil {
+		var resp clashConnsResp
+		if json.Unmarshal(data, &resp) == nil {
+			connCount = len(resp.Connections)
+			// clash-api returns aggregate up/down across all connections.
+			if resp.Upload > 0 || resp.Download > 0 {
+				// These are cumulative since session start; use them
+				// if our atomic counters haven't been populated yet.
+				if out == 0 {
+					out = uint64(resp.Upload)
+				}
+				if in == 0 {
+					in = uint64(resp.Download)
+				}
+			}
+		}
+	}
+
+	// Update series with the latest data point.
+	now := time.Now()
+	pt := proto.TrafficPoint{Timestamp: now, BytesIn: in, BytesOut: out}
+	b.seriesMu.Lock()
+	b.series = append(b.series, pt)
+	if len(b.series) > 120 {
+		b.series = b.series[len(b.series)-120:]
+	}
+	seriesCopy := make([]proto.TrafficPoint, len(b.series))
+	copy(seriesCopy, b.series)
+	b.seriesMu.Unlock()
+
+	peak := int(b.peakConns.Load())
+	if connCount > peak {
+		peak = connCount
+	}
+
+	return proto.TrafficStats{
+		TotalBytesIn:  in,
+		TotalBytesOut: out,
+		Series:        seriesCopy,
+		ConnCount:     connCount,
+		PeakConnCount: peak,
+	}
+}
+
+// ResetStats implements StatsBackend.
+func (b *SingBoxBackend) ResetStats() error {
+	b.bytesIn.Store(0)
+	b.bytesOut.Store(0)
+	b.latencyMS.Store(0)
+	b.peakConns.Store(0)
+	b.seriesMu.Lock()
+	b.series = b.series[:0]
+	b.seriesMu.Unlock()
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// TestBackend implementation
+// ---------------------------------------------------------------------------
+
+// TestURL measures latency to a URL through the active SOCKS proxy.
+func (b *SingBoxBackend) TestURL(ctx context.Context, target string) (proto.TestResult, error) {
+	b.mu.Lock()
+	socks := b.socks
+	b.mu.Unlock()
+	if socks == "" {
+		return proto.TestResult{}, errors.New("sing-box is not running")
+	}
+
+	// Parse the URL to extract host for the result.
+	_, err := url.Parse(target)
+	if err != nil {
+		return proto.TestResult{}, fmt.Errorf("parse URL: %w", err)
+	}
+
+	dialer, err := proxy.SOCKS5("tcp", socks, nil, &net.Dialer{})
+	if err != nil {
+		return proto.TestResult{}, fmt.Errorf("socks5 dial: %w", err)
+	}
+
+	transport := &http.Transport{
+		DialContext: func(_ context.Context, network, addr string) (net.Conn, error) {
+			return dialer.Dial(network, addr)
+		},
+	}
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   10 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // don't follow; we just want latency
+		},
+	}
+
+	start := time.Now()
+	resp, err := client.Get(target)
+	latency := time.Since(start)
+	if err != nil {
+		_ = ctx
+		return proto.TestResult{
+			ServerID:  "",
+			LatencyMS: int(latency.Milliseconds()),
+			Error:     err.Error(),
+			TestedAt:  start,
+		}, nil
+	}
+	resp.Body.Close()
+
+	return proto.TestResult{
+		LatencyMS: int(latency.Milliseconds()),
+		TestedAt:  start,
+	}, nil
+}
+
+// TestIP queries the apparent egress IP through the active tunnel.
+func (b *SingBoxBackend) TestIP(ctx context.Context) (proto.IPInfo, error) {
+	b.mu.Lock()
+	socks := b.socks
+	b.mu.Unlock()
+	if socks == "" {
+		return proto.IPInfo{}, errors.New("sing-box is not running")
+	}
+
+	dialer, err := proxy.SOCKS5("tcp", socks, nil, &net.Dialer{})
+	if err != nil {
+		return proto.IPInfo{}, fmt.Errorf("socks5 dial: %w", err)
+	}
+
+	transport := &http.Transport{
+		DialContext: func(_ context.Context, network, addr string) (net.Conn, error) {
+			return dialer.Dial(network, addr)
+		},
+	}
+	client := &http.Client{Transport: transport, Timeout: 10 * time.Second}
+
+	req, _ := http.NewRequestWithContext(ctx, "GET", "https://api.ipify.org?format=json", nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		return proto.IPInfo{}, err
+	}
+	defer resp.Body.Close()
+
+	var ipResp struct {
+		IP string `json:"ip"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&ipResp); err != nil {
+		return proto.IPInfo{}, err
+	}
+
+	// Best-effort geo lookup via ip-api.com (no key needed for low rate).
+	ipInfo := proto.IPInfo{IP: ipResp.IP}
+	req2, _ := http.NewRequestWithContext(ctx, "GET", "http://ip-api.com/json/"+ipResp.IP, nil)
+	client2 := &http.Client{Timeout: 5 * time.Second}
+	resp2, err := client2.Do(req2)
+	if err == nil {
+		defer resp2.Body.Close()
+		var geo struct {
+			CountryCode string `json:"countryCode"`
+			Country     string `json:"country"`
+			City        string `json:"city"`
+			ISP         string `json:"isp"`
+			AS          string `json:"as"`
+		}
+		if json.NewDecoder(resp2.Body).Decode(&geo) == nil {
+			ipInfo.Country = geo.Country
+			ipInfo.City = geo.City
+			ipInfo.ISP = geo.ISP
+			ipInfo.ASN = geo.AS
+		}
+	}
+
+	return ipInfo, nil
+}
+
+// SpeedTest runs a basic download speed test through the active tunnel.
+func (b *SingBoxBackend) SpeedTest(ctx context.Context) (proto.SpeedTestResult, error) {
+	b.mu.Lock()
+	socks := b.socks
+	b.mu.Unlock()
+	if socks == "" {
+		return proto.SpeedTestResult{}, errors.New("sing-box is not running")
+	}
+
+	dialer, err := proxy.SOCKS5("tcp", socks, nil, &net.Dialer{})
+	if err != nil {
+		return proto.SpeedTestResult{}, fmt.Errorf("socks5 dial: %w", err)
+	}
+
+	transport := &http.Transport{
+		DialContext: func(_ context.Context, network, addr string) (net.Conn, error) {
+			return dialer.Dial(network, addr)
+		},
+	}
+	client := &http.Client{Transport: transport, Timeout: 30 * time.Second}
+
+	testStart := time.Now()
+
+	// Download test: fetch a 10 MB file from speed-test servers via tunnel.
+	req, _ := http.NewRequestWithContext(ctx, "GET", "https://speed.cloudflare.com/__down?bytes=10000000", nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		return proto.SpeedTestResult{TestedAt: testStart, Error: err.Error()}, nil
+	}
+	defer resp.Body.Close()
+
+	dlStart := time.Now()
+	n, _ := io.Copy(io.Discard, resp.Body)
+	dlDuration := time.Since(dlStart)
+
+	var dlBps float64
+	if dlDuration > 0 {
+		dlBps = float64(n) / dlDuration.Seconds() * 8
+	}
+
+	return proto.SpeedTestResult{
+		DownloadBps:  uint64(dlBps),
+		DownloadMbps: dlBps / 1_000_000,
+		TestedAt:     testStart,
+	}, nil
 }

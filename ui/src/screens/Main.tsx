@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import type { Server, Status } from "../api/types";
+import type { Server, Status, Profile } from "../api/types";
 import { StatusSquare } from "../components/StatusSquare";
 import { WorldMap } from "../components/WorldMap";
 import { locText } from "../components/locText";
+import { ProfileEditor } from "./ProfileEditor";
 
 /**
  * Main — the home screen, equivalent to docs/mockups/main.html.
@@ -13,6 +14,12 @@ export function Main({ status }: { status: Status }): JSX.Element {
   const [servers, setServers] = useState<Server[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [editing, setEditing] = useState<Profile | null>(null);
+  const [showEditor, setShowEditor] = useState(false);
+
+  const reloadProfiles = () =>
+    api.listProfiles().then(setProfiles).catch(() => {});
 
   useEffect(() => {
     let cancelled = false;
@@ -24,6 +31,7 @@ export function Main({ status }: { status: Status }): JSX.Element {
       .catch((e: Error) => {
         if (!cancelled) setErr(e.message);
       });
+    reloadProfiles();
     return () => {
       cancelled = true;
     };
@@ -139,6 +147,45 @@ export function Main({ status }: { status: Status }): JSX.Element {
                 ? "Cancel"
                 : "Engage tunnel »"}
         </button>
+
+        {/* Profile quick-switcher */}
+        {profiles.length > 0 ? (
+          <div className="mono" style={{ marginTop: 12, fontSize: 11.5 }}>
+            <div style={{ color: "var(--ink-mute)", letterSpacing: "0.1em", textTransform: "uppercase", fontSize: 10, marginBottom: 4 }}>
+              Profiles
+            </div>
+            {profiles.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className="row"
+                style={{ display: "flex", width: "100%", alignItems: "center", gap: 6, padding: "4px 8px" }}
+                onClick={() => setEditing(p)}
+                title="Edit profile"
+              >
+                <span style={{ fontSize: 14 }}>{p.icon ?? "🌐"}</span>
+                <span>{p.name}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <button
+          className="btn ghost"
+          style={{ marginTop: 8, fontSize: 11, width: "100%" }}
+          onClick={() => { setEditing(null); setShowEditor(true); }}
+        >
+          + New Profile
+        </button>
+
+        {showEditor || editing ? (
+          <ProfileEditor
+            profile={editing ?? undefined}
+            onClose={() => { setShowEditor(false); setEditing(null); }}
+            onSaved={() => void reloadProfiles()}
+          />
+        ) : null}
+
         {err ? (
           <div
             className="mono"

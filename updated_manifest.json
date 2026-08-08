@@ -1,0 +1,192 @@
+{
+  "provider_name": "MosaicVPN",
+  "user_tier": "free",
+  "groups": [
+    {
+      "id": "rg-all",
+      "title": "⚡️ Минимальный пинг (Авто)",
+      "type": "urltest",
+      "nodes": [],
+      "user_tier": "free",
+      "badge": "Оптимально",
+      "category": "smart",
+      "icon": "lightning",
+      "description": "Автоматический выбор наибыстрейшего сервера",
+      "ping_interval": 30,
+      "max_retries": 3,
+      "failover_delay": 5
+    },
+    {
+      "id": "auto-whitelist",
+      "title": "🛡 Обход белых списков (CDN)",
+      "type": "fallback",
+      "nodes": [],
+      "user_tier": "free",
+      "badge": "Защита 4G",
+      "category": "whitelist",
+      "icon": "shield",
+      "description": "VLESS Reality через SNI госсервисов",
+      "ping_interval": 30,
+      "max_retries": 3,
+      "failover_delay": 5
+    },
+    {
+      "id": "auto-de",
+      "title": "🇩🇪 Германия",
+      "type": "urltest",
+      "nodes": [],
+      "user_tier": "free",
+      "badge": "EU Fast",
+      "category": "smart",
+      "icon": "flag_de",
+      "ping_interval": 30,
+      "max_retries": 3,
+      "failover_delay": 5
+    },
+    {
+      "id": "auto-nl",
+      "title": "🇳🇱 Нидерланды",
+      "type": "urltest",
+      "nodes": [],
+      "user_tier": "free",
+      "badge": "P2P Ok",
+      "category": "smart",
+      "icon": "flag_nl",
+      "ping_interval": 30,
+      "max_retries": 3,
+      "failover_delay": 5
+    },
+    {
+      "id": "auto-us",
+      "title": "🇺🇸 США",
+      "type": "urltest",
+      "nodes": [],
+      "user_tier": "free",
+      "badge": "NA Fast",
+      "category": "smart",
+      "icon": "flag_us",
+      "ping_interval": 30,
+      "max_retries": 3,
+      "failover_delay": 5
+    },
+    {
+      "id": "auto-ru",
+      "title": "🇷🇺 Россия",
+      "type": "urltest",
+      "nodes": [],
+      "user_tier": "free",
+      "badge": "Local",
+      "category": "smart",
+      "icon": "flag_ru",
+      "ping_interval": 30,
+      "max_retries": 3,
+      "failover_delay": 5
+    },
+    {
+      "id": "auto-gb",
+      "title": "🇬🇧 Великобритания",
+      "type": "urltest",
+      "nodes": [],
+      "user_tier": "free",
+      "badge": "UK Fast",
+      "category": "smart",
+      "icon": "flag_gb",
+      "ping_interval": 30,
+      "max_retries": 3,
+      "failover_delay": 5
+    },
+    {
+      "id": "auto-fr",
+      "title": "🇫🇷 Франция",
+      "type": "urltest",
+      "nodes": [],
+      "user_tier": "free",
+      "badge": "EU Fast",
+      "category": "smart",
+      "icon": "flag_fr",
+      "ping_interval": 30,
+      "max_retries": 3,
+      "failover_delay": 5
+    },
+    {
+      "id": "auto-ca",
+      "title": "🇨🇦 Канада",
+      "type": "urltest",
+      "nodes": [],
+      "user_tier": "free",
+      "badge": "NA Fast",
+      "category": "smart",
+      "icon": "flag_ca",
+      "ping_interval": 30,
+      "max_retries": 3,
+      "failover_delay": 5
+    }
+  ],
+  "profile": {
+    "branding": {
+      "logo_url": "https://sub.zxc1x1.ru/icon.png",
+      "accent_color": "#E6C475",
+      "support_url": "https://t.me/mosaicsup",
+      "provider_description": "MosaicVPN — Атлас свободных маршрутов"
+    },
+    "billing": {
+      "type": "telegram_bot",
+      "bot_username": "mosaicvpnbot",
+      "pricing_model": "daily",
+      "price_per_day": {"RUB": 1.0},
+      "trial_days": 3,
+      "payment_methods": ["SBP", "YooMoney"],
+      "endpoints": {"topup": "https://t.me/mosaicvpnbot?start=topup"}
+    },
+    "services": [
+      {
+        "id": "mtproto-proxy",
+        "type": "proxy_picker",
+        "title": "🔐 MTProto Proxy для Telegram",
+        "description": "Автоматический выбор наибыстрейшего прокси для Telegram в 1 клик",
+        "icon": "support_agent",
+        "config": {
+          "source_url": "https://sub.zxc1x1.ru/api/mtproto/list",
+          "protocol": "mtproto",
+          "selection": "lowest_ping",
+          "output": {
+            "type": "deep_link",
+            "template": "tg://proxy?server={host}&port={port}&secret={secret}"
+          }
+        }
+      },
+      {
+        "id": "speed_test",
+        "type": "action",
+        "title": "Тест скорости",
+        "description": "Проверить пропускную способность туннеля",
+        "icon": "speed",
+        "config": {"action": "speed_test"}
+      },
+      {
+        "id": "support",
+        "type": "link",
+        "title": "Поддержка",
+        "description": "Открыть чат с поддержкой в Telegram",
+        "icon": "chat",
+        "config": {"url": "https://t.me/mosaicsup"}
+      }
+    ],
+    "widgets": [
+      {
+        "id": "balance",
+        "type": "stats_card",
+        "title": "Баланс",
+        "data_source": "/v1/billing/balance",
+        "fields": ["balance_rub", "days_remaining"]
+      },
+      {
+        "id": "traffic",
+        "type": "stats_card",
+        "title": "Трафик",
+        "data_source": "/v1/stats/traffic",
+        "fields": ["used_bytes", "limit_bytes"]
+      }
+    ]
+  }
+}

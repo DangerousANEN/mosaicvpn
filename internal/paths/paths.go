@@ -22,19 +22,25 @@ const DataDirEnv = "MOSAIC_DATA_DIR"
 // (subscriptions, rules, logs). It does not create the directory.
 //
 //   - $MOSAIC_DATA_DIR if set (used as-is, no AppName suffix appended)
-//   - Windows: %ProgramData%\Mosaic
+//   - Windows: %LOCALAPPDATA%\Mosaic  (per-user, always writable)
 //   - macOS:   ~/Library/Application Support/Mosaic
 //   - Linux:   $XDG_DATA_HOME/mosaic or ~/.local/share/mosaic
+//
+// On Windows we prefer %LOCALAPPDATA% over %ProgramData% because
+// %ProgramData% requires elevation for writes — a non-elevated daemon
+// cannot persist store.json there.  %LOCALAPPDATA% is always writable
+// by the current user.
 func DataDir() string {
 	if d := os.Getenv(DataDirEnv); d != "" {
 		return d
 	}
 	switch runtime.GOOS {
 	case "windows":
-		if d := os.Getenv("ProgramData"); d != "" {
-			return filepath.Join(d, AppName)
+		if la := os.Getenv("LOCALAPPDATA"); la != "" {
+			return filepath.Join(la, AppName)
 		}
-		return filepath.Join(os.Getenv("SystemDrive"), "ProgramData", AppName)
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home, "AppData", "Local", AppName)
 	case "darwin":
 		home, _ := os.UserHomeDir()
 		return filepath.Join(home, "Library", "Application Support", AppName)
@@ -58,3 +64,24 @@ func StoreFile(dir string) string { return filepath.Join(dir, "store.json") }
 
 // EnsureDir creates dir with mode 0o700 if it does not already exist.
 func EnsureDir(dir string) error { return os.MkdirAll(dir, 0o700) }
+
+// EnsureDataDir creates the data directory and verifies it is writable.
+// On Windows the primary path is already %LOCALAPPDATA%\Mosaic (per-user,
+// always writable).  If for some reason that fails, it falls back to a
+// temp directory.
+func EnsureDataDir() (string, error) {
+	dir := DataDir()
+	if err := os.MkdirAll(dir, 0o700); err == nil {
+		probe := filepath.Join(dir, ".writeprobe")
+		if err := os.WriteFile(probe, []byte("ok"), 0o600); err == nil {
+			_ = os.Remove(probe)
+			return dir, nil
+		}
+	}
+	// Last resort: temp directory.
+	dir = filepath.Join(os.TempDir(), "mosaic")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return dir, err
+	}
+	return dir, nil
+}

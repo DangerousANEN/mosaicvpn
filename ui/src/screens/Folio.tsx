@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api/client";
-import type { Prefs } from "../api/types";
+import type { Prefs, WARPConfig } from "../api/types";
 
 /**
  * Folio — the book of preferences. Mirrors docs/mockups/settings.html.
@@ -12,7 +12,7 @@ import type { Prefs } from "../api/types";
  * daemon doesn't yet have — those will land when proto.Prefs grows.
  */
 
-type ChapterId = "network" | "privacy" | "dns" | "autostart" | "mcp";
+type ChapterId = "network" | "privacy" | "dns" | "warp" | "autostart" | "mcp";
 
 const CHAPTERS: { id: ChapterId; num: string; title: string; sub: string }[] = [
   { id: "network", num: "i", title: "Network", sub: "tunnel mode & stack" },
@@ -23,10 +23,11 @@ const CHAPTERS: { id: ChapterId; num: string; title: string; sub: string }[] = [
     sub: "if the tunnel drops",
   },
   { id: "dns", num: "iii", title: "DNS", sub: "name resolution" },
-  { id: "autostart", num: "iv", title: "Auto-start", sub: "how Mosaic launches" },
+  { id: "warp", num: "iv", title: "WARP", sub: "Cloudflare WARP chain" },
+  { id: "autostart", num: "v", title: "Auto-start", sub: "how Mosaic launches" },
   {
     id: "mcp",
-    num: "v",
+    num: "vi",
     title: "Agent & MCP",
     sub: "letting an AI control Mosaic",
   },
@@ -39,17 +40,49 @@ export function Folio(): JSX.Element {
   const [err, setErr] = useState<string | null>(null);
   const [chapter, setChapter] = useState<ChapterId>("network");
 
+  // WARP state (separate from Prefs — stored independently by daemon)
+  const [warp, setWarp] = useState<WARPConfig>({
+    enabled: false,
+    mode: "warp",
+    license_key: "",
+    team_token: "",
+    bind_addr: "127.0.0.1:40000",
+  });
+  const [warpBusy, setWarpBusy] = useState(false);
+  const [warpErr, setWarpErr] = useState<string | null>(null);
+  const [warpLoaded, setWarpLoaded] = useState(false);
+
   const reload = async () => {
     setBusy("load");
     setErr(null);
     try {
-      const p = await api.getPrefs();
+      const [p, w] = await Promise.all([
+        api.getPrefs(),
+        !warpLoaded ? api.getWARP().catch(() => null) : Promise.resolve(null),
+      ]);
       setLoaded(p);
       setDraft(p);
+      if (w) {
+        setWarp(w);
+        setWarpLoaded(true);
+      }
     } catch (e) {
       setErr((e as Error).message);
     } finally {
       setBusy(null);
+    }
+  };
+
+  const onSaveWARP = async () => {
+    setWarpBusy(true);
+    setWarpErr(null);
+    try {
+      const saved = await api.setWARP(warp);
+      setWarp(saved);
+    } catch (e) {
+      setWarpErr((e as Error).message);
+    } finally {
+      setWarpBusy(false);
     }
   };
 
@@ -234,9 +267,13 @@ export function Folio(): JSX.Element {
             </Chapter>
           ) : null}
 
+          {chapter === "warp" ? (
+            <WARPChapter warp={warp} setWarp={setWarp} busy={warpBusy} err={warpErr} onSave={onSaveWARP} />
+          ) : null}
+
           {chapter === "autostart" ? (
             <Chapter
-              num="iv"
+              num="v"
               title="Auto-start"
               desc="how Mosaic launches"
             >
@@ -263,7 +300,7 @@ export function Folio(): JSX.Element {
 
           {chapter === "mcp" ? (
             <Chapter
-              num="v"
+              num="vi"
               title="Agent & MCP"
               desc="letting an AI control Mosaic"
             >
@@ -448,5 +485,97 @@ function Text({
       placeholder={placeholder}
       disabled={disabled}
     />
+  );
+}
+
+/* ---------- WARP chapter ---------- */
+
+function WARPChapter({
+  warp,
+  setWarp,
+  busy,
+  err,
+  onSave,
+}: {
+  warp: WARPConfig;
+  setWarp: (w: WARPConfig) => void;
+  busy: boolean;
+  err: string | null;
+  onSave: () => void;
+}): JSX.Element {
+  const update = <K extends keyof WARPConfig>(k: K, v: WARPConfig[K]) =>
+    setWarp({ ...warp, [k]: v });
+
+  return (
+    <Chapter num="iv" title="WARP" desc="Cloudflare WARP chain">
+      <Opt
+        name="Enable WARP"
+        desc="Chain Cloudflare WARP as an upstream. Traffic flows: you → VPN server → WARP → internet, hiding your VPN exit IP."
+      >
+        <Switch
+          value={warp.enabled}
+          onChange={(v) => update("enabled", v)}
+        />
+      </Opt>
+      <Opt
+        name="Mode"
+        desc="warp = standard WARP. team = Zero Trust team (requires team token)."
+      >
+        <Seg
+          value={warp.mode ?? "warp"}
+          options={[
+            { v: "warp", lab: "WARP" },
+            { v: "team", lab: "WARP+ TEAM" },
+            { v: "plus", lab: "WARP+" },
+          ]}
+          onChange={(v) => update("mode", v)}
+          disabled={!warp.enabled}
+        />
+      </Opt>
+      <Opt
+        name="License key"
+        desc="Optional. Needed for WARP+ referral benefits."
+      >
+        <Text
+          value={warp.license_key ?? ""}
+          onChange={(v) => update("license_key", v)}
+          placeholder="warp-license-key"
+          disabled={!warp.enabled}
+        />
+      </Opt>
+      <Opt
+        name="Team token"
+        desc="Required for WARP+ Team mode. JWT from your Cloudflare Zero Trust dashboard."
+      >
+        <Text
+          value={warp.team_token ?? ""}
+          onChange={(v) => update("team_token", v)}
+          placeholder="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+          disabled={!warp.enabled || warp.mode !== "team"}
+        />
+      </Opt>
+      <Opt
+        name="Bind address"
+        desc="Local port for the WARP wireguard listener. Default 127.0.0.1:40000."
+      >
+        <Text
+          value={warp.bind_addr ?? "127.0.0.1:40000"}
+          onChange={(v) => update("bind_addr", v)}
+          placeholder="127.0.0.1:40000"
+          disabled={!warp.enabled}
+        />
+      </Opt>
+      {err ? <div className="pool-error">{err}</div> : null}
+      <div className="folio-warp-actions">
+        <button
+          type="button"
+          className="btn primary"
+          onClick={onSave}
+          disabled={busy}
+        >
+          {busy ? "Saving…" : "Save WARP settings"}
+        </button>
+      </div>
+    </Chapter>
   );
 }

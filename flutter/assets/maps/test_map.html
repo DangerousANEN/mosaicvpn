@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html><head><style>
+body {background:#1a1a1a;margin:0;display:flex;justify-content:center;align-items:center;height:100vh}
+.container {position:relative;width:800px;background:#222}
+.container svg {width:100%;display:block}
+.pin {position:absolute;width:8px;height:8px;border-radius:50%;transform:translate(-50%,-50%)}
+.pin .label {color:white;font-size:10px;white-space:nowrap;position:absolute;left:12px;top:-4px}
+</style></head><body>
+<div class='container' id='map'>
+</div>
+<script>
+const cities = [
+  {name:'Moscow',lat:55.75,lon:37.62,color:'lime'},
+  {name:'New York',lat:40.71,lon:-74.01,color:'cyan'},
+  {name:'Tokyo',lat:35.68,lon:139.69,color:'red'},
+  {name:'London',lat:51.51,lon:-0.13,color:'yellow'},
+  {name:'Sydney',lat:-33.87,lon:151.21,color:'orange'},
+  {name:'São Paulo',lat:-23.55,lon:-46.63,color:'pink'},
+  {name:'Cape Town',lat:-33.93,lon:18.42,color:'magenta'},
+  {name:'Singapore',lat:1.35,lon:103.82,color:'#0ff'},
+];
+
+// Load SVG
+fetch('world.svg').then(r=>r.text()).then(svg=>{
+  document.getElementById('map').innerHTML = svg;
+  const svgEl = document.querySelector('svg');
+  svgEl.style.width = '100%';
+  svgEl.style.height = 'auto';
+  
+  const rect = svgEl.getBoundingClientRect();
+  
+  cities.forEach(c=>{
+    const nx = (c.lon + 180) / 360;
+    const ny = (90 - c.lat) / 180;
+    const pin = document.createElement('div');
+    pin.className = 'pin';
+    pin.style.background = c.color;
+    pin.style.left = (nx * rect.width) + 'px';
+    pin.style.top = (ny * rect.height) + 'px';
+    pin.innerHTML = '<span class="label">' + c.name + '</span>';
+    document.getElementById('map').appendChild(pin);
+  });
+});
+</script>
+</body></html>

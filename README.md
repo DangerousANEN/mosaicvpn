@@ -1,6 +1,8 @@
-# Mosaic
+# MosaicVPN & MosaicBox
 
-A modular, gazetteer-styled VPN client for Windows.
+> **Notice**: For up-to-date architecture details, master file paths, and current task backlog, consult **[PROJECT_STATUS.md](./PROJECT_STATUS.md)** and **[TODO.md](./TODO.md)**.
+
+A modular, gazetteer-styled VPN client and infrastructure ecosystem.
 
 Mosaic combines a Go daemon (`mosaicd`), a bundled
 [sing-box](https://github.com/SagerNet/sing-box) engine, and a Tauri /

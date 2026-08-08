@@ -96,8 +96,10 @@ func TestSubscribeReceivesEvents(t *testing.T) {
 	ch, cancel := mgr.Subscribe()
 	defer cancel()
 
+	done := make(chan struct{})
 	go func() {
 		_ = mgr.Connect(context.Background(), srv.ID)
+		close(done)
 	}()
 
 	want := map[proto.State]bool{
@@ -114,6 +116,7 @@ func TestSubscribeReceivesEvents(t *testing.T) {
 			if _, tracked := want[ev.State]; tracked {
 				want[ev.State] = true
 				if want[proto.StateConnecting] && want[proto.StateConnected] {
+					<-done
 					return
 				}
 			}

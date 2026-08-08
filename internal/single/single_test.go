@@ -84,3 +84,50 @@ func TestReleaseAllowsReacquire(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = second.Release() })
 }
+
+// TestDistinctLockfilesDoNotCollide guards a real regression: on Windows the
+// single-instance guard used one hardcoded global mutex regardless of the
+// lockfile path, so two daemons pointed at different --data-dir values (a
+// portable install alongside a system one, or parallel tests) wrongly
+// reported "another mosaic daemon is already running". Locks keyed on
+// different lockfiles must be independent.
+func TestDistinctLockfilesDoNotCollide(t *testing.T) {
+	pathA := filepath.Join(t.TempDir(), "daemon.lock")
+	pathB := filepath.Join(t.TempDir(), "daemon.lock")
+
+	epA := proto.DaemonEndpoint{Host: "127.0.0.1", Port: 1111, Token: "a", PID: 1}
+	epB := proto.DaemonEndpoint{Host: "127.0.0.1", Port: 2222, Token: "b", PID: 2}
+
+	lockA, _, err := single.Acquire(pathA, epA)
+	if err != nil {
+		t.Fatalf("acquire A: %v", err)
+	}
+	t.Cleanup(func() { _ = lockA.Release() })
+
+	lockB, prev, err := single.Acquire(pathB, epB)
+	if err != nil {
+		t.Fatalf("acquire B with a distinct data dir must succeed, got: %v", err)
+	}
+	if prev != nil {
+		t.Fatalf("unexpected previous endpoint for independent lockfile: %+v", prev)
+	}
+	t.Cleanup(func() { _ = lockB.Release() })
+
+	// Each lockfile must still describe its own daemon.
+	gotA, err := single.ReadEndpoint(pathA)
+	if err != nil {
+		t.Fatalf("read A: %v", err)
+	}
+	gotB, err := single.ReadEndpoint(pathB)
+	if err != nil {
+		t.Fatalf("read B: %v", err)
+	}
+	if gotA.Port != epA.Port || gotB.Port != epB.Port {
+		t.Fatalf("endpoints crossed over: A=%+v B=%+v", gotA, gotB)
+	}
+
+	// And the same lockfile must still be exclusive.
+	if _, _, err := single.Acquire(pathA, epB); !errors.Is(err, single.ErrAlreadyRunning) {
+		t.Fatalf("re-acquiring the same lockfile must fail with ErrAlreadyRunning, got %v", err)
+	}
+}

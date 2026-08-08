@@ -69,40 +69,34 @@ func singboxCommon(ob map[string]any, p proto.Protocol) proto.Server {
 func singboxVLESS(subID string, ob map[string]any) proto.Server {
 	s := singboxCommon(ob, proto.ProtoVLESS)
 	s.SubscriptionID = subID
-	s.ID = serverID(subID, "vless", s.Address, fmt.Sprint(s.Port), fmt.Sprint(ob["uuid"]))
-	if flow, ok := ob["flow"].(string); ok && flow != "" {
-		s.Tag = flow
-	}
+	s.ID = serverID(subID, "vless", s.Address, fmt.Sprint(s.Port, s.Name), fmt.Sprint(ob["uuid"]))
 	return s
 }
 
 func singboxHysteria2(subID string, ob map[string]any) proto.Server {
 	s := singboxCommon(ob, proto.ProtoHysteria2)
 	s.SubscriptionID = subID
-	s.ID = serverID(subID, "hy2", s.Address, fmt.Sprint(s.Port), fmt.Sprint(ob["password"]))
+	s.ID = serverID(subID, "hy2", s.Address, fmt.Sprint(s.Port, s.Name), fmt.Sprint(ob["password"]))
 	return s
 }
 
 func singboxShadowsocks(subID string, ob map[string]any) proto.Server {
 	s := singboxCommon(ob, proto.ProtoShadowsocks)
 	s.SubscriptionID = subID
-	s.ID = serverID(subID, "ss", s.Address, fmt.Sprint(s.Port), fmt.Sprint(ob["method"]), fmt.Sprint(ob["password"]))
-	if m, ok := ob["method"].(string); ok {
-		s.Tag = m
-	}
+	s.ID = serverID(subID, "ss", s.Address, fmt.Sprint(s.Port, s.Name), fmt.Sprint(ob["method"]), fmt.Sprint(ob["password"]))
 	return s
 }
 
 func singboxNaive(subID string, ob map[string]any) proto.Server {
 	s := singboxCommon(ob, proto.ProtoNaive)
 	s.SubscriptionID = subID
-	s.ID = serverID(subID, "naive", s.Address, fmt.Sprint(s.Port), fmt.Sprint(ob["username"]))
+	s.ID = serverID(subID, "naive", s.Address, fmt.Sprint(s.Port, s.Name), fmt.Sprint(ob["username"]))
 	return s
 }
 
 func singboxWireguard(subID string, ob map[string]any) proto.Server {
 	s := singboxCommon(ob, proto.ProtoAmneziaWG)
 	s.SubscriptionID = subID
-	s.ID = serverID(subID, "awg", s.Address, fmt.Sprint(s.Port), fmt.Sprint(ob["private_key"]))
+	s.ID = serverID(subID, "awg", s.Address, fmt.Sprint(s.Port, s.Name), fmt.Sprint(ob["private_key"]))
 	return s
 }

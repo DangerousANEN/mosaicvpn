@@ -1,0 +1,862 @@
+import { Button, ListView, StandardListView, StandardTableView } from "std-widgets.slint";
+
+// ── Atlas Theme (global) ────────────────────────────
+global AtlasTheme {
+    out property<color> paper:       #ECE4D0;
+    out property<color> paper-2:      #E3DAC4;
+    out property<color> paper-edge:   #D8CFB6;
+    out property<color> ink:          #1F1C18;
+    out property<color> ink-2:        #423D36;
+    out property<color> ink-mute:     #807967;
+    out property<color> ink-faint:    #B3A988;
+    out property<color> copper:       #B85C2C;
+    out property<color> leaf:         #4A6E3A;
+    out property<color> rule:         rgba(31, 28, 24, 0.18);
+}
+
+// ── Server data model ───────────────────────────────
+struct DemoServer {
+    name: string,
+    city: string,
+    country: string,
+    ping: int,
+    load: int,
+}
+
+// ── Demo App with 4 UI variants ─────────────────────
+export component App inherits Window {
+    width: 1100px;
+    height: 720px;
+    background: AtlasTheme.paper;
+    title: "MosaicVPN · UI Concepts";
+
+    in-out property<int> active-variant: 0;
+    in-out property<[DemoServer]> servers;
+    in-out property<int> selected-idx: 0;
+    in-out property<string> status-text: "Disconnected";
+    in-out property<bool> connected: false;
+
+    callback connect(int);
+    callback select-station(int);
+
+    VerticalLayout {
+        spacing: 0px;
+
+        // Header
+        Rectangle {
+            height: 50px;
+            background: AtlasTheme.paper-2;
+            border-width: 1px;
+            border-color: AtlasTheme.ink;
+
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                spacing: 16px;
+
+                Text {
+                    text: "MosaicVPN";
+                    font-family: "serif";
+                    font-size: 20px;
+                    font-weight: 700;
+                    color: AtlasTheme.ink;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: "· UI Concepts";
+                    font-family: "serif";
+                    font-size: 14px;
+                    color: AtlasTheme.copper;
+                    vertical-alignment: center;
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                // Variant switcher
+                HorizontalLayout {
+                    spacing: 4px;
+                    alignment: center;
+
+                    for v in 4 : Rectangle {
+                        width: 80px;
+                        height: 30px;
+                        background: v == root.active-variant ? AtlasTheme.copper : AtlasTheme.paper-edge;
+                        border-radius: 4px;
+
+                        Text {
+                            text: "V" + (v + 1);
+                            font-size: 12px;
+                            font-weight: 600;
+                            color: v == root.active-variant ? AtlasTheme.paper : AtlasTheme.ink-2;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        TouchArea {
+                            clicked => { root.active-variant = v; }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Status bar
+        Rectangle {
+            height: 28px;
+            background: AtlasTheme.ink;
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                spacing: 12px;
+
+                Text {
+                    text: root.connected ? "● Connected" : "○ Disconnected";
+                    font-size: 11px;
+                    font-weight: 600;
+                    color: root.connected ? AtlasTheme.leaf : AtlasTheme.paper-edge;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.status-text;
+                    font-size: 11px;
+                    color: AtlasTheme.ink-faint;
+                    vertical-alignment: center;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Text {
+                    text: root.servers.length + " servers";
+                    font-size: 11px;
+                    color: AtlasTheme.ink-faint;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // ── Content area ──
+        Rectangle {
+            background: AtlasTheme.paper;
+            vertical-stretch: 1;
+
+            // ═════════════════════════════════════════════
+            // VARIANT 0: Simple Server List
+            // ═════════════════════════════════════════════
+            if root.active-variant == 0 : Rectangle {
+                background: AtlasTheme.paper;
+
+                VerticalLayout {
+                    padding: 24px;
+                    spacing: 16px;
+
+                    Text {
+                        text: "Server List";
+                        font-family: "serif";
+                        font-size: 24px;
+                        font-weight: 700;
+                        color: AtlasTheme.ink;
+                    }
+                    Text {
+                        text: "Simple table with latency and connect button";
+                        font-size: 12px;
+                        color: AtlasTheme.ink-mute;
+                    }
+
+                    // Table header
+                    Rectangle {
+                                                height: 32px;
+                        background: AtlasTheme.paper-2;
+                        border-radius: 6px;
+
+                        HorizontalLayout {
+                            padding-left: 16px;
+                            padding-right: 16px;
+
+                            Text { text: "#"; width: 40px; font-size: 11px; font-weight: 700; color: AtlasTheme.ink-mute; vertical-alignment: center; }
+                            Text { text: "Server"; horizontal-stretch: 1; font-size: 11px; font-weight: 700; color: AtlasTheme.ink-mute; vertical-alignment: center; }
+                            Text { text: "Country"; width: 100px; font-size: 11px; font-weight: 700; color: AtlasTheme.ink-mute; vertical-alignment: center; }
+                            Text { text: "Latency"; width: 80px; font-size: 11px; font-weight: 700; color: AtlasTheme.ink-mute; horizontal-alignment: right; vertical-alignment: center; }
+                            Text { text: "Load"; width: 60px; font-size: 11px; font-weight: 700; color: AtlasTheme.ink-mute; horizontal-alignment: right; vertical-alignment: center; }
+                            Text { text: ""; width: 90px; }
+                        }
+                    }
+
+                    // Server rows
+                    ListView {
+                        vertical-stretch: 1;
+
+
+                        for srv[i] in root.servers : Rectangle {
+                            height: 48px;
+                            background: i == root.selected-idx ? AtlasTheme.paper-2 : AtlasTheme.paper;
+                            border-radius: 6px;
+                            border-width: i == root.selected-idx ? 2px : 0px;
+                            border-color: AtlasTheme.copper;
+
+                            HorizontalLayout {
+                                padding-left: 16px;
+                                padding-right: 16px;
+
+                                Text {
+                                    text: i + 1;
+                                    width: 40px;
+                                    font-family: "serif";
+                                    font-size: 14px;
+                                    font-weight: 600;
+                                    color: AtlasTheme.ink-mute;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: srv.city != "" ? srv.city : srv.name;
+                                    horizontal-stretch: 1;
+                                    font-size: 14px;
+                                    font-weight: 500;
+                                    color: AtlasTheme.ink;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: srv.country;
+                                    width: 100px;
+                                    font-size: 12px;
+                                    color: AtlasTheme.ink-2;
+                                    vertical-alignment: center;
+                                }
+                                Rectangle {
+                                    width: 80px;
+                                    HorizontalLayout {
+                                        alignment: end;
+                                        spacing: 4px;
+                                        Text {
+                                            text: srv.ping < 50 ? "⚡" : srv.ping < 150 ? "○" : "●";
+                                            font-size: 10px;
+                                            color: srv.ping < 50 ? AtlasTheme.leaf : srv.ping < 150 ? AtlasTheme.copper : #DC4444;
+                                            vertical-alignment: center;
+                                        }
+                                        Text {
+                                            text: srv.ping + "ms";
+                                            font-size: 12px;
+                                            font-family: "monospace";
+                                            color: srv.ping < 50 ? AtlasTheme.leaf : srv.ping < 150 ? AtlasTheme.ink-2 : #DC4444;
+                                            horizontal-alignment: right;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                                Rectangle {
+                                    width: 60px;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Rectangle {
+                                            width: 50px;
+                                            height: 6px;
+                                            background: AtlasTheme.paper-edge;
+                                            border-radius: 3px;
+                                            Rectangle {
+                                                width: (srv.load / 100.0 * 50) * 1px;
+                                                height: 6px;
+                                                background: srv.load < 50 ? AtlasTheme.leaf : srv.load < 80 ? AtlasTheme.copper : #DC4444;
+                                                border-radius: 3px;
+                                            }
+                                        }
+                                    }
+                                }
+                                Rectangle {
+                                    width: 90px;
+                                    height: 32px;
+                                    background: i == root.selected-idx && root.connected ? AtlasTheme.leaf : AtlasTheme.copper;
+                                    border-radius: 6px;
+
+                                    Text {
+                                        text: i == root.selected-idx && root.connected ? "Connected" : "Connect";
+                                        font-size: 11px;
+                                        font-weight: 700;
+                                        color: AtlasTheme.paper;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+
+                                    TouchArea {
+                                        clicked => {
+                                            root.selected-idx = i;
+                                            root.connect(i);
+                                        }
+                                    }
+                                }
+                            }
+
+                            TouchArea {
+                                clicked => { root.selected-idx = i; root.select-station(i); }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ═════════════════════════════════════════════
+            // VARIANT 1: Card Carousel
+            // ═════════════════════════════════════════════
+            if root.active-variant == 1 : Rectangle {
+                background: AtlasTheme.paper;
+
+                VerticalLayout {
+                    padding: 24px;
+                    spacing: 16px;
+
+                    Text {
+                        text: "Card Carousel";
+                        font-family: "serif";
+                        font-size: 24px;
+                        font-weight: 700;
+                        color: AtlasTheme.ink;
+                    }
+                    Text {
+                        text: "One server at a time — click arrows to browse";
+                        font-size: 12px;
+                        color: AtlasTheme.ink-mute;
+                    }
+
+                    Rectangle { vertical-stretch: 1; }
+
+                    // Card
+                    Rectangle {
+                        width: 420px;
+                        height: 280px;
+                        background: AtlasTheme.paper-2;
+                        border-radius: 16px;
+                        border-width: 2px;
+                        border-color: AtlasTheme.copper;
+                        horizontal-stretch: 0;
+
+                        VerticalLayout {
+                            padding: 32px;
+                            spacing: 20px;
+                            alignment: center;
+
+                            Rectangle {
+                                width: 64px;
+                                height: 64px;
+                                background: AtlasTheme.copper;
+                                border-radius: 32px;
+                                HorizontalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: (root.selected-idx + 1) + "";
+                                        font-family: "serif";
+                                        font-size: 28px;
+                                        font-weight: 700;
+                                        color: AtlasTheme.paper;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: root.servers.length > 0 ? root.servers[root.selected-idx].city : "—";
+                                font-family: "serif";
+                                font-size: 28px;
+                                font-weight: 700;
+                                color: AtlasTheme.ink;
+                                horizontal-alignment: center;
+                            }
+                            Text {
+                                text: root.servers.length > 0 ? root.servers[root.selected-idx].country : "—";
+                                font-size: 16px;
+                                color: AtlasTheme.ink-mute;
+                                horizontal-alignment: center;
+                            }
+
+                            HorizontalLayout {
+                                spacing: 24px;
+                                alignment: center;
+
+                                VerticalLayout {
+                                    spacing: 4px;
+                                    alignment: center;
+                                    Text {
+                                        text: root.servers.length > 0 ? root.servers[root.selected-idx].ping + "ms" : "—";
+                                        font-size: 20px;
+                                        font-family: "monospace";
+                                        font-weight: 700;
+                                        color: AtlasTheme.leaf;
+                                        horizontal-alignment: center;
+                                    }
+                                    Text {
+                                        text: "Latency";
+                                        font-size: 10px;
+                                        color: AtlasTheme.ink-mute;
+                                        horizontal-alignment: center;
+                                    }
+                                }
+                                VerticalLayout {
+                                    spacing: 4px;
+                                    alignment: center;
+                                    Text {
+                                        text: root.servers.length > 0 ? root.servers[root.selected-idx].load + "%" : "—";
+                                        font-size: 20px;
+                                        font-family: "monospace";
+                                        font-weight: 700;
+                                        color: AtlasTheme.copper;
+                                        horizontal-alignment: center;
+                                    }
+                                    Text {
+                                        text: "Load";
+                                        font-size: 10px;
+                                        color: AtlasTheme.ink-mute;
+                                        horizontal-alignment: center;
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                width: 160px;
+                                height: 44px;
+                                background: root.connected ? AtlasTheme.leaf : AtlasTheme.copper;
+                                border-radius: 8px;
+                                HorizontalLayout {
+                                    alignment: center;
+                                    Text {
+                                        text: root.connected ? "✓ Connected" : "Connect";
+                                        font-size: 14px;
+                                        font-weight: 700;
+                                        color: AtlasTheme.paper;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                TouchArea {
+                                    clicked => { root.connect(root.selected-idx); }
+                                }
+                            }
+                        }
+                    }
+
+                    // Nav arrows
+                    HorizontalLayout {
+                        spacing: 12px;
+                        alignment: center;
+
+                        Rectangle {
+                            width: 44px;
+                            height: 44px;
+                            background: AtlasTheme.paper-edge;
+                            border-radius: 22px;
+                            Text {
+                                text: "←";
+                                font-size: 20px;
+                                color: AtlasTheme.ink;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                            TouchArea {
+                                clicked => {
+                                    if root.selected-idx > 0 {
+                                        root.selected-idx = root.selected-idx - 1;
+                                    } else {
+                                        root.selected-idx = root.servers.length - 1;
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 6px;
+                            alignment: center;
+                            for srv[i] in root.servers : Rectangle {
+                                width: 8px;
+                                height: 8px;
+                                background: i == root.selected-idx ? AtlasTheme.copper : AtlasTheme.ink-faint;
+                                border-radius: 4px;
+                            }
+                        }
+
+                        Rectangle {
+                            width: 44px;
+                            height: 44px;
+                            background: AtlasTheme.paper-edge;
+                            border-radius: 22px;
+                            Text {
+                                text: "→";
+                                font-size: 20px;
+                                color: AtlasTheme.ink;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                            TouchArea {
+                                clicked => {
+                                    if root.selected-idx < root.servers.length - 1 {
+                                        root.selected-idx = root.selected-idx + 1;
+                                    } else {
+                                        root.selected-idx = 0;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            // ═════════════════════════════════════════════
+            // VARIANT 2: Dashboard
+            // ═════════════════════════════════════════════
+            if root.active-variant == 2 : Rectangle {
+                background: AtlasTheme.paper;
+
+                HorizontalLayout {
+                    padding: 24px;
+                    spacing: 20px;
+
+                    // Left: gauges
+                    VerticalLayout {
+                        width: 320px;
+                        horizontal-stretch: 0;
+                        spacing: 16px;
+
+                        Text {
+                            text: "Dashboard";
+                            font-family: "serif";
+                            font-size: 24px;
+                            font-weight: 700;
+                            color: AtlasTheme.ink;
+                        }
+
+                        // Ping gauge
+                        Rectangle {
+                            height: 200px;
+                            background: AtlasTheme.paper-2;
+                            border-radius: 12px;
+
+                            VerticalLayout {
+                                padding: 20px;
+                                spacing: 8px;
+                                alignment: center;
+
+                                Text {
+                                    text: "Latency";
+                                    font-size: 11px;
+                                    color: AtlasTheme.ink-mute;
+                                    horizontal-alignment: center;
+                                }
+                                Text {
+                                    text: root.servers.length > 0 ? root.servers[root.selected-idx].ping + "" : "—";
+                                    font-family: "monospace";
+                                    font-size: 48px;
+                                    font-weight: 700;
+                                    color: AtlasTheme.leaf;
+                                    horizontal-alignment: center;
+                                }
+                                Text {
+                                    text: "ms";
+                                    font-size: 14px;
+                                    color: AtlasTheme.ink-mute;
+                                    horizontal-alignment: center;
+                                }
+
+                                Rectangle {
+                                    width: 240px;
+                                    height: 8px;
+                                    background: AtlasTheme.paper-edge;
+                                    border-radius: 4px;
+                                    Rectangle {
+                                        width: (root.servers.length > 0 ? (root.servers[root.selected-idx].ping / 300.0 * 240.0) : 0) * 1px;
+                                        height: 8px;
+                                        background: AtlasTheme.leaf;
+                                        border-radius: 4px;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Load gauge
+                        Rectangle {
+                            height: 100px;
+                            background: AtlasTheme.paper-2;
+                            border-radius: 12px;
+
+                            HorizontalLayout {
+                                padding: 16px;
+                                spacing: 16px;
+
+                                VerticalLayout {
+                                    spacing: 4px;
+                                    Text {
+                                        text: "Server Load";
+                                        font-size: 11px;
+                                        color: AtlasTheme.ink-mute;
+                                    }
+                                    Text {
+                                        text: root.servers.length > 0 ? root.servers[root.selected-idx].load + "%" : "—";
+                                        font-family: "monospace";
+                                        font-size: 28px;
+                                        font-weight: 700;
+                                        color: AtlasTheme.copper;
+                                    }
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                                Rectangle {
+                                    width: 60px;
+                                    height: 60px;
+                                    background: AtlasTheme.paper-edge;
+                                    border-radius: 30px;
+                                    VerticalLayout {
+                                        alignment: end;
+                                        Rectangle {
+                                            width: 60px;
+                                            height: (root.servers.length > 0 ? (root.servers[root.selected-idx].load / 100.0 * 60.0) : 0) * 1px;
+                                            background: AtlasTheme.copper;
+                                            border-radius: 30px;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle { vertical-stretch: 1; }
+
+                        Rectangle {
+                            width: 100%;
+                            height: 48px;
+                            background: root.connected ? AtlasTheme.leaf : AtlasTheme.copper;
+                            border-radius: 8px;
+                            Text {
+                                text: root.connected ? "✓ Connected" : "Connect";
+                                font-size: 13px;
+                                font-weight: 700;
+                                color: AtlasTheme.paper;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                            TouchArea {
+                                clicked => { root.connect(root.selected-idx); }
+                            }
+                        }
+                    }
+
+                    // Right: compact server list
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 8px;
+
+                        Text {
+                            text: "All Servers";
+                            font-family: "serif";
+                            font-size: 16px;
+                            font-weight: 600;
+                            color: AtlasTheme.ink;
+                        }
+                        Rectangle { height: 1px; background: AtlasTheme.ink; opacity: 0.3; }
+
+                        ListView {
+                            vertical-stretch: 1;
+
+
+                            for srv[i] in root.servers : Rectangle {
+                                height: 40px;
+                                background: i == root.selected-idx ? AtlasTheme.paper-2 : transparent;
+                                border-radius: 6px;
+                                border-width: i == root.selected-idx ? 2px : 0px;
+                                border-color: AtlasTheme.copper;
+
+                                HorizontalLayout {
+                                    padding-left: 12px;
+                                    padding-right: 12px;
+
+
+                                    Rectangle {
+                                        width: 12px;
+                                        height: 12px;
+                                        background: srv.ping < 50 ? AtlasTheme.leaf : srv.ping < 150 ? AtlasTheme.copper : #DC4444;
+                                        border-radius: 6px;
+                                        VerticalLayout { alignment: center; }
+                                    }
+
+                                    Text {
+                                        text: srv.city != "" ? srv.city : srv.name;
+                                        horizontal-stretch: 1;
+                                        font-size: 13px;
+                                        color: AtlasTheme.ink;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: srv.ping + "ms";
+                                        width: 60px;
+                                        font-family: "monospace";
+                                        font-size: 12px;
+                                        color: AtlasTheme.ink-mute;
+                                        horizontal-alignment: right;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                TouchArea {
+                                    clicked => { root.selected-idx = i; }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ═════════════════════════════════════════════
+            // VARIANT 3: Country Grid
+            // ═════════════════════════════════════════════
+            if root.active-variant == 3 : Rectangle {
+                background: AtlasTheme.paper;
+
+                VerticalLayout {
+                    padding: 24px;
+                    spacing: 16px;
+
+                    Text {
+                        text: "Country Grid";
+                        font-family: "serif";
+                        font-size: 24px;
+                        font-weight: 700;
+                        color: AtlasTheme.ink;
+                    }
+                    Text {
+                        text: "Pick a region, then a server — no fragile graphics";
+                        font-size: 12px;
+                        color: AtlasTheme.ink-mute;
+                    }
+
+                    // Region cards
+                    HorizontalLayout {
+                        spacing: 8px;
+
+                        Rectangle {
+                            width: 160px;
+                            height: 80px;
+                            background: AtlasTheme.copper;
+                            border-radius: 12px;
+                            VerticalLayout {
+                                padding: 12px;
+                                Text { text: "EU"; font-family: "serif"; font-size: 24px; font-weight: 700; color: AtlasTheme.paper; }
+                                Text { text: "Europe"; font-size: 12px; font-weight: 600; color: AtlasTheme.paper; }
+                                Rectangle { vertical-stretch: 1; }
+                                Text { text: "→"; font-size: 16px; color: AtlasTheme.paper; horizontal-alignment: right; }
+                            }
+                            TouchArea { clicked => { } }
+                        }
+                        Rectangle {
+                            width: 160px;
+                            height: 80px;
+                            background: AtlasTheme.leaf;
+                            border-radius: 12px;
+                            VerticalLayout {
+                                padding: 12px;
+                                Text { text: "NA"; font-family: "serif"; font-size: 24px; font-weight: 700; color: AtlasTheme.paper; }
+                                Text { text: "N. America"; font-size: 12px; font-weight: 600; color: AtlasTheme.paper; }
+                                Rectangle { vertical-stretch: 1; }
+                                Text { text: "→"; font-size: 16px; color: AtlasTheme.paper; horizontal-alignment: right; }
+                            }
+                            TouchArea { clicked => { } }
+                        }
+                        Rectangle {
+                            width: 160px;
+                            height: 80px;
+                            background: #4466AA;
+                            border-radius: 12px;
+                            VerticalLayout {
+                                padding: 12px;
+                                Text { text: "AS"; font-family: "serif"; font-size: 24px; font-weight: 700; color: AtlasTheme.paper; }
+                                Text { text: "Asia"; font-size: 12px; font-weight: 600; color: AtlasTheme.paper; }
+                                Rectangle { vertical-stretch: 1; }
+                                Text { text: "→"; font-size: 16px; color: AtlasTheme.paper; horizontal-alignment: right; }
+                            }
+                            TouchArea { clicked => { } }
+                        }
+                        Rectangle {
+                            width: 160px;
+                            height: 80px;
+                            background: AtlasTheme.ink-2;
+                            border-radius: 12px;
+                            VerticalLayout {
+                                padding: 12px;
+                                Text { text: "★"; font-family: "serif"; font-size: 24px; font-weight: 700; color: AtlasTheme.paper; }
+                                Text { text: "Other"; font-size: 12px; font-weight: 600; color: AtlasTheme.paper; }
+                                Rectangle { vertical-stretch: 1; }
+                                Text { text: "→"; font-size: 16px; color: AtlasTheme.paper; horizontal-alignment: right; }
+                            }
+                            TouchArea { clicked => { } }
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: AtlasTheme.ink; opacity: 0.2; }
+
+                    // Server list
+                    VerticalLayout {
+                        vertical-stretch: 1;
+                        spacing: 6px;
+
+                        for srv[i] in root.servers : Rectangle {
+                            height: 44px;
+                            background: i == root.selected-idx ? AtlasTheme.paper-2 : transparent;
+                            border-radius: 6px;
+                            border-width: i == root.selected-idx ? 2px : 1px;
+                            border-color: i == root.selected-idx ? AtlasTheme.copper : AtlasTheme.rule;
+
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 12px;
+                                spacing: 8px;
+
+                                Rectangle {
+                                    width: 8px;
+                                    height: 8px;
+                                    background: srv.ping < 50 ? AtlasTheme.leaf : srv.ping < 150 ? AtlasTheme.copper : #DC4444;
+                                    border-radius: 4px;
+                                    VerticalLayout { alignment: center; }
+                                }
+
+                                Text {
+                                    text: srv.country;
+                                    width: 50px;
+                                    font-size: 11px;
+                                    font-weight: 600;
+                                    color: AtlasTheme.ink-mute;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: srv.city != "" ? srv.city : srv.name;
+                                    horizontal-stretch: 1;
+                                    font-size: 13px;
+                                    color: AtlasTheme.ink;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: srv.ping + "ms";
+                                    width: 60px;
+                                    font-family: "monospace";
+                                    font-size: 12px;
+                                    color: srv.ping < 50 ? AtlasTheme.leaf : AtlasTheme.ink-mute;
+                                    horizontal-alignment: right;
+                                    vertical-alignment: center;
+                                }
+                                Rectangle {
+                                    width: 60px;
+                                    height: 28px;
+                                    background: i == root.selected-idx && root.connected ? AtlasTheme.leaf : AtlasTheme.paper-edge;
+                                    border-radius: 4px;
+                                    Text {
+                                        text: i == root.selected-idx && root.connected ? "ON" : "Go";
+                                        font-size: 10px;
+                                        font-weight: 700;
+                                        color: i == root.selected-idx && root.connected ? AtlasTheme.paper : AtlasTheme.ink-2;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                    TouchArea {
+                                        clicked => { root.selected-idx = i; root.connect(i); }
+                                    }
+                                }
+                            }
+
+                            TouchArea {
+                                clicked => { root.selected-idx = i; }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

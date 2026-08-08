@@ -6,6 +6,7 @@ import "./styles/pool.css";
 import "./styles/routing.css";
 import "./styles/folio.css";
 import "./styles/tray.css";
+import "./styles/connections.css";
 import { App } from "./App";
 import { ErrorBoundary } from "./ErrorBoundary";
 
