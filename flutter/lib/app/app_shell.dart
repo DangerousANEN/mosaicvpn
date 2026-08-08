@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,8 +24,9 @@ import '../features/logs/logs_screen.dart';
 import '../features/billing/billing_screen.dart';
 import '../features/manifest_groups/manifest_groups_screen.dart';
 import '../features/provider_profile/provider_profile_screen.dart';
+import '../features/more/more_screen.dart';
 
-/// Root shell with sidebar navigation and tab caching via IndexedStack.
+/// Root shell with bottom navigation (and sidebar on desktop/wide screens) and tab caching via IndexedStack.
 ///
 /// IndexedStack keeps alive all tab pages so switching is instant.
 /// Each page also uses AutomaticKeepAliveClientMixin for state preservation.
@@ -42,6 +42,29 @@ class _AppShellState extends ConsumerState<AppShell>
   int _currentIndex = 0;
   bool _autoConnectTriggered = false;
 
+  /// Main 5 bottom navigation destinations
+  final _mainDestinations = const <_NavDestination>[
+    _NavDestination(
+        icon: Icons.dashboard_outlined,
+        activeIcon: Icons.dashboard,
+        label: 'Dashboard'),
+    _NavDestination(
+        icon: Icons.bolt_outlined, activeIcon: Icons.bolt, label: 'Groups'),
+    _NavDestination(
+        icon: Icons.subscriptions_outlined,
+        activeIcon: Icons.subscriptions,
+        label: 'Subscriptions'),
+    _NavDestination(
+        icon: Icons.account_balance_wallet_outlined,
+        activeIcon: Icons.account_balance_wallet,
+        label: 'Billing'),
+    _NavDestination(
+        icon: Icons.more_horiz_outlined,
+        activeIcon: Icons.more_horiz,
+        label: 'More'),
+  ];
+
+  /// Full list of destinations for desktop/sidebar navigation (>900px)
   final _destinations = const <_NavDestination>[
     _NavDestination(
         icon: Icons.dashboard_outlined,
@@ -132,32 +155,50 @@ class _AppShellState extends ConsumerState<AppShell>
     // Lifecycle hooks for tray/minimize handled in main.dart
   }
 
-  List<Widget> get _pages => [
+  /// 5 Main tab pages cached with _KeepAlive
+  List<Widget> get _mainPages => [
         const _KeepAlive(child: DashboardScreen()),
-        _KeepAlive(child: const ServersScreen()),
-        _KeepAlive(child: const ProfilesScreen()),
-        _KeepAlive(child: const MixedSubscriptionsScreen()),
-        _KeepAlive(child: const BillingScreen()),
-        _KeepAlive(child: const ManifestGroupsScreen()),
-        _KeepAlive(child: const ProviderProfileScreen()),
-        _KeepAlive(child: const RoutingScreen()),
-        _KeepAlive(child: const EgressesScreen()),
-        _KeepAlive(child: const ConnectionsScreen()),
-        _KeepAlive(child: const StatsScreen()),
-        _KeepAlive(child: const SpeedTestScreen()),
-        _KeepAlive(child: const CoresScreen()),
-        _KeepAlive(child: const LogsScreen()),
-        _KeepAlive(child: const SettingsScreen()),
+        const _KeepAlive(child: ManifestGroupsScreen()),
+        const _KeepAlive(child: MixedSubscriptionsScreen()),
+        const _KeepAlive(child: BillingScreen()),
+        const _KeepAlive(child: MoreScreen()),
+      ];
+
+  /// Full pages list for wide screen sidebar navigation (>900px)
+  List<Widget> get _allPages => [
+        const _KeepAlive(child: DashboardScreen()),
+        const _KeepAlive(child: ServersScreen()),
+        const _KeepAlive(child: ProfilesScreen()),
+        const _KeepAlive(child: MixedSubscriptionsScreen()),
+        const _KeepAlive(child: BillingScreen()),
+        const _KeepAlive(child: ManifestGroupsScreen()),
+        const _KeepAlive(child: ProviderProfileScreen()),
+        const _KeepAlive(child: RoutingScreen()),
+        const _KeepAlive(child: EgressesScreen()),
+        const _KeepAlive(child: ConnectionsScreen()),
+        const _KeepAlive(child: StatsScreen()),
+        const _KeepAlive(child: SpeedTestScreen()),
+        const _KeepAlive(child: CoresScreen()),
+        const _KeepAlive(child: LogsScreen()),
+        const _KeepAlive(child: SettingsScreen()),
       ];
 
   @override
   Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
+    final width = MediaQuery.of(context).size.width;
+    final isWide = width > 900;
+
     // Auto-connect on first frame (q3)
     if (!_autoConnectTriggered) {
       _autoConnectTriggered = true;
       _tryAutoConnect();
     }
+
+    // Clamp active index for the current layout mode
+    final activeIndex = isWide
+        ? _currentIndex.clamp(0, _allPages.length - 1)
+        : _currentIndex.clamp(0, _mainPages.length - 1);
 
     return CallbackShortcuts(
       bindings: {
@@ -171,107 +212,158 @@ class _AppShellState extends ConsumerState<AppShell>
             setState(() => _currentIndex = 3),
         const SingleActivator(LogicalKeyboardKey.digit5, control: true): () =>
             setState(() => _currentIndex = 4),
-        const SingleActivator(LogicalKeyboardKey.digit6, control: true): () =>
-            setState(() => _currentIndex = 5),
-        const SingleActivator(LogicalKeyboardKey.digit7, control: true): () =>
-            setState(() => _currentIndex = 6),
-        const SingleActivator(LogicalKeyboardKey.digit8, control: true): () =>
-            setState(() => _currentIndex = 7),
-        const SingleActivator(LogicalKeyboardKey.digit9, control: true): () =>
-            setState(() => _currentIndex = 8),
+        if (isWide) ...{
+          const SingleActivator(LogicalKeyboardKey.digit6, control: true): () =>
+              setState(() => _currentIndex = 5),
+          const SingleActivator(LogicalKeyboardKey.digit7, control: true): () =>
+              setState(() => _currentIndex = 6),
+          const SingleActivator(LogicalKeyboardKey.digit8, control: true): () =>
+              setState(() => _currentIndex = 7),
+          const SingleActivator(LogicalKeyboardKey.digit9, control: true): () =>
+              setState(() => _currentIndex = 8),
+        },
       },
       child: Focus(
         autofocus: true,
         child: Scaffold(
-          body: Row(
-            children: [
-              // ── Sidebar ──
-              Container(
-                width: 72,
-                decoration: BoxDecoration(
-                  color: c.bgInk,
-                  border: Border(
-                    right: BorderSide(color: c.borderInk, width: 1),
-                  ),
-                ),
-                child: SafeArea(
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 12),
-                      // Logo / app icon
-                      Tooltip(
-                        message: 'MosaicBox',
-                        child: Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            borderRadius:
-                                BorderRadius.circular(AtlasTheme.radiusSm),
-                          ),
-                          child: ClipRRect(
-                            borderRadius:
-                                BorderRadius.circular(AtlasTheme.radiusSm),
-                            child: Image.asset(
-                              'assets/icon.png',
-                              width: 36,
-                              height: 36,
-                              fit: BoxFit.cover,
-                            ),
-                          ),
+          body: isWide
+              ? Row(
+                  children: [
+                    // ── Sidebar on wide screens (>900px) ──
+                    Container(
+                      width: 72,
+                      decoration: BoxDecoration(
+                        color: c.bgInk,
+                        border: Border(
+                          right: BorderSide(color: c.borderInk, width: 1),
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      // Navigation icons
-                      Expanded(
-                        child: () {
-                          final prefs = ref.watch(prefsProvider).valueOrNull;
-                          final isAdvanced = prefs?.advancedMode ?? false;
-                          final visibleIndices = isAdvanced
-                              ? List.generate(_destinations.length, (i) => i)
-                              : const [0, 1, 3, 5, 6, 11, 14];
+                      child: SafeArea(
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 12),
+                            // Logo / app icon
+                            Tooltip(
+                              message: 'MosaicBox',
+                              child: Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(
+                                      AtlasTheme.radiusSm),
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(
+                                      AtlasTheme.radiusSm),
+                                  child: Image.asset(
+                                    'assets/icon.png',
+                                    width: 36,
+                                    height: 36,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            // Full Sidebar Navigation icons
+                            Expanded(
+                              child: () {
+                                final prefs =
+                                    ref.watch(prefsProvider).valueOrNull;
+                                final isAdvanced =
+                                    prefs?.advancedMode ?? false;
+                                final visibleIndices = isAdvanced
+                                    ? List.generate(
+                                        _destinations.length, (i) => i)
+                                    : const [0, 1, 3, 5, 6, 11, 14];
 
-                          return ListView.builder(
-                            itemCount: visibleIndices.length,
-                            itemBuilder: (context, idx) {
-                              final i = visibleIndices[idx];
-                              final dest = _destinations[i];
-                              final isSelected = i == _currentIndex;
-                              return _SideIcon(
-                                icon: isSelected ? dest.activeIcon : dest.icon,
-                                label: dest.label,
-                                isSelected: isSelected,
-                                onTap: () => setState(() => _currentIndex = i),
-                              );
-                            },
-                          );
-                        }(),
+                                return ListView.builder(
+                                  itemCount: visibleIndices.length,
+                                  itemBuilder: (context, idx) {
+                                    final i = visibleIndices[idx];
+                                    final dest = _destinations[i];
+                                    final isSelected = i == activeIndex;
+                                    return _SideIcon(
+                                      icon: isSelected
+                                          ? dest.activeIcon
+                                          : dest.icon,
+                                      label: dest.label,
+                                      isSelected: isSelected,
+                                      onTap: () =>
+                                          setState(() => _currentIndex = i),
+                                    );
+                                  },
+                                );
+                              }(),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 8),
-                    ],
-                  ),
-                ),
-              ),
-              // ── Main content ──
-              Expanded(
-                child: Column(
+                    ),
+                    // ── Main content area ──
+                    Expanded(
+                      child: Column(
+                        children: [
+                          _QuickStatusBar(
+                            currentIndex: activeIndex,
+                            onNavigate: (i) => setState(() => _currentIndex = i),
+                          ),
+                          Expanded(
+                            child: IndexedStack(
+                              index: activeIndex,
+                              children: _allPages,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                )
+              : Column(
                   children: [
-                    // ── Quick status bar (topbar) ──
                     _QuickStatusBar(
-                      currentIndex: _currentIndex,
+                      currentIndex: activeIndex,
                       onNavigate: (i) => setState(() => _currentIndex = i),
                     ),
-                    // ── Content area with IndexedStack for tab caching ──
                     Expanded(
                       child: IndexedStack(
-                        index: _currentIndex,
-                        children: _pages,
+                        index: activeIndex,
+                        children: _mainPages,
                       ),
                     ),
                   ],
                 ),
-              ),
-            ],
-          ),
+          bottomNavigationBar: isWide
+              ? null
+              : Container(
+                  decoration: BoxDecoration(
+                    color: c.bgInk,
+                    border: Border(
+                      top: BorderSide(color: c.borderInk, width: 1),
+                    ),
+                  ),
+                  child: BottomNavigationBar(
+                    currentIndex: activeIndex,
+                    onTap: (index) => setState(() => _currentIndex = index),
+                    type: BottomNavigationBarType.fixed,
+                    backgroundColor: Colors.transparent,
+                    elevation: 0,
+                    selectedItemColor: AtlasTheme.accent,
+                    unselectedItemColor: c.textMuted,
+                    selectedFontSize: 11,
+                    unselectedFontSize: 11,
+                    items: _mainDestinations
+                        .map(
+                          (dest) => BottomNavigationBarItem(
+                            icon: Icon(dest.icon),
+                            activeIcon: Icon(dest.activeIcon),
+                            label: dest.label,
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
         ),
       ),
     );
@@ -345,8 +437,8 @@ class _AppShellState extends ConsumerState<AppShell>
           ElevatedButton.icon(
             onPressed: () {
               Navigator.pop(dialogContext);
-              // Switch to Stations tab
-              setState(() => _currentIndex = 1);
+              // Switch to Subscriptions tab
+              setState(() => _currentIndex = 2);
               // Trigger add-subscription dialog
               ref.read(addSubscriptionTriggerProvider.notifier).state = true;
             },
@@ -490,7 +582,7 @@ class _QuickStatusBar extends ConsumerWidget {
                 : status.state == 'disconnected'
                     ? TextButton.icon(
                         onPressed: () =>
-                            onNavigate(1), // Go to stations to pick a server
+                            onNavigate(1), // Quick navigate
                         icon: const Icon(Icons.bolt, size: 16),
                         label: const Text('Quick Connect'),
                       )
@@ -505,7 +597,12 @@ class _QuickStatusBar extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.settings, size: 18),
             tooltip: 'Settings',
-            onPressed: () => onNavigate(14),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              );
+            },
             constraints: const BoxConstraints(),
             padding: const EdgeInsets.all(8),
           ),

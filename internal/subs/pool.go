@@ -15,6 +15,7 @@ type HealthStatus struct {
 	NodeID    string    `json:"node_id"`
 	Alive     bool      `json:"alive"`
 	LatencyMS int       `json:"latency_ms"`
+	Load      float64   `json:"load"`
 	LastCheck time.Time `json:"last_check"`
 	Error     string    `json:"error,omitempty"`
 }
@@ -196,34 +197,112 @@ func (e *PoolEngine) selectURLTest(pool []proto.Server, group proto.ManifestGrou
 	return best
 }
 
-// selectWeightedRR picks a node using weighted round-robin.
+// selectWeightedRR picks a node considering server load, weight, latency, and health.
+// Score (lower is better) = latency_ms / (weight * (1 - load))
+// Hard filtering:
+// - Nodes with Alive=false are never selected.
+// - Nodes with Load >= 0.95 are excluded.
+// Graceful degradation: if ALL alive nodes have Load >= 0.95, pick the node with the lowest Load.
 func (e *PoolEngine) selectWeightedRR(groupID string, group proto.ManifestGroup, pool []proto.Server) proto.Server {
-	e.rrMu.Lock()
-	defer e.rrMu.Unlock()
-	idx := e.rrIdx[groupID]
-	// Build weighted list
-	var weighted []proto.Server
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	if len(pool) == 0 {
+		return proto.Server{}
+	}
+
+	type nodeInfo struct {
+		server proto.Server
+		weight int
+		load   float64
+		latency int
+		alive  bool
+	}
+
+	var candidates []nodeInfo
+	var aliveOverloaded []nodeInfo
+
 	for _, srv := range pool {
-		w := 1
+		hs, ok := e.health[srv.ID]
+		// Determine latency & alive
+		latency := hs.LatencyMS
+		alive := hs.Alive
+		if !ok {
+			// If health check hasn't run or entry missing, treat as alive by default if LastCheck is zero or check pool[0] logic
+			// But for health map: if hs not present, check srv.LastTestMS or fallback
+			if srv.LastTestMS > 0 {
+				latency = srv.LastTestMS
+			}
+			alive = true // Default to true if unprobed unless explicit dead
+		} else {
+			if !alive {
+				continue // Мёртвые узлы (Alive=false) не выбираются никогда.
+			}
+		}
+
+		weight := 1
+		load := 0.0
+		if ok {
+			load = hs.Load
+		}
+
+		// Search in group.Nodes (ManifestNode)
 		for _, n := range group.Nodes {
-			if n.ID == srv.ID && n.Weight > 0 {
-				w = n.Weight
+			if n.ID == srv.ID {
+				if n.Weight > 0 {
+					weight = n.Weight
+				}
 				break
 			}
 		}
-		for i := 0; i < w; i++ {
-			weighted = append(weighted, srv)
+
+		info := nodeInfo{
+			server:  srv,
+			weight:  weight,
+			load:    load,
+			latency: latency,
+			alive:   alive,
+		}
+
+		if load >= 0.95 {
+			aliveOverloaded = append(aliveOverloaded, info)
+		} else {
+			candidates = append(candidates, info)
 		}
 	}
-	if len(weighted) == 0 {
+
+	// If no candidates under 0.95 load, but we have overloaded alive nodes -> graceful degradation: pick least loaded
+	if len(candidates) == 0 {
+		if len(aliveOverloaded) > 0 {
+			best := aliveOverloaded[0]
+			for _, n := range aliveOverloaded[1:] {
+				if n.load < best.load {
+					best = n
+				}
+			}
+			return best.server
+		}
+		// If no alive nodes at all, fallback to first node in pool
 		return pool[0]
 	}
-	if idx >= len(weighted) {
-		idx = 0
+
+	// Calculate score for candidate nodes
+	best := candidates[0]
+	bestScore := -1.0
+
+	for _, c := range candidates {
+		effLatency := float64(c.latency)
+		if effLatency <= 0 {
+			effLatency = 1.0 // avoid 0 score
+		}
+		score := effLatency / (float64(c.weight) * (1.0 - c.load))
+		if bestScore < 0 || score < bestScore {
+			bestScore = score
+			best = c
+		}
 	}
-	picked := weighted[idx]
-	e.rrIdx[groupID] = (idx + 1) % len(weighted)
-	return picked
+
+	return best.server
 }
 
 // selectFallback picks the first alive node by priority order.
@@ -261,7 +340,12 @@ func (e *PoolEngine) selectFallback(group proto.ManifestGroup, pool []proto.Serv
 	return proto.Server{}
 }
 
-// GetHealthStatus returns the cached health status for a node.
+// SetHealth manually sets health/load telemetry for a node (used by telemetry sync / tests).
+func (e *PoolEngine) SetHealth(status HealthStatus) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.health[status.NodeID] = status
+}
 func (e *PoolEngine) GetHealthStatus(nodeID string) HealthStatus {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
