@@ -160,6 +160,7 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, prefs s
 
 	cctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(cctx, bin, "run", "-c", cfgPath, "-D", b.dataDir)
+	hideConsoleWindow(cmd)
 	cmd.Dir = b.dataDir
 
 	outLog, _ := os.Create(filepath.Join(b.dataDir, "singbox.out.log"))
