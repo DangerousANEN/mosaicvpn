@@ -57,6 +57,10 @@ type State struct {
 	// Promo codes and redemption log
 	Promos      []PromoEntry      `json:"promos,omitempty"`
 	Redemptions []RedemptionEntry `json:"redemptions,omitempty"`
+
+	// Groups are the unified node-selection entities. Seeded on first run so
+	// a fresh install has something to connect to without any setup.
+	Groups []proto.ServerGroup `json:"groups,omitempty"`
 }
 
 // PromoEntry is the store-level representation of a promo code.
@@ -185,6 +189,7 @@ func Open(path string) (*Store, error) {
 	s := &Store{path: path, state: Default()}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
+		seedDefaultGroups(&s.state)
 		if err := s.persistLocked(); err != nil {
 			return nil, err
 		}
@@ -202,6 +207,13 @@ func Open(path string) (*Store, error) {
 	}
 	if s.state.Profiles == nil {
 		s.state.Profiles = []proto.Profile{}
+	}
+	// Existing installs predate groups, so seed them here too rather than
+	// only on a fresh file. Persist only when something was actually added.
+	if seedDefaultGroups(&s.state) {
+		if err := s.persistLocked(); err != nil {
+			return nil, err
+		}
 	}
 	return s, nil
 }
