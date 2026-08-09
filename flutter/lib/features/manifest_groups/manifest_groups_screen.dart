@@ -69,30 +69,93 @@ class _ManifestGroupsScreenState extends ConsumerState<ManifestGroupsScreen> {
                       ?.copyWith(color: AtlasTheme.textMuted)),
             );
           }
-          final children = <Widget>[
-            Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: Text(
-                manifest.providerName.isNotEmpty
-                    ? manifest.providerName
-                    : 'VPN Groups',
-                style: tt.headlineSmall
-                    ?.copyWith(fontFamily: AtlasTheme.serifFamily, fontSize: 22),
-              ),
+          final header = Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Text(
+              manifest.providerName.isNotEmpty
+                  ? manifest.providerName
+                  : 'VPN Groups',
+              style: tt.headlineSmall
+                  ?.copyWith(fontFamily: AtlasTheme.serifFamily, fontSize: 22),
             ),
+          );
+
+          final cards = [
+            for (final group in manifest.groups)
+              _GroupCard(
+                group: group,
+                isExpanded: _expandedGroups.contains(group.id),
+                isConnecting: _connectingGroupId == group.id,
+                onToggle: () => _toggleGroup(group.id),
+                onConnect: () => _connectToGroup(group.id),
+              ),
           ];
-          for (final group in manifest.groups) {
-            children.add(_GroupCard(
-              group: group,
-              isExpanded: _expandedGroups.contains(group.id),
-              isConnecting: _connectingGroupId == group.id,
-              onToggle: () => _toggleGroup(group.id),
-              onConnect: () => _connectToGroup(group.id),
-            ));
-          }
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
-            children: children,
+
+          // A card stretched across a 1440px window is unreadable, so cards cap
+          // at 520px. Past 900px there is room for two of those side by side,
+          // which stops the remaining width turning into dead margin.
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              const maxCardWidth = 520.0;
+              const gap = 16.0;
+              final twoColumns = constraints.maxWidth >= 900;
+
+              final children = <Widget>[header];
+              if (twoColumns) {
+                for (var i = 0; i < cards.length; i += 2) {
+                  final left = cards[i];
+                  final right = i + 1 < cards.length ? cards[i + 1] : null;
+                  children.add(Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: ConstrainedBox(
+                          constraints:
+                              const BoxConstraints(maxWidth: maxCardWidth),
+                          child: left,
+                        ),
+                      ),
+                      const SizedBox(width: gap),
+                      Expanded(
+                        child: right == null
+                            ? const SizedBox.shrink()
+                            : ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                    maxWidth: maxCardWidth),
+                                child: right,
+                              ),
+                      ),
+                    ],
+                  ));
+                }
+              } else {
+                for (final card in cards) {
+                  children.add(ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: maxCardWidth),
+                    child: card,
+                  ));
+                }
+              }
+
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
+                children: [
+                  Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: twoColumns
+                            ? maxCardWidth * 2 + gap
+                            : maxCardWidth,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: children,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           );
         },
       ),
