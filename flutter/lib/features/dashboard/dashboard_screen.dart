@@ -29,6 +29,44 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   late ThemeColors c;
   String? _selectedServerId;
 
+  /// First tap marks a server as the candidate: dim orange, dashed route, and
+  /// the camera frames it alongside the client. A second tap on the same
+  /// server connects. The map, the station list and the context menu all
+  /// funnel through here so the behaviour cannot drift between them.
+  void onSelectServer(String id) {
+    if (_selectedServerId == id) {
+      connectToServer(id);
+    } else {
+      setState(() => _selectedServerId = id);
+    }
+  }
+
+  /// Connects immediately, skipping the candidate step. Used by the context
+  /// menu and the big Engage button, where intent is already explicit and a
+  /// second click would just be busywork.
+  void connectToServer(String id) {
+    final api = ref.read(daemonApiProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _selectedServerId = id);
+    api.connect(id).catchError((e) {
+      messenger.showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 10),
+          content: SelectableText(
+            'Connection failed: $e',
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+          ),
+          action: SnackBarAction(
+            label: 'Copy',
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: e.toString()));
+            },
+          ),
+        ),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     c = ThemeColors.of(context);
@@ -135,73 +173,61 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         ),
         const SizedBox(height: 16),
 
-        // ── Three-column layout ──
+        // ── Responsive body ──
+        // A fixed three-column Row squeezed each panel to ~120px on a 390px
+        // phone, which broke "DISCONNECTED" into two characters per line.
+        // Panels now stack below 600px and the map keeps its 2:1 ratio.
         Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ── Left: Connection status ──
-              Expanded(
-                flex: 3,
-                child: _ConnectionPanel(
-                  status: status,
-                  selectedServerId: _selectedServerId,
-                ),
-              ),
-              const SizedBox(width: 16),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final w = constraints.maxWidth;
+              final isCompact = w < 600;
 
-              // ── Middle: World chart ──
-              Expanded(
-                flex: 4,
-                child: _WorldChartPanel(
-                  status: status,
-                  serversAsync: serversAsync,
-                  selectedServerId: _selectedServerId,
-                ),
-              ),
-              const SizedBox(width: 16),
+              final connectionPanel = _ConnectionPanel(
+                status: status,
+                selectedServerId: _selectedServerId,
+              );
+              final mapPanel = _WorldChartPanel(
+                status: status,
+                serversAsync: serversAsync,
+                selectedServerId: _selectedServerId,
+              );
+              final stationsPanel = _StationsPanel(
+                status: status,
+                serversAsync: serversAsync,
+                selectedServerId: _selectedServerId,
+                onSelectServer: onSelectServer,
+              );
 
-              // ── Right: Stations preview ──
-              Expanded(
-                flex: 3,
-                child: _StationsPanel(
-                  status: status,
-                  serversAsync: serversAsync,
-                  selectedServerId: _selectedServerId,
-                  onSelectServer: (id) {
-                    if (_selectedServerId == id) {
-                      // 2nd click on same server → connect to it
-                      final api = ref.read(daemonApiProvider);
-                      final messenger = ScaffoldMessenger.of(context);
-                      api.connect(id).catchError((e) {
-                        messenger.showSnackBar(
-                          SnackBar(
-                            duration: const Duration(seconds: 10),
-                            content: SelectableText(
-                              'Connection failed: $e',
-                              style: const TextStyle(
-                                  fontFamily: 'monospace', fontSize: 12),
-                            ),
-                            action: SnackBarAction(
-                              label: 'Copy',
-                              onPressed: () async {
-                                await Clipboard.setData(
-                                    ClipboardData(text: e.toString()));
-                              },
-                            ),
-                          ),
-                        );
-                      });
-                    } else {
-                      // 1st click on new server → select (highlights + draws path + zoom)
-                      setState(() {
-                        _selectedServerId = id;
-                      });
-                    }
-                  },
-                ),
-              ),
-            ],
+              if (isCompact) {
+                // Phone: one column, scrollable. The map is given an explicit
+                // 2:1 box so the equirectangular projection stays correct and
+                // pins land where they belong.
+                return SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      connectionPanel,
+                      const SizedBox(height: 12),
+                      AspectRatio(aspectRatio: 2.0, child: mapPanel),
+                      const SizedBox(height: 12),
+                      SizedBox(height: 320, child: stationsPanel),
+                    ],
+                  ),
+                );
+              }
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(flex: 3, child: connectionPanel),
+                  const SizedBox(width: 16),
+                  Expanded(flex: 4, child: mapPanel),
+                  const SizedBox(width: 16),
+                  Expanded(flex: 3, child: stationsPanel),
+                ],
+              );
+            },
           ),
         ),
       ],
@@ -362,7 +388,8 @@ class _ConnectionPanelState extends ConsumerState<_ConnectionPanel> {
                 } else {
                   // Connect to selected or last-used server
                   final servers = ref.read(serversProvider).valueOrNull ?? [];
-                  String? targetId = widget.selectedServerId ?? status.server?.id;
+                  String? targetId =
+                      widget.selectedServerId ?? status.server?.id;
                   if (targetId == null && servers.isNotEmpty) {
                     targetId = servers.first.id;
                   }
@@ -374,13 +401,12 @@ class _ConnectionPanelState extends ConsumerState<_ConnectionPanel> {
               } catch (e) {
                 messenger.showSnackBar(
                   SnackBar(
-                    content: SelectableText(
-                        'Connection error: $e',
+                    content: SelectableText('Connection error: $e',
                         style: const TextStyle(fontFamily: 'monospace')),
                     action: SnackBarAction(
                       label: 'Copy',
-                      onPressed: () => Clipboard.setData(
-                          ClipboardData(text: e.toString())),
+                      onPressed: () =>
+                          Clipboard.setData(ClipboardData(text: e.toString())),
                     ),
                   ),
                 );
@@ -748,38 +774,47 @@ class _WorldChartPanelState extends ConsumerState<_WorldChartPanel>
           const SizedBox(height: 16),
 
           // ── Real SVG world map with pins + camera animation ──
+          // The map draws an equirectangular projection, which is inherently
+          // 2:1. Letting a bare Expanded stretch the frame left dead bands
+          // above and below the continents on tall desktop columns, so the
+          // frame hugs the projection and pins to the top of the column.
           Expanded(
-            child: Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: c.bgElevated,
-                border: Border.all(color: c.border),
-                borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: AnimatedBuilder(
-                animation: _ctrl,
-                builder: (context, child) {
-                  final zoom = _zoomAnim?.value ?? _zoom;
-                  final pan = _panAnim?.value ?? _pan;
-                  // Connected only when the VPN is actually connected AND
-                  // the connected server is the currently selected one
-                  // (otherwise the visible pin is just "selected").
-                  final isConnected = widget.status.isConnected &&
-                      widget.selectedServerId != null &&
-                      widget.status.server?.id == widget.selectedServerId;
-                  return _AnimatedMap(
-                    pins: _buildPins(widget.serversAsync, widget.status),
-                    zoom: zoom,
-                    pan: pan,
-                    connected: isConnected,
-                    youPin: MapPin(
-                      nx: _youNx,
-                      ny: _youNy,
-                      label: 'You',
-                    ),
-                  );
-                },
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: AspectRatio(
+                aspectRatio: 2.0,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: c.bgElevated,
+                    border: Border.all(color: c.border),
+                    borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: AnimatedBuilder(
+                    animation: _ctrl,
+                    builder: (context, child) {
+                      final zoom = _zoomAnim?.value ?? _zoom;
+                      final pan = _panAnim?.value ?? _pan;
+                      // Connected only when the VPN is actually connected AND
+                      // the connected server is the currently selected one
+                      // (otherwise the visible pin is just "selected").
+                      final isConnected = widget.status.isConnected &&
+                          widget.selectedServerId != null &&
+                          widget.status.server?.id == widget.selectedServerId;
+                      return _AnimatedMap(
+                        pins: _buildPins(widget.serversAsync, widget.status),
+                        zoom: zoom,
+                        pan: pan,
+                        connected: isConnected,
+                        youPin: MapPin(
+                          nx: _youNx,
+                          ny: _youNy,
+                          label: 'You',
+                        ),
+                      );
+                    },
+                  ),
+                ),
               ),
             ),
           ),

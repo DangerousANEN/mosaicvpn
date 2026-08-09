@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../core/theme/atlas_theme.dart';
+import 'map_camera.dart';
 
 /// Pin position on the map (in 0..1 normalized coords).
 class MapPin {
@@ -26,11 +27,14 @@ class MapPin {
 }
 
 /// Equirectangular (Plate Carrée) world map with graticule + server pins
-/// and dashed connection line.  The SVG (world.svg) has viewBox
-/// `0 0 5760 2880` — exactly 2:1 — spanning -180..180° × 90..-90°.
-/// Simple linear lon/lat → x/y projection is therefore exact.
+/// and a route line from the client to the chosen server. The SVG
+/// (world.svg) has viewBox `0 0 5760 2880` — exactly 2:1 — spanning
+/// -180..180° × 90..-90°, so a linear lon/lat → x/y projection is exact.
 ///
-/// Supports mouse-wheel zoom, drag-to-pan, and hover tooltips on pins.
+/// The camera is driven by app state, not by the user: picking a server
+/// frames the client and that server together. Manual pan and zoom were
+/// removed because they let the map be dragged out of view with no way back
+/// other than a reset button.
 class WorldMapWidget extends StatefulWidget {
   final List<MapPin> pins;
   final MapPin? youPin;
@@ -39,6 +43,10 @@ class WorldMapWidget extends StatefulWidget {
   /// If true, draw a solid line from youPin → active pin (connected).
   /// If false, draw a dashed line (selected but not yet connected).
   final bool connected;
+
+  /// Called when a pin is tapped. The dashboard decides what a tap means
+  /// (first tap selects, second connects), so the map stays presentational.
+  final void Function(MapPin pin)? onPinTap;
 
   /// Width / height ratio of the equirectangular map (2:1).
   /// Kept for external callers that need the canonical ratio.
@@ -50,6 +58,7 @@ class WorldMapWidget extends StatefulWidget {
     this.youPin,
     this.bearing,
     this.connected = false,
+    this.onPinTap,
   });
 
   /// Map lon/lat to normalized overlay coords (0..1).
@@ -63,14 +72,61 @@ class WorldMapWidget extends StatefulWidget {
   State<WorldMapWidget> createState() => _WorldMapWidgetState();
 }
 
-class _WorldMapWidgetState extends State<WorldMapWidget> {
-  final TransformationController _ctrl = TransformationController();
+class _WorldMapWidgetState extends State<WorldMapWidget>
+    with SingleTickerProviderStateMixin {
   MapPin? _hoveredPin;
+
+  late final AnimationController _camCtrl;
+  MapCamera _camera = MapCamera.world;
+  MapCamera _camFrom = MapCamera.world;
+
+  @override
+  void initState() {
+    super.initState();
+    _camCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 450),
+    )..addListener(() => setState(() {}));
+    _camera = _targetCamera();
+    _camFrom = _camera;
+    _camCtrl.value = 1.0;
+  }
+
+  @override
+  void didUpdateWidget(covariant WorldMapWidget old) {
+    super.didUpdateWidget(old);
+    final next = _targetCamera();
+    if (next != _camera) {
+      _camFrom = _currentCamera();
+      _camera = next;
+      _camCtrl.forward(from: 0);
+    }
+  }
 
   @override
   void dispose() {
-    _ctrl.dispose();
+    _camCtrl.dispose();
     super.dispose();
+  }
+
+  /// Where the camera should sit for the current selection.
+  MapCamera _targetCamera() {
+    final active = widget.pins.where((p) => p.active);
+    if (active.isEmpty || widget.youPin == null) return MapCamera.world;
+    final p = active.first;
+    return MapCamera.framing(
+      Offset(widget.youPin!.nx, widget.youPin!.ny),
+      Offset(p.nx, p.ny),
+    );
+  }
+
+  /// Interpolated camera for the in-flight animation.
+  MapCamera _currentCamera() {
+    final t = Curves.easeInOutCubic.transform(_camCtrl.value);
+    return MapCamera(
+      scale: _camFrom.scale + (_camera.scale - _camFrom.scale) * t,
+      focus: Offset.lerp(_camFrom.focus, _camera.focus, t)!,
+    );
   }
 
   @override
@@ -81,8 +137,12 @@ class _WorldMapWidgetState extends State<WorldMapWidget> {
         final availW = constraints.maxWidth;
         final availH = constraints.maxHeight;
 
+        // The projection is only correct at 2:1, so the map is sized to that
+        // ratio and centred rather than stretched to fill the box.
         final mapW = math.min(availW, availH * 2.0);
         final mapH = mapW / 2.0;
+
+        final cam = _currentCamera();
 
         return ClipRect(
           child: SizedBox(
@@ -90,17 +150,14 @@ class _WorldMapWidgetState extends State<WorldMapWidget> {
             height: availH,
             child: Stack(
               children: [
-                // Interactive pan/zoom canvas covering the full available viewport
                 Positioned.fill(
-                  child: InteractiveViewer(
-                    transformationController: _ctrl,
-                    minScale: 1.0,
-                    maxScale: 8.0,
-                    boundaryMargin: const EdgeInsets.all(double.infinity),
-                    child: Center(
-                      child: SizedBox(
-                        width: mapW,
-                        height: mapH,
+                  child: Center(
+                    child: SizedBox(
+                      width: mapW,
+                      height: mapH,
+                      child: Transform(
+                        alignment: Alignment.topLeft,
+                        transform: cam.toMatrix(Size(mapW, mapH)),
                         child: Stack(
                           children: [
                             // SVG continent layer
@@ -115,14 +172,13 @@ class _WorldMapWidgetState extends State<WorldMapWidget> {
                               ),
                             ),
 
-                            // Graticule + pins + arc overlay
+                            // Graticule + pins + route overlay
                             Positioned.fill(
                               child: MouseRegion(
                                 cursor: _hoveredPin != null
                                     ? SystemMouseCursors.click
-                                    : SystemMouseCursors.grab,
+                                    : SystemMouseCursors.basic,
                                 child: GestureDetector(
-                                  // Pin tap → tooltip
                                   onTapDown: (details) {
                                     _handleTap(
                                         details.localPosition, mapW, mapH);
@@ -176,42 +232,12 @@ class _WorldMapWidgetState extends State<WorldMapWidget> {
                       ),
                     ),
                   ),
-
-                // Zoom controls (fixed UI overlay)
-                Positioned(
-                  right: 8,
-                  bottom: 8,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _ZoomButton(
-                        icon: Icons.add,
-                        onTap: () => _zoom(1.5),
-                      ),
-                      const SizedBox(height: 4),
-                      _ZoomButton(
-                        icon: Icons.remove,
-                        onTap: () => _zoom(1 / 1.5),
-                      ),
-                      const SizedBox(height: 4),
-                      _ZoomButton(
-                        icon: Icons.fit_screen_outlined,
-                        onTap: () => _ctrl.value = Matrix4.identity(),
-                      ),
-                    ],
-                  ),
-                ),
               ],
             ),
           ),
         );
       },
     );
-  }
-
-  void _zoom(double factor) {
-    final matrix = _ctrl.value * Matrix4.diagonal3Values(factor, factor, 1);
-    _ctrl.value = matrix;
   }
 
   void _handleTap(Offset localPos, double w, double h) {
@@ -230,6 +256,7 @@ class _WorldMapWidgetState extends State<WorldMapWidget> {
     }
     if (closest != null) {
       setState(() => _hoveredPin = closest);
+      widget.onPinTap?.call(closest);
     } else {
       // Tapped empty area → hide tooltip
       if (_hoveredPin != null) setState(() => _hoveredPin = null);
@@ -290,34 +317,6 @@ class _PinTooltip extends StatelessWidget {
               ),
             ],
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Small circular zoom button.
-class _ZoomButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  const _ZoomButton({required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = ThemeColors.of(context);
-    return Material(
-      color: c.bgElevated.withValues(alpha: 0.8),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(6),
-        side: BorderSide(color: c.border, width: 0.5),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(6),
-        child: SizedBox(
-          width: 28,
-          height: 28,
-          child: Icon(icon, size: 16, color: c.textSecondary),
         ),
       ),
     );
