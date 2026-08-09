@@ -73,11 +73,14 @@ func (s *Server) handleBillingProfile(w http.ResponseWriter, r *http.Request) {
 	if traffic, err := s.billing.GetUserTraffic(r.Context(), user.UUID); err == nil && traffic != nil {
 		resp.UsedTrafficBytes = traffic.UsedTrafficBytes
 	}
-	// Cache for offline display.
+	// Cache for offline display. SessionToken must be carried over: writing
+	// a zero value here would silently unlink the account on the next
+	// profile refresh, because the link check keys off a non-empty token.
 	_ = s.store.SetAccount(store.Account{
-		TelegramID: acct.TelegramID,
-		Username:   user.Username,
-		ExpireAt:   user.ExpireAt,
+		TelegramID:   acct.TelegramID,
+		SessionToken: acct.SessionToken,
+		Username:     user.Username,
+		ExpireAt:     user.ExpireAt,
 	})
 	writeJSON(w, http.StatusOK, resp)
 }

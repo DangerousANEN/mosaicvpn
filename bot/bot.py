@@ -16,6 +16,7 @@ import socks
 import concurrent.futures
 import psycopg2
 import base64
+import secrets
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -424,6 +425,21 @@ def init_db():
         online INTEGER
     )
     """)
+    # T-19: single-use pairing codes for linking the desktop/mobile client.
+    # The daemon lives behind NAT on the user's machine, so the bot cannot
+    # push a code to it: the bot issues, the daemon verifies over HTTP.
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS link_codes (
+        code TEXT PRIMARY KEY,
+        telegram_id INTEGER NOT NULL,
+        username TEXT,
+        session_token TEXT,
+        issued_at TEXT,
+        expires_at TEXT,
+        used_at TEXT,
+        attempts INTEGER DEFAULT 0
+    )
+    """)
     # #13: User complaints (quick report-bad-connection)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS complaints (
@@ -438,6 +454,110 @@ def init_db():
     conn.close()
 
 # Database Helper Functions
+
+# --- T-19: pairing codes for the desktop/mobile client ---------------------
+# Ambiguous glyphs are excluded: a code is read off one screen and typed into
+# another, so 0/O and 1/I/L would generate support tickets.
+LINK_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+LINK_CODE_TTL_MINUTES = 10
+LINK_CODE_MAX_ATTEMPTS = 5
+
+
+def _link_code_normalise(raw):
+    """Uppercase and strip separators so 'ab23-cd45' matches 'AB23CD45'."""
+    if not raw:
+        return ""
+    return "".join(ch for ch in raw.upper() if ch in LINK_CODE_ALPHABET)
+
+
+def issue_link_code(telegram_id, username, session_token=None):
+    """Mint a single-use pairing code, invalidating any earlier unused one.
+
+    Reissuing drops the previous code on purpose: leaving several live codes
+    for one account widens the guessing window for no benefit.
+    """
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM link_codes WHERE telegram_id = ? AND used_at IS NULL", (telegram_id,))
+    now = datetime.datetime.now(datetime.timezone.utc)
+    expires = now + datetime.timedelta(minutes=LINK_CODE_TTL_MINUTES)
+    for _ in range(12):
+        code = "".join(secrets.choice(LINK_CODE_ALPHABET) for _ in range(8))
+        try:
+            cursor.execute(
+                "INSERT INTO link_codes (code, telegram_id, username, session_token, issued_at, expires_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (code, telegram_id, username or "", session_token or "",
+                 now.isoformat(), expires.isoformat()),
+            )
+            conn.commit()
+            conn.close()
+            return code, expires
+        except sqlite3.IntegrityError:
+            continue  # astronomically unlikely collision; just try again
+    conn.close()
+    raise RuntimeError("could not allocate a link code")
+
+
+def redeem_link_code(raw_code):
+    """Burn a pairing code.
+
+    Returns (payload, None) on success or (None, reason) where reason is one
+    of not_found / expired / used / attempts. The caller maps those onto HTTP
+    statuses; the daemon needs the distinction to tell the user something
+    true instead of a generic failure.
+    """
+    code = _link_code_normalise(raw_code)
+    if not code:
+        return None, "not_found"
+
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT telegram_id, username, session_token, expires_at, used_at, attempts "
+        "FROM link_codes WHERE code = ?", (code,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return None, "not_found"
+
+    telegram_id, username, session_token, expires_at, used_at, attempts = row
+    if used_at:
+        conn.close()
+        return None, "used"
+    if attempts is not None and attempts >= LINK_CODE_MAX_ATTEMPTS:
+        conn.close()
+        return None, "attempts"
+
+    try:
+        expires = datetime.datetime.fromisoformat(expires_at)
+    except (TypeError, ValueError):
+        expires = None
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if expires is not None:
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=datetime.timezone.utc)
+        if expires < now:
+            conn.close()
+            return None, "expired"
+
+    # Mark used in the same transaction that reads it, so two clients racing
+    # on one code cannot both succeed.
+    cursor.execute(
+        "UPDATE link_codes SET used_at = ?, attempts = attempts + 1 "
+        "WHERE code = ? AND used_at IS NULL", (now.isoformat(), code))
+    if cursor.rowcount == 0:
+        conn.commit()
+        conn.close()
+        return None, "used"
+    conn.commit()
+    conn.close()
+    return {
+        "telegram_id": telegram_id,
+        "username": username or "",
+        "session_token": session_token or "",
+    }, None
+
 def get_user(telegram_id):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -1229,6 +1349,43 @@ def send_welcome(message):
         bot.send_message(message.chat.id, "Вы можете управлять аккаунтом с помощью меню ниже:" if lang == "ru" else "You can manage your account using the menu below:", reply_markup=get_main_menu(lang))
     else:
         bot.send_message(message.chat.id, t["welcome"], parse_mode="Markdown", reply_markup=get_main_menu(lang))
+
+@bot.message_handler(commands=["link"])
+def issue_link_code_command(message):
+    """Show a single-use code the user types into the desktop/mobile app."""
+    telegram_id = message.chat.id
+    db_user = get_user(telegram_id)
+    lang = db_user["language"] if db_user else "ru"
+
+    if not db_user:
+        bot.send_message(
+            telegram_id,
+            "Сначала нажмите /start, чтобы создать аккаунт." if lang == "ru"
+            else "Press /start first to create an account.")
+        return
+
+    try:
+        code, expires = issue_link_code(
+            telegram_id, db_user.get("username"), db_user.get("short_uuid"))
+    except Exception as exc:
+        logging.error("issue_link_code failed for %s: %s", telegram_id, exc)
+        bot.send_message(
+            telegram_id,
+            "Не удалось создать код, попробуйте позже." if lang == "ru"
+            else "Could not create a code, please try again later.")
+        return
+
+    minutes = LINK_CODE_TTL_MINUTES
+    if lang == "ru":
+        text = (f"Код для входа в приложение:\n\n<code>{code}</code>\n\n"
+                f"Введите его в приложении в разделе «Кабинет».\n"
+                f"Код действует {minutes} минут и работает один раз.")
+    else:
+        text = (f"Your app sign-in code:\n\n<code>{code}</code>\n\n"
+                f"Enter it in the app under \"Account\".\n"
+                f"Valid for {minutes} minutes, single use.")
+    bot.send_message(telegram_id, text, parse_mode="HTML")
+
 
 @bot.message_handler(commands=["support"])
 def show_support(message):
@@ -2088,6 +2245,62 @@ def setup_bot_branding():
 
 # Web API server serving Stats
 class StatsRequestHandler(BaseHTTPRequestHandler):
+    def _send_json(self, status, payload):
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self):
+        # T-19: the daemon runs behind NAT on the user's machine, so it is the
+        # side that reaches out. The bot issues codes; this endpoint burns them.
+        if self.path.rstrip("/") != "/api/link/redeem":
+            self.send_response(404)
+            self.end_headers()
+            return
+
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        # Cap the read: an unbounded Content-Length would let a caller
+        # exhaust memory on the VPS.
+        if length <= 0 or length > 4096:
+            self._send_json(400, {"error": "invalid body"})
+            return
+
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            code = payload.get("code", "")
+        except (ValueError, UnicodeDecodeError):
+            self._send_json(400, {"error": "invalid body"})
+            return
+
+        if not code:
+            self._send_json(400, {"error": "code required"})
+            return
+
+        try:
+            result, reason = redeem_link_code(code)
+        except Exception as exc:
+            logging.error("redeem_link_code failed: %s", exc)
+            self._send_json(500, {"error": "internal error"})
+            return
+
+        if result is None:
+            status = {
+                "not_found": 404,
+                "expired": 410,
+                "used": 409,
+                "attempts": 429,
+            }.get(reason, 400)
+            self._send_json(status, {"error": reason})
+            return
+
+        self._send_json(200, result)
+
     def do_GET(self):
         parts = self.path.split("/")
         # /stats-api/stats/<shortUuid>

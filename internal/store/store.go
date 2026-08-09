@@ -26,20 +26,20 @@ import (
 // It is the single source of truth for everything that survives a daemon
 // restart.
 type State struct {
-	Subscriptions   []proto.Subscription `json:"subscriptions"`
-	Servers         []proto.Server       `json:"servers"`
-	Rules           []proto.Rule         `json:"rules"`
-	Prefs           Prefs                `json:"prefs"`
-	LastServerID    string               `json:"last_server_id,omitempty"`
-	Profiles        []proto.Profile      `json:"profiles"`
-	RouteProfiles   []proto.RouteProfile `json:"route_profiles"`
-	WARP            proto.WARPConfig     `json:"warp"`
-	ActiveProfileID string               `json:"active_profile_id,omitempty"`
-	Egresses        []proto.Egress       `json:"egresses,omitempty"`
-	AntiDPI         proto.AntiDPIConfig  `json:"anti_dpi,omitempty"`
-	ActiveManifest *proto.SubscriptionManifest `json:"active_manifest,omitempty"`
-	Version        int                        `json:"version"`
-	Account         Account              `json:"account,omitempty"`
+	Subscriptions   []proto.Subscription        `json:"subscriptions"`
+	Servers         []proto.Server              `json:"servers"`
+	Rules           []proto.Rule                `json:"rules"`
+	Prefs           Prefs                       `json:"prefs"`
+	LastServerID    string                      `json:"last_server_id,omitempty"`
+	Profiles        []proto.Profile             `json:"profiles"`
+	RouteProfiles   []proto.RouteProfile        `json:"route_profiles"`
+	WARP            proto.WARPConfig            `json:"warp"`
+	ActiveProfileID string                      `json:"active_profile_id,omitempty"`
+	Egresses        []proto.Egress              `json:"egresses,omitempty"`
+	AntiDPI         proto.AntiDPIConfig         `json:"anti_dpi,omitempty"`
+	ActiveManifest  *proto.SubscriptionManifest `json:"active_manifest,omitempty"`
+	Version         int                         `json:"version"`
+	Account         Account                     `json:"account,omitempty"`
 
 	// Billing credentials persisted so the daemon can rebuild the
 	// billing.Client across restarts without requiring the user to
@@ -65,13 +65,21 @@ type State struct {
 	// LastGroupID is the last group that produced a working connection. Step 2
 	// of the connect priority chain prefers it over the generic pool-auto.
 	LastGroupID string `json:"last_group_id,omitempty"`
+
+	// LinkCodes are single-use pairing codes issued by the bot so a client
+	// can link to an account without the user pasting a raw telegram_id.
+	// See account.go.
+	LinkCodes []LinkCode `json:"link_codes,omitempty"`
+
+	// Payments is the account payment history displayed in the cabinet.
+	Payments []PaymentEntry `json:"payments,omitempty"`
 }
 
 // PromoEntry is the store-level representation of a promo code.
 // Kept separate from billing.Promo to avoid import cycles.
 type PromoEntry struct {
 	Code      string    `json:"code"`
-	Type      string    `json:"type"`       // "days" | "balance"
+	Type      string    `json:"type"` // "days" | "balance"
 	Value     int       `json:"value"`
 	MaxUses   int       `json:"max_uses"`
 	UsedCount int       `json:"used_count"`
@@ -957,4 +965,3 @@ func uuid() string {
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }
-

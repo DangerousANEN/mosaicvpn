@@ -364,6 +364,15 @@ class _ResolvedDaemonApi implements DaemonApiBase {
   @override
   Future<TopupStatusResponse> getTopupStatus(int invoiceId) async =>
       (await _backend()).getTopupStatus(invoiceId);
+
+  @override
+  Future<LinkResult> redeemLinkCode(String code) async =>
+      (await _backend()).redeemLinkCode(code);
+
+  @override
+  Future<List<PaymentEntry>> getPaymentHistory() async =>
+      (await _backend()).getPaymentHistory();
+
   @override
   Future<ProviderManifest> getProviderManifest() async =>
       (await _backend()).getProviderManifest();

@@ -405,6 +405,25 @@ class DaemonApi implements DaemonApiBase {
     return TopupStatusResponse.fromJson(r.data);
   }
 
+  // ─── Account cabinet (T-19) ────────────────────────────────────────
+
+  @override
+  Future<LinkResult> redeemLinkCode(String code) async {
+    final r = await _dio.post('/v1/account/link', data: {'code': code});
+    return LinkResult.fromJson(Map<String, dynamic>.from(r.data as Map));
+  }
+
+  @override
+  Future<List<PaymentEntry>> getPaymentHistory() async {
+    final r = await _dio.get('/v1/account/payments');
+    final raw = (r.data as Map)['payments'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => PaymentEntry.fromJson(Map<String, dynamic>.from(e)))
+        .toList(growable: false);
+  }
+
   // ─── Provider Manifest ─────────────────────────────────────────────
 
   @override

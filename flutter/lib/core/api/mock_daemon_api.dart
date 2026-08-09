@@ -1523,6 +1523,78 @@ class MockDaemonApi implements DaemonApiBase {
         );
   }
 
+  // ─── Account cabinet (T-19) ────────────────────────────────────────
+
+  /// Codes the mock accepts. Anything else is rejected like the daemon would,
+  /// so the UI's error paths stay exercisable without a backend.
+  static const mockValidLinkCode = 'MOCK2345';
+  static const mockExpiredLinkCode = 'EXPIRED9';
+
+  bool _mockLinked = false;
+
+  @override
+  Future<LinkResult> redeemLinkCode(String code) async {
+    await _delayVoid();
+    final normalized =
+        code.toUpperCase().replaceAll('-', '').replaceAll(' ', '');
+    if (normalized == mockExpiredLinkCode) {
+      throw DioException(
+        requestOptions: RequestOptions(path: '/v1/account/link'),
+        response: Response(
+          requestOptions: RequestOptions(path: '/v1/account/link'),
+          statusCode: 410,
+        ),
+      );
+    }
+    if (normalized != mockValidLinkCode) {
+      throw DioException(
+        requestOptions: RequestOptions(path: '/v1/account/link'),
+        response: Response(
+          requestOptions: RequestOptions(path: '/v1/account/link'),
+          statusCode: 404,
+        ),
+      );
+    }
+    _mockLinked = true;
+    return const LinkResult(ok: true, telegramId: 424242, username: 'mock_user');
+  }
+
+  @override
+  Future<List<PaymentEntry>> getPaymentHistory() async {
+    await _delayVoid();
+    if (!_mockLinked) return const [];
+    final now = DateTime.now();
+    return [
+      PaymentEntry(
+        id: 'mock-3',
+        provider: 'lava',
+        amount: 199,
+        currency: 'RUB',
+        status: 'pending',
+        days: 30,
+        createdAt: now.subtract(const Duration(minutes: 4)),
+      ),
+      PaymentEntry(
+        id: 'mock-2',
+        provider: 'yookassa',
+        amount: 349,
+        currency: 'RUB',
+        status: 'paid',
+        days: 30,
+        createdAt: now.subtract(const Duration(days: 31)),
+        paidAt: now.subtract(const Duration(days: 31)),
+      ),
+      PaymentEntry(
+        id: 'mock-1',
+        provider: 'cryptobot',
+        amount: 4.2,
+        currency: 'USDT',
+        status: 'failed',
+        createdAt: now.subtract(const Duration(days: 60)),
+      ),
+    ];
+  }
+
   // ─── Provider Manifest ─────────────────────────────────────────────
 
   @override

@@ -39,12 +39,15 @@ type Fetcher func(ctx context.Context, url string) ([]byte, string, error)
 
 // Server bundles the daemon's HTTP API.
 type Server struct {
-	store          *store.Store
-	mgr            *state.Manager
-	token          string
-	fetcher        Fetcher
-	billing        *billing.Client
-	lava           billing.PaymentProvider
+	store   *store.Store
+	mgr     *state.Manager
+	token   string
+	fetcher Fetcher
+	billing *billing.Client
+	lava    billing.PaymentProvider
+	// linkVerifier redeems pairing codes against the bot. Nil means
+	// self-hosted mode: codes are issued and burned locally.
+	linkVerifier   LinkVerifier
 	activeManifest *proto.SubscriptionManifest
 	manifestMu     sync.RWMutex
 	pool           *subs.PoolEngine
@@ -80,6 +83,9 @@ func (s *Server) SetBillingConfig(cfg billing.Config) {
 }
 
 // SetLavaProvider replaces the Lava payment provider instance.
+// SetLinkVerifier installs the remote pairing-code authority.
+func (s *Server) SetLinkVerifier(v LinkVerifier) { s.linkVerifier = v }
+
 func (s *Server) SetLavaProvider(p billing.PaymentProvider) {
 	s.lava = p
 }
@@ -166,6 +172,11 @@ func (s *Server) routes() {
 	// Billing endpoints — bridge to Remnawave + CryptoBot.
 	s.mux.HandleFunc("GET /v1/billing/profile", s.handleBillingProfile)
 	s.mux.HandleFunc("POST /v1/billing/link", s.handleBillingLink)
+
+	// Account cabinet (T-19): code-based linking + payment history.
+	s.mux.HandleFunc("POST /v1/account/link-code", s.handleLinkCodeIssue)
+	s.mux.HandleFunc("POST /v1/account/link", s.handleLinkCodeRedeem)
+	s.mux.HandleFunc("GET /v1/account/payments", s.handlePaymentHistory)
 	s.mux.HandleFunc("POST /v1/billing/unlink", s.handleBillingUnlink)
 	s.mux.HandleFunc("POST /v1/billing/topup", s.handleBillingTopup)
 	s.mux.HandleFunc("GET /v1/billing/topup/{id}", s.handleBillingTopupStatus)

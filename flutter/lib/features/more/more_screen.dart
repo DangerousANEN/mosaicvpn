@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/atlas_theme.dart';
+import '../account/account_screen.dart';
 import '../servers/servers_screen.dart';
 import '../profiles/profiles_screen.dart';
 import '../provider_profile/provider_profile_screen.dart';
@@ -21,6 +22,12 @@ class MoreScreen extends StatelessWidget {
     final c = ThemeColors.of(context);
 
     final items = <_MoreItem>[
+      _MoreItem(
+        title: 'Account',
+        subtitle: 'Subscription, traffic and payments',
+        icon: Icons.person_outline,
+        builder: (_) => const AccountScreen(),
+      ),
       _MoreItem(
         title: 'Stations',
         subtitle: 'VPN servers and nodes',

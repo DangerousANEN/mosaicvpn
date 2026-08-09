@@ -135,6 +135,14 @@ abstract class DaemonApiBase {
   });
   Future<TopupStatusResponse> getTopupStatus(int invoiceId);
 
+  // ─── Account cabinet (T-19) ────────────────────────────────────────
+
+  /// Redeems a pairing code shown by the Telegram bot.
+  Future<LinkResult> redeemLinkCode(String code);
+
+  /// Payment history, newest first.
+  Future<List<PaymentEntry>> getPaymentHistory();
+
   // ─── Provider Manifest ─────────────────────────────────────────────
 
   Future<ProviderManifest> getProviderManifest();

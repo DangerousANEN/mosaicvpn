@@ -22,6 +22,7 @@ import '../features/cores/cores_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/logs/logs_screen.dart';
 import '../features/billing/billing_screen.dart';
+import '../features/account/account_screen.dart';
 import '../features/groups/groups_screen.dart';
 import '../features/provider_profile/provider_profile_screen.dart';
 import '../features/more/more_screen.dart';
@@ -84,6 +85,10 @@ class _AppShellState extends ConsumerState<AppShell>
         label: 'Billing'),
     _NavDestination(
         icon: Icons.bolt_outlined, activeIcon: Icons.bolt, label: 'Groups'),
+    _NavDestination(
+        icon: Icons.person_outline,
+        activeIcon: Icons.person,
+        label: 'Account'),
     _NavDestination(
         icon: Icons.verified_outlined,
         activeIcon: Icons.verified,
@@ -172,6 +177,7 @@ class _AppShellState extends ConsumerState<AppShell>
         const _KeepAlive(child: SubscriptionsScreen()),
         const _KeepAlive(child: BillingScreen()),
         const _KeepAlive(child: GroupsScreen()),
+        const _KeepAlive(child: AccountScreen()),
         const _KeepAlive(child: ProviderProfileScreen()),
         const _KeepAlive(child: RoutingScreen()),
         const _KeepAlive(child: EgressesScreen()),
