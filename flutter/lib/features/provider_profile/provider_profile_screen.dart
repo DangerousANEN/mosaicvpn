@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/models.dart';
+import '../../core/providers/billing_provider.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/theme/atlas_theme.dart';
+import '../../core/utils/formatters.dart';
 import '../../shared/widgets/atlas_widgets.dart';
 
 /// Provider Manifest provider — fetches /v1/manifest from the Go daemon.
@@ -39,8 +41,12 @@ class ProviderProfileScreen extends ConsumerWidget {
               subtitle: 'Branding, billing, and services — driven by the provider manifest',
               action: IconButton(
                 icon: const Icon(Icons.refresh),
-                tooltip: 'Refresh Manifest',
-                onPressed: () => ref.invalidate(providerManifestProvider),
+                tooltip: 'Refresh',
+                onPressed: () {
+                  ref.invalidate(providerManifestProvider);
+                  ref.invalidate(billingProfileProvider);
+                  ref.invalidate(vpnStatusProvider);
+                },
               ),
             ),
             const SizedBox(height: 16),
@@ -67,13 +73,13 @@ class ProviderProfileScreen extends ConsumerWidget {
   }
 }
 
-class _ManifestContent extends StatelessWidget {
+class _ManifestContent extends ConsumerWidget {
   final ProviderManifest manifest;
 
   const _ManifestContent({required this.manifest});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final profile = manifest.profile;
     if (profile == null) {
       return Center(
@@ -84,6 +90,8 @@ class _ManifestContent extends StatelessWidget {
       );
     }
 
+    final billingProfileAsync = ref.watch(billingProfileProvider);
+
     return SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       child: Column(
@@ -91,6 +99,27 @@ class _ManifestContent extends StatelessWidget {
         children: [
           // ── Branding header ──
           _BrandingCard(branding: profile.branding, providerName: manifest.providerName),
+          const SizedBox(height: 16),
+
+          // ── Account state card (Real User State) ──
+          billingProfileAsync.when(
+            data: (billingProfile) => _UserAccountCard(profile: billingProfile),
+            loading: () => const AtlasCard(
+              child: Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+            ),
+            error: (err, _) => _UserAccountErrorCard(
+              onRetry: () => ref.invalidate(billingProfileProvider),
+            ),
+          ),
           const SizedBox(height: 16),
 
           // ── Node groups overview ──
@@ -118,6 +147,230 @@ class _ManifestContent extends StatelessWidget {
                   child: _ServiceCard(service: s),
                 )),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _UserAccountCard extends StatelessWidget {
+  final BillingProfile profile;
+
+  const _UserAccountCard({required this.profile});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeColors.of(context);
+
+    if (!profile.linked) {
+      return AtlasCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.account_circle, size: 20, color: c.textMuted),
+                const SizedBox(width: 8),
+                Text(
+                  'Account State',
+                  style: TextStyle(
+                    fontFamily: AtlasTheme.serifFamily,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: c.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'No account linked',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: c.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Link your Telegram account via the Billing screen to view subscription details and manage traffic.',
+              style: TextStyle(fontSize: 13, color: c.textMuted),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final used = profile.usedTrafficBytes;
+    final limit = profile.trafficLimitBytes;
+    final progress = limit > 0 ? (used / limit).clamp(0.0, 1.0) : 0.0;
+    final daysLeft = profile.daysLeft;
+
+    Color daysColor = c.success;
+    if (daysLeft <= 0) {
+      daysColor = c.danger;
+    } else if (daysLeft <= 3) {
+      daysColor = c.warning;
+    }
+
+    return AtlasCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.account_circle, size: 20, color: AtlasTheme.accent),
+                  const SizedBox(width: 8),
+                  Text(
+                    profile.username.isNotEmpty ? profile.username : 'Linked Account',
+                    style: TextStyle(
+                      fontFamily: AtlasTheme.serifFamily,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: c.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+              if (profile.squadName.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AtlasTheme.accent.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
+                  ),
+                  child: Text(
+                    profile.squadName,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AtlasTheme.accent,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Status',
+                style: TextStyle(fontSize: 13, color: c.textMuted),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: profile.status.toLowerCase() == 'active'
+                      ? c.success.withValues(alpha: 0.2)
+                      : c.warning.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
+                ),
+                child: Text(
+                  (profile.status.isNotEmpty ? profile.status : 'Active').toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: profile.status.toLowerCase() == 'active'
+                        ? c.success
+                        : c.warning,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Traffic Used',
+                style: TextStyle(fontSize: 13, color: c.textMuted),
+              ),
+              Text(
+                limit > 0
+                    ? '${formatBytes(used)} / ${formatBytes(limit)}'
+                    : '${formatBytes(used)} (Unlimited)',
+                style: TextStyle(
+                  fontFamily: AtlasTheme.monoFamily,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: c.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          if (limit > 0) ...[
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 6,
+                backgroundColor: c.bgChild,
+                color: progress > 0.9 ? c.danger : AtlasTheme.accent,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Subscription',
+                style: TextStyle(fontSize: 13, color: c.textMuted),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: daysColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
+                  border: Border.all(color: daysColor.withValues(alpha: 0.3)),
+                ),
+                child: Text(
+                  '$daysLeft Days Left',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: daysColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UserAccountErrorCard extends StatelessWidget {
+  final VoidCallback onRetry;
+
+  const _UserAccountErrorCard({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeColors.of(context);
+    return AtlasCard(
+      child: Row(
+        children: [
+          Icon(Icons.error_outline, size: 20, color: c.danger),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Failed to load account state',
+              style: TextStyle(fontSize: 13, color: c.textSecondary),
+            ),
+          ),
+          TextButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh, size: 14),
+            label: const Text('Retry', style: TextStyle(fontSize: 12)),
+          ),
         ],
       ),
     );
@@ -277,17 +530,37 @@ class _BillingCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Icon(Icons.account_balance_wallet, size: 20, color: AtlasTheme.accent),
-              const SizedBox(width: 8),
-              Text('Billing',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: c.textPrimary,
-                        fontWeight: FontWeight.w600,
-                      )),
+              Row(
+                children: [
+                  Icon(Icons.account_balance_wallet, size: 20, color: AtlasTheme.accent),
+                  const SizedBox(width: 8),
+                  Text('Billing',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            color: c.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          )),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: c.bgChild,
+                  borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
+                  border: Border.all(color: c.border),
+                ),
+                child: Text(
+                  'Provider offer',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                    color: c.textMuted,
+                  ),
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 12),
           // Pricing rows
           if (billing.pricePerDay.isNotEmpty) ...[
             ...billing.pricePerDay.entries.map((e) => Padding(
