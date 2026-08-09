@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Личный кабинет — MosaicVPN</title>
+<meta name="description" content="Личный кабинет MosaicVPN: баланс, срок действия доступа, устройства, история платежей и пополнение. Вход через Telegram-бот." />
+<link rel="canonical" href="https://sub.zxc1x1.ru/cabinet.html" />
+<meta name="robots" content="noindex, nofollow" />
+<style>
+  :root{
+    --bg:#F4EFE6; --card:#FBF8F2; --border:#DED3C0; --text:#241F1A;
+    --text-2:#6B6157; --muted:#8A7F72; --accent:#B85C38; --accent-2:#7A6A55;
+    --ok:#3F6B4A; --warn:#8A6A1F; --err:#8C3A2E;
+    --serif:'Playfair Display',Georgia,'Times New Roman',serif;
+    --mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--text);
+       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+       line-height:1.65; -webkit-font-smoothing:antialiased}
+  .wrap{max-width:960px; margin:0 auto; padding:0 24px}
+  a{color:var(--accent)}
+
+  header{border-bottom:1px solid var(--border); background:rgba(244,239,230,.92);
+         position:sticky; top:0; z-index:20; backdrop-filter:blur(8px)}
+  .nav{display:flex; align-items:center; gap:16px; height:64px}
+  .brand{display:flex; align-items:center; gap:10px; font-family:var(--serif);
+         font-size:20px; font-weight:600; text-decoration:none; color:var(--text)}
+  .brand .dot{color:var(--accent)}
+  .nav-links{margin-left:auto; display:flex; flex-wrap:wrap; gap:20px; font-size:14px; color:var(--text-2)}
+  .nav-links a{text-decoration:none; white-space:nowrap}
+  @media(max-width:760px){ .nav-links{display:none} }
+
+  .head{padding:48px 0 28px; border-bottom:1px solid var(--border)}
+  .fig{font-family:var(--mono); font-size:11px; letter-spacing:.18em;
+       text-transform:uppercase; color:var(--muted)}
+  h1{font-family:var(--serif); font-size:clamp(28px,5vw,42px); margin:10px 0 12px; font-weight:600}
+  .lede{color:var(--text-2); max-width:60ch; margin:0}
+
+  section{padding:32px 0}
+  h2{font-family:var(--serif); font-size:24px; margin:0 0 14px; font-weight:600}
+
+  /* auth gate */
+  .gate{border:1px solid var(--border); border-radius:14px; background:var(--card);
+        padding:28px; text-align:center; margin:8px 0 4px}
+  .gate .icon{width:52px; height:52px; margin:0 auto 14px; border-radius:50%;
+              background:rgba(184,92,56,.12); display:flex; align-items:center; justify-content:center}
+  .gate h3{font-family:var(--serif); font-size:22px; margin:0 0 8px; font-weight:600}
+  .gate p{color:var(--text-2); margin:0 auto 20px; max-width:46ch}
+  .btn{display:inline-block; padding:13px 26px; border-radius:9px; text-decoration:none;
+       font-weight:600; font-size:15px; border:1px solid transparent}
+  .btn-primary{background:var(--accent); color:#fff}
+  .btn-primary:hover{background:#a04f30}
+  .btn-ghost{border-color:var(--border); color:var(--text); background:transparent}
+  .btn-ghost:hover{border-color:var(--accent); color:var(--accent)}
+  .btn-row{display:flex; gap:10px; flex-wrap:wrap; justify-content:center}
+
+  /* account panel */
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px}
+  .card{border:1px solid var(--border); border-radius:12px; background:var(--card); padding:18px}
+  .card .k{font-family:var(--mono); font-size:10.5px; letter-spacing:.14em;
+           text-transform:uppercase; color:var(--muted); margin-bottom:8px}
+  .card .v{font-family:var(--serif); font-size:26px; font-weight:600; line-height:1.2}
+  .card .sub{font-size:12.5px; color:var(--text-2); margin-top:6px}
+  .v.ok{color:var(--ok)} .v.warn{color:var(--warn)} .v.err{color:var(--err)}
+
+  .tbl-wrap{overflow-x:auto; border:1px solid var(--border); border-radius:10px;
+            background:var(--card); margin:14px 0}
+  table{border-collapse:collapse; width:100%; font-size:14px}
+  th,td{padding:11px 14px; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap}
+  th{font-family:var(--mono); font-size:10.5px; letter-spacing:.12em;
+     text-transform:uppercase; color:var(--muted); font-weight:500}
+  tr:last-child td{border-bottom:none}
+
+  .note{border-left:3px solid var(--accent); background:var(--card);
+        padding:14px 18px; border-radius:0 10px 10px 0; margin:16px 0}
+  .note .t{font-weight:600; margin-bottom:5px}
+  .note p{margin:0; color:var(--text-2); font-size:14px}
+
+  .soon{display:inline-block; font-family:var(--mono); font-size:10px; letter-spacing:.1em;
+        text-transform:uppercase; padding:3px 8px; border-radius:20px;
+        background:rgba(138,106,31,.14); color:var(--warn); border:1px solid rgba(138,106,31,.3);
+        vertical-align:middle; margin-left:8px}
+
+  code{font-family:var(--mono); font-size:13px; background:rgba(0,0,0,.05);
+       padding:2px 6px; border-radius:4px}
+
+  footer{border-top:1px solid var(--border); padding:28px 0 40px; margin-top:20px;
+         font-size:13px; color:var(--muted)}
+  footer a{color:var(--text-2); text-decoration:none}
+  footer a:hover{color:var(--accent)}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="/">
+      <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="14" fill="none" stroke="#B85C38" stroke-width="1.6"/>
+        <path d="M16 5 L19 16 L16 27 L13 16 Z" fill="#B85C38"/>
+      </svg>
+      MosaicVPN<span class="dot">.</span>
+    </a>
+    <nav class="nav-links">
+      <a href="/">Главная</a>
+      <a href="/#pricing">Тариф</a>
+      <a href="/docs.html">Провайдерам</a>
+      <a href="/contacts.html">Поддержка</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="head">
+    <div class="fig">Личный кабинет</div>
+    <h1>Ваш аккаунт</h1>
+    <p class="lede">
+      Баланс, срок доступа, устройства и история платежей. Один и тот же аккаунт
+      работает в Telegram-боте, в приложении и здесь — данные везде одинаковые.
+    </p>
+  </div>
+
+  <!-- ─── AUTH GATE (shown when not signed in) ───────────── -->
+  <section id="gate-section">
+    <div class="gate" id="gate">
+      <div class="icon">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#B85C38" stroke-width="1.8">
+          <path d="M21 11.5a8.5 8.5 0 1 1-4.6-7.6"/>
+          <path d="M9 12l2.5 2.5L21 5"/>
+        </svg>
+      </div>
+      <h3>Вход через Telegram</h3>
+      <p>
+        Аккаунт привязан к вашему Telegram. Баланс, срок доступа и пополнение
+        сейчас доступны в боте и в приложении — веб-вход подключается.
+      </p>
+      <div class="btn-row">
+        <a class="btn btn-primary" href="https://t.me/mosaic_tf_bot" target="_blank" rel="noopener">
+          Открыть бота
+        </a>
+        <a class="btn btn-ghost" href="/#downloads">Скачать приложение</a>
+      </div>
+    </div>
+
+    <div class="note">
+      <div class="t">Вход на сайте ещё не подключён <span class="soon">в разработке</span></div>
+      <p>
+        Сейчас баланс и срок доступа доступны в Telegram-боте и в приложении.
+        Веб-вход появится вместе с платёжным шлюзом — разметка кабинета
+        и контракт данных уже готовы, осталось включить обмен кода на сессию.
+      </p>
+    </div>
+  </section>
+
+  <!-- ─── ACCOUNT (rendered once the session API is live) ── -->
+  <section id="account-section" class="hidden">
+    <h2>Состояние аккаунта</h2>
+    <div class="grid">
+      <div class="card">
+        <div class="k">Баланс</div>
+        <div class="v" data-field="balance">—</div>
+        <div class="sub" data-field="balance_note">списание 1 ₽ в сутки</div>
+      </div>
+      <div class="card">
+        <div class="k">Доступ активен до</div>
+        <div class="v" data-field="expires">—</div>
+        <div class="sub" data-field="expires_note">хватит ещё на —</div>
+      </div>
+      <div class="card">
+        <div class="k">Устройства</div>
+        <div class="v" data-field="devices">—</div>
+        <div class="sub">не более 5 одновременно</div>
+      </div>
+      <div class="card">
+        <div class="k">Тариф</div>
+        <div class="v" data-field="tier">—</div>
+        <div class="sub" data-field="tier_note">посуточная оплата</div>
+      </div>
+    </div>
+
+    <h2 style="margin-top:34px">Пополнение</h2>
+    <div class="btn-row" style="justify-content:flex-start">
+      <a class="btn btn-primary" href="https://t.me/mosaic_tf_bot" target="_blank" rel="noopener">
+        Пополнить в боте
+      </a>
+      <a class="btn btn-ghost" id="topup-web" href="#">Оплатить картой <span class="soon">скоро</span></a>
+    </div>
+
+    <h2 style="margin-top:34px">История платежей</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Дата</th><th>Сумма</th><th>Способ</th><th>Статус</th></tr>
+        </thead>
+        <tbody data-field="payments">
+          <tr><td colspan="4" style="color:var(--muted)">Нет операций</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 style="margin-top:34px">Устройства</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Устройство</th><th>Платформа</th><th>Последняя активность</th></tr>
+        </thead>
+        <tbody data-field="device_list">
+          <tr><td colspan="3" style="color:var(--muted)">Нет привязанных устройств</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Один аккаунт в трёх местах</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Где</th><th>Что доступно</th><th>Статус</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Telegram-бот</td>
+            <td>Баланс, пополнение, заморозка, подписка</td>
+            <td style="color:var(--ok)">Работает</td>
+          </tr>
+          <tr>
+            <td>Приложение</td>
+            <td>Баланс, срок доступа, привязка аккаунта</td>
+            <td style="color:var(--ok)">Работает</td>
+          </tr>
+          <tr>
+            <td>Этот кабинет</td>
+            <td>Те же данные в браузере</td>
+            <td style="color:var(--warn)">Вход в разработке</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">
+      <div class="t">Почему аккаунт один</div>
+      <p>
+        Аккаунт определяется вашим Telegram ID. Бот выдаёт сессионный токен,
+        приложение и кабинет обращаются с ним к одному и тому же биллингу,
+        поэтому баланс и срок доступа совпадают везде без синхронизации вручную.
+      </p>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    MosaicVPN · Atlas of routes · Edition I<br/>
+    <a href="/">Главная</a> ·
+    <a href="/cabinet.html">Кабинет</a> ·
+    <a href="/docs.html">Провайдерам</a> ·
+    <a href="/contacts.html">Контакты</a> ·
+    <a href="/offer.html">Оферта</a> ·
+    <a href="/privacy.html">Политика ПДн</a> ·
+    <a href="/refund.html">Возврат</a> ·
+    <a href="/terms.html">Условия</a> ·
+    <a href="https://t.me/mosaic_tf_bot" target="_blank" rel="noopener">@mosaic_tf_bot</a>
+  </div>
+</footer>
+
+<script>
+// The cabinet renders from the same billing contract the app and the bot use:
+//   GET /v1/billing/profile -> { balance, currency, expires_at, tier, devices, payments }
+// Web sign-in is not wired yet, so the page stays on the auth gate instead of
+// showing invented numbers. Once the bot exposes code->session exchange, set
+// SESSION_ENDPOINT and the account panel takes over.
+(function () {
+  var SESSION_ENDPOINT = null; // set when the bot bridge ships
+
+  var gate = document.getElementById('gate-section');
+  var account = document.getElementById('account-section');
+
+  function showAccount(profile) {
+    gate.classList.add('hidden');
+    account.classList.remove('hidden');
+
+    var q = function (name) { return document.querySelector('[data-field="' + name + '"]'); };
+    var money = function (v, cur) {
+      return new Intl.NumberFormat('ru-RU').format(v) + ' ' + (cur === 'USDT' ? 'USDT' : '₽');
+    };
+
+    q('balance').textContent = money(profile.balance, profile.currency);
+    q('devices').textContent = profile.devices_used + ' / ' + profile.devices_limit;
+    q('tier').textContent = profile.tier;
+
+    var days = Math.floor(profile.balance);
+    q('expires').textContent = new Date(profile.expires_at).toLocaleDateString('ru-RU');
+    q('expires_note').textContent = 'хватит ещё на ' + days + ' сут.';
+
+    var bal = q('balance');
+    bal.classList.toggle('warn', days > 0 && days <= 3);
+    bal.classList.toggle('err', days <= 0);
+  }
+
+  if (!SESSION_ENDPOINT) return; // gate stays visible
+
+  fetch(SESSION_ENDPOINT, { credentials: 'include' })
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(showAccount)
+    .catch(function () { /* stay on the gate */ });
+})();
+</script>
+
+</body>
+</html>
