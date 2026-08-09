@@ -69,6 +69,23 @@ class AtlasTheme {
   static const Color darkTextMuted = Color(0xFF6B5F50);
   static const Color darkTextOnInk = Color(0xFFE8DFD0);
 
+  // ── Console / log output ──
+  // The log console is an ink panel in BOTH themes, so these are not
+  // light/dark pairs — they are the on-ink variants of the status hues.
+  // The base status colors (error/warning/success) are tuned for parchment
+  // and only reach 2.5:1–4.3:1 against ink, so reusing them here would be
+  // unreadable. These are lightened to clear 4.5:1 on the lighter ink panel.
+  static const Color consoleError = Color(0xFFE87A5C); // 5.26:1 on bgInk
+  static const Color consoleWarning = Color(0xFFE8A552); // 7.09:1
+  static const Color consoleSuccess = Color(0xFF9CBF6B); // 7.19:1
+  static const Color consoleMuted = Color(0xFFA89882); // 5.34:1
+  static const Color consoleText = Color(0xFFE8DFD0); // 11.35:1
+
+  // Foreground for filled accent/danger buttons. The parchment cream
+  // (textOnInk) only reaches 3.96:1 on the terracotta accent, so filled
+  // buttons need a brighter foreground than panel text does.
+  static const Color onAccent = Color(0xFFFFFDFA); // 4.51:1 on accent
+
   /// Light ThemeData (default — warm cream paper aesthetic).
   static ThemeData get themeData => ThemeData.light().copyWith(
         scaffoldBackgroundColor: bgBase,
@@ -428,4 +445,16 @@ class ThemeColors {
   Color get infoDim => AtlasTheme.infoDim;
 
   Color get bgChild => isDark ? AtlasTheme.darkBgElevated : AtlasTheme.bgChild;
+
+  // ── Console (ink panel in both themes — intentionally not a light/dark pair) ──
+  Color get consoleBg => isDark ? AtlasTheme.darkBgInk : AtlasTheme.bgInk;
+  Color get consoleError => AtlasTheme.consoleError;
+  Color get consoleWarning => AtlasTheme.consoleWarning;
+  Color get consoleSuccess => AtlasTheme.consoleSuccess;
+  Color get consoleMuted => AtlasTheme.consoleMuted;
+  Color get consoleText => AtlasTheme.consoleText;
+
+  /// Foreground for filled accent/danger buttons (same in both themes —
+  /// the fill color is the same, so the contrast requirement is too).
+  Color get onAccent => AtlasTheme.onAccent;
 }

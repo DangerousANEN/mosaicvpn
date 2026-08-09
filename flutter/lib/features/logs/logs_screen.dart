@@ -196,7 +196,7 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
           Expanded(
             child: Container(
               decoration: BoxDecoration(
-                color: const Color(0xFF0D0E0F),
+                color: c.consoleBg,
                 borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
                 border: Border.all(color: c.border),
               ),
@@ -241,22 +241,26 @@ class _LogLine extends StatelessWidget {
   final LogEntry entry;
   const _LogLine({required this.entry});
 
-  Color get _levelColor {
+  /// Level colors come from the console-on-ink palette rather than the base
+  /// status hues: those are tuned for the parchment background and only reach
+  /// 2.5:1-4.3:1 against the ink console, which is unreadable.
+  Color _levelColor(ThemeColors c) {
     switch (entry.level) {
       case 'ERROR':
-        return const Color(0xFFEF4444);
+        return c.consoleError;
       case 'WARN':
-        return const Color(0xFFF59E0B);
+        return c.consoleWarning;
       case 'DEBUG':
-        return const Color(0xFF6B7280);
+        return c.consoleMuted;
       case 'INFO':
       default:
-        return const Color(0xFF22C55E);
+        return c.consoleSuccess;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final c = ThemeColors.of(context);
     return RichText(
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
@@ -269,18 +273,18 @@ class _LogLine extends StatelessWidget {
         children: [
           TextSpan(
             text: '${entry.formattedTime} ',
-            style: const TextStyle(color: Color(0xFF4B5563)),
+            style: TextStyle(color: c.consoleMuted),
           ),
           TextSpan(
             text: '${entry.level.padRight(5)} ',
             style: TextStyle(
-              color: _levelColor,
+              color: _levelColor(c),
               fontWeight: FontWeight.w700,
             ),
           ),
           TextSpan(
             text: entry.message,
-            style: const TextStyle(color: Color(0xFFD1D5DB)),
+            style: TextStyle(color: c.consoleText),
           ),
         ],
       ),

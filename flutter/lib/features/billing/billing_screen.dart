@@ -236,7 +236,7 @@ class _AccountLinkCard extends ConsumerWidget {
                         ElevatedButton(
                           style: ElevatedButton.styleFrom(
                               backgroundColor: c.danger,
-                              foregroundColor: Colors.white),
+                              foregroundColor: c.onAccent),
                           onPressed: () => Navigator.of(ctx).pop(true),
                           child: const Text('Unlink'),
                         ),

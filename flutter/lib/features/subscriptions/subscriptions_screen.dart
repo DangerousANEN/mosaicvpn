@@ -256,7 +256,7 @@ class _AddSubscriptionFeedDialogState
                   height: 16,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: Colors.white,
+                    color: AtlasTheme.onAccent,
                   ),
                 )
               : const Text('Add'),
