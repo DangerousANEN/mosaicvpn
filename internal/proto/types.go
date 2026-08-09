@@ -39,29 +39,29 @@ func (p Protocol) IsKnown() bool {
 // Server represents a single VPN/proxy endpoint that the daemon can connect
 // to. Servers live inside Subscriptions.
 type Server struct {
-	ID             string         `json:"id"`
-	Name           string         `json:"name"`
-	Protocol       Protocol       `json:"protocol"`
-	Address        string         `json:"address"`
-	Port           int            `json:"port"`
-	City           string         `json:"city,omitempty"`
-	Country        string         `json:"country,omitempty"`
-	Tag            string         `json:"tag,omitempty"`
-	SubscriptionID string         `json:"subscription_id"`
-	IsVirtualGroup bool           `json:"is_virtual_group,omitempty"`
-	Category       string         `json:"category,omitempty"` // "smart", "whitelist", "raw"
-	GroupTag       string         `json:"group_tag,omitempty"`
-	OutboundTag    string         `json:"outbound_tag,omitempty"`
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Protocol       Protocol `json:"protocol"`
+	Address        string   `json:"address"`
+	Port           int      `json:"port"`
+	City           string   `json:"city,omitempty"`
+	Country        string   `json:"country,omitempty"`
+	Tag            string   `json:"tag,omitempty"`
+	SubscriptionID string   `json:"subscription_id"`
+	IsVirtualGroup bool     `json:"is_virtual_group,omitempty"`
+	Category       string   `json:"category,omitempty"` // "smart", "whitelist", "raw"
+	GroupTag       string   `json:"group_tag,omitempty"`
+	OutboundTag    string   `json:"outbound_tag,omitempty"`
 	// LastTestMS is the round-trip time of the most recent probe, in
 	// milliseconds. A negative value means the probe failed; LastTestError
 	// then carries the reason. Zero means the server has never been probed.
-	LastTestMS    int            `json:"last_test_ms,omitempty"`
-	LastTestError string         `json:"last_test_error,omitempty"`
-	LastTestAt    time.Time      `json:"last_test_at,omitempty"`
+	LastTestMS    int       `json:"last_test_ms,omitempty"`
+	LastTestError string    `json:"last_test_error,omitempty"`
+	LastTestAt    time.Time `json:"last_test_at,omitempty"`
 	// Lat/Lon are decimal degrees (WGS84). Populated from a GeoIP
 	// lookup against Address; zero means "not resolved yet".
-	Lat float64 `json:"lat,omitempty"`
-	Lon float64 `json:"lon,omitempty"`
+	Lat float64        `json:"lat,omitempty"`
+	Lon float64        `json:"lon,omitempty"`
 	Raw map[string]any `json:"raw,omitempty"`
 }
 
@@ -107,11 +107,11 @@ const (
 // NodeRef references a physical node within a ServerGroup along with load and health telemetry.
 type NodeRef struct {
 	ServerID  string  `json:"server_id"`
-	Weight    int     `json:"weight"`               // 1..100, static weight
-	Load      float64 `json:"load"`                 // 0..1, current load
-	LatencyMs int     `json:"latency_ms"`           // last latency probe
+	Weight    int     `json:"weight"`     // 1..100, static weight
+	Load      float64 `json:"load"`       // 0..1, current load
+	LatencyMs int     `json:"latency_ms"` // last latency probe
 	Alive     bool    `json:"alive"`
-	LastSeen  int64   `json:"last_seen"`            // unix timestamp
+	LastSeen  int64   `json:"last_seen"` // unix timestamp
 	Country   string  `json:"country,omitempty"`
 	City      string  `json:"city,omitempty"`
 }
@@ -201,18 +201,18 @@ type ManifestNode struct {
 
 // ManifestGroup defines an admin-managed route/group in the subscription manifest.
 type ManifestGroup struct {
-	ID           string         `json:"id"`
-	Title        string         `json:"title"`
-	Type         string         `json:"type"` // "urltest", "fallback", "weighted_round_robin", "direct_node"
-	Nodes        []ManifestNode `json:"nodes"`
-	UserTier     UserTier       `json:"user_tier,omitempty"`     // required tier: "free", "pro", "vip"
-	Badge        string         `json:"badge,omitempty"`         // e.g. "Оптимально", "Низкий пинг", "VIP", "4G ТСПУ"
-	Category     string         `json:"category,omitempty"`      // "smart", "whitelist", "raw"
-	Icon         string         `json:"icon,omitempty"`          // e.g. "shield", "lightning", "flag_de"
-	Description  string         `json:"description,omitempty"`
-	PingInterval int            `json:"ping_interval,omitempty"` // seconds between health checks, default 30
-	MaxRetries   int            `json:"max_retries,omitempty"`   // before marking node dead, default 3
-	FailoverDelay int           `json:"failover_delay,omitempty"` // seconds before switching to next node
+	ID            string         `json:"id"`
+	Title         string         `json:"title"`
+	Type          string         `json:"type"` // "urltest", "fallback", "weighted_round_robin", "direct_node"
+	Nodes         []ManifestNode `json:"nodes"`
+	UserTier      UserTier       `json:"user_tier,omitempty"` // required tier: "free", "pro", "vip"
+	Badge         string         `json:"badge,omitempty"`     // e.g. "Оптимально", "Низкий пинг", "VIP", "4G ТСПУ"
+	Category      string         `json:"category,omitempty"`  // "smart", "whitelist", "raw"
+	Icon          string         `json:"icon,omitempty"`      // e.g. "shield", "lightning", "flag_de"
+	Description   string         `json:"description,omitempty"`
+	PingInterval  int            `json:"ping_interval,omitempty"`  // seconds between health checks, default 30
+	MaxRetries    int            `json:"max_retries,omitempty"`    // before marking node dead, default 3
+	FailoverDelay int            `json:"failover_delay,omitempty"` // seconds before switching to next node
 }
 
 // SubscriptionManifest is the provider-controlled routing & load-balancing manifest.
@@ -374,7 +374,31 @@ type Status struct {
 
 // ConnectRequest tells the daemon to bring up a server.
 type ConnectRequest struct {
+	// ServerID pins one specific node. Takes precedence over GroupID.
 	ServerID string `json:"server_id"`
+	// GroupID asks the daemon to pick the best node inside that group. When
+	// both fields are empty the daemon walks the full priority chain.
+	GroupID string `json:"group_id,omitempty"`
+}
+
+// ConnectResponse is the /v1/connect body: the resulting status with the
+// resolver's decision embedded.
+//
+// Status is embedded rather than nested under a "status" key because existing
+// clients (CLI, Flutter, Tauri) decode this response straight into Status.
+// Nesting it would silently break every one of them.
+type ConnectResponse struct {
+	Status
+	// ResolvedVia names the priority-chain step that produced the node.
+	ResolvedVia string `json:"resolved_via,omitempty"`
+	// GroupID is the group the node came from.
+	GroupID string `json:"group_id,omitempty"`
+	// Degraded is true when a more preferred option was unavailable, so the UI
+	// can show a fall back to the emergency group instead of presenting it as
+	// a normal connection.
+	Degraded bool `json:"degraded,omitempty"`
+	// Notes explain any downgrade in user-facing language.
+	Notes []string `json:"notes,omitempty"`
 }
 
 // AddSubscriptionRequest adds a new subscription.
@@ -414,20 +438,20 @@ type DaemonEndpoint struct {
 // ruleset, and DNS config into a named preset. Users can have multiple
 // profiles (e.g. "Home", "Work", "Gaming") and switch between them.
 type Profile struct {
-	ID            string        `json:"id"`
-	Name          string        `json:"name"`
-	Icon          string        `json:"icon,omitempty"`   // emoji or icon name
-	Color         string        `json:"color,omitempty"`  // hex color for avatar
-	ServerID      string        `json:"server_id,omitempty"`
-	SubscriptionID string      `json:"subscription_id,omitempty"`
-	TunnelMode    string        `json:"tunnel_mode"`      // "tun" | "proxy"
-	KillSwitch    bool          `json:"kill_switch"`
-	AllowLAN      bool          `json:"allow_lan"`
-	DNS           DNSConfig     `json:"dns"`
-	RuleIDs       []string      `json:"rule_ids,omitempty"` // ordered list of rule IDs enabled in this profile
-	AutoConnect    bool          `json:"auto_connect"`
-	CreatedAt     time.Time     `json:"created_at"`
-	UpdatedAt     time.Time     `json:"updated_at"`
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	Icon           string    `json:"icon,omitempty"`  // emoji or icon name
+	Color          string    `json:"color,omitempty"` // hex color for avatar
+	ServerID       string    `json:"server_id,omitempty"`
+	SubscriptionID string    `json:"subscription_id,omitempty"`
+	TunnelMode     string    `json:"tunnel_mode"` // "tun" | "proxy"
+	KillSwitch     bool      `json:"kill_switch"`
+	AllowLAN       bool      `json:"allow_lan"`
+	DNS            DNSConfig `json:"dns"`
+	RuleIDs        []string  `json:"rule_ids,omitempty"` // ordered list of rule IDs enabled in this profile
+	AutoConnect    bool      `json:"auto_connect"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // RouteProfile is a named bundle of routing rules that can be shared
@@ -492,20 +516,20 @@ func DefaultDNSConfig() DNSConfig {
 // Clash API). Uses a mix of the fields sing-box exposes via its
 // connections endpoint.
 type Connection struct {
-	ID         string `json:"id"`
-	Network    string `json:"network"`    // "tcp" | "udp"
-	Outbound   string `json:"outbound"`  // outbound tag: "proxy", "direct", "block"
-	Domain     string `json:"domain,omitempty"`
-	IP         string `json:"ip,omitempty"`
-	Port       int    `json:"port,omitempty"`
-	SourceIP   string `json:"source_ip,omitempty"`
-	SourcePort int    `json:"source_port,omitempty"`
-	Process    string `json:"process,omitempty"`
-	Upload     uint64 `json:"upload"`
-	Download   uint64 `json:"download"`
+	ID         string    `json:"id"`
+	Network    string    `json:"network"`  // "tcp" | "udp"
+	Outbound   string    `json:"outbound"` // outbound tag: "proxy", "direct", "block"
+	Domain     string    `json:"domain,omitempty"`
+	IP         string    `json:"ip,omitempty"`
+	Port       int       `json:"port,omitempty"`
+	SourceIP   string    `json:"source_ip,omitempty"`
+	SourcePort int       `json:"source_port,omitempty"`
+	Process    string    `json:"process,omitempty"`
+	Upload     uint64    `json:"upload"`
+	Download   uint64    `json:"download"`
 	StartAt    time.Time `json:"start_at"`
-	Chain      string `json:"chain,omitempty"`   // e.g. "proxy → vless"
-	Rule       string `json:"rule,omitempty"`     // matching rule name
+	Chain      string    `json:"chain,omitempty"` // e.g. "proxy → vless"
+	Rule       string    `json:"rule,omitempty"`  // matching rule name
 }
 
 // TrafficStats aggregates bytes uploaded/downloaded over a time window.
@@ -534,11 +558,11 @@ type TrafficStats struct {
 
 // TrafficPoint is a single timestamped measurement for charting traffic.
 type TrafficPoint struct {
-	Timestamp  time.Time `json:"ts"`
-	BytesIn    uint64    `json:"bin"`
-	BytesOut   uint64    `json:"bout"`
-	UpSpeed    uint64    `json:"up,omitempty"`
-	DownSpeed  uint64    `json:"down,omitempty"`
+	Timestamp time.Time `json:"ts"`
+	BytesIn   uint64    `json:"bin"`
+	BytesOut  uint64    `json:"bout"`
+	UpSpeed   uint64    `json:"up,omitempty"`
+	DownSpeed uint64    `json:"down,omitempty"`
 }
 
 // ---------- Test results --------------------------------------------------
@@ -546,11 +570,11 @@ type TrafficPoint struct {
 // TestResult is the outcome of a URL-test (latency probe) or IP-test
 // against a single server. Mirror of Throne's query test results.
 type TestResult struct {
-	ServerID  string    `json:"server_id"`
-	ServerName string   `json:"server_name,omitempty"`
-	LatencyMS int       `json:"latency_ms"`     // -1 on failure
-	Error     string    `json:"error,omitempty"`
-	TestedAt  time.Time `json:"tested_at"`
+	ServerID   string    `json:"server_id"`
+	ServerName string    `json:"server_name,omitempty"`
+	LatencyMS  int       `json:"latency_ms"` // -1 on failure
+	Error      string    `json:"error,omitempty"`
+	TestedAt   time.Time `json:"tested_at"`
 	// IPInfo is populated during an IP test (the apparent egress IP).
 	IPInfo *IPInfo `json:"ip_info,omitempty"`
 }
@@ -558,21 +582,21 @@ type TestResult struct {
 // IPInfo is the apparent egress IP metadata, determined by querying
 // an IP-echo service through the proxy tunnel.
 type IPInfo struct {
-	IP       string `json:"ip"`
-	Country  string `json:"country,omitempty"`
-	City     string `json:"city,omitempty"`
-	ISP      string `json:"isp,omitempty"`
-	ASN      string `json:"asn,omitempty"`
+	IP      string `json:"ip"`
+	Country string `json:"country,omitempty"`
+	City    string `json:"city,omitempty"`
+	ISP     string `json:"isp,omitempty"`
+	ASN     string `json:"asn,omitempty"`
 }
 
 // SpeedTestResult is the outcome of a download/upload speed test
 // through the active tunnel.
 type SpeedTestResult struct {
-	DownloadBps uint64    `json:"download_bps"` // bytes/sec
-	UploadBps   uint64    `json:"upload_bps"`
-	DownloadMbps float64  `json:"download_mbps"`
-	UploadMbps   float64  `json:"upload_mbps"`
-	LatencyMS    int      `json:"latency_ms,omitempty"`
+	DownloadBps  uint64    `json:"download_bps"` // bytes/sec
+	UploadBps    uint64    `json:"upload_bps"`
+	DownloadMbps float64   `json:"download_mbps"`
+	UploadMbps   float64   `json:"upload_mbps"`
+	LatencyMS    int       `json:"latency_ms,omitempty"`
 	TestedAt     time.Time `json:"tested_at"`
 	Error        string    `json:"error,omitempty"`
 }
@@ -582,11 +606,11 @@ type SpeedTestResult struct {
 // WARPConfig holds Cloudflare WARP connection parameters. When enabled,
 // the daemon prepends a WARP outbound to the chain.
 type WARPConfig struct {
-	Enabled     bool   `json:"enabled"`
-	Mode        string `json:"mode,omitempty"`        // "warp" | "warp+"
-	LicenseKey  string `json:"license_key,omitempty"` // WARP+ key
-	TeamToken   string `json:"team_token,omitempty"`   // Zero Trust team token
-	BindAddr    string `json:"bind_addr,omitempty"`   // local:port for the warp outbound
+	Enabled    bool   `json:"enabled"`
+	Mode       string `json:"mode,omitempty"`        // "warp" | "warp+"
+	LicenseKey string `json:"license_key,omitempty"` // WARP+ key
+	TeamToken  string `json:"team_token,omitempty"`  // Zero Trust team token
+	BindAddr   string `json:"bind_addr,omitempty"`   // local:port for the warp outbound
 }
 
 // ---------- Clipboard import & deep-link ----------------------------------
@@ -594,11 +618,11 @@ type WARPConfig struct {
 // ClipboardImport is a structure representing a shared server link
 // pasted from the clipboard or received via the mosaic:// deep-link.
 type ClipboardImport struct {
-	Raw   string    `json:"raw"`
+	Raw      string   `json:"raw"`
 	Protocol Protocol `json:"protocol,omitempty"`
-	Format Format    `json:"format,omitempty"`
-	Parsed bool      `json:"parsed"`
-	Error string     `json:"error,omitempty"`
+	Format   Format   `json:"format,omitempty"`
+	Parsed   bool     `json:"parsed"`
+	Error    string   `json:"error,omitempty"`
 }
 
 // ---------- Egress listeners ----------------------------------------------
@@ -610,18 +634,18 @@ type Egress struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	Protocol string `json:"protocol"` // "socks5", "http", "mixed"
-	Listen   string `json:"listen"`    // "127.0.0.1:10808"
+	Listen   string `json:"listen"`   // "127.0.0.1:10808"
 	Active   bool   `json:"active"`
 	// Chain specifies an optional outbound chain (e.g. "warp→vless") for
 	// this listener. Empty means use the default proxy outbound.
-	Chain    string `json:"chain,omitempty"`
+	Chain string `json:"chain,omitempty"`
 	// GroupID, if set, means this egress auto-selects the best node from
 	// the specified manifest group pool instead of a fixed server.
-	GroupID    string `json:"group_id,omitempty"`
-	ServerID   string `json:"server_id,omitempty"`
-	ServerName string `json:"server_name,omitempty"`
-	Port       int    `json:"port"`
-	Type       string `json:"type,omitempty"` // "mixed", "socks", "http"
+	GroupID     string `json:"group_id,omitempty"`
+	ServerID    string `json:"server_id,omitempty"`
+	ServerName  string `json:"server_name,omitempty"`
+	Port        int    `json:"port"`
+	Type        string `json:"type,omitempty"` // "mixed", "socks", "http"
 	AutoConnect bool   `json:"auto_connect,omitempty"`
 }
 
@@ -631,8 +655,8 @@ type Egress struct {
 // deep packet inspection and circumvent blocking.
 type AntiDPIConfig struct {
 	Enabled      bool   `json:"enabled"`
-	Mode         string `json:"mode,omitempty"`         // "utls", "shadowtls", " reality"
-	Fingerprint  string `json:"fingerprint,omitempty"`  // uTLS fingerprint name
+	Mode         string `json:"mode,omitempty"`          // "utls", "shadowtls", " reality"
+	Fingerprint  string `json:"fingerprint,omitempty"`   // uTLS fingerprint name
 	FragmentSize int    `json:"fragment_size,omitempty"` // TCP fragment size (0 = disabled)
 	FragmentTTL  int    `json:"fragment_ttl,omitempty"`  // IP TTL for fragments
 }

@@ -78,6 +78,7 @@ func (s *Server) SetBillingConfig(cfg billing.Config) {
 		s.billing.UpdateConfig(cfg)
 	}
 }
+
 // SetLavaProvider replaces the Lava payment provider instance.
 func (s *Server) SetLavaProvider(p billing.PaymentProvider) {
 	s.lava = p
@@ -253,11 +254,47 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	if err := s.mgr.Connect(r.Context(), req.ServerID); err != nil {
+	// Walk the priority chain unless the caller pinned a node. An older client
+	// that sends only server_id keeps working: a pinned ID short-circuits the
+	// chain and behaves exactly as before.
+	res, err := state.Resolve(s.store, req.GroupID, req.ServerID)
+	if err != nil {
+		var rerr *state.ResolveError
+		if errors.As(err, &rerr) {
+			// Report the reason and the steps tried instead of a bare failure,
+			// so the UI can explain the problem and offer a retry.
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"error":     rerr.Reason,
+				"details":   rerr.Details,
+				"tried":     rerr.Tried,
+				"retryable": rerr.Retryable,
+			})
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, s.mgr.Status())
+
+	if err := s.mgr.Connect(r.Context(), res.ServerID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Remember the group only after the connection actually came up, so a
+	// failing group does not become the preferred choice next time.
+	if res.GroupID != "" {
+		if err := s.store.SetLastGroup(res.GroupID); err != nil {
+			logx.Warn("connect: remember last group", "group", res.GroupID, "err", err)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, proto.ConnectResponse{
+		Status:      s.mgr.Status(),
+		ResolvedVia: string(res.Step),
+		GroupID:     res.GroupID,
+		Degraded:    res.Degraded,
+		Notes:       res.Notes,
+	})
 }
 
 func (s *Server) handleDisconnect(w http.ResponseWriter, r *http.Request) {
@@ -818,9 +855,9 @@ func (s *Server) handleResetStats(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) handleGetDNS(w http.ResponseWriter, _ *http.Request) {
 	snap := s.store.Snapshot()
 	dns := proto.DNSConfig{
-		Mode:        snap.Prefs.DNSMode,
-		Proxied:     snap.Prefs.DNSProxied,
-		Direct:      snap.Prefs.DNSDirect,
+		Mode:    snap.Prefs.DNSMode,
+		Proxied: snap.Prefs.DNSProxied,
+		Direct:  snap.Prefs.DNSDirect,
 	}
 	if dns.Mode == "" {
 		dns = proto.DefaultDNSConfig()
@@ -1574,4 +1611,3 @@ func (s *Server) handleResolveService(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 }
-
