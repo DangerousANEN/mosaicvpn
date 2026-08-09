@@ -60,19 +60,6 @@
   h1{font-family:var(--serif); font-size:clamp(28px,5vw,42px); font-weight:600; line-height:1.2; margin-bottom:12px}
   .lead{font-size:16px; color:var(--text-2); max-width:720px}
 
-  /* draft warning */
-  .draft-warning{
-    background:#FFF3CD; border:1px dashed var(--warn); color:#856404;
-    padding:16px 20px; border-radius:8px; margin-bottom:32px; font-size:14px; line-height:1.5;
-  }
-  .draft-warning strong{display:block; font-weight:600; margin-bottom:4px; color:#533F03}
-
-  /* todo placeholder */
-  .todo{
-    display:inline-block; background:#FFE8A3; color:#6B4E00;
-    border:1px dashed var(--accent); padding:2px 8px; border-radius:4px;
-    font-family:var(--mono); font-size:13px; font-weight:600; word-break:break-word;
-  }
 
   /* grid layout */
   .info-grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:24px; margin-top:24px}
@@ -129,11 +116,6 @@
     <p class="lead">Каналы связи со службой поддержки и юридические реквизиты сервиса MosaicVPN.</p>
   </div>
 
-  <div class="draft-warning">
-    <strong>⚠️ Внимание: Требуется заполнение реквизитов владельцем сайта</strong>
-    Данная страница подготовлена для модерации платёжным провайдером. Отдельные юридические и контактные данные отмечены плейсхолдерами и должны быть заменены на реальные сведения владельца сервиса до публикации.
-  </div>
-
   <div class="info-grid">
     <!-- Служба поддержки -->
     <div class="card">
@@ -149,11 +131,11 @@
         </li>
         <li>
           <span class="label">Электронная почта</span>
-          <span class="val"><span class="todo">[ТРЕБУЕТСЯ ОТ ВЛАДЕЛЬЦА: Email службы поддержки]</span></span>
+          <span class="val"><a href="mailto:anen.online@gmail.com">anen.online@gmail.com</a></span>
         </li>
         <li>
           <span class="label">Телефон поддержки</span>
-          <span class="val"><span class="todo">[ТРЕБУЕТСЯ ОТ ВЛАДЕЛЬЦА: Контактный телефон]</span></span>
+          <span class="val"><a href="tel:+79134886919">+7 913 488-69-19</a></span>
         </li>
         <li>
           <span class="label">Режим работы поддержки</span>
@@ -171,26 +153,32 @@
       <h2>Реквизиты исполнителя</h2>
       <ul class="info-list">
         <li>
-          <span class="label">Наименование организации / ИП</span>
-          <span class="val"><span class="todo">[ТРЕБУЕТСЯ ОТ ВЛАДЕЛЬЦА: Наименование ИП или ООО]</span></span>
+          <span class="label">Статус</span>
+          <span class="val">Самозанятый (плательщик налога на профессиональный доход)</span>
+        </li>
+        <li>
+          <span class="label">Исполнитель</span>
+          <span class="val">Липский Никита Евгеньевич</span>
         </li>
         <li>
           <span class="label">ИНН</span>
-          <span class="val"><span class="todo">[ТРЕБУЕТСЯ ОТ ВЛАДЕЛЬЦА: ИНН (10 или 12 цифр)]</span></span>
+          <span class="val">545113651604</span>
         </li>
         <li>
-          <span class="label">ОГРН / ОГРНИП</span>
-          <span class="val"><span class="todo">[ТРЕБУЕТСЯ ОТ ВЛАДЕЛЬЦА: ОГРН или ОГРНИП]</span></span>
+          <span class="label">Регистрация</span>
+          <span class="val">Новосибирская область, Российская Федерация</span>
         </li>
         <li>
-          <span class="label">Юридический адрес</span>
-          <span class="val"><span class="todo">[ТРЕБУЕТСЯ ОТ ВЛАДЕЛЬЦА: Юридический адрес]</span></span>
-        </li>
-        <li>
-          <span class="label">Фактический / Почтовый адрес</span>
-          <span class="val"><span class="todo">[ТРЕБУЕТСЯ ОТ ВЛАДЕЛЬЦА: Фактический адрес]</span></span>
+          <span class="label">Адрес для корреспонденции</span>
+          <span class="val">Направляйте обращения на <a href="mailto:anen.online@gmail.com">anen.online@gmail.com</a> или в Telegram-бот поддержки</span>
         </li>
       </ul>
+      <p style="font-size:13px; color:var(--muted); margin:14px 0 0">
+        Исполнитель применяет специальный налоговый режим «Налог на профессиональный
+        доход» и не является индивидуальным предпринимателем или юридическим лицом,
+        поэтому ОГРН и юридический адрес отсутствуют. Чек за оплату формируется
+        в приложении «Мой налог» и направляется покупателю.
+      </p>
     </div>
   </div>
 </div>
