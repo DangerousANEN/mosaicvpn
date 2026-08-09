@@ -298,8 +298,8 @@ func (p *Pool) Sources() []Source {
 
 // RefreshResult reports the outcome of a Refresh pass.
 type RefreshResult struct {
-	SourcesFetched int
-	SourcesFailed  int
+	SourcesFetched  int
+	SourcesFailed   int
 	NodesDiscovered int
 	NodesAdded      int
 	Errors          []error

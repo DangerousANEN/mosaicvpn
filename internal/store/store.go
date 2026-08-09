@@ -61,6 +61,10 @@ type State struct {
 	// Groups are the unified node-selection entities. Seeded on first run so
 	// a fresh install has something to connect to without any setup.
 	Groups []proto.ServerGroup `json:"groups,omitempty"`
+
+	// LastGroupID is the last group that produced a working connection. Step 2
+	// of the connect priority chain prefers it over the generic pool-auto.
+	LastGroupID string `json:"last_group_id,omitempty"`
 }
 
 // PromoEntry is the store-level representation of a promo code.
@@ -460,6 +464,21 @@ func (s *Store) SetLastServer(id string) error {
 		st.LastServerID = id
 		return nil
 	})
+}
+
+// SetLastGroup remembers which group produced a working connection.
+func (s *Store) SetLastGroup(id string) error {
+	return s.Update(func(st *State) error {
+		st.LastGroupID = id
+		return nil
+	})
+}
+
+// LastGroup returns the last group that produced a working connection.
+func (s *Store) LastGroup() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.state.LastGroupID
 }
 
 // SetPrefs replaces preferences wholesale.

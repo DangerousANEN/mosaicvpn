@@ -15,7 +15,17 @@ import '../../shared/widgets/world_map_widget.dart';
 import '../../core/utils/formatters.dart';
 import '../subscriptions/subscriptions_screen.dart';
 
-/// Dashboard — the "Station Command" screen.
+/// Width reserved for the latency badge in a station row.
+///
+/// The slot is held even when no measurement exists yet: letting the badge
+/// appear only after a ping made the row's trailing group grow, which stole
+/// width from the title and clipped server names to a few characters.
+const double _kLatencySlotWidth = 40;
+
+/// Minimum width for a station's name before it may be ellipsised, roughly
+/// twenty characters at the row's 12px font.
+const double _kStationNameMinWidth = 140;
+
 /// Dashboard — the "Station Command" screen.
 /// Three-column atlas layout: connection controls, world chart, stations.
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -160,13 +170,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ),
             ),
             const SizedBox(width: 10),
-            Text(
-              'Atlas of routes · Edition I',
-              style: TextStyle(
-                fontFamily: AtlasTheme.sansFamily,
-                fontSize: 11,
-                fontStyle: FontStyle.italic,
-                color: c.textMuted,
+            // The tagline is decorative, so it yields space instead of pushing
+            // the row past a 360px phone (it overflowed by ~194px).
+            Flexible(
+              child: Text(
+                'Atlas of routes · Edition I',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: AtlasTheme.sansFamily,
+                  fontSize: 11,
+                  fontStyle: FontStyle.italic,
+                  color: c.textMuted,
+                ),
               ),
             ),
           ],
@@ -545,7 +561,11 @@ class _ConnectionPanelState extends ConsumerState<_ConnectionPanel> {
             ],
           ),
 
-          const Spacer(),
+          // A Spacer here asserts inside the dashboard's scroll view: the
+          // incoming height is unbounded, so there is no free space to expand
+          // into. The card shrink-wraps its content, so a fixed gap is what the
+          // layout actually needs.
+          const SizedBox(height: 20),
 
           // Footer note
           Container(
@@ -601,10 +621,11 @@ class _WorldChartPanelState extends ConsumerState<_WorldChartPanel>
   // Previous selectedServerId to detect changes
   String? _prevSelectedId;
 
-  // Your real location — resolved via GeoIP
-  double _youNx = WorldMapWidget.projectX(37.62);
-  double _youNy = WorldMapWidget.projectY(55.75);
-  bool _youResolved = false;
+  // Your real location, resolved via GeoIP. Null until it answers: the pin
+  // used to default to Moscow, so a user anywhere else saw a confident marker
+  // in the wrong country and a route line drawn from a place they are not.
+  double? _youNx;
+  double? _youNy;
 
   @override
   void initState() {
@@ -618,12 +639,13 @@ class _WorldChartPanelState extends ConsumerState<_WorldChartPanel>
   }
 
   void _updateYouLocation(double lat, double lon) {
-    if (!_youResolved) {
+    if (_youNx != null) return;
+    if (!mounted) return;
+    setState(() {
       _youNx = WorldMapWidget.projectX(lon);
       _youNy = WorldMapWidget.projectY(lat);
-      _youResolved = true;
-      _computeTarget(widget.selectedServerId, widget.serversAsync);
-    }
+    });
+    _computeTarget(widget.selectedServerId, widget.serversAsync);
   }
 
   @override
@@ -674,11 +696,20 @@ class _WorldChartPanelState extends ConsumerState<_WorldChartPanel>
     final srvNx = WorldMapWidget.projectX(lon);
     final srvNy = WorldMapWidget.projectY(lat);
 
+    // Until GeoIP resolves there is no client point to frame against, so centre
+    // on the server rather than inventing an origin for the bounding box.
+    final youNx = _youNx;
+    final youNy = _youNy;
+    if (youNx == null || youNy == null) {
+      _animateTo(2.0, Offset(srvNx, srvNy));
+      return;
+    }
+
     // Bounding box in normalized coords
-    final bboxMinX = math.min(_youNx, srvNx);
-    final bboxMaxX = math.max(_youNx, srvNx);
-    final bboxMinY = math.min(_youNy, srvNy);
-    final bboxMaxY = math.max(_youNy, srvNy);
+    final bboxMinX = math.min(youNx, srvNx);
+    final bboxMaxX = math.max(youNx, srvNx);
+    final bboxMinY = math.min(youNy, srvNy);
+    final bboxMaxY = math.max(youNy, srvNy);
 
     // Expand bbox by 35% padding on each side so both pins are visible
     final bboxW = (bboxMaxX - bboxMinX).clamp(1e-4, 1.0);
@@ -806,11 +837,15 @@ class _WorldChartPanelState extends ConsumerState<_WorldChartPanel>
                         zoom: zoom,
                         pan: pan,
                         connected: isConnected,
-                        youPin: MapPin(
-                          nx: _youNx,
-                          ny: _youNy,
-                          label: 'You',
-                        ),
+                        // Omitted entirely until GeoIP resolves, rather than
+                        // planting a placeholder somewhere the user is not.
+                        youPin: (_youNx != null && _youNy != null)
+                            ? MapPin(
+                                nx: _youNx!,
+                                ny: _youNy!,
+                                label: 'You',
+                              )
+                            : null,
                       );
                     },
                   ),
@@ -874,14 +909,16 @@ class _WorldChartPanelState extends ConsumerState<_WorldChartPanel>
 /// `zoom` fits the You↔Server bounding box with ~15% padding.
 class _AnimatedMap extends StatelessWidget {
   final List<MapPin> pins;
-  final MapPin youPin;
+  /// Null until GeoIP resolves the client's location; the map omits the pin
+  /// rather than showing one in the wrong place.
+  final MapPin? youPin;
   final double zoom;
   final Offset pan; // normalized midpoint offset (0..1 range)
   final bool connected;
 
   const _AnimatedMap({
     required this.pins,
-    required this.youPin,
+    this.youPin,
     required this.zoom,
     required this.pan,
     this.connected = false,
@@ -1297,7 +1334,12 @@ class _StationsPanelState extends ConsumerState<_StationsPanel> {
         dividerColor: Colors.transparent,
         canvasColor: Theme.of(context).cardColor,
       ),
-      child: ExpansionTile(
+      // The surrounding card paints its own background, which would swallow the
+      // tile's ink splashes (Flutter asserts on exactly this). A transparent
+      // Material of its own gives the tiles a surface to paint on.
+      child: Material(
+        type: MaterialType.transparency,
+        child: ExpansionTile(
         title: Text(
           title,
           maxLines: 1,
@@ -1459,14 +1501,18 @@ class _StationsPanelState extends ConsumerState<_StationsPanel> {
               leading: isActive
                   ? const StatusDot(color: AtlasTheme.success, size: 6)
                   : StatusDot(color: c.textMuted, size: 5),
-              title: Text(
-                s.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                  color: isActive ? c.textPrimary : c.textSecondary,
+              title: ConstrainedBox(
+                constraints:
+                    const BoxConstraints(minWidth: _kStationNameMinWidth),
+                child: Text(
+                  s.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                    color: isActive ? c.textPrimary : c.textSecondary,
+                  ),
                 ),
               ),
               subtitle: Text(
@@ -1500,28 +1546,41 @@ class _StationsPanelState extends ConsumerState<_StationsPanel> {
                     ),
                   ),
                   const SizedBox(width: 2),
-                  if (s.lastTestMS > 0)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: (s.lastTestMS < 120
-                                ? AtlasTheme.success
-                                : AtlasTheme.warning)
-                            .withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                      child: Text(
-                        '${s.lastTestMS}ms',
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontFamily: AtlasTheme.monoFamily,
-                          color: s.lastTestMS < 120
-                              ? AtlasTheme.success
-                              : AtlasTheme.warning,
-                        ),
-                      ),
-                    ),
+                  // Fixed-width latency slot. It is reserved even before a
+                  // measurement exists, otherwise the badge appearing after a
+                  // ping steals width from the title and the server name gets
+                  // ellipsised down to a few characters.
+                  SizedBox(
+                    width: _kLatencySlotWidth,
+                    child: s.lastTestMS > 0
+                        ? Align(
+                            alignment: Alignment.centerRight,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 4, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: (s.lastTestMS < 120
+                                        ? AtlasTheme.success
+                                        : AtlasTheme.warning)
+                                    .withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                              child: Text(
+                                '${s.lastTestMS}ms',
+                                maxLines: 1,
+                                overflow: TextOverflow.clip,
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontFamily: AtlasTheme.monoFamily,
+                                  color: s.lastTestMS < 120
+                                      ? AtlasTheme.success
+                                      : AtlasTheme.warning,
+                                ),
+                              ),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
                   const SizedBox(width: 2),
                   IconButton(
                     icon: Icon(
@@ -1587,6 +1646,7 @@ class _StationsPanelState extends ConsumerState<_StationsPanel> {
             ),
           );
         }).toList(),
+        ),
       ),
     );
   }
@@ -1837,7 +1897,9 @@ class _StationsPanelState extends ConsumerState<_StationsPanel> {
 
   Widget _emptyState(BuildContext context, WidgetRef ref) {
     final c = ThemeColors.of(context);
-    return Center(
+    // Scrollable so the icon, heading, body copy and button do not overflow
+    // the short panel a 360x640 phone gives this card (it clipped by 13px).
+    return SingleChildScrollView(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(

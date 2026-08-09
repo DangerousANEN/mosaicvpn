@@ -8,7 +8,7 @@ import '../../core/models/models.dart';
 import '../../core/utils/formatters.dart';
 import '../../shared/widgets/atlas_widgets.dart';
 import '../../shared/widgets/skeleton_loader.dart';
-import '../manifest_groups/manifest_groups_screen.dart' show manifestProvider;
+import '../groups/groups_screen.dart' show groupsManifestProvider;
 
 /// Egresses screen — manage multiple proxy listeners on different ports.
 ///
@@ -136,7 +136,7 @@ void _showEgressDialog(
   final servers = serversAsync.valueOrNull ?? [];
   // Read manifest groups (synchronous read, no watch in void fn)
   final manifestGroups =
-      ref.read(manifestProvider).valueOrNull?.groups ?? [];
+      ref.read(groupsManifestProvider).valueOrNull?.groups ?? [];
 
   // Dispose controllers after dialog closes (Add, Cancel, back gesture).
   void disposeCtrls() {

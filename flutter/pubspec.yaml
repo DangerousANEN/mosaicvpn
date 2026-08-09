@@ -44,6 +44,9 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  # Pulled in transitively by flutter, but map_camera_test.dart imports Vector3
+  # directly to assert the transform matrix, so declare it explicitly.
+  vector_math: ^2.1.4
 
 flutter:
   uses-material-design: true

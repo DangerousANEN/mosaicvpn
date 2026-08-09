@@ -12,7 +12,7 @@ import '../shared/widgets/atlas_widgets.dart';
 import '../features/dashboard/dashboard_screen.dart';
 import '../features/servers/servers_screen.dart';
 import '../features/profiles/profiles_screen.dart';
-import '../features/mixed_subscriptions/mixed_subscriptions_screen.dart';
+import '../features/subscriptions/subscriptions_screen.dart';
 import '../features/connections/connections_screen.dart';
 import '../features/routing/routing_screen.dart';
 import '../features/egresses/egresses_screen.dart';
@@ -22,7 +22,7 @@ import '../features/cores/cores_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/logs/logs_screen.dart';
 import '../features/billing/billing_screen.dart';
-import '../features/manifest_groups/manifest_groups_screen.dart';
+import '../features/groups/groups_screen.dart';
 import '../features/provider_profile/provider_profile_screen.dart';
 import '../features/more/more_screen.dart';
 
@@ -158,8 +158,8 @@ class _AppShellState extends ConsumerState<AppShell>
   /// 5 Main tab pages cached with _KeepAlive
   List<Widget> get _mainPages => [
         const _KeepAlive(child: DashboardScreen()),
-        const _KeepAlive(child: ManifestGroupsScreen()),
-        const _KeepAlive(child: MixedSubscriptionsScreen()),
+        const _KeepAlive(child: GroupsScreen()),
+        const _KeepAlive(child: SubscriptionsScreen()),
         const _KeepAlive(child: BillingScreen()),
         const _KeepAlive(child: MoreScreen()),
       ];
@@ -169,9 +169,9 @@ class _AppShellState extends ConsumerState<AppShell>
         const _KeepAlive(child: DashboardScreen()),
         const _KeepAlive(child: ServersScreen()),
         const _KeepAlive(child: ProfilesScreen()),
-        const _KeepAlive(child: MixedSubscriptionsScreen()),
+        const _KeepAlive(child: SubscriptionsScreen()),
         const _KeepAlive(child: BillingScreen()),
-        const _KeepAlive(child: ManifestGroupsScreen()),
+        const _KeepAlive(child: GroupsScreen()),
         const _KeepAlive(child: ProviderProfileScreen()),
         const _KeepAlive(child: RoutingScreen()),
         const _KeepAlive(child: EgressesScreen()),
@@ -540,74 +540,121 @@ class _QuickStatusBar extends ConsumerWidget {
           bottom: BorderSide(color: c.border, width: 1),
         ),
       ),
-      child: Row(
-        children: [
-          // ── VPN Status indicator ──
-          statusAsync.when(
-            data: (status) => _StatusPill(status: status),
-            loading: () => const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            error: (_, __) => Text('—', style: TextStyle(color: c.textMuted)),
-          ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // On a 360px phone the status pill, kill switch, a labelled action
+          // button and the settings icon do not fit side by side -- the row
+          // overflowed by ~260px. Below this width the action button drops its
+          // text label and keeps the icon.
+          final compact = constraints.maxWidth < 480;
 
-          const SizedBox(width: 16),
+          return Row(
+            children: [
+              // ── VPN Status indicator ──
+              Flexible(
+                child: statusAsync.when(
+                  data: (status) => _StatusPill(status: status),
+                  loading: () => const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  error: (_, __) =>
+                      Text('—', style: TextStyle(color: c.textMuted)),
+                ),
+              ),
 
-          // ── Kill switch quick toggle (q2) ──
-          statusAsync.when(
-            data: (status) => _KillSwitchToggle(status: status),
-            loading: () => const SizedBox.shrink(),
-            error: (_, __) => const SizedBox.shrink(),
-          ),
+              const SizedBox(width: 16),
 
-          const Spacer(),
+              // ── Kill switch quick toggle (q2) ──
+              statusAsync.when(
+                data: (status) => _KillSwitchToggle(status: status),
+                loading: () => const SizedBox.shrink(),
+                error: (_, __) => const SizedBox.shrink(),
+              ),
 
-          // ── Quick disconnect/connect button ──
-          statusAsync.when(
-            data: (status) => status.state == 'connected'
-                ? TextButton.icon(
-                    onPressed: () async {
-                      try {
-                        await ref.read(daemonApiProvider).disconnect();
-                      } catch (e) {
-                        debugPrint('disconnect failed: $e');
-                      }
-                      ref.invalidate(vpnStatusProvider);
-                    },
-                    icon: const Icon(Icons.power_settings_new, size: 16),
-                    label: const Text('Disconnect'),
-                  )
-                : status.state == 'disconnected'
-                    ? TextButton.icon(
-                        onPressed: () =>
-                            onNavigate(1), // Quick navigate
-                        icon: const Icon(Icons.bolt, size: 16),
-                        label: const Text('Quick Connect'),
+              const Spacer(),
+
+              // ── Quick disconnect/connect button ──
+              statusAsync.when(
+                data: (status) => status.state == 'connected'
+                    ? _QuickAction(
+                        icon: Icons.power_settings_new,
+                        label: 'Disconnect',
+                        compact: compact,
+                        onPressed: () async {
+                          try {
+                            await ref.read(daemonApiProvider).disconnect();
+                          } catch (e) {
+                            debugPrint('disconnect failed: $e');
+                          }
+                          ref.invalidate(vpnStatusProvider);
+                        },
                       )
-                    : const SizedBox.shrink(),
-            loading: () => const SizedBox.shrink(),
-            error: (_, __) => const SizedBox.shrink(),
-          ),
+                    : status.state == 'disconnected'
+                        ? _QuickAction(
+                            icon: Icons.bolt,
+                            label: 'Quick Connect',
+                            compact: compact,
+                            onPressed: () => onNavigate(1),
+                          )
+                        : const SizedBox.shrink(),
+                loading: () => const SizedBox.shrink(),
+                error: (_, __) => const SizedBox.shrink(),
+              ),
 
-          const SizedBox(width: 8),
+              const SizedBox(width: 8),
 
-          // ── Settings shortcut ──
-          IconButton(
-            icon: const Icon(Icons.settings, size: 18),
-            tooltip: 'Settings',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              );
-            },
-            constraints: const BoxConstraints(),
-            padding: const EdgeInsets.all(8),
-          ),
-        ],
+              // ── Settings shortcut ──
+              IconButton(
+                icon: const Icon(Icons.settings, size: 18),
+                tooltip: 'Settings',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  );
+                },
+                constraints: const BoxConstraints(),
+                padding: const EdgeInsets.all(8),
+              ),
+            ],
+          );
+        },
       ),
+    );
+  }
+}
+
+/// Quick-bar action that sheds its text label when horizontal space is tight.
+class _QuickAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool compact;
+  final VoidCallback onPressed;
+
+  const _QuickAction({
+    required this.icon,
+    required this.label,
+    required this.compact,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (compact) {
+      return IconButton(
+        icon: Icon(icon, size: 18),
+        tooltip: label,
+        onPressed: onPressed,
+        constraints: const BoxConstraints(),
+        padding: const EdgeInsets.all(8),
+      );
+    }
+    return TextButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 16),
+      label: Text(label),
     );
   }
 }
