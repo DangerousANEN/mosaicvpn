@@ -450,6 +450,16 @@ def init_db():
         created_at TEXT
     )
     """)
+    # Web cabinet sessions (long-lived, 30-day tokens for sub.zxc1x1.ru/cabinet)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS web_sessions (
+        token TEXT PRIMARY KEY,
+        telegram_id INTEGER NOT NULL,
+        username TEXT,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL
+    )
+    """)
     conn.commit()
     conn.close()
 
@@ -557,6 +567,79 @@ def redeem_link_code(raw_code):
         "username": username or "",
         "session_token": session_token or "",
     }, None
+
+
+# --- Web cabinet sessions (30-day tokens for sub.zxc1x1.ru/cabinet) ----------
+
+WEB_SESSION_TTL_DAYS = 30
+
+
+def create_web_session(telegram_id, username):
+    """Mint a long-lived token for the web cabinet."""
+    import secrets as _secrets
+    token = _secrets.token_urlsafe(32)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    expires = now + datetime.timedelta(days=WEB_SESSION_TTL_DAYS)
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO web_sessions (token, telegram_id, username, created_at, expires_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (token, telegram_id, username or "", now.isoformat(), expires.isoformat()),
+    )
+    conn.commit()
+    conn.close()
+    return token, expires.isoformat()
+
+
+def get_web_session(token):
+    """Return {telegram_id, username} for a valid web session token, else None."""
+    if not token or len(token) > 128:
+        return None
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT telegram_id, username, expires_at FROM web_sessions WHERE token = ?",
+        (token,),
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    telegram_id, username, expires_at = row
+    try:
+        expires = datetime.datetime.fromisoformat(expires_at)
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=datetime.timezone.utc)
+        if expires < datetime.datetime.now(datetime.timezone.utc):
+            return None
+    except (TypeError, ValueError):
+        return None
+    return {"telegram_id": telegram_id, "username": username or ""}
+
+
+def get_payments_history(telegram_id):
+    """Return list of paid invoices for the web cabinet."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT invoice_id, amount, days, status, created_at "
+        "FROM invoices WHERE telegram_id = ? ORDER BY created_at DESC LIMIT 50",
+        (telegram_id,),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [
+        {
+            "id": r[0],
+            "amount": r[1],
+            "days": r[2],
+            "status": r[3],
+            "date": r[4],
+        }
+        for r in rows
+    ]
+
 
 def get_user(telegram_id):
     conn = sqlite3.connect(DB_PATH)
@@ -2250,23 +2333,39 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        self._cors_headers()
         self.end_headers()
         self.wfile.write(body)
 
+    def _cors_headers(self):
+        self.send_header("Access-Control-Allow-Origin", "https://sub.zxc1x1.ru")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self._cors_headers()
+        self.end_headers()
+
     def do_POST(self):
+        path = self.path.rstrip("/")
         # T-19: the daemon runs behind NAT on the user's machine, so it is the
         # side that reaches out. The bot issues codes; this endpoint burns them.
-        if self.path.rstrip("/") != "/api/link/redeem":
-            self.send_response(404)
-            self.end_headers()
-            return
+        if path == "/api/link/redeem":
+            return self._handle_link_redeem()
+        # Web cabinet: exchange pairing code for a long-lived web session token
+        if path == "/api/session":
+            return self._handle_session_create()
 
+        self.send_response(404)
+        self._cors_headers()
+        self.end_headers()
+
+    def _handle_link_redeem(self):
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             length = 0
-        # Cap the read: an unbounded Content-Length would let a caller
-        # exhaust memory on the VPS.
         if length <= 0 or length > 4096:
             self._send_json(400, {"error": "invalid body"})
             return
@@ -2301,11 +2400,61 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
 
         self._send_json(200, result)
 
+    def _handle_session_create(self):
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if length <= 0 or length > 4096:
+            self._send_json(400, {"error": "invalid body"})
+            return
+
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            code = payload.get("code", "")
+        except (ValueError, UnicodeDecodeError):
+            self._send_json(400, {"error": "invalid body"})
+            return
+
+        if not code:
+            self._send_json(400, {"error": "code required"})
+            return
+
+        try:
+            result, reason = redeem_link_code(code)
+        except Exception as exc:
+            logging.error("session create — redeem failed: %s", exc)
+            self._send_json(500, {"error": "internal error"})
+            return
+
+        if result is None:
+            status = {
+                "not_found": 404,
+                "expired": 410,
+                "used": 409,
+                "attempts": 429,
+            }.get(reason, 400)
+            self._send_json(status, {"error": reason})
+            return
+
+        telegram_id = result["telegram_id"]
+        username = result.get("username", "")
+        token, expires_at = create_web_session(telegram_id, username)
+        self._send_json(200, {
+            "token": token,
+            "telegram_id": telegram_id,
+            "username": username,
+            "expires_at": expires_at,
+        })
+
     def do_GET(self):
-        parts = self.path.split("/")
-        # /stats-api/stats/<shortUuid>
-        if len(parts) >= 4 and parts[2] == "stats":
-            short_uuid = parts[3]
+        path = self.path.split("?")[0].rstrip("/")
+        parsed = urllib.parse.urlparse(self.path)
+        query = urllib.parse.parse_qs(parsed.query)
+
+        # /stats-api/stats/<shortUuid> — unchanged
+        if path.startswith("/stats-api/stats/"):
+            short_uuid = path.split("/")[-1]
             stats = self.get_user_statistics(short_uuid)
             if stats:
                 self.send_response(200)
@@ -2314,9 +2463,78 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps(stats).encode("utf-8"))
                 return
-                
+            self.send_response(404)
+            self.end_headers()
+            return
+
+        # Web cabinet: billing profile
+        if path == "/api/billing/profile":
+            return self._handle_billing_profile(query)
+
+        # Web cabinet: payments history
+        if path == "/api/billing/payments":
+            return self._handle_billing_payments(query)
+
         self.send_response(404)
+        self._cors_headers()
         self.end_headers()
+
+    def _handle_billing_profile(self, query):
+        token = query.get("token", [""])[0]
+        session = get_web_session(token)
+        if not session:
+            self._send_json(401, {"error": "invalid or expired session"})
+            return
+
+        telegram_id = session["telegram_id"]
+        username = session["username"]
+        db_user = get_user(telegram_id)
+        if not db_user:
+            self._send_json(404, {"error": "user not found"})
+            return
+
+        short_uuid = db_user.get("short_uuid") or ""
+        user_data = api_get_user(username) if username else None
+
+        profile = {
+            "telegram_id": telegram_id,
+            "username": username,
+            "short_uuid": short_uuid,
+            "tier": "trial" if not db_user.get("trial_used") else "standard",
+            "sub_url": f"https://sub.zxc1x1.ru/{short_uuid}" if short_uuid else None,
+            "expires_at": None,
+            "days_left": 0,
+            "balance": 0,
+            "currency": "RUB",
+            "devices": [],
+        }
+
+        if user_data:
+            expire_at_raw = user_data.get("expireAt")
+            if expire_at_raw:
+                profile["expires_at"] = expire_at_raw
+                try:
+                    expire_dt = dateutil.parser.isoparse(expire_at_raw)
+                    now = datetime.datetime.now(datetime.timezone.utc)
+                    profile["days_left"] = max(0, (expire_dt - now).days)
+                except Exception:
+                    pass
+            traffic_used = user_data.get("usedTrafficBytes", 0) or 0
+            traffic_limit = user_data.get("trafficLimitBytes", 0) or 0
+            profile["traffic_used"] = traffic_used
+            profile["traffic_limit"] = traffic_limit
+
+        self._send_json(200, profile)
+
+    def _handle_billing_payments(self, query):
+        token = query.get("token", [""])[0]
+        session = get_web_session(token)
+        if not session:
+            self._send_json(401, {"error": "invalid or expired session"})
+            return
+
+        payments = get_payments_history(session["telegram_id"])
+        self._send_json(200, {"payments": payments})
 
     def get_user_statistics(self, short_uuid):
         # Connect to Remnawave Postgres database

@@ -133,26 +133,25 @@
           <path d="M9 12l2.5 2.5L21 5"/>
         </svg>
       </div>
-      <h3>Вход через Telegram</h3>
+      <h3>Вход по коду из Telegram</h3>
       <p>
-        Аккаунт привязан к вашему Telegram. Баланс, срок доступа и пополнение
-        сейчас доступны в боте и в приложении — веб-вход подключается.
+        Отправьте команду <code>/link</code> боту <a href="https://t.me/mosaic_tf_bot" target="_blank" rel="noopener">@mosaic_tf_bot</a>,
+        получите 6-значный код и введите его здесь.
       </p>
-      <div class="btn-row">
-        <a class="btn btn-primary" href="https://t.me/mosaic_tf_bot" target="_blank" rel="noopener">
-          Открыть бота
-        </a>
-        <a class="btn btn-ghost" href="/#downloads">Скачать приложение</a>
+      <form id="code-form" style="max-width:340px; margin:0 auto 16px;">
+        <input id="code-input" type="text" maxlength="6" placeholder="AB3XK7"
+               style="width:100%; padding:14px 16px; border:2px solid var(--border); border-radius:9px;
+                      font-family:var(--mono); font-size:22px; letter-spacing:.25em; text-align:center;
+                      text-transform:uppercase; background:#fff; color:var(--text); outline:none;" />
+        <div id="code-error" style="color:var(--err); font-size:14px; margin:10px 0 0; min-height:20px;"></div>
+        <button type="submit" class="btn btn-primary" style="width:100%; margin-top:12px; border:none; cursor:pointer;">
+          Войти
+        </button>
+      </form>
+      <div style="font-size:13px; color:var(--muted); margin-top:14px;">
+        Код действителен 10 минут. Нужен бот? —
+        <a href="https://t.me/mosaic_tf_bot" target="_blank" rel="noopener">Открыть @mosaic_tf_bot</a>
       </div>
-    </div>
-
-    <div class="note">
-      <div class="t">Вход на сайте ещё не подключён <span class="soon">в разработке</span></div>
-      <p>
-        Сейчас баланс и срок доступа доступны в Telegram-боте и в приложении.
-        Веб-вход появится вместе с платёжным шлюзом — разметка кабинета
-        и контракт данных уже готовы, осталось включить обмен кода на сессию.
-      </p>
     </div>
   </section>
 
@@ -161,19 +160,24 @@
     <h2>Состояние аккаунта</h2>
     <div class="grid">
       <div class="card">
-        <div class="k">Баланс</div>
-        <div class="v" data-field="balance">—</div>
-        <div class="sub" data-field="balance_note">списание 1 ₽ в сутки</div>
+        <div class="k">Аккаунт</div>
+        <div class="v" data-field="username" style="font-size:20px;">—</div>
+        <div class="sub">Telegram ID</div>
       </div>
       <div class="card">
         <div class="k">Доступ активен до</div>
         <div class="v" data-field="expires">—</div>
-        <div class="sub" data-field="expires_note">хватит ещё на —</div>
+        <div class="sub" data-field="expires_note">—</div>
       </div>
       <div class="card">
-        <div class="k">Устройства</div>
+        <div class="k">Осталось дней</div>
+        <div class="v" data-field="balance">—</div>
+        <div class="sub" data-field="balance_note">списание 1 ₽ в сутки</div>
+      </div>
+      <div class="card">
+        <div class="k">Трафик</div>
         <div class="v" data-field="devices">—</div>
-        <div class="sub">не более 5 одновременно</div>
+        <div class="sub" data-field="tier_note">посуточная оплата</div>
       </div>
       <div class="card">
         <div class="k">Тариф</div>
@@ -236,7 +240,7 @@
           <tr>
             <td>Этот кабинет</td>
             <td>Те же данные в браузере</td>
-            <td style="color:var(--warn)">Вход в разработке</td>
+            <td style="color:var(--ok)">Работает</td>
           </tr>
         </tbody>
       </table>
@@ -269,47 +273,154 @@
 </footer>
 
 <script>
-// The cabinet renders from the same billing contract the app and the bot use:
-//   GET /v1/billing/profile -> { balance, currency, expires_at, tier, devices, payments }
-// Web sign-in is not wired yet, so the page stays on the auth gate instead of
-// showing invented numbers. Once the bot exposes code->session exchange, set
-// SESSION_ENDPOINT and the account panel takes over.
+// Web cabinet — real auth flow:
+//   1) User enters pairing code (obtained via /link in @mosaic_tf_bot)
+//   2) POST /api/session { code } -> { token }
+//   3) GET /api/billing/profile?token=... -> profile
+//   4) GET /api/billing/payments?token=... -> payments[]
 (function () {
-  var SESSION_ENDPOINT = null; // set when the bot bridge ships
+  'use strict';
 
+  // Endpoints on the same origin (proxoed to bot:12223 by nginx)
+  var API_SESSION  = '/api/session';
+  var API_PROFILE  = '/api/billing/profile';
+  var API_PAYMENTS = '/api/billing/payments';
+
+  var TOKEN_KEY = 'mv_session_token';
   var gate = document.getElementById('gate-section');
   var account = document.getElementById('account-section');
+  var codeForm = document.getElementById('code-form');
+  var codeInput = document.getElementById('code-input');
+  var codeError = document.getElementById('code-error');
 
+  /* ---- DOM helpers ---- */
+  function $(name) { return document.querySelector('[data-field="' + name + '"]'); }
+  function money(v, cur) {
+    return new Intl.NumberFormat('ru-RU').format(v || 0) + ' ' + (cur === 'USDT' ? 'USDT' : '₽');
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return {'&':'&','<':'<','>':'>','"':'"',"'":'&#39;'}[c];
+    });
+  }
+
+  /* ---- Show account panel ---- */
   function showAccount(profile) {
     gate.classList.add('hidden');
     account.classList.remove('hidden');
 
-    var q = function (name) { return document.querySelector('[data-field="' + name + '"]'); };
-    var money = function (v, cur) {
-      return new Intl.NumberFormat('ru-RU').format(v) + ' ' + (cur === 'USDT' ? 'USDT' : '₽');
-    };
+    $('balance').textContent = money(profile.balance, profile.currency || 'RUB');
+    $('balance_note').textContent = profile.days_left > 0
+      ? 'хватит на ' + profile.days_left + ' сут.'
+      : 'подписка не активна';
+    $('tier').textContent = profile.tier === 'trial' ? 'Пробный' : 'Стандарт';
 
-    q('balance').textContent = money(profile.balance, profile.currency);
-    q('devices').textContent = profile.devices_used + ' / ' + profile.devices_limit;
-    q('tier').textContent = profile.tier;
+    if (profile.expires_at) {
+      var dt = new Date(profile.expires_at);
+      $('expires').textContent = dt.toLocaleDateString('ru-RU');
+      $('expires_note').textContent = profile.days_left > 0
+        ? 'осталось ' + profile.days_left + ' дн.'
+        : 'истёк';
+    } else {
+      $('expires').textContent = '—';
+      $('expires_note').textContent = 'нет активной подписки';
+    }
 
-    var days = Math.floor(profile.balance);
-    q('expires').textContent = new Date(profile.expires_at).toLocaleDateString('ru-RU');
-    q('expires_note').textContent = 'хватит ещё на ' + days + ' сут.';
+    if (profile.username) {
+      $('username').textContent = '@' + profile.username;
+    }
 
-    var bal = q('balance');
-    bal.classList.toggle('warn', days > 0 && days <= 3);
-    bal.classList.toggle('err', days <= 0);
+    // Traffic (if provided)
+    if (profile.traffic_used !== undefined) {
+      $('devices').textContent = Math.round(profile.traffic_used / 1048576) + ' МБ';
+    } else {
+      $('devices').textContent = '—';
+    }
+
+    // Color the balance
+    var bal = $('balance');
+    bal.classList.toggle('warn', profile.days_left > 0 && profile.days_left <= 3);
+    bal.classList.toggle('err', profile.days_left <= 0);
   }
 
-  if (!SESSION_ENDPOINT) return; // gate stays visible
+  /* ---- Render payments table ---- */
+  function showPayments(payments) {
+    var tbody = document.querySelector('[data-field="payments"]');
+    if (!payments || payments.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="color:var(--muted)">Нет операций</td></tr>';
+      return;
+    }
+    tbody.innerHTML = payments.map(function (p) {
+      var status = p.status === 'paid' ? 'Оплачен' : p.status === 'pending' ? 'Ожидает' : p.status;
+      var statusColor = p.status === 'paid' ? 'var(--ok)' : 'var(--warn)';
+      return '<tr>'
+        + '<td>' + esc(p.date || '—') + '</td>'
+        + '<td>' + money(p.amount, 'RUB') + '</td>'
+        + '<td>Telegram-бот</td>'
+        + '<td style="color:' + statusColor + '">' + esc(status) + '</td>'
+        + '</tr>';
+    }).join('');
+  }
 
-  fetch(SESSION_ENDPOINT, { credentials: 'include' })
-    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
-    .then(showAccount)
-    .catch(function () { /* stay on the gate */ });
-})();
-</script>
+  /* ---- Fetch profile + payments with token ---- */
+  function loadProfile(token) {
+    Promise.all([
+      fetch(API_PROFILE + '?token=' + encodeURIComponent(token)).then(function (r) { return r.json(); }),
+      fetch(API_PAYMENTS + '?token=' + encodeURIComponent(token)).then(function (r) { return r.json(); }),
+    ]).then(function (results) {
+      var profile = results[0];
+      var payments = results[1];
+      if (profile.error) {
+        console.error('profile error:', profile.error);
+        return;
+      }
+      showAccount(profile);
+      showPayments(payments.payments || []);
+    }).catch(function (e) {
+      console.error('load failed:', e);
+    });
+  }
 
-</body>
-</html>
+  /* ---- Handle code submission ---- */
+  function submitCode(code) {
+    codeError.textContent = '';
+    fetch(API_SESSION, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: code }),
+    }).then(function (r) {
+      return r.json().then(function (data) {
+        return { status: r.status, body: data };
+      });
+    }).then(function (result) {
+      if (result.status !== 200) {
+        var msg = { not_found: 'Код не найден', expired: 'Код истёк', used: 'Код уже использован', attempts: 'Слишком много попыток' };
+        codeError.textContent = msg[result.body.error] || 'Ошибка входа';
+        return;
+      }
+      localStorage.setItem(TOKEN_KEY, result.body.token);
+      loadProfile(result.body.token);
+    }).catch(function () {
+      codeError.textContent = 'Не удалось подключиться к серверу';
+    });
+  }
+
+  if (codeForm) {
+    codeForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var code = (codeInput.value || '').trim().toUpperCase();
+      if (!code) { codeError.textContent = 'Введите код'; return; }
+      submitCode(code);
+    });
+  }
+
+  // Auto-login if token is in localStorage
+  var savedToken = localStorage.getItem(TOKEN_KEY);
+  if (savedToken) {
+    loadProfile(savedToken);
+  })();
+
+  </script>
+
+  </body>
+  </html>
