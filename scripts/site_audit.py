@@ -16,7 +16,7 @@ SITE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 BASE_URL = sys.argv[1].rstrip("/") if len(sys.argv) > 1 else None
 
 # Pages the compliance doc requires (section 4).
-REQUIRED = ["contacts.html", "offer.html", "privacy.html", "refund.html", "terms.html"]
+REQUIRED = ["contacts.html", "offer.html", "privacy.html", "refund.html", "terms.html", "delivery.html"]
 INDEX = "index.html"
 
 # Phrases that frame the service around circumventing blocks (SC-5). The payment

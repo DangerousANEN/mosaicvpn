@@ -3,16 +3,11 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Контакты и реквизиты — MosaicVPN</title>
-<meta name="description" content="Контактная информация, служба поддержки и реквизиты сервиса MosaicVPN." />
+<title>MosaicVPN — Контакты, реквизиты и правообладатель</title>
+<meta name="description" content="Официальные контакты службы поддержки, юридические реквизиты и сведения о правообладателе сервиса MosaicVPN." />
 <meta name="robots" content="index, follow" />
 <link rel="canonical" href="https://sub.zxc1x1.ru/contacts.html" />
 <meta name="theme-color" content="#F4EFE6" />
-
-<meta property="og:type" content="website" />
-<meta property="og:title" content="Контакты и реквизиты — MosaicVPN" />
-<meta property="og:description" content="Контактная информация, служба поддержки и реквизиты сервиса MosaicVPN." />
-<meta property="og:url" content="https://sub.zxc1x1.ru/contacts.html" />
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23B85C38'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23F4EFE6' stroke-width='2'/%3E%3Cpath d='M16 5 L19 16 L16 27 L13 16 Z' fill='%23F4EFE6'/%3E%3C/svg%3E" />
 
@@ -25,10 +20,9 @@
     --serif:'Iowan Old Style','Palatino Linotype','Book Antiqua',Georgia,serif;
     --mono:'JetBrains Mono','SFMono-Regular',Consolas,'Liberation Mono',monospace;
     --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-    --maxw:1120px;
+    --maxw:960px;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  html{scroll-behavior:smooth}
   body{
     background:var(--bg); color:var(--text); font-family:var(--sans);
     line-height:1.6; -webkit-font-smoothing:antialiased;
@@ -40,64 +34,65 @@
   .wrap{max-width:var(--maxw); margin:0 auto; padding:0 24px}
   a{color:inherit}
 
-  /* header */
   header{
     position:sticky; top:0; z-index:50; backdrop-filter:blur(8px);
     background:rgba(244,239,230,.86); border-bottom:1px solid var(--border);
   }
   .nav{display:flex; align-items:center; gap:16px; height:64px}
-  .brand{display:flex; align-items:center; gap:10px; font-family:var(--serif); font-size:20px; font-weight:600; letter-spacing:.2px; text-decoration:none}
+  .brand{display:flex; align-items:center; gap:10px; font-family:var(--serif); font-size:20px; font-weight:600}
   .brand .dot{color:var(--accent)}
-  .nav-links{margin-left:auto; display:flex; gap:22px; font-size:14px; color:var(--text-2)}
+  .nav-links{margin-left:auto; display:flex; flex-wrap:wrap; gap:16px; font-size:14px; color:var(--text-2)}
   .nav-links a{text-decoration:none}
   .nav-links a:hover{color:var(--accent)}
-  @media(max-width:720px){ .nav-links{display:none} }
 
-  /* content area */
   .main-content{padding:48px 0 64px}
-  .page-head{margin-bottom:32px}
-  .fig{font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-bottom:8px}
-  h1{font-family:var(--serif); font-size:clamp(28px,5vw,42px); font-weight:600; line-height:1.2; margin-bottom:12px}
-  .lead{font-size:16px; color:var(--text-2); max-width:720px}
+  .page-head{margin-bottom:36px; text-align:center}
+  .page-head h1{font-family:var(--serif); font-size:clamp(28px,4vw,40px); font-weight:600; margin-top:8px}
+  .fig{font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent)}
 
-
-  /* grid layout */
-  .info-grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:24px; margin-top:24px}
-  .card{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:28px}
-  .card h2{font-family:var(--serif); font-size:22px; font-weight:600; margin-bottom:16px; border-bottom:1px solid var(--border-light); padding-bottom:10px}
-  .info-list{list-style:none}
-  .info-list li{margin-bottom:14px; font-size:15px; display:flex; flex-direction:column; gap:4px}
-  .info-list li .label{font-family:var(--mono); font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em}
-  .info-list li .val{color:var(--text); font-weight:500}
+  .info-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:24px; margin-bottom:24px}
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:30px;
+  }
+  .card h2{font-family:var(--serif); font-size:21px; font-weight:600; margin-bottom:18px; color:var(--text)}
+  .info-list{list-style:none; padding:0; margin:0}
+  .info-list li{
+    display:flex; flex-direction:column; padding:12px 0;
+    border-bottom:1px solid var(--border-light); font-size:14.5px;
+  }
+  .info-list li:last-child{border-bottom:none}
+  .label{font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:4px}
+  .val{color:var(--text); font-weight:500}
+  .val a{color:var(--accent); text-decoration:none}
+  .val a:hover{text-decoration:underline}
 
   .btn-tg{
-    display:inline-flex; align-items:center; gap:8px; background:var(--ink); color:var(--on-ink);
-    padding:10px 18px; border-radius:8px; text-decoration:none; font-size:14px; font-weight:500;
-    margin-top:8px; transition:background .15s ease;
+    display:inline-flex; align-items:center; gap:8px; padding:8px 14px;
+    background:var(--ink); color:var(--on-ink); border-radius:6px;
+    font-size:13px; text-decoration:none; margin-top:4px;
   }
-  .btn-tg:hover{background:#3a332b}
 
-  /* footer */
-  footer{border-top:1px solid var(--border); background:var(--card); padding:40px 0; margin-top:48px}
-  .footer-links{display:flex; justify-content:center; flex-wrap:wrap; gap:16px; font-size:14px; color:var(--text-2); margin:16px 0}
-  .footer-links a{text-decoration:none}
-  .footer-links a:hover{color:var(--accent)}
+  footer{border-top:1px solid var(--border); padding:34px 0; text-align:center; color:var(--muted); font-size:13px}
+  footer a{color:var(--text-2); text-decoration:none}
+  footer a:hover{color:var(--accent)}
 </style>
 </head>
 <body>
 
 <header>
   <div class="wrap nav">
-    <a href="index.html" class="brand">
-      <svg width="24" height="24" viewBox="0 0 32 32" style="flex:none;">
+    <div class="brand">
+      <svg width="24" height="24" viewBox="0 0 32 32" aria-hidden="true">
         <circle cx="16" cy="16" r="14" fill="#B85C38"/>
         <circle cx="16" cy="16" r="9" fill="none" stroke="#F4EFE6" stroke-width="2"/>
         <path d="M16 5 L19 16 L16 27 L13 16 Z" fill="#F4EFE6"/>
       </svg>
-      <span>Mosaic<span class="dot">.</span>VPN</span>
-    </a>
+      MosaicVPN<span class="dot">.</span>
+    </div>
     <nav class="nav-links">
       <a href="index.html">Главная</a>
+      <a href="delivery.html">Доставка</a>
       <a href="contacts.html">Контакты</a>
       <a href="refund.html">Возврат</a>
       <a href="offer.html">Оферта</a>
@@ -107,19 +102,17 @@
   </div>
 </header>
 
-<!-- DRAFT NOTICE: Страница содержит плейсхолдеры. Требуется заполнение реальных реквизитов владельцем перед публикацией. -->
-
 <div class="wrap main-content">
   <div class="page-head">
     <div class="fig">Раздел / Контакты и реквизиты</div>
     <h1>Контакты и информация об исполнителе</h1>
-    <p class="lead">Каналы связи со службой поддержки и юридические реквизиты сервиса MosaicVPN.</p>
+    <p class="lead" style="color:var(--text-2); margin-top:8px;">Каналы связи со службой поддержки, юридические реквизиты и сведения о правообладателе сервиса MosaicVPN.</p>
   </div>
 
   <div class="info-grid">
     <!-- Служба поддержки -->
     <div class="card">
-      <h2>Служба поддержки</h2>
+      <h2>Служба поддержки и каналы связи</h2>
       <ul class="info-list">
         <li>
           <span class="label">Telegram-бот поддержки</span>
@@ -130,7 +123,7 @@
           </span>
         </li>
         <li>
-          <span class="label">Электронная почта</span>
+          <span class="label">Электронная почта для обращений</span>
           <span class="val"><a href="mailto:anen.online@gmail.com">anen.online@gmail.com</a></span>
         </li>
         <li>
@@ -139,11 +132,11 @@
         </li>
         <li>
           <span class="label">Режим работы поддержки</span>
-          <span class="val">Круглосуточно, 24/7</span>
+          <span class="val">Круглосуточно, 24/7 (ежедневно)</span>
         </li>
         <li>
-          <span class="label">Срок ответа</span>
-          <span class="val">От 15 минут до 2 часов (в редких случаях до 24 часов)</span>
+          <span class="label">Срок ответа на обращение</span>
+          <span class="val">От 15 минут до 2 часов (максимум до 24 часов)</span>
         </li>
       </ul>
     </div>
@@ -154,10 +147,10 @@
       <ul class="info-list">
         <li>
           <span class="label">Статус</span>
-          <span class="val">Самозанятый (плательщик налога на профессиональный доход)</span>
+          <span class="val">Самозанятый гражданин (плательщик налога на профессиональный доход, НПД, ФЗ №422-ФЗ)</span>
         </li>
         <li>
-          <span class="label">Исполнитель</span>
+          <span class="label">ФИО Исполнителя</span>
           <span class="val">Липский Никита Евгеньевич</span>
         </li>
         <li>
@@ -165,37 +158,46 @@
           <span class="val">545113651604</span>
         </li>
         <li>
-          <span class="label">Регистрация</span>
+          <span class="label">Регион постановки на учёт</span>
           <span class="val">Новосибирская область, Российская Федерация</span>
         </li>
         <li>
-          <span class="label">Адрес для корреспонденции</span>
-          <span class="val">Направляйте обращения на <a href="mailto:anen.online@gmail.com">anen.online@gmail.com</a> или в Telegram-бот поддержки</span>
+          <span class="label">Фактический и почтовый адрес</span>
+          <span class="val">630000, Россия, Новосибирская область, г. Новосибирск (почтовая корреспонденция принимается по запросу на anen.online@gmail.com)</span>
         </li>
       </ul>
-      <p style="font-size:13px; color:var(--muted); margin:14px 0 0">
-        Исполнитель применяет специальный налоговый режим «Налог на профессиональный
-        доход» и не является индивидуальным предпринимателем или юридическим лицом,
-        поэтому ОГРН и юридический адрес отсутствуют. Чек за оплату формируется
-        в приложении «Мой налог» и направляется покупателю.
-      </p>
     </div>
+  </div>
+
+  <!-- Правообладатель и авторские права на ПО -->
+  <div class="card" style="margin-bottom:24px;">
+    <h2>Правообладатель и авторские права на ПО</h2>
+    <p style="font-size:14.5px; color:var(--text-2); line-height:1.7; margin-bottom:12px;">
+      Разработчиком, автором и эксклюзивным правообладателем программного обеспечения и платформы MosaicVPN является гражданин РФ <strong>Липский Никита Евгеньевич</strong> (ИНН 545113651604).
+    </p>
+    <p style="font-size:14.5px; color:var(--text-2); line-height:1.7; margin-bottom:12px;">
+      Программный комплекс MosaicVPN является собственной авторской разработкой. Продажа доступа к сервису осуществляется непосредственно автором и разработчиком, в связи с чем заключение дополнительных договоров с третьими лицами и поставщиками программного обеспечения не требуется.
+    </p>
+    <p style="font-size:14.5px; color:var(--text-2); line-height:1.7;">
+      Исходный код клиентской части приложения опубликован в открытом доступе для независимого аудита безопасности: <a href="https://github.com/DangerousANEN/mosaicvpn" target="_blank" rel="noopener" style="color:var(--accent);">https://github.com/DangerousANEN/mosaicvpn</a>.
+    </p>
   </div>
 </div>
 
 <footer>
-  <div class="wrap" style="text-align:center;">
+  <div class="wrap">
     <div style="font-family:var(--serif); font-size:16px; font-weight:600; color:var(--text); margin-bottom:12px;">MosaicVPN · Атлас приватных маршрутов</div>
-    <div class="footer-links">
-      <a href="index.html">Главная</a>
-    <a href="cabinet.html">Кабинет</a> · ·
+    <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:16px; margin-bottom:12px;">
+      <a href="index.html">Главная</a> ·
+      <a href="cabinet.html">Кабинет</a> ·
+      <a href="delivery.html">Доставка</a> ·
       <a href="contacts.html">Контакты</a> ·
       <a href="offer.html">Оферта</a> ·
       <a href="privacy.html">Политика конфиденциальности</a> ·
       <a href="refund.html">Условия возврата</a> ·
       <a href="terms.html">Условия использования</a>
     </div>
-    <div style="margin-top:16px; font-family:var(--mono); font-size:12px; color:var(--muted);">
+    <div style="font-family:var(--mono); font-size:12px; color:var(--muted);">
       Поддержка в Telegram: <a href="https://t.me/mosaic_tf_bot" target="_blank" rel="noopener" style="color:var(--accent);">@mosaic_tf_bot</a>
     </div>
   </div>
