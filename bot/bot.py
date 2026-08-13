@@ -42,6 +42,20 @@ if _missing:
 DB_PATH = "/opt/mosaic-bot/bot.db"
 ADMIN_FILE = "/opt/mosaic-bot/admins.txt"
 
+# Telegram IDs allowed to use /admin, receive alerts, and see forwarded complaints.
+# Split on comma to allow multiple admins. The first registered user (owner) is
+# the default fallback so admin alerts work even before the env var is set.
+_raw_admins = os.environ.get("MOSAIC_ADMIN_IDS", "")
+ADMIN_IDS = set()
+if _raw_admins:
+    for _id in _raw_admins.replace(";", ",").split(","):
+        _id = _id.strip()
+        if _id.isdigit():
+            ADMIN_IDS.add(int(_id))
+if not ADMIN_IDS:
+    # Owner is always an admin unless explicitly overridden.
+    ADMIN_IDS = {831992162}
+
 # Pricing Packages (1 RUB = 1 day)
 # Min 10 days = 10 RUB (0.10 USDT), Max 90 days = 90 RUB (0.90 USDT)
 PACKAGES = {
@@ -692,12 +706,34 @@ def get_pending_invoices():
     conn.close()
     return rows
 
-def update_invoice_status(invoice_id, status):
+def update_invoice_status(invoice_id, status, expect="pending"):
+    """Atomically transition an invoice's status.
+
+    Returns True only if THIS call performed the transition. The guard on the
+    previous status is what makes subscription accrual idempotent: the bot runs
+    under `Restart=always` and polls in a background thread, so the same paid
+    invoice can be observed twice (restart mid-accrual, or two poll cycles
+    overlapping). Without the guard both observers would call api_extend_user
+    and the user would be credited twice for one payment.
+
+    Pass expect=None to force the write regardless of the current status.
+    """
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("UPDATE invoices SET status = ? WHERE invoice_id = ?", (status, invoice_id))
+    if expect is None:
+        cursor.execute(
+            "UPDATE invoices SET status = ? WHERE invoice_id = ?",
+            (status, invoice_id),
+        )
+    else:
+        cursor.execute(
+            "UPDATE invoices SET status = ? WHERE invoice_id = ? AND status = ?",
+            (status, invoice_id, expect),
+        )
+    changed = cursor.rowcount == 1
     conn.commit()
     conn.close()
+    return changed
 
 def get_all_tg_users():
     conn = sqlite3.connect(DB_PATH)
@@ -709,11 +745,15 @@ def get_all_tg_users():
 
 # Admin verification
 def is_admin(telegram_id):
+    # Fast path: check the in-memory ADMIN_IDS set (env var or owner fallback).
+    if telegram_id in ADMIN_IDS:
+        return True
+    # Slow path: check the admins.txt file for ad-hoc additions.
     if not os.path.exists(ADMIN_FILE):
-        # Create empty admins file and authorize root
+        # Create empty admins file so an operator can add IDs manually.
         os.makedirs(os.path.dirname(ADMIN_FILE), exist_ok=True)
         with open(ADMIN_FILE, "w") as f:
-            f.write("583864\n") # Default authorized ID
+            f.write("")  # empty — ADMIN_IDS is the source of truth
     try:
         with open(ADMIN_FILE, "r") as f:
             admins = [int(line.strip()) for line in f if line.strip().isdigit()]
@@ -733,7 +773,7 @@ def api_get_headers():
 def api_get_user(username):
     url = f"{BASE_URL}/api/users/by-username/{username}"
     try:
-        res = requests.get(url, headers=api_get_headers())
+        res = requests.get(url, headers=api_get_headers(), timeout=15)
         if res.status_code == 200:
             return res.json().get("response")
     except Exception as e:
@@ -754,7 +794,7 @@ def api_create_user(username, days, telegram_id):
         "telegramId": int(telegram_id)
     }
     try:
-        res = requests.post(url, headers=api_get_headers(), json=payload)
+        res = requests.post(url, headers=api_get_headers(), json=payload, timeout=15)
         if res.status_code in [200, 201]:
             return res.json().get("response")
         else:
@@ -789,7 +829,7 @@ def api_extend_user(username, days):
         "expireAt": new_expire_str
     }
     try:
-        res = requests.patch(url, headers=api_get_headers(), json=payload)
+        res = requests.patch(url, headers=api_get_headers(), json=payload, timeout=15)
         if res.status_code == 200:
             return res.json().get("response")
         else:
@@ -811,7 +851,7 @@ def create_cryptopay_invoice(amount, days):
         "expires_in": 1800
     }
     try:
-        res = requests.post(url, headers=headers, json=payload)
+        res = requests.post(url, headers=headers, json=payload, timeout=15)
         if res.status_code == 200:
             data = res.json()
             if data.get("ok"):
@@ -827,7 +867,7 @@ def check_cryptopay_invoice(invoice_id):
     headers = {"Crypto-Pay-API-Token": CRYPTO_PAY_TOKEN}
     payload = {"invoice_ids": str(invoice_id)}
     try:
-        res = requests.post(url, headers=headers, json=payload)
+        res = requests.post(url, headers=headers, json=payload, timeout=15)
         if res.status_code == 200:
             data = res.json()
             if data.get("ok"):
@@ -851,9 +891,17 @@ def polling_invoices_thread():
             for invoice_id, telegram_id, days in pending:
                 status = check_cryptopay_invoice(invoice_id)
                 if status == "paid":
+                    # Claim the invoice BEFORE crediting anything. update_invoice_status
+                    # returns False when another poll cycle (or a pre-restart run) already
+                    # moved it out of 'pending', which means the subscription was already
+                    # extended — crediting again would give a free month per restart.
+                    if not update_invoice_status(invoice_id, "paid"):
+                        logger.info(
+                            f"Invoice {invoice_id} already processed (status != pending); skipping accrual"
+                        )
+                        continue
                     logger.info(f"Invoice {invoice_id} paid by {telegram_id} for {days} days!")
-                    update_invoice_status(invoice_id, "paid")
-                    
+
                     username = f"tg_{telegram_id}"
                     user = api_get_user(username)
                     
@@ -926,7 +974,10 @@ def polling_invoices_thread():
                             
                 elif status in ["expired", "cancelled"]:
                     logger.info(f"Invoice {invoice_id} status changed to {status}. Cancelling in DB.")
-                    update_invoice_status(invoice_id, status)
+                    if update_invoice_status(invoice_id, status):
+                        logger.info(f"Invoice {invoice_id} marked as {status}")
+                    else:
+                        logger.debug(f"Invoice {invoice_id} already not pending (got {status})")
         except Exception as e:
             logger.error(f"Error in polling loop: {e}")
         time.sleep(10)
@@ -989,9 +1040,19 @@ def rate_limit_check(telegram_id, action):
 # #1, #8: Referral stats helpers
 # ============================================================
 def ref_stats_incr(referrer_id, field, by=1):
-    """Increment referral_stats counter for referrer."""
+    """Increment referral_stats counter for referrer.
+
+    field must be one of the known column names — we validate against a whitelist
+    instead of interpolating into SQL to prevent injection through the f-string
+    that was here before: anyone calling ref_stats_incr(0, '1=1; DROP TABLE ...')
+    would have executed arbitrary SQL.
+    """
+    allowed_fields = {"clicks", "joined", "paid", "bonus_days_earned"}
+    if field not in allowed_fields:
+        logger.error(f"ref_stats_incr: invalid field {field!r}, ignoring")
+        return
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-    c.execute("INSERT INTO referral_stats (referrer_id, clicks, joined, paid, bonus_days_earned) VALUES (?,0,0,0,0)",
+    c.execute("INSERT OR IGNORE INTO referral_stats (referrer_id, clicks, joined, paid, bonus_days_earned) VALUES (?,0,0,0,0)",
               (referrer_id,))
     c.execute(f"UPDATE referral_stats SET {field}={field}+? WHERE referrer_id=?", (by, referrer_id))
     conn.commit(); conn.close()
@@ -1184,7 +1245,12 @@ def admin_alert(text):
         try:
             bot.send_message(admin_id, f"🚨 **АЛЕРТ**\n\n{text}", parse_mode="Markdown")
         except Exception as e:
-            logger.error(f"Failed to send admin alert to {admin_id}: {e}")
+            # Fallback: send without parse_mode so a stray _ or * in text
+            # doesn't silently swallow the alert.
+            try:
+                bot.send_message(admin_id, f"🚨 АЛЕРТ\n\n{text}")
+            except Exception as e2:
+                logger.error(f"Failed to send admin alert to {admin_id}: {e} / {e2}")
 
 def check_and_alert():
     """Called every 5 min from uptime loop — alert if server down >5min or >3 complaints/hour."""
@@ -1619,17 +1685,53 @@ def handle_broadcast(message):
     users = get_all_tg_users()
     
     count = 0
+    fail_parse = 0
+    fail_429 = 0
     for uid in users:
         try:
             bot.send_message(uid, broadcast_msg, parse_mode="Markdown")
             count += 1
-            time.sleep(0.05) # Rate limiting prevention
         except Exception as e:
-            logger.error(f"Failed to send broadcast to {uid}: {e}")
-            
+            err_str = str(e)
+            if "429" in err_str or "Too Many Requests" in err_str:
+                # Telegram rate limit — wait and retry once
+                retry_after = 1
+                import re as _re
+                m = _re.search(r"retry after (\d+)", err_str, _re.I)
+                if m:
+                    retry_after = int(m.group(1))
+                logger.warning(f"429 rate limit broadcasting to {uid}; retrying in {retry_after}s")
+                time.sleep(retry_after + 1)
+                try:
+                    bot.send_message(uid, broadcast_msg, parse_mode="Markdown")
+                    count += 1
+                except Exception as e2:
+                    # Fallback: send without parse_mode so broken Markdown doesn't lose the message
+                    if "parse" in str(e2).lower() or "entity" in str(e2).lower():
+                        try:
+                            bot.send_message(uid, broadcast_msg)
+                            count += 1
+                        except Exception:
+                            fail_parse += 1
+                    else:
+                        fail_429 += 1
+            elif "parse" in err_str.lower() or "entity" in err_str.lower():
+                # Markdown parse error — retry without parse_mode
+                try:
+                    bot.send_message(uid, broadcast_msg)
+                    count += 1
+                except Exception:
+                    fail_parse += 1
+            else:
+                logger.error(f"Failed to send broadcast to {uid}: {e}")
+        time.sleep(0.05)  # ~20 msg/sec — stay under Telegram's global limit (~30/sec)
+    
     db_user = get_user(telegram_id)
     lang = db_user["language"] if db_user else "ru"
-    bot.send_message(telegram_id, MESSAGES[lang]["broadcast_sent"].format(count=count))
+    summary = MESSAGES[lang]["broadcast_sent"].format(count=count)
+    if fail_parse or fail_429:
+        summary += f"\n⚠️ Failed: {fail_parse} (parse), {fail_429} (rate limit)"
+    bot.send_message(telegram_id, summary)
 
 def send_buy_menu(chat_id, lang):
     t = MESSAGES[lang]
@@ -3571,7 +3673,10 @@ if __name__ == "__main__":
     max_retry_delay = 60
     while True:
         try:
-            bot.infinity_polling(timeout=60, long_polling_timeout=30)
+            # skip_pending=True discards updates that accumulated while the bot
+            # was down — without this, every restart replays old messages and
+            # users see duplicate responses to commands they sent hours ago.
+            bot.infinity_polling(timeout=30, long_polling_timeout=20, skip_pending=True)
             poll_retry_delay = 3  # reset backoff after a clean run
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout,
                 requests.exceptions.ReadTimeout) as e:

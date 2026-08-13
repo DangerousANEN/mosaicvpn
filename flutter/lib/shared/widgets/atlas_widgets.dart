@@ -87,13 +87,19 @@ class SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // On screens narrower than 420dp the action button (e.g. "Add Source")
+        // collides with the title and squeezes both to ribbon-width, which
+        // causes each letter to wrap onto its own line ("S\nt\na\nt…").
+        // Below this width the layout becomes vertical: title+subtitle on
+        // top, action wrapped below.
+        final isNarrow = constraints.maxWidth < 420;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Text(
+            if (isNarrow) ...[
+              Text(
                 title,
                 style: TextStyle(
                   fontFamily: AtlasTheme.serifFamily,
@@ -102,29 +108,60 @@ class SectionHeader extends StatelessWidget {
                   color: c.textPrimary,
                 ),
               ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  subtitle!,
+                  style: TextStyle(
+                    fontFamily: AtlasTheme.sansFamily,
+                    fontSize: 12,
+                    color: c.textMuted,
+                  ),
+                ),
+              ],
+              if (action != null) ...[
+                const SizedBox(height: 8),
+                action!,
+              ],
+            ] else ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontFamily: AtlasTheme.serifFamily,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: c.textPrimary,
+                      ),
+                    ),
+                  ),
+                  if (action != null) action!,
+                ],
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  subtitle!,
+                  style: TextStyle(
+                    fontFamily: AtlasTheme.sansFamily,
+                    fontSize: 12,
+                    color: c.textMuted,
+                  ),
+                ),
+              ],
+            ],
+            const SizedBox(height: 6),
+            Container(
+              height: 1,
+              decoration: BoxDecoration(
+                color: c.border,
+              ),
             ),
-            if (action != null) action!,
           ],
-        ),
-        if (subtitle != null) ...[
-          const SizedBox(height: 4),
-          Text(
-            subtitle!,
-            style: TextStyle(
-              fontFamily: AtlasTheme.sansFamily,
-              fontSize: 12,
-              color: c.textMuted,
-            ),
-          ),
-        ],
-        const SizedBox(height: 6),
-        Container(
-          height: 1,
-          decoration: BoxDecoration(
-            color: c.border,
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
 }

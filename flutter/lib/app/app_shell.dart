@@ -192,8 +192,13 @@ class _AppShellState extends ConsumerState<AppShell>
   @override
   Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
-    final width = MediaQuery.of(context).size.width;
-    final isWide = width > 900;
+    final mq = MediaQuery.of(context);
+    // Use the shortest side so a phone in landscape (wide but short)
+    // still gets the mobile layout.  A typical 6" phone in landscape
+    // is ~360dp tall — well below 600.  Tablets start around 800dp
+    // on the shortest side and deserve the desktop layout.
+    final shortest = mq.size.shortestSide;
+    final isWide = shortest > 600;
 
     // Auto-connect on first frame (q3)
     if (!_autoConnectTriggered) {
