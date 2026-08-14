@@ -160,14 +160,59 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Restore Android release signing identity
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: flutter
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/mosaicvpn-release.jks"
+          cat > android/key.properties <<EOF
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          storeFile=$RUNNER_TEMP/mosaicvpn-release.jks
+          EOF
+
+      - name: Build signed Android technical preview APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: flutter
+        run: |
+          set -euo pipefail
+          flutter build apk --release
+          mkdir -p ../dist/android
+          cp build/app/outputs/flutter-apk/app-release.apk "../dist/android/MosaicVPN-Android-Technical-Preview-${GITHUB_REF_NAME}.apk"
+          "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner" verify --verbose --print-certs "../dist/android/MosaicVPN-Android-Technical-Preview-${GITHUB_REF_NAME}.apk"
+
       - name: Build branded debug APK
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         working-directory: flutter
         run: flutter build apk --debug
 
       - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: MosaicVPN-Android-signed-preview
+          if-no-files-found: error
+          path: dist/android/MosaicVPN-Android-Technical-Preview-v*.apk
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         with:
           name: MosaicVPN-Android-debug-validation
           path: flutter/build/app/outputs/flutter-apk/app-debug.apk
 
-      # A public release APK requires a dedicated Android signing key. Do not
-      # attach a debug-signed APK to GitHub Releases.
+      - name: Attach Android technical preview to tagged release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/android/MosaicVPN-Android-Technical-Preview-v*.apk

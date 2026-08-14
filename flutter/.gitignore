@@ -23,3 +23,8 @@ Thumbs.db
 # Generated
 *.g.dart
 *.freezed.dart
+
+# Android release signing secrets
+android/key.properties
+android/*.jks
+android/*.keystore
