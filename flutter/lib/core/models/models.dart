@@ -21,3 +21,4 @@ export 'billing_profile.dart';
 export 'topup_response.dart';
 export 'provider_profile.dart';
 export 'payment_entry.dart';
+export 'unified_account.dart';

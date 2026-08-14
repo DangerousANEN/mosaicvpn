@@ -47,10 +47,11 @@ type Server struct {
 	lava    billing.PaymentProvider
 	// linkVerifier redeems pairing codes against the bot. Nil means
 	// self-hosted mode: codes are issued and burned locally.
-	linkVerifier   LinkVerifier
-	activeManifest *proto.SubscriptionManifest
-	manifestMu     sync.RWMutex
-	pool           *subs.PoolEngine
+	linkVerifier       LinkVerifier
+	emailAuthenticator EmailAuthenticator
+	activeManifest     *proto.SubscriptionManifest
+	manifestMu         sync.RWMutex
+	pool               *subs.PoolEngine
 
 	mux *http.ServeMux
 }
@@ -85,6 +86,9 @@ func (s *Server) SetBillingConfig(cfg billing.Config) {
 // SetLavaProvider replaces the Lava payment provider instance.
 // SetLinkVerifier installs the remote pairing-code authority.
 func (s *Server) SetLinkVerifier(v LinkVerifier) { s.linkVerifier = v }
+
+// SetEmailAuthenticator installs the remote password authority for non-Telegram accounts.
+func (s *Server) SetEmailAuthenticator(v EmailAuthenticator) { s.emailAuthenticator = v }
 
 func (s *Server) SetLavaProvider(p billing.PaymentProvider) {
 	s.lava = p
@@ -173,13 +177,23 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/billing/profile", s.handleBillingProfile)
 	s.mux.HandleFunc("POST /v1/billing/link", s.handleBillingLink)
 
-	// Account cabinet (T-19): code-based linking + payment history.
+	// Account cabinet: code/email sign-in plus the hosted unified account.
 	s.mux.HandleFunc("POST /v1/account/link-code", s.handleLinkCodeIssue)
 	s.mux.HandleFunc("POST /v1/account/link", s.handleLinkCodeRedeem)
+	s.mux.HandleFunc("POST /v1/account/email-login", s.handleEmailLogin)
 	s.mux.HandleFunc("GET /v1/account/payments", s.handlePaymentHistory)
+	s.mux.HandleFunc("GET /v1/account/overview", s.handleUnifiedAccountProfile)
+	s.mux.HandleFunc("POST /v1/account/freeze", s.handleAccountAccessAction("freeze"))
+	s.mux.HandleFunc("POST /v1/account/unfreeze", s.handleAccountAccessAction("unfreeze"))
+	s.mux.HandleFunc("POST /v1/account/subscription-link/rotate", s.handleSubscriptionLinkRotate)
 	s.mux.HandleFunc("POST /v1/billing/unlink", s.handleBillingUnlink)
 	s.mux.HandleFunc("POST /v1/billing/topup", s.handleBillingTopup)
 	s.mux.HandleFunc("GET /v1/billing/topup/{id}", s.handleBillingTopupStatus)
+	// Unified checkout is provider-neutral; the hosted authority selects the
+	// enabled provider, currently Crypto Pay and later Lava/SBP.
+	s.mux.HandleFunc("GET /v1/billing/checkout-options", s.handleCheckoutOptions)
+	s.mux.HandleFunc("POST /v1/billing/checkout", s.handleCheckoutCreate)
+	s.mux.HandleFunc("GET /v1/billing/checkout/{invoiceID}", s.handleCheckoutStatus)
 	s.mux.HandleFunc("GET /v1/billing/config", s.handleBillingConfigGet)
 	s.mux.HandleFunc("PUT /v1/billing/config", s.handleBillingConfigSet)
 

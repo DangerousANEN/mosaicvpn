@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -120,6 +121,29 @@ func TestBotLinkVerifierRejectsMalformedOK(t *testing.T) {
 			t.Errorf("body %q: err = %v, want ErrVerifierUnavailable", body, err)
 		}
 		srv.Close()
+	}
+}
+
+func TestBotLinkVerifierBuildsDirectFeedURL(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, LinkVerification{
+			TelegramID:  777,
+			Username:    "nikita",
+			DirectToken: "opaque+/ token",
+		})
+	}))
+	defer srv.Close()
+
+	res, err := NewBotLinkVerifier(srv.URL).Verify(context.Background(), "AB23CD45")
+	if err != nil {
+		t.Fatalf("Verify() error = %v", err)
+	}
+	want := srv.URL + "/api/direct/singbox?token=opaque%2B%2F+token"
+	if res.DirectFeedURL != want {
+		t.Fatalf("DirectFeedURL = %q, want %q", res.DirectFeedURL, want)
+	}
+	if strings.Contains(res.DirectFeedURL, "telegram") {
+		t.Fatalf("DirectFeedURL must not contain a Telegram identifier: %q", res.DirectFeedURL)
 	}
 }
 

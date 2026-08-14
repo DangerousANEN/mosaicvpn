@@ -1,45 +1,23 @@
-# 📋 MosaicVPN Active Task Backlog (TODO)
+# MosaicVPN Client — next account controls
 
-## 🎯 Current Sprint Goals
+Client code is deliberately unchanged in the current iteration. The user asked to stabilise the Telegram-bot presentation first.
 
-### 1. ⚙️ Daemon (`mosaicd`)
-- [x] **Weight & Tier Balancing in Pool Engine**
-  - Path: `internal/subs/pool.go`
-  - Task: Compute `Score = LatencyMS / Weight` and filter nodes according to user tier (`free`, `pro`, `vip`).
-- [x] **Offline Manifest Persistence**
-  - Path: `internal/store/store.go`, `internal/api/server.go`
-  - Task: Save active manifest to disk (`store.json`) via `SaveManifest` and fallback to local cache when VPS is unreachable.
-- [x] **Declarative Service Engine**
-  - Path: `internal/proto/types.go`, `internal/api/server.go`
-  - Task: Process `profile.services[]` definitions (`GET /v1/services/{id}/resolve` for `proxy_picker`, `value_display`, etc.).
+| Priority | Item | Acceptance criterion |
+| --- | --- | --- |
+| P1 | Show shared account state | The linked-account screen reads `status`, balance and billing rate from the unified account API with a client session token. |
+| P1 | Pause and resume access | The client calls authenticated freeze/unfreeze endpoints; the UI refreshes the profile and renders insufficient-funds feedback without exposing tokens. |
+| P1 | Provider-neutral top-up | The client obtains available providers from checkout options, asks for a RUB amount between 10 and 365, opens the returned hosted payment URL and refreshes invoice state. |
+| P2 | Lava.ru / SBP adapter | Enable it only after server credentials, webhook validation and reconciliation tests are configured; no client UI redesign should be required. |
+| P2 | End-to-end checks | Verify Telegram, website and client show one balance and one access state; test active, frozen and insufficient-funds paths. |
 
----
+No legacy relay route should be changed as part of these client tasks.
 
-### 2. 📱 Flutter GUI (`MosaicBox`)
-- [x] **Simple / Expert UI Toggle**
-  - Path: `flutter/lib/app/app_shell.dart`, `settings_screen.dart`
-  - Task: Dynamic navigation destination list based on `advancedMode` preference.
-- [x] **Fix Dart Analyzer Warnings**
-  - Path: `flutter/lib/features/dashboard/dashboard_screen.dart`
-  - Task: Cleaned up async gap BuildContext warnings.
-- [x] **Provider Profiles Screen**
-  - Path: `flutter/lib/features/provider_profile/provider_profile_screen.dart`
-  - Task: Render custom provider cards (MTProto proxy picker, status widgets, support links).
 
----
+## Subscription-link security
 
-### 3. 🌐 Web & Telegram Infrastructure
-- [x] **Provider Manifest Update**
-  - Path: VPS `/opt/remnawave/manifest/provider_manifest.json`
-  - Task: Updated provider manifest with declarative `profile.services[]` (`mtproto-proxy`, `speed_test`, `support`) and `profile.widgets[]`.
-- [x] **Telegram Bot Integration**
-  - Path: VPS `/opt/mosaic-bot/`
-  - Task: Verified deep links and topup endpoints integration.
+| Priority | Item | Acceptance criterion |
+| --- | --- | --- |
+| P1 | Show and copy current subscription link | A linked user can copy the current account-bound link without exposing it in diagnostics or logs. |
+| P1 | Rotate exposed link | After an explicit confirmation, the client calls the authenticated rotation endpoint, replaces the displayed URL, and explains that the old link and connection credentials stopped working. |
+| P2 | Recovery UX | The import flow offers the new link immediately after rotation and displays the server cooldown response without retry loops. |
 
----
-
-### 4. 📦 Deployment & Verification
-- [x] **Daemon & Flutter Windows Release Build**
-  - Task: `mosaicd.exe`, `mosaic.exe`, and Flutter `mosaic_vpn.exe` built successfully.
-- [x] **E2E Integration Verification**
-  - Task: Daemon live testing verified `GET /v1/manifest` and `GET /v1/services/mtproto-proxy/resolve`.

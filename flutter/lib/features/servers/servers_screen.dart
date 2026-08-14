@@ -83,8 +83,8 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
                   ElevatedButton.icon(
                     onPressed: () => _showAddSubscriptionDialog(context),
                     icon: const Icon(Icons.add_link, size: 16),
-                    label:
-                        const Text('Add Source', style: TextStyle(fontSize: 12)),
+                    label: const Text('Add Source',
+                        style: TextStyle(fontSize: 12)),
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 10),
@@ -113,8 +113,8 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
                       );
                     },
                     icon: const Icon(Icons.dns_outlined, size: 16),
-                    label:
-                        const Text('Add Server', style: TextStyle(fontSize: 12)),
+                    label: const Text('Add Server',
+                        style: TextStyle(fontSize: 12)),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 10),
@@ -125,7 +125,8 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
                   // Global Action: Create Group
                   OutlinedButton.icon(
                     onPressed: () => _showCreateGroupDialog(context),
-                    icon: const Icon(Icons.create_new_folder_outlined, size: 16),
+                    icon:
+                        const Icon(Icons.create_new_folder_outlined, size: 16),
                     label:
                         const Text('New Group', style: TextStyle(fontSize: 12)),
                     style: OutlinedButton.styleFrom(
@@ -139,13 +140,14 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
                   OutlinedButton.icon(
                     onPressed: () => _testAll(ref),
                     icon: const Icon(Icons.speed, size: 16),
-                    label: const Text('Test All', style: TextStyle(fontSize: 12)),
+                    label:
+                        const Text('Test All', style: TextStyle(fontSize: 12)),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 10),
                       foregroundColor: AtlasTheme.accent,
-                      side:
-                          const BorderSide(color: AtlasTheme.accent, width: 1.2),
+                      side: const BorderSide(
+                          color: AtlasTheme.accent, width: 1.2),
                     ),
                   ),
                 ],
@@ -420,6 +422,11 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
           ),
         ),
         child: ExpansionTile(
+          // A shape forces ExpansionTile to retain a Material layer between its
+          // animated background and nested ListTile controls. This keeps ink
+          // feedback visible and prevents the desktop widget warning.
+          shape: const RoundedRectangleBorder(),
+          collapsedShape: const RoundedRectangleBorder(),
           initiallyExpanded: hasActiveInGroup || _searchQuery.isNotEmpty,
           leading: Icon(
             Icons.folder_open,
@@ -963,7 +970,8 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
               ClipboardData(text: '${server.address}:${server.port}'));
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Copied: ${server.address}:${server.port}')),
+              SnackBar(
+                  content: Text('Copied: ${server.address}:${server.port}')),
             );
           }
           break;
@@ -1006,15 +1014,15 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
             ref.invalidate(serverGroupsProvider);
             if (mounted) {
               final groupName = await _resolveGroupName(groupId, ref);
-            if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Moved "${server.name}" → $groupName')),
-            );
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Moved "${server.name}" → $groupName')),
+              );
+            }
+          } else if (action == 'create_group_from_server') {
+            await _showCreateGroupDialog(context, suggestedForServer: server);
           }
-        } else if (action == 'create_group_from_server') {
-          await _showCreateGroupDialog(context, suggestedForServer: server);
-        }
-        break;
+          break;
       }
     } catch (e) {
       debugPrint('Server action "$action" failed: $e');
@@ -1319,8 +1327,8 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
                           style: const TextStyle(fontFamily: 'monospace')),
                       action: SnackBarAction(
                         label: 'Copy',
-                        onPressed: () =>
-                            Clipboard.setData(ClipboardData(text: e.toString())),
+                        onPressed: () => Clipboard.setData(
+                            ClipboardData(text: e.toString())),
                       ),
                     ),
                   );

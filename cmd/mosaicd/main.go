@@ -82,6 +82,15 @@ func run(dataDirOverride string) error {
 	mgr := state.New(store, backend, Version)
 
 	apiSrv := api.NewServer(store, mgr, nil)
+	// Official builds pair against MosaicVPN by default. Self-hosted operators
+	// can point the daemon at their own compatible authority without recompiling.
+	linkAPIURL := os.Getenv("MOSAIC_LINK_API_URL")
+	if linkAPIURL == "" {
+		linkAPIURL = "https://sub.zxc1x1.ru"
+	}
+	verifier := api.NewBotLinkVerifier(linkAPIURL)
+	apiSrv.SetLinkVerifier(verifier)
+	apiSrv.SetEmailAuthenticator(verifier)
 
 	// Load persisted billing credentials so the billing.Client is seeded
 	// with the user's previously-saved Remnawave/CryptoBot settings on

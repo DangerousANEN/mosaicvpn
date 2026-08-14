@@ -33,8 +33,12 @@ type billingProfileResponse struct {
 // GET /v1/billing/profile
 func (s *Server) handleBillingProfile(w http.ResponseWriter, r *http.Request) {
 	acct := s.store.GetAccount()
-	if acct.TelegramID == 0 {
+	if acct.TelegramID == 0 && acct.DirectToken == "" {
 		writeJSON(w, http.StatusOK, billingProfileResponse{Linked: false})
+		return
+	}
+	if acct.TelegramID == 0 {
+		writeJSON(w, http.StatusOK, billingProfileResponse{Linked: true, Username: acct.Username, Email: acct.Email, ExpireAt: formatTime(acct.ExpireAt)})
 		return
 	}
 	if s.billing == nil {
@@ -77,10 +81,13 @@ func (s *Server) handleBillingProfile(w http.ResponseWriter, r *http.Request) {
 	// a zero value here would silently unlink the account on the next
 	// profile refresh, because the link check keys off a non-empty token.
 	_ = s.store.SetAccount(store.Account{
-		TelegramID:   acct.TelegramID,
-		SessionToken: acct.SessionToken,
-		Username:     user.Username,
-		ExpireAt:     user.ExpireAt,
+		TelegramID:    acct.TelegramID,
+		SessionToken:  acct.SessionToken,
+		DirectToken:   acct.DirectToken,
+		DirectFeedURL: acct.DirectFeedURL,
+		Username:      user.Username,
+		Email:         acct.Email,
+		ExpireAt:      user.ExpireAt,
 	})
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -131,9 +138,9 @@ func (s *Server) handleBillingUnlink(w http.ResponseWriter, r *http.Request) {
 
 // topupRequest creates a CryptoBot invoice.
 type topupRequest struct {
-	Amount      float64 `json:"amount"`       // USDT
-	Description string  `json:"description"`  // optional
-	Days        int     `json:"days"`         // days to add on payment
+	Amount      float64 `json:"amount"`      // USDT
+	Description string  `json:"description"` // optional
+	Days        int     `json:"days"`        // days to add on payment
 }
 
 // topupResponse is returned after creating an invoice.

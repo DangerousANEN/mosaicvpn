@@ -43,7 +43,7 @@ class MosaicApp extends ConsumerWidget {
     }
 
     return MaterialApp(
-      title: 'MosaicBox',
+      title: 'MosaicVPN',
       debugShowCheckedModeBanner: false,
       theme: AtlasTheme.themeData,
       darkTheme: AtlasTheme.darkThemeData,

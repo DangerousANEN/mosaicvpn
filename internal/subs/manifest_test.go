@@ -76,3 +76,54 @@ func TestFetchProviderManifest(t *testing.T) {
 		t.Errorf("got profile branding description = %v; want 'Test Provider Desc'", manifest.Profile)
 	}
 }
+
+func TestResolveMosaicHintGroups(t *testing.T) {
+	servers := []proto.Server{
+		{
+			ID:       "stable-fast",
+			Protocol: "vless",
+			Raw: map[string]any{
+				"mosaic_stable":            true,
+				"mosaic_stable_priority":   float64(2),
+				"mosaic_speed_eligible":    true,
+				"mosaic_allowlist":         false,
+				"mosaic_failover_priority": float64(4),
+			},
+		},
+		{
+			ID:       "allowlist-primary",
+			Protocol: "vless",
+			Raw: map[string]any{
+				"mosaic_stable":             true,
+				"mosaic_stable_priority":    float64(1),
+				"mosaic_speed_eligible":     false,
+				"mosaic_allowlist":          true,
+				"mosaic_allowlist_priority": float64(1),
+			},
+		},
+		{
+			ID:       "ordinary",
+			Protocol: "shadowsocks",
+			Raw: map[string]any{
+				"mosaic_stable":         false,
+				"mosaic_speed_eligible": false,
+				"mosaic_allowlist":      false,
+			},
+		},
+	}
+
+	stable := resolveGroupNodes(proto.ManifestGroup{ID: "auto-stable", Category: "smart"}, servers)
+	if len(stable) != 2 || stable[0].ID != "stable-fast" || stable[0].Priority != 2 || stable[1].ID != "allowlist-primary" || stable[1].Priority != 1 {
+		t.Fatalf("stable group = %#v; expected exactly the two stable candidates with priorities", stable)
+	}
+
+	speed := resolveGroupNodes(proto.ManifestGroup{ID: "auto-speed", Category: "smart"}, servers)
+	if len(speed) != 1 || speed[0].ID != "stable-fast" {
+		t.Fatalf("speed group = %#v; expected only speed-eligible candidate", speed)
+	}
+
+	allowlist := resolveGroupNodes(proto.ManifestGroup{ID: "auto-allowlist", Category: "whitelist"}, servers)
+	if len(allowlist) != 1 || allowlist[0].ID != "allowlist-primary" || allowlist[0].Priority != 1 {
+		t.Fatalf("allowlist group = %#v; expected the assigned Reality candidate", allowlist)
+	}
+}

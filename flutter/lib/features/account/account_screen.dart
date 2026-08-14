@@ -7,6 +7,7 @@ import '../../core/models/models.dart';
 import '../../core/providers/billing_provider.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/theme/atlas_theme.dart';
+import 'unified_account_panel.dart';
 
 /// Payment history for the linked account, newest first.
 final paymentHistoryProvider =
@@ -26,12 +27,16 @@ class AccountScreen extends ConsumerStatefulWidget {
 
 class _AccountScreenState extends ConsumerState<AccountScreen> {
   final _codeController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
   bool _linking = false;
   String? _linkError;
 
   @override
   void dispose() {
     _codeController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
@@ -70,6 +75,27 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     }
   }
 
+  Future<void> _submitEmail() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+    if (!email.contains('@') || password.length < 8) {
+      setState(() => _linkError = 'Enter a valid email and a password of at least 8 characters.');
+      return;
+    }
+    setState(() { _linking = true; _linkError = null; });
+    try {
+      await ref.read(daemonApiProvider).loginWithEmail(email, password);
+      if (!mounted) return;
+      ref.invalidate(billingProfileProvider);
+      ref.invalidate(paymentHistoryProvider);
+      _passwordController.clear();
+      setState(() => _linking = false);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() { _linking = false; _linkError = 'Email or password is incorrect. Try again or create an account on the website.'; });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
@@ -81,6 +107,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
         child: RefreshIndicator(
           onRefresh: () async {
             ref.invalidate(billingProfileProvider);
+            ref.invalidate(unifiedAccountProvider);
             ref.invalidate(paymentHistoryProvider);
           },
           child: LayoutBuilder(
@@ -112,9 +139,12 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                                 ? _LinkedBody(profile: p)
                                 : _LinkForm(
                                     controller: _codeController,
+                                    emailController: _emailController,
+                                    passwordController: _passwordController,
                                     busy: _linking,
                                     error: _linkError,
                                     onSubmit: _submitCode,
+                                    onEmailSubmit: _submitEmail,
                                   ),
                           ),
                         ],
@@ -177,15 +207,21 @@ class _CabinetError extends StatelessWidget {
 /// Pairing-code entry form shown while the account is unlinked.
 class _LinkForm extends StatelessWidget {
   final TextEditingController controller;
+  final TextEditingController emailController;
+  final TextEditingController passwordController;
   final bool busy;
   final String? error;
   final VoidCallback onSubmit;
+  final VoidCallback onEmailSubmit;
 
   const _LinkForm({
     required this.controller,
+    required this.emailController,
+    required this.passwordController,
     required this.busy,
     required this.error,
     required this.onSubmit,
+    required this.onEmailSubmit,
   });
 
   @override
@@ -208,6 +244,7 @@ class _LinkForm extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           TextField(
+            key: const ValueKey('pairing-code-input'),
             controller: controller,
             enabled: !busy,
             autocorrect: false,
@@ -252,6 +289,30 @@ class _LinkForm extends StatelessWidget {
                   : const Text('Link account'),
             ),
           ),
+          const SizedBox(height: 20),
+          Divider(color: c.border),
+          const SizedBox(height: 12),
+          Text('Sign in with email', style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          TextField(
+            controller: emailController,
+            enabled: !busy,
+            keyboardType: TextInputType.emailAddress,
+            decoration: InputDecoration(labelText: 'Email', filled: true, fillColor: c.bgChild),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: passwordController,
+            enabled: !busy,
+            obscureText: true,
+            onSubmitted: busy ? null : (_) => onEmailSubmit(),
+            decoration: InputDecoration(labelText: 'Password', filled: true, fillColor: c.bgChild),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(height: 44, child: OutlinedButton(
+            onPressed: busy ? null : onEmailSubmit,
+            child: busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Sign in with email'),
+          )),
         ],
       ),
     );
@@ -266,10 +327,17 @@ class _LinkedBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final history = ref.watch(paymentHistoryProvider);
+    final unified = ref.watch(unifiedAccountProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _SubscriptionCard(profile: profile),
+        unified.when(
+          data: (account) => account == null
+              ? _SubscriptionCard(profile: profile)
+              : UnifiedAccountPanel(account: account),
+          loading: () => _SubscriptionCard(profile: profile),
+          error: (_, __) => _SubscriptionCard(profile: profile),
+        ),
         const SizedBox(height: 12),
         _TrafficCard(profile: profile),
         const SizedBox(height: 12),

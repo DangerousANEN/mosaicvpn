@@ -370,8 +370,31 @@ class _ResolvedDaemonApi implements DaemonApiBase {
       (await _backend()).redeemLinkCode(code);
 
   @override
+  Future<void> loginWithEmail(String email, String password) async =>
+      (await _backend()).loginWithEmail(email, password);
+
+  @override
   Future<List<PaymentEntry>> getPaymentHistory() async =>
       (await _backend()).getPaymentHistory();
+
+  @override
+  Future<UnifiedAccount?> getUnifiedAccount() async =>
+      (await _backend()).getUnifiedAccount();
+  @override
+  Future<UnifiedAccount> freezeAccount() async =>
+      (await _backend()).freezeAccount();
+  @override
+  Future<UnifiedAccount> unfreezeAccount() async =>
+      (await _backend()).unfreezeAccount();
+  @override
+  Future<List<CheckoutProviderOption>> getCheckoutOptions() async =>
+      (await _backend()).getCheckoutOptions();
+  @override
+  Future<CheckoutSession> createCheckout({required int amountRub, required String provider}) async =>
+      (await _backend()).createCheckout(amountRub: amountRub, provider: provider);
+  @override
+  Future<RotatedSubscriptionLink> rotateSubscriptionLink() async =>
+      (await _backend()).rotateSubscriptionLink();
 
   @override
   Future<ProviderManifest> getProviderManifest() async =>
@@ -433,6 +456,14 @@ final serverGroupsProvider =
     FutureProvider.autoDispose<List<ServerGroup>>((ref) async {
   final api = ref.watch(daemonApiProvider);
   return api.listGroups();
+});
+
+/// Provider-owned smart groups are safe user-facing choices: their physical
+/// nodes stay inside the daemon and only the selected endpoint is returned.
+final mosaicManifestProvider =
+    FutureProvider.autoDispose<ProviderManifest>((ref) async {
+  final api = ref.watch(daemonApiProvider);
+  return api.getProviderManifest();
 });
 
 // ─── Subscriptions ─────────────────────────────────────────────────

@@ -28,20 +28,59 @@ func resolveGroupNodes(group proto.ManifestGroup, rawServers []proto.Server) []p
 	var nodes []proto.ManifestNode
 	for _, srv := range rawServers {
 		if matchGroupFilter(group, srv) {
-			nodes = append(nodes, proto.ManifestNode{ID: srv.ID})
+			node := proto.ManifestNode{ID: srv.ID}
+			// The optional auto-speed group is a client-side weighted choice.
+			// The provider supplies only a recent bounded probe result; the
+			// client still performs its own health checks before connecting.
+			if group.ID == "auto-speed" {
+				if speed, ok := srv.Raw["mosaic_speed_mbps"].(float64); ok && speed > 0 {
+					weight := int(speed * 10)
+					if weight < 1 {
+						weight = 1
+					}
+					if weight > 100 {
+						weight = 100
+					}
+					node.Weight = weight
+				}
+			}
+			if priority := failoverPriority(group.ID, srv); priority > 0 {
+				node.Priority = priority
+			}
+			nodes = append(nodes, node)
 		}
 	}
 	return nodes
 }
 
 func matchGroupFilter(group proto.ManifestGroup, srv proto.Server) bool {
-	// Category-based matching as fallback
+	// Mosaic's direct pool optionally includes opaque, aggregate selection hints.
+	// Their presence takes precedence; ordinary third-party subscriptions retain
+	// the legacy heuristic below for backwards compatibility.
+	switch group.ID {
+	case "auto-stable":
+		if stable, present := boolHint(srv, "mosaic_stable"); present {
+			return stable
+		}
+		return true
+	case "auto-speed":
+		if eligible, present := boolHint(srv, "mosaic_speed_eligible"); present {
+			return eligible
+		}
+		return true
+	case "auto-allowlist":
+		if allowed, present := boolHint(srv, "mosaic_allowlist"); present {
+			return allowed
+		}
+	}
+
+	// Category-based matching as fallback.
 	switch group.Category {
 	case "whitelist":
 		nameLower := strings.ToLower(srv.Name + " " + srv.Tag)
 		return strings.Contains(nameLower, "whitelist") || strings.Contains(nameLower, "4g") || strings.Contains(nameLower, "tspu") || srv.Protocol == "vless"
 	case "smart":
-		// Country-based matching from group ID suffix
+		// Country-based matching from group ID suffix.
 		cc := groupCountryFromID(group.ID)
 		if cc == "" {
 			return true
@@ -49,6 +88,41 @@ func matchGroupFilter(group proto.ManifestGroup, srv proto.Server) bool {
 		return strings.EqualFold(srv.Country, cc)
 	}
 	return true
+}
+
+func boolHint(srv proto.Server, key string) (bool, bool) {
+	value, present := srv.Raw[key]
+	flag, ok := value.(bool)
+	return flag, present && ok
+}
+
+func numericHint(srv proto.Server, key string) int {
+	value, present := srv.Raw[key]
+	if !present {
+		return 0
+	}
+	switch number := value.(type) {
+	case float64:
+		return int(number)
+	case float32:
+		return int(number)
+	case int:
+		return number
+	case int64:
+		return int(number)
+	}
+	return 0
+}
+
+func failoverPriority(groupID string, srv proto.Server) int {
+	switch groupID {
+	case "auto-stable":
+		return numericHint(srv, "mosaic_stable_priority")
+	case "auto-allowlist":
+		return numericHint(srv, "mosaic_allowlist_priority")
+	default:
+		return numericHint(srv, "mosaic_failover_priority")
+	}
 }
 
 func groupCountryFromID(id string) string {
@@ -329,6 +403,12 @@ func BuildVirtualServersFromManifest(manifest proto.SubscriptionManifest, subID 
 			GroupTag:       g.ID,
 			OutboundTag:    g.ID,
 			Tag:            g.Badge,
+			Raw: map[string]any{
+				"mosaic_group_type":     g.Type,
+				"mosaic_ping_interval":  g.PingInterval,
+				"mosaic_max_retries":    g.MaxRetries,
+				"mosaic_failover_delay": g.FailoverDelay,
+			},
 		}
 		switch {
 		case strings.Contains(g.ID, "de"):

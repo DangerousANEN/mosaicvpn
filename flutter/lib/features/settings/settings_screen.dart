@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/atlas_theme.dart';
 import '../../core/providers/vpn_providers.dart';
+import '../../core/i18n/app_strings.dart';
 import '../../core/models/models.dart';
 import '../../core/services/tray_service.dart';
 import '../../core/services/autostart_service.dart';
@@ -68,11 +69,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Widget _buildSettings(BuildContext context, Preferences prefs) {
     final c = ThemeColors.of(context);
+    final s = AppStrings.of(context);
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SectionHeader(title: 'Settings', subtitle: 'Daemon configuration'),
+          SectionHeader(
+              title: s.t('settings'), subtitle: s.t('daemon_configuration')),
 
           const SizedBox(height: 24),
 
@@ -443,7 +446,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
               _SettingTile(
                 label: 'Advanced Mode (Продвинутый режим)',
-                description: 'Show advanced tabs (Profiles, Routes, Egresses, Activity, Stats, Cores, Logs)',
+                description:
+                    'Show advanced tabs (Profiles, Routes, Egresses, Activity, Stats, Cores, Logs)',
                 tooltip:
                     'When disabled (default), MosaicBox hides complex developer tools and keeps a clean 4-tab layout (Dashboard, Stations, Subscriptions, Settings).',
                 child: Switch(
@@ -453,7 +457,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
               _SettingTile(
                 label: 'Show Raw Nodes (Expert Mode)',
-                description: 'Show individual raw servers instead of Smart Virtual Groups',
+                description:
+                    'Show individual raw servers instead of Smart Virtual Groups',
                 tooltip:
                     'When disabled (default), MosaicBox displays clean Smart Presets (Fastest Latency, Whitelist Evader 🛡, Countries). Enable to see raw VLESS/Hysteria2 nodes.',
                 child: Switch(
@@ -479,31 +484,49 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // ── Appearance (q8) ──
           _SettingsGroup(
-            title: 'Appearance',
+            title: s.t('appearance'),
             children: [
               _SettingTile(
-                label: 'Theme',
-                description: 'Dark or light interface mode',
+                label: s.t('theme'),
+                description: s.t('theme_description'),
                 child: Consumer(builder: (context, ref, _) {
                   final themeMode = ref.watch(themeModeProvider);
                   return SegmentedButton<String>(
-                    segments: const [
+                    segments: [
                       ButtonSegment(
                           value: 'dark',
-                          icon: Icon(Icons.dark_mode, size: 16),
-                          label: Text('Dark')),
+                          icon: const Icon(Icons.dark_mode, size: 16),
+                          label: Text(s.t('dark_theme'))),
                       ButtonSegment(
                           value: 'light',
-                          icon: Icon(Icons.light_mode, size: 16),
-                          label: Text('Light')),
+                          icon: const Icon(Icons.light_mode, size: 16),
+                          label: Text(s.t('light_theme'))),
                       ButtonSegment(
                           value: 'system',
-                          icon: Icon(Icons.settings_brightness, size: 16),
-                          label: Text('System')),
+                          icon: const Icon(Icons.settings_brightness, size: 16),
+                          label: Text(s.t('system_theme'))),
                     ],
                     selected: {themeMode},
                     onSelectionChanged: (s) =>
                         ref.read(themeModeProvider.notifier).set(s.first),
+                  );
+                }),
+              ),
+              _SettingTile(
+                label: s.t('language'),
+                description: s.t('language_description'),
+                child: Consumer(builder: (context, ref, _) {
+                  final language = ref.watch(languageProvider);
+                  return SegmentedButton<String>(
+                    segments: [
+                      ButtonSegment(
+                          value: 'system', label: Text(s.t('system_default'))),
+                      ButtonSegment(value: 'en', label: Text(s.t('english'))),
+                      ButtonSegment(value: 'ru', label: Text(s.t('russian'))),
+                    ],
+                    selected: {language},
+                    onSelectionChanged: (value) =>
+                        ref.read(languageProvider.notifier).set(value.first),
                   );
                 }),
               ),
@@ -618,6 +641,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               Padding(
                 padding: const EdgeInsets.only(top: 8, bottom: 4),
                 child: ExpansionTile(
+                  // Keep the header ListTile on a Material layer while the
+                  // section background animates, preserving visible ink feedback.
+                  shape: const RoundedRectangleBorder(),
+                  collapsedShape: const RoundedRectangleBorder(),
                   tilePadding: EdgeInsets.zero,
                   title: Row(
                     children: [
@@ -773,7 +800,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     'Managed via Routes tab. Global: all traffic via VPN. Rule: route by GeoIP/GeoSite rules. Direct: bypass VPN.',
                 difficulty: 2,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: c.bgElevated,
                     borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
@@ -1011,7 +1039,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     'Managed via Cores & Engines tab. sing-box: modern, all-protocol support. xray-core: legacy, proven.',
                 difficulty: 2,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: c.bgElevated,
                     borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),

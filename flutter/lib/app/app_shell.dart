@@ -6,10 +6,11 @@ import 'package:window_manager/window_manager.dart';
 import '../core/theme/atlas_theme.dart';
 import '../core/platform/app_platform.dart';
 import '../core/providers/vpn_providers.dart';
+import '../core/i18n/app_strings.dart';
 import '../core/models/models.dart';
 import '../core/services/tray_service.dart';
 import '../shared/widgets/atlas_widgets.dart';
-import '../features/dashboard/dashboard_screen.dart';
+import '../features/dashboard/connection_dashboard.dart';
 import '../features/servers/servers_screen.dart';
 import '../features/profiles/profiles_screen.dart';
 import '../features/subscriptions/subscriptions_screen.dart';
@@ -43,85 +44,105 @@ class _AppShellState extends ConsumerState<AppShell>
   int _currentIndex = 0;
   bool _autoConnectTriggered = false;
 
-  /// Main 5 bottom navigation destinations
-  final _mainDestinations = const <_NavDestination>[
-    _NavDestination(
-        icon: Icons.dashboard_outlined,
-        activeIcon: Icons.dashboard,
-        label: 'Dashboard'),
-    _NavDestination(
-        icon: Icons.bolt_outlined, activeIcon: Icons.bolt, label: 'Groups'),
-    _NavDestination(
-        icon: Icons.subscriptions_outlined,
-        activeIcon: Icons.subscriptions,
-        label: 'Subscriptions'),
-    _NavDestination(
-        icon: Icons.account_balance_wallet_outlined,
-        activeIcon: Icons.account_balance_wallet,
-        label: 'Billing'),
-    _NavDestination(
-        icon: Icons.more_horiz_outlined,
-        activeIcon: Icons.more_horiz,
-        label: 'More'),
-  ];
+  // Only build a tab after the user opens it. This prevents hidden technical
+  // screens from starting network polls or timers on first launch, while the
+  // visited tabs remain alive for instant back-and-forth navigation.
+  final Set<int> _visitedMobileTabs = {0};
+  final Set<int> _visitedWideTabs = {0};
 
-  /// Full list of destinations for desktop/sidebar navigation (>900px)
-  final _destinations = const <_NavDestination>[
-    _NavDestination(
-        icon: Icons.dashboard_outlined,
-        activeIcon: Icons.dashboard,
-        label: 'Dashboard'),
-    _NavDestination(
-        icon: Icons.dns_outlined, activeIcon: Icons.dns, label: 'Stations'),
-    _NavDestination(
-        icon: Icons.book_outlined, activeIcon: Icons.book, label: 'Profiles'),
-    _NavDestination(
-        icon: Icons.subscriptions_outlined,
-        activeIcon: Icons.subscriptions,
-        label: 'Subscriptions'),
-    _NavDestination(
-        icon: Icons.account_balance_wallet_outlined,
-        activeIcon: Icons.account_balance_wallet,
-        label: 'Billing'),
-    _NavDestination(
-        icon: Icons.bolt_outlined, activeIcon: Icons.bolt, label: 'Groups'),
-    _NavDestination(
-        icon: Icons.person_outline,
-        activeIcon: Icons.person,
-        label: 'Account'),
-    _NavDestination(
-        icon: Icons.verified_outlined,
-        activeIcon: Icons.verified,
-        label: 'Provider'),
-    _NavDestination(
-        icon: Icons.hub_outlined, activeIcon: Icons.hub, label: 'Routes'),
-    _NavDestination(
-        icon: Icons.account_tree_outlined,
-        activeIcon: Icons.account_tree,
-        label: 'Egresses'),
-    _NavDestination(
-        icon: Icons.visibility_outlined,
-        activeIcon: Icons.visibility,
-        label: 'Activity'),
-    _NavDestination(
-        icon: Icons.bar_chart_outlined,
-        activeIcon: Icons.bar_chart,
-        label: 'Stats'),
-    _NavDestination(
-        icon: Icons.speed_outlined,
-        activeIcon: Icons.speed,
-        label: 'Speed Test'),
-    _NavDestination(
-        icon: Icons.memory_outlined, activeIcon: Icons.memory, label: 'Cores'),
-    _NavDestination(
-        icon: Icons.receipt_long_outlined,
-        activeIcon: Icons.receipt_long,
-        label: 'Logs'),
-    _NavDestination(
-        icon: Icons.settings_outlined,
-        activeIcon: Icons.settings,
-        label: 'Settings'),
-  ];
+  /// Primary navigation labels are resolved from the active locale at build time.
+  List<_NavDestination> _mainDestinations(BuildContext context) {
+    final s = AppStrings.of(context);
+    return [
+      _NavDestination(
+          icon: Icons.shield_outlined,
+          activeIcon: Icons.shield,
+          label: s.t('connection')),
+      _NavDestination(
+          icon: Icons.public_outlined,
+          activeIcon: Icons.public,
+          label: s.t('routes')),
+      _NavDestination(
+          icon: Icons.person_outline,
+          activeIcon: Icons.person,
+          label: s.t('account')),
+      _NavDestination(
+          icon: Icons.more_horiz_outlined,
+          activeIcon: Icons.more_horiz,
+          label: s.t('more')),
+    ];
+  }
+
+  /// Full list of desktop/sidebar destinations resolved from the active locale.
+  List<_NavDestination> _destinations(BuildContext context) {
+    final s = AppStrings.of(context);
+    return [
+      _NavDestination(
+          icon: Icons.dashboard_outlined,
+          activeIcon: Icons.dashboard,
+          label: s.t('connection')),
+      _NavDestination(
+          icon: Icons.dns_outlined,
+          activeIcon: Icons.dns,
+          label: s.t('stations')),
+      _NavDestination(
+          icon: Icons.book_outlined,
+          activeIcon: Icons.book,
+          label: s.t('profiles')),
+      _NavDestination(
+          icon: Icons.subscriptions_outlined,
+          activeIcon: Icons.subscriptions,
+          label: s.t('subscriptions')),
+      _NavDestination(
+          icon: Icons.account_balance_wallet_outlined,
+          activeIcon: Icons.account_balance_wallet,
+          label: s.t('balance')),
+      _NavDestination(
+          icon: Icons.bolt_outlined,
+          activeIcon: Icons.bolt,
+          label: s.t('groups')),
+      _NavDestination(
+          icon: Icons.person_outline,
+          activeIcon: Icons.person,
+          label: s.t('account')),
+      _NavDestination(
+          icon: Icons.verified_outlined,
+          activeIcon: Icons.verified,
+          label: s.t('provider')),
+      _NavDestination(
+          icon: Icons.hub_outlined,
+          activeIcon: Icons.hub,
+          label: s.t('routing')),
+      _NavDestination(
+          icon: Icons.account_tree_outlined,
+          activeIcon: Icons.account_tree,
+          label: s.t('egresses')),
+      _NavDestination(
+          icon: Icons.visibility_outlined,
+          activeIcon: Icons.visibility,
+          label: s.t('activity')),
+      _NavDestination(
+          icon: Icons.bar_chart_outlined,
+          activeIcon: Icons.bar_chart,
+          label: s.t('stats')),
+      _NavDestination(
+          icon: Icons.speed_outlined,
+          activeIcon: Icons.speed,
+          label: s.t('speed')),
+      _NavDestination(
+          icon: Icons.memory_outlined,
+          activeIcon: Icons.memory,
+          label: s.t('cores')),
+      _NavDestination(
+          icon: Icons.receipt_long_outlined,
+          activeIcon: Icons.receipt_long,
+          label: s.t('logs')),
+      _NavDestination(
+          icon: Icons.settings_outlined,
+          activeIcon: Icons.settings,
+          label: s.t('settings')),
+    ];
+  }
 
   @override
   void initState() {
@@ -160,18 +181,17 @@ class _AppShellState extends ConsumerState<AppShell>
     // Lifecycle hooks for tray/minimize handled in main.dart
   }
 
-  /// 5 Main tab pages cached with _KeepAlive
+  /// Primary pages are deliberately limited to the common everyday tasks.
   List<Widget> get _mainPages => [
-        const _KeepAlive(child: DashboardScreen()),
+        const _KeepAlive(child: ConnectionDashboard()),
         const _KeepAlive(child: GroupsScreen()),
-        const _KeepAlive(child: SubscriptionsScreen()),
-        const _KeepAlive(child: BillingScreen()),
+        const _KeepAlive(child: AccountScreen()),
         const _KeepAlive(child: MoreScreen()),
       ];
 
   /// Full pages list for wide screen sidebar navigation (>900px)
   List<Widget> get _allPages => [
-        const _KeepAlive(child: DashboardScreen()),
+        const _KeepAlive(child: ConnectionDashboard()),
         const _KeepAlive(child: ServersScreen()),
         const _KeepAlive(child: ProfilesScreen()),
         const _KeepAlive(child: SubscriptionsScreen()),
@@ -203,13 +223,18 @@ class _AppShellState extends ConsumerState<AppShell>
     // Auto-connect on first frame (q3)
     if (!_autoConnectTriggered) {
       _autoConnectTriggered = true;
-      _tryAutoConnect();
+      _tryAutoConnect(showLegacySetupPrompt: false);
     }
 
     // Clamp active index for the current layout mode
     final activeIndex = isWide
         ? _currentIndex.clamp(0, _allPages.length - 1)
         : _currentIndex.clamp(0, _mainPages.length - 1);
+
+    final pages = isWide ? _allPages : _mainPages;
+    final destinations = _destinations(context);
+    final visitedTabs = isWide ? _visitedWideTabs : _visitedMobileTabs;
+    visitedTabs.add(activeIndex);
 
     return CallbackShortcuts(
       bindings: {
@@ -255,7 +280,7 @@ class _AppShellState extends ConsumerState<AppShell>
                             const SizedBox(height: 12),
                             // Logo / app icon
                             Tooltip(
-                              message: 'MosaicBox',
+                              message: 'MosaicVPN',
                               child: Container(
                                 width: 36,
                                 height: 36,
@@ -281,18 +306,17 @@ class _AppShellState extends ConsumerState<AppShell>
                               child: () {
                                 final prefs =
                                     ref.watch(prefsProvider).valueOrNull;
-                                final isAdvanced =
-                                    prefs?.advancedMode ?? false;
+                                final isAdvanced = prefs?.advancedMode ?? false;
                                 final visibleIndices = isAdvanced
                                     ? List.generate(
-                                        _destinations.length, (i) => i)
+                                        destinations.length, (i) => i)
                                     : const [0, 1, 3, 5, 6, 11, 14];
 
                                 return ListView.builder(
                                   itemCount: visibleIndices.length,
                                   itemBuilder: (context, idx) {
                                     final i = visibleIndices[idx];
-                                    final dest = _destinations[i];
+                                    final dest = destinations[i];
                                     final isSelected = i == activeIndex;
                                     return _SideIcon(
                                       icon: isSelected
@@ -318,12 +342,14 @@ class _AppShellState extends ConsumerState<AppShell>
                         children: [
                           _QuickStatusBar(
                             currentIndex: activeIndex,
-                            onNavigate: (i) => setState(() => _currentIndex = i),
+                            onNavigate: (i) =>
+                                setState(() => _currentIndex = i),
                           ),
                           Expanded(
-                            child: IndexedStack(
-                              index: activeIndex,
-                              children: _allPages,
+                            child: _LazyTabStack(
+                              pages: pages,
+                              currentIndex: activeIndex,
+                              visitedTabs: visitedTabs,
                             ),
                           ),
                         ],
@@ -338,9 +364,10 @@ class _AppShellState extends ConsumerState<AppShell>
                       onNavigate: (i) => setState(() => _currentIndex = i),
                     ),
                     Expanded(
-                      child: IndexedStack(
-                        index: activeIndex,
-                        children: _mainPages,
+                      child: _LazyTabStack(
+                        pages: pages,
+                        currentIndex: activeIndex,
+                        visitedTabs: visitedTabs,
                       ),
                     ),
                   ],
@@ -364,7 +391,7 @@ class _AppShellState extends ConsumerState<AppShell>
                     unselectedItemColor: c.textMuted,
                     selectedFontSize: 11,
                     unselectedFontSize: 11,
-                    items: _mainDestinations
+                    items: _mainDestinations(context)
                         .map(
                           (dest) => BottomNavigationBarItem(
                             icon: Icon(dest.icon),
@@ -380,7 +407,7 @@ class _AppShellState extends ConsumerState<AppShell>
     );
   }
 
-  void _tryAutoConnect() {
+  void _tryAutoConnect({required bool showLegacySetupPrompt}) {
     // Defer to next frame to let providers initialize
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
@@ -406,7 +433,10 @@ class _AppShellState extends ConsumerState<AppShell>
             await api.connect(lastID);
             if (!mounted) return;
             ref.invalidate(vpnStatusProvider);
-          } else {
+          } else if (showLegacySetupPrompt) {
+            // The desktop technical workspace may still guide legacy users to
+            // import an existing subscription. Mobile uses smart groups and
+            // never exposes the physical-server setup dialog.
             final servers = await api.listServers();
             if (!mounted) return;
             final subs = await api.listSubscriptions();
@@ -458,6 +488,39 @@ class _AppShellState extends ConsumerState<AppShell>
           ),
         ],
       ),
+    );
+  }
+}
+
+/// A tab stack that creates technical screens only after the user needs them.
+///
+/// Unlike IndexedStack, it does not eagerly build every child (and therefore
+/// does not start polling in hidden pages). Offstage keeps already visited tabs
+/// mounted so forms, scroll position and in-progress operations are preserved.
+class _LazyTabStack extends StatelessWidget {
+  final List<Widget> pages;
+  final int currentIndex;
+  final Set<int> visitedTabs;
+
+  const _LazyTabStack({
+    required this.pages,
+    required this.currentIndex,
+    required this.visitedTabs,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        for (var index = 0; index < pages.length; index++)
+          if (visitedTabs.contains(index))
+            Offstage(
+              key: ValueKey('mosaic-tab-$index'),
+              offstage: index != currentIndex,
+              child: pages[index],
+            ),
+      ],
     );
   }
 }
@@ -591,7 +654,7 @@ class _QuickStatusBar extends ConsumerWidget {
                 data: (status) => status.state == 'connected'
                     ? _QuickAction(
                         icon: Icons.power_settings_new,
-                        label: 'Disconnect',
+                        label: 'Отключить',
                         compact: compact,
                         onPressed: () async {
                           try {
@@ -605,9 +668,9 @@ class _QuickStatusBar extends ConsumerWidget {
                     : status.state == 'disconnected'
                         ? _QuickAction(
                             icon: Icons.bolt,
-                            label: 'Quick Connect',
+                            label: 'Подключиться',
                             compact: compact,
-                            onPressed: () => onNavigate(1),
+                            onPressed: () => onNavigate(0),
                           )
                         : const SizedBox.shrink(),
                 loading: () => const SizedBox.shrink(),
@@ -619,7 +682,7 @@ class _QuickStatusBar extends ConsumerWidget {
               // ── Settings shortcut ──
               IconButton(
                 icon: const Icon(Icons.settings, size: 18),
-                tooltip: 'Settings',
+                tooltip: 'Настройки',
                 onPressed: () {
                   Navigator.push(
                     context,
@@ -688,11 +751,11 @@ class _StatusPill extends StatelessWidget {
 
     final label = switch (status.state) {
       'connected' => status.server != null
-          ? 'Connected · ${status.server!.name}'
-          : 'Connected',
-      'connecting' => 'Connecting…',
-      'disconnected' => 'Disconnected',
-      'error' => 'Error',
+          ? 'Подключено · ${status.server!.name}'
+          : 'Подключено',
+      'connecting' => 'Подключаемся…',
+      'disconnected' => 'Не подключено',
+      'error' => 'Ошибка',
       _ => status.state,
     };
 
@@ -742,8 +805,8 @@ class _KillSwitchToggleState extends ConsumerState<_KillSwitchToggle> {
     final ks = widget.status.killSwitch;
     return Tooltip(
       message: ks
-          ? 'Kill Switch ON — network blocked when VPN drops'
-          : 'Kill Switch OFF — enable to block traffic on VPN disconnect',
+          ? 'Защита сети включена: трафик блокируется при разрыве VPN'
+          : 'Защита сети выключена: включите её, чтобы блокировать трафик при разрыве VPN',
       child: InkWell(
         onTap: _loading
             ? null
@@ -781,7 +844,7 @@ class _KillSwitchToggleState extends ConsumerState<_KillSwitchToggle> {
               ),
               const SizedBox(width: 4),
               Text(
-                'Kill Switch',
+                'Защита',
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w600,

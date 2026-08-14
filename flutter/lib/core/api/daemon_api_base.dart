@@ -140,8 +140,24 @@ abstract class DaemonApiBase {
   /// Redeems a pairing code shown by the Telegram bot.
   Future<LinkResult> redeemLinkCode(String code);
 
+  /// Authenticates a non-Telegram account and installs its personal direct feed.
+  Future<void> loginWithEmail(String email, String password);
+
   /// Payment history, newest first.
   Future<List<PaymentEntry>> getPaymentHistory();
+
+  // ─── Unified account (wallet, access and secure subscription link) ───
+
+  /// Returns null until this device is linked to a Mosaic account.
+  Future<UnifiedAccount?> getUnifiedAccount();
+  Future<UnifiedAccount> freezeAccount();
+  Future<UnifiedAccount> unfreezeAccount();
+  Future<List<CheckoutProviderOption>> getCheckoutOptions();
+  Future<CheckoutSession> createCheckout({
+    required int amountRub,
+    required String provider,
+  });
+  Future<RotatedSubscriptionLink> rotateSubscriptionLink();
 
   // ─── Provider Manifest ─────────────────────────────────────────────
 

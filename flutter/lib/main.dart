@@ -17,7 +17,7 @@ void main() async {
         size: Size(1100, 720),
         minimumSize: Size(900, 600),
         center: true,
-        title: 'MosaicBox',
+        title: 'MosaicVPN',
         titleBarStyle: TitleBarStyle.normal,
       ),
       () async {

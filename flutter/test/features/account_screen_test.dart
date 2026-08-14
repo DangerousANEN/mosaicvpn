@@ -117,7 +117,7 @@ void main() {
       await tester.pumpWidget(_wrap(api));
       await tester.pumpAndSettle();
 
-      await tester.enterText(find.byType(TextField), 'AB23CD45');
+      await tester.enterText(find.byKey(const ValueKey('pairing-code-input')), 'AB23CD45');
       await tester.tap(find.text('Link account'));
       await tester.pumpAndSettle();
 
@@ -131,7 +131,7 @@ void main() {
       await tester.pumpWidget(_wrap(api));
       await tester.pumpAndSettle();
 
-      await tester.enterText(find.byType(TextField), 'ZZ99ZZ99');
+      await tester.enterText(find.byKey(const ValueKey('pairing-code-input')), 'ZZ99ZZ99');
       await tester.tap(find.text('Link account'));
       await tester.pumpAndSettle();
 
@@ -146,7 +146,7 @@ void main() {
       await tester.pumpWidget(_wrap(api));
       await tester.pumpAndSettle();
 
-      await tester.enterText(find.byType(TextField), 'ab23cd45');
+      await tester.enterText(find.byKey(const ValueKey('pairing-code-input')), 'ab23cd45');
       await tester.tap(find.text('Link account'));
       await tester.pumpAndSettle();
 

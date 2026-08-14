@@ -1531,6 +1531,21 @@ class MockDaemonApi implements DaemonApiBase {
   static const mockExpiredLinkCode = 'EXPIRED9';
 
   bool _mockLinked = false;
+  UnifiedAccount? _unifiedAccount;
+
+  UnifiedAccount _demoAccount({String status = 'active'}) => UnifiedAccount(
+        accountId: 'mock-account',
+        status: status,
+        tier: 'standard',
+        balanceKopecks: 3200,
+        currency: 'RUB',
+        trialEndsAt: DateTime.now().add(const Duration(days: 2)),
+        shortUuid: 'mock-subscription',
+        subscriptionUrl: 'https://sub.zxc1x1.ru/mock-subscription',
+        pricePerDayKopecks: 100,
+        timezone: 'Europe/Moscow',
+        checkoutDiscountPercent: 0,
+      );
 
   @override
   Future<LinkResult> redeemLinkCode(String code) async {
@@ -1556,7 +1571,18 @@ class MockDaemonApi implements DaemonApiBase {
       );
     }
     _mockLinked = true;
+    _unifiedAccount = _demoAccount();
     return const LinkResult(ok: true, telegramId: 424242, username: 'mock_user');
+  }
+
+  @override
+  Future<void> loginWithEmail(String email, String password) async {
+    await _delayVoid();
+    if (!email.contains('@') || password.length < 8) {
+      throw DioException(requestOptions: RequestOptions(path: '/v1/account/email-login'));
+    }
+    _mockLinked = true;
+    _unifiedAccount = _demoAccount();
   }
 
   @override
@@ -1595,6 +1621,62 @@ class MockDaemonApi implements DaemonApiBase {
     ];
   }
 
+  // ─── Unified account ───────────────────────────────────────────────
+
+  @override
+  Future<UnifiedAccount?> getUnifiedAccount() async {
+    await _delayVoid();
+    return _mockLinked ? (_unifiedAccount ??= _demoAccount()) : null;
+  }
+
+  @override
+  Future<UnifiedAccount> freezeAccount() async {
+    await _delayVoid();
+    final current = _unifiedAccount;
+    if (!_mockLinked || current == null) throw DioException(requestOptions: RequestOptions(path: '/v1/account/freeze'));
+    return _unifiedAccount = UnifiedAccount(
+      accountId: current.accountId, status: 'frozen', tier: current.tier,
+      balanceKopecks: current.balanceKopecks, currency: current.currency,
+      trialEndsAt: current.trialEndsAt, shortUuid: current.shortUuid,
+      subscriptionUrl: current.subscriptionUrl, pricePerDayKopecks: current.pricePerDayKopecks,
+      timezone: current.timezone, checkoutDiscountPercent: current.checkoutDiscountPercent,
+    );
+  }
+
+  @override
+  Future<UnifiedAccount> unfreezeAccount() async {
+    await _delayVoid();
+    final current = _unifiedAccount;
+    if (!_mockLinked || current == null) throw DioException(requestOptions: RequestOptions(path: '/v1/account/unfreeze'));
+    return _unifiedAccount = UnifiedAccount(
+      accountId: current.accountId, status: 'active', tier: current.tier,
+      balanceKopecks: current.balanceKopecks, currency: current.currency,
+      trialEndsAt: current.trialEndsAt, shortUuid: current.shortUuid,
+      subscriptionUrl: current.subscriptionUrl, pricePerDayKopecks: current.pricePerDayKopecks,
+      timezone: current.timezone, checkoutDiscountPercent: current.checkoutDiscountPercent,
+    );
+  }
+
+  @override
+  Future<List<CheckoutProviderOption>> getCheckoutOptions() async {
+    await _delayVoid();
+    return const [CheckoutProviderOption(id: 'cryptopay', title: 'Crypto Pay', currency: 'USDT', available: true, minAmountRub: 10, maxAmountRub: 365)];
+  }
+
+  @override
+  Future<CheckoutSession> createCheckout({required int amountRub, required String provider}) async {
+    await _delayVoid();
+    if (amountRub < 10 || amountRub > 365) throw DioException(requestOptions: RequestOptions(path: '/v1/billing/checkout'));
+    return CheckoutSession(provider: provider, checkoutUrl: Uri.parse('https://pay.crypt.bot/mock-mosaic-invoice'), amountRub: amountRub, message: 'Оплата будет зачислена автоматически.');
+  }
+
+  @override
+  Future<RotatedSubscriptionLink> rotateSubscriptionLink() async {
+    await _delayVoid();
+    if (!_mockLinked) throw DioException(requestOptions: RequestOptions(path: '/v1/account/subscription-link/rotate'));
+    return RotatedSubscriptionLink(subscriptionUrl: Uri.parse('https://sub.zxc1x1.ru/mock-rotated-subscription'), shortUuid: 'mock-rotated-subscription');
+  }
+
   // ─── Provider Manifest ─────────────────────────────────────────────
 
   @override
@@ -1604,9 +1686,84 @@ class MockDaemonApi implements DaemonApiBase {
       'provider_name': 'MosaicVPN',
       'user_tier': 'free',
       'groups': [
-        {'id': 'auto', 'title': 'Auto (Latency)', 'type': 'urltest', 'user_tier': 'free'},
-        {'id': 'ru', 'title': 'Russia', 'type': 'selector', 'user_tier': 'free', 'badge': 'RU'},
-        {'id': 'eu', 'title': 'Europe', 'type': 'selector', 'user_tier': 'premium', 'badge': 'EU'},
+        {
+          'id': 'rg-all',
+          'title': 'Минимальный пинг',
+          'type': 'urltest',
+          'user_tier': 'free',
+          'badge': 'Оптимально',
+          'category': 'smart',
+          'icon': 'lightning',
+          'description': 'Лучший свежепроверенный узел',
+          'ping_interval': 15,
+          'max_retries': 3,
+          'failover_delay': 2,
+        },
+        {
+          'id': 'auto-stable',
+          'title': 'Стабильное соединение',
+          'type': 'fallback',
+          'user_tier': 'free',
+          'badge': 'Надёжно',
+          'category': 'smart',
+          'icon': 'shield',
+          'description': 'Переход на резервный здоровый узел',
+          'ping_interval': 15,
+          'max_retries': 3,
+          'failover_delay': 2,
+        },
+        {
+          'id': 'auto-speed',
+          'title': 'Максимальная скорость',
+          'type': 'weighted_round_robin',
+          'user_tier': 'free',
+          'badge': 'Speed',
+          'category': 'smart',
+          'icon': 'speed',
+          'description': 'Приоритет свежего замера скорости',
+          'ping_interval': 15,
+          'max_retries': 3,
+          'failover_delay': 2,
+        },
+        {
+          'id': 'auto-allowlist',
+          'title': 'Доступ через allowlist',
+          'type': 'fallback',
+          'user_tier': 'free',
+          'badge': 'Reality',
+          'category': 'whitelist',
+          'icon': 'shield',
+          'description': 'Проверенные Reality-кандидаты',
+          'ping_interval': 15,
+          'max_retries': 3,
+          'failover_delay': 2,
+        },
+        {
+          'id': 'auto-de',
+          'title': 'Германия',
+          'type': 'urltest',
+          'user_tier': 'free',
+          'badge': 'EU Fast',
+          'category': 'smart',
+          'icon': 'flag_de',
+          'description': 'Свежепроверенные узлы Германии',
+          'ping_interval': 15,
+          'max_retries': 3,
+          'failover_delay': 2,
+        },
+        {
+          'id': 'auto-ca',
+          'title': 'Канада',
+          'type': 'urltest',
+          'user_tier': 'free',
+          'badge': 'NA Fast',
+          'category': 'smart',
+          'icon': 'flag_ca',
+          'description': 'Свежепроверенные узлы Канады',
+          'ping_interval': 15,
+          'max_retries': 3,
+          'failover_delay': 2,
+        },
       ],
       'profile': {
         'branding': {

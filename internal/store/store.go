@@ -104,12 +104,19 @@ type Account struct {
 	// their Remnawave account via @mosaicvpnbot; the bot issues a session
 	// token that the daemon stores here.
 	TelegramID int64 `json:"telegram_id,omitempty"`
-	// SessionToken is the opaque token issued by the bot. Empty when no
+	// SessionToken is the legacy opaque token issued by the bot. Empty when no
 	// account is linked.
 	SessionToken string `json:"session_token,omitempty"`
+	// DirectToken is a separately scoped opaque credential for the personal
+	// direct sing-box feed. It is not a Telegram ID and carries no user data.
+	DirectToken string `json:"direct_token,omitempty"`
+	// DirectFeedURL is the per-device subscription URL built from DirectToken.
+	DirectFeedURL string `json:"direct_feed_url,omitempty"`
 	// Username is the Remnawave username of the linked user, cached for
 	// fast display when the daemon starts offline.
 	Username string `json:"username,omitempty"`
+	// Email is a non-secret display identity for password-based accounts.
+	Email string `json:"email,omitempty"`
 	// Cached profile fields — refreshed from Remnawave on demand.
 	ExpireAt time.Time `json:"expire_at,omitempty"`
 }

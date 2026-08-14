@@ -39,21 +39,21 @@ type SingBoxBackend struct {
 	dataDir string
 	store   *store.Store
 
-	cmd        *exec.Cmd
-	cancel     context.CancelFunc
-	doneCh     chan struct{}
-	socks      string
-	http       string
-	clashApi   string // loopback address of the clash-api (e.g. "127.0.0.1:9090")
+	cmd         *exec.Cmd
+	cancel      context.CancelFunc
+	doneCh      chan struct{}
+	socks       string
+	http        string
+	clashApi    string // loopback address of the clash-api (e.g. "127.0.0.1:9090")
 	clashSecret string
-	bytesIn    atomic.Uint64
-	bytesOut   atomic.Uint64
-	latencyMS  atomic.Int32
+	bytesIn     atomic.Uint64
+	bytesOut    atomic.Uint64
+	latencyMS   atomic.Int32
 
 	// Rolling traffic series (for StatsBackend)
-	seriesMu   sync.Mutex
-	series     []proto.TrafficPoint
-	peakConns  atomic.Int32
+	seriesMu  sync.Mutex
+	series    []proto.TrafficPoint
+	peakConns atomic.Int32
 }
 
 // NewSingBoxBackend constructs a backend rooted at dataDir (where the
@@ -368,6 +368,61 @@ func BuildSingBoxConfig(server proto.Server, socksPort, httpPort int, prefs stor
 	return BuildSingBoxConfigWithServers(server, socksPort, httpPort, prefs, rules, dns, clashPort, clashSecret, nil, nil)
 }
 
+// virtualGroupAllowsCandidate applies provider-supplied aggregate hints locally.
+// The hints are used only for client selection; the generated outbounds still
+// connect directly to the candidate node and never route payload traffic via
+// MosaicVPN infrastructure.
+func virtualGroupAllowsCandidate(group proto.Server, candidate proto.Server, targetCountry string) bool {
+	if group.GroupTag == "rg-all" || group.GroupTag == "" {
+		return true
+	}
+
+	switch group.GroupTag {
+	case "auto-stable":
+		if stable, present := outboundBoolHint(candidate, "mosaic_stable"); present {
+			return stable
+		}
+		return true
+	case "auto-speed":
+		if eligible, present := outboundBoolHint(candidate, "mosaic_speed_eligible"); present {
+			return eligible
+		}
+		return true
+	case "auto-allowlist", "auto-whitelist":
+		if allowed, present := outboundBoolHint(candidate, "mosaic_allowlist"); present {
+			return allowed
+		}
+		nameLower := strings.ToLower(candidate.Name + " " + candidate.Tag)
+		return strings.Contains(nameLower, "whitelist") || strings.Contains(nameLower, "4g") || strings.Contains(nameLower, "tspu") || candidate.Protocol == proto.ProtoVLESS
+	}
+
+	return targetCountry != "" && matchServerCountry(candidate, targetCountry)
+}
+
+func outboundBoolHint(server proto.Server, key string) (bool, bool) {
+	value, present := server.Raw[key]
+	flag, ok := value.(bool)
+	return flag, present && ok
+}
+
+func outboundIntHint(server proto.Server, key string) int {
+	value, present := server.Raw[key]
+	if !present {
+		return 0
+	}
+	switch number := value.(type) {
+	case float64:
+		return int(number)
+	case float32:
+		return int(number)
+	case int:
+		return number
+	case int64:
+		return int(number)
+	}
+	return 0
+}
+
 func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int, prefs store.Prefs, rules []proto.Rule, dns proto.DNSConfig, clashPort int, clashSecret string, allServers []proto.Server, egresses []proto.Egress) ([]byte, error) {
 	var proxyOutbounds []any
 
@@ -410,14 +465,7 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 			if server.SubscriptionID != "" && sv.SubscriptionID != server.SubscriptionID {
 				continue
 			}
-			if server.GroupTag == "rg-all" || server.GroupTag == "" {
-				childNodes = append(childNodes, sv)
-			} else if server.GroupTag == "auto-whitelist" || server.Category == "whitelist" {
-				nameLower := strings.ToLower(sv.Name + " " + sv.Tag)
-				if strings.Contains(nameLower, "whitelist") || strings.Contains(nameLower, "4g") || strings.Contains(nameLower, "tspu") || sv.Protocol == "vless" {
-					childNodes = append(childNodes, sv)
-				}
-			} else if targetCountry != "" && matchServerCountry(sv, targetCountry) {
+			if virtualGroupAllowsCandidate(server, sv, targetCountry) {
 				childNodes = append(childNodes, sv)
 			}
 		}
@@ -444,13 +492,20 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 			nodeTags = []string{"direct"}
 		}
 
+		intervalSeconds := outboundIntHint(server, "mosaic_ping_interval")
+		if intervalSeconds <= 0 {
+			intervalSeconds = 15
+		}
+		// urltest owns the active outbound locally. If its current candidate
+		// fails a probe, sing-box selects another direct candidate. Existing
+		// flows are left intact; new traffic follows the healthy route.
 		groupOut := map[string]any{
 			"type":                        "urltest",
 			"tag":                         "proxy",
 			"outbounds":                   nodeTags,
 			"url":                         targetURL,
-			"interval":                    "15s",
-			"tolerance":                   30,
+			"interval":                    fmt.Sprintf("%ds", intervalSeconds),
+			"tolerance":                   20,
 			"idle_timeout":                "30m",
 			"interrupt_exist_connections": false,
 		}
@@ -485,12 +540,12 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 
 	if prefs.TunnelMode == "tun" || prefs.TunnelMode == "" {
 		inbounds = append(inbounds, map[string]any{
-			"type":        "tun",
-			"tag":         "tun-in",
-			"address":     []string{"172.19.0.1/30"},
-			"auto_route":  true,
+			"type":         "tun",
+			"tag":          "tun-in",
+			"address":      []string{"172.19.0.1/30"},
+			"auto_route":   true,
 			"strict_route": true,
-			"stack":       "gvisor",
+			"stack":        "gvisor",
 		})
 	}
 
@@ -645,8 +700,8 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 		// FakeIP server (new format: standalone server object)
 		if dns.Mode == "fake-ip" {
 			fakeIPEntry := map[string]any{
-				"type":       "fakeip",
-				"tag":        "dns-fakeip",
+				"type":        "fakeip",
+				"tag":         "dns-fakeip",
 				"inet4_range": "198.18.0.0/15",
 			}
 			if dns.FakeIPRange != "" {
@@ -710,8 +765,8 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 	}
 
 	routeBlock := map[string]any{
-		"final":                  "proxy",
-		"rules":                  routeRules,
+		"final":                   "proxy",
+		"rules":                   routeRules,
 		"default_domain_resolver": dnsServerTag,
 	}
 	if dns.Mode == "disabled" {
@@ -1200,19 +1255,19 @@ type clashConn struct {
 	ID       string `json:"id"`
 	Network  string `json:"network"`
 	Metadata struct {
-		Network      string `json:"network"`
-		DestinationIP string `json:"destinationIP"`
+		Network         string `json:"network"`
+		DestinationIP   string `json:"destinationIP"`
 		DestinationPort string `json:"destinationPort"`
-		SourceIP     string `json:"sourceIP"`
-		SourcePort   string `json:"sourcePort"`
-		ProcessPath  string `json:"processPath"`
-		Host         string `json:"host"`
+		SourceIP        string `json:"sourceIP"`
+		SourcePort      string `json:"sourcePort"`
+		ProcessPath     string `json:"processPath"`
+		Host            string `json:"host"`
 	} `json:"metadata"`
-	Upload   int64  `json:"upload"`
-	Download int64  `json:"download"`
-	Start    string `json:"start"`
+	Upload   int64    `json:"upload"`
+	Download int64    `json:"download"`
+	Start    string   `json:"start"`
 	Chains   []string `json:"chains"`
-	Rule     string `json:"rule"`
+	Rule     string   `json:"rule"`
 }
 
 type clashConnsResp struct {

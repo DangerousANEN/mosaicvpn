@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/store"
 )
 
@@ -70,6 +71,49 @@ type linkCodeRedeemRequest struct {
 	Code string `json:"code"`
 }
 
+type emailLoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+// handleEmailLogin authorizes a password account at the provider and creates
+// a personal direct feed subscription. The password never reaches disk.
+func (s *Server) handleEmailLogin(w http.ResponseWriter, r *http.Request) {
+	var req emailLoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if req.Email == "" || req.Password == "" {
+		writeError(w, http.StatusBadRequest, "email and password required")
+		return
+	}
+	auth := s.emailAuthenticator
+	if auth == nil {
+		writeError(w, http.StatusServiceUnavailable, "email login is unavailable")
+		return
+	}
+	res, err := auth.Login(r.Context(), req.Email, req.Password)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid email or password")
+		return
+	}
+	if err := s.store.SetAccount(store.Account{SessionToken: res.SessionToken, DirectToken: res.ClientToken, DirectFeedURL: res.DirectFeedURL, Username: res.Email, Email: res.Email}); err != nil {
+		writeError(w, http.StatusInternalServerError, "store: "+err.Error())
+		return
+	}
+	directSub := proto.Subscription{ID: "mosaic-direct", Name: "MosaicVPN · Direct", URL: res.DirectFeedURL, AutoRefresh: true, RefreshIntervalSeconds: 3600}
+	if _, err := s.store.AddOrUpdateSubscription(directSub); err != nil {
+		writeError(w, http.StatusInternalServerError, "store direct subscription: "+err.Error())
+		return
+	}
+	if err := s.refresh(r.Context(), directSub); err != nil {
+		writeError(w, http.StatusBadGateway, "direct subscription fetch: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "direct_ready": true, "email": res.Email})
+}
+
 // handleLinkCodeRedeem exchanges a pairing code for a linked account.
 //
 // POST /v1/account/link   { "code": "AB23CD45" }
@@ -92,17 +136,33 @@ func (s *Server) handleLinkCodeRedeem(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case verr == nil:
 			if serr := s.store.SetAccount(store.Account{
-				TelegramID:   res.TelegramID,
-				SessionToken: res.SessionToken,
-				Username:     res.Username,
+				TelegramID:    res.TelegramID,
+				SessionToken:  res.SessionToken,
+				DirectToken:   res.DirectToken,
+				DirectFeedURL: res.DirectFeedURL,
+				Username:      res.Username,
 			}); serr != nil {
 				writeError(w, http.StatusInternalServerError, "store: "+serr.Error())
 				return
 			}
+			// The direct subscription is only created after a successful pairing.
+			// Existing manually added subscriptions are left untouched.
+			if res.DirectFeedURL != "" {
+				directSub := proto.Subscription{ID: "mosaic-direct", Name: "MosaicVPN · Direct", URL: res.DirectFeedURL, AutoRefresh: true, RefreshIntervalSeconds: 3600}
+				if _, serr := s.store.AddOrUpdateSubscription(directSub); serr != nil {
+					writeError(w, http.StatusInternalServerError, "store direct subscription: "+serr.Error())
+					return
+				}
+				if serr := s.refresh(r.Context(), directSub); serr != nil {
+					writeError(w, http.StatusBadGateway, "direct subscription fetch: "+serr.Error())
+					return
+				}
+			}
 			writeJSON(w, http.StatusOK, map[string]any{
-				"ok":          true,
-				"telegram_id": res.TelegramID,
-				"username":    res.Username,
+				"ok":           true,
+				"telegram_id":  res.TelegramID,
+				"direct_ready": res.DirectFeedURL != "",
+				"username":     res.Username,
 			})
 			return
 		case errors.Is(verr, errLinkNotFound):

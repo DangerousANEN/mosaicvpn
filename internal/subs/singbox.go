@@ -55,11 +55,15 @@ func singboxCommon(ob map[string]any, p proto.Protocol) proto.Server {
 	if name == "" {
 		name = fmt.Sprintf("%s://%s:%d", p, server, port)
 	}
+	// Mosaic's direct feed may attach non-secret selection hints. They do not
+	// alter the protocol config and are ignored by ordinary sing-box clients.
+	country, _ := ob["mosaic_country"].(string)
 	return proto.Server{
 		Name:           name,
 		Protocol:       p,
 		Address:        server,
 		Port:           port,
+		Country:        country,
 		Tag:            tag,
 		SubscriptionID: "", // filled by caller
 		Raw:            ob,

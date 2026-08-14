@@ -414,6 +414,11 @@ class DaemonApi implements DaemonApiBase {
   }
 
   @override
+  Future<void> loginWithEmail(String email, String password) async {
+    await _dio.post('/v1/account/email-login', data: {'email': email, 'password': password});
+  }
+
+  @override
   Future<List<PaymentEntry>> getPaymentHistory() async {
     final r = await _dio.get('/v1/account/payments');
     final raw = (r.data as Map)['payments'];
@@ -422,6 +427,52 @@ class DaemonApi implements DaemonApiBase {
         .whereType<Map>()
         .map((e) => PaymentEntry.fromJson(Map<String, dynamic>.from(e)))
         .toList(growable: false);
+  }
+
+  // ─── Unified account ────────────────────────────────────────────────
+
+  @override
+  Future<UnifiedAccount?> getUnifiedAccount() async {
+    final r = await _dio.get('/v1/account/overview');
+    final raw = r.data as Map;
+    if (raw['linked'] != true || raw['account'] is! Map) return null;
+    return UnifiedAccount.fromJson(Map<String, dynamic>.from(raw['account'] as Map));
+  }
+
+  @override
+  Future<UnifiedAccount> freezeAccount() async {
+    await _dio.post('/v1/account/freeze', data: const {});
+    final account = await getUnifiedAccount();
+    if (account == null) throw const FormatException('Account is no longer linked.');
+    return account;
+  }
+
+  @override
+  Future<UnifiedAccount> unfreezeAccount() async {
+    await _dio.post('/v1/account/unfreeze', data: const {});
+    final account = await getUnifiedAccount();
+    if (account == null) throw const FormatException('Account is no longer linked.');
+    return account;
+  }
+
+  @override
+  Future<List<CheckoutProviderOption>> getCheckoutOptions() async {
+    final r = await _dio.get('/v1/billing/checkout-options');
+    final raw = (r.data as Map)['providers'];
+    if (raw is! List) return const [];
+    return raw.whereType<Map>().map((item) => CheckoutProviderOption.fromJson(Map<String, dynamic>.from(item))).toList(growable: false);
+  }
+
+  @override
+  Future<CheckoutSession> createCheckout({required int amountRub, required String provider}) async {
+    final r = await _dio.post('/v1/billing/checkout', data: {'amount_rub': amountRub, 'provider': provider});
+    return CheckoutSession.fromJson(Map<String, dynamic>.from(r.data as Map));
+  }
+
+  @override
+  Future<RotatedSubscriptionLink> rotateSubscriptionLink() async {
+    final r = await _dio.post('/v1/account/subscription-link/rotate', data: const {});
+    return RotatedSubscriptionLink.fromJson(Map<String, dynamic>.from(r.data as Map));
   }
 
   // ─── Provider Manifest ─────────────────────────────────────────────
