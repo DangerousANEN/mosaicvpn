@@ -40,6 +40,7 @@ if (-not [string]::IsNullOrWhiteSpace($CliPath)) { Require-File $CliPath 'Pass a
 Remove-Item -Force -Recurse $PortableDir -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $PortableDir -Force | Out-Null
 Copy-Item -Recurse -Force (Join-Path $Bundle '*') $PortableDir
+Copy-Item -Force (Join-Path $FlutterDir 'assets\icons\app_icon.ico') (Join-Path $PortableDir 'app_icon.ico')
 Copy-Item -Force $DaemonPath (Join-Path $PortableDir 'mosaicd.exe')
 Copy-Item -Force $SingBoxPath (Join-Path $PortableDir 'sing-box.exe')
 if (-not [string]::IsNullOrWhiteSpace($CliPath)) { Copy-Item -Force $CliPath (Join-Path $PortableDir 'mosaic.exe') }
