@@ -113,10 +113,12 @@ jobs:
         run: |
           set -euo pipefail
           api="https://api.github.com/repos/SagerNet/sing-box/releases/tags/v${SINGBOX_VERSION}"
-          url="$(curl -fsSL "$api" | jq -r '.assets[] | select(.name == "sing-box-'"${SINGBOX_VERSION}"'-linux-amd64-glibc.tar.gz") | .browser_download_url')"
-          digest="$(curl -fsSL "$api" | jq -r '.assets[] | select(.name == "sing-box-'"${SINGBOX_VERSION}"'-linux-amd64-glibc.tar.gz") | .digest' | sed 's/^sha256://')"
+          user_agent="MosaicVPN-release-ci"
+          release_json="$(curl --retry 4 --retry-all-errors -fsSL -H "User-Agent: $user_agent" "$api")"
+          url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "sing-box-'"${SINGBOX_VERSION}"'-linux-amd64-glibc.tar.gz") | .browser_download_url')"
+          digest="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "sing-box-'"${SINGBOX_VERSION}"'-linux-amd64-glibc.tar.gz") | .digest' | sed 's/^sha256://')"
           test -n "$url" && test -n "$digest"
-          curl -fsSL "$url" -o /tmp/sing-box.tar.gz
+          curl --retry 4 --retry-all-errors -fsSL -H "User-Agent: $user_agent" "$url" -o /tmp/sing-box.tar.gz
           test "$(sha256sum /tmp/sing-box.tar.gz | awk '{print $1}')" = "$digest"
           tar -xzf /tmp/sing-box.tar.gz -C /tmp
           install -m 0755 "$(find /tmp -path '*linux-amd64-glibc/sing-box' -type f | head -1)" build/sing-box_linux_amd64
