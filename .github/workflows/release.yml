@@ -1,8 +1,4 @@
-name: release
-
-# Builds the Tauri Windows installer with the bundled mosaicd sidecar.
-# Triggered manually or on a v* tag — the resulting NSIS .exe is uploaded
-# as a workflow artifact (and attached to the release on a tag push).
+name: MosaicVPN release
 
 on:
   push:
@@ -13,8 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  windows-installer:
-    name: Mosaic-Setup.exe
+  windows-packages:
+    name: Windows portable and Setup
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,77 +20,154 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - uses: actions/setup-node@v4
+      - uses: subosito/flutter-action@v2
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
+          channel: stable
+          flutter-version: 3.47.0
+          cache: true
 
-      - name: install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-
-      - name: cache cargo registry + target
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ui/src-tauri
-
-      - name: build mosaicd sidecar
+      - name: Build daemon and CLI
         shell: pwsh
-        env:
-          GOOS: windows
-          GOARCH: amd64
         run: |
-          New-Item -ItemType Directory -Force -Path ui/src-tauri/binaries | Out-Null
-          go build -ldflags="-s -w" -o ui/src-tauri/binaries/mosaicd-x86_64-pc-windows-msvc.exe ./cmd/mosaicd
-          go build -ldflags="-s -w" -o bin/mosaic.exe ./cmd/mosaic
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          go build -trimpath -ldflags="-s -w" -o build/mosaicd.exe ./cmd/mosaicd
+          if (Test-Path cmd/mosaic) { go build -trimpath -ldflags="-s -w" -o build/mosaic.exe ./cmd/mosaic }
 
-      - name: bundle sing-box sidecar
+      - name: Download and verify official sing-box
         shell: pwsh
         env:
-          SINGBOX_VERSION: 1.10.7
+          SINGBOX_VERSION: 1.13.18
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = $env:SINGBOX_VERSION
-          $tmp = Join-Path $env:RUNNER_TEMP "sing-box"
-          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
-          $zip = Join-Path $tmp "sing-box.zip"
-          $url = "https://github.com/SagerNet/sing-box/releases/download/v$version/sing-box-$version-windows-amd64.zip"
-          Write-Host "Downloading $url"
-          Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
-          Expand-Archive -Path $zip -DestinationPath $tmp -Force
-          $exe = Get-ChildItem -Recurse -Path $tmp -Filter "sing-box.exe" | Select-Object -First 1
-          if (-not $exe) { throw "sing-box.exe not found inside the release zip" }
-          New-Item -ItemType Directory -Force -Path ui/src-tauri/binaries | Out-Null
-          Copy-Item $exe.FullName "ui/src-tauri/binaries/sing-box-x86_64-pc-windows-msvc.exe"
-          Get-ChildItem ui/src-tauri/binaries
+          $release = Invoke-RestMethod "https://api.github.com/repos/SagerNet/sing-box/releases/tags/v$env:SINGBOX_VERSION"
+          $asset = $release.assets | Where-Object { $_.name -eq "sing-box-$env:SINGBOX_VERSION-windows-amd64.zip" } | Select-Object -First 1
+          if (-not $asset) { throw 'Official Windows amd64 sing-box asset was not found.' }
+          $archive = Join-Path $env:RUNNER_TEMP $asset.name
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archive
+          $expected = $asset.digest -replace '^sha256:', ''
+          $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "sing-box checksum mismatch: $actual" }
+          $destination = Join-Path $env:RUNNER_TEMP 'sing-box'
+          Expand-Archive -Path $archive -DestinationPath $destination -Force
+          $binary = Get-ChildItem -Path $destination -Recurse -Filter sing-box.exe | Select-Object -First 1
+          if (-not $binary) { throw 'sing-box.exe was not found in the verified asset.' }
+          Copy-Item $binary.FullName build/sing-box.exe
 
-      - name: install renderer deps
-        working-directory: ui
-        run: npm ci
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
 
-      - name: build Tauri NSIS installer
-        working-directory: ui
-        run: npm run tauri -- build --target x86_64-pc-windows-msvc --bundles nsis
-
-      - name: collect artifacts
+      - name: Build portable archive and Setup installer
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Get-ChildItem -Recurse -Path ui/src-tauri/target/x86_64-pc-windows-msvc/release/bundle |
-            Where-Object { $_.Extension -in '.exe', '.msi' } |
-            ForEach-Object { Copy-Item $_.FullName dist/ }
-          Copy-Item bin/mosaic.exe dist/mosaic.exe
-          Get-ChildItem dist
+          .\scripts\build_windows_packages.ps1 `
+            -DaemonPath "$PWD\build\mosaicd.exe" `
+            -SingBoxPath "$PWD\build\sing-box.exe" `
+            -CliPath "$PWD\build\mosaic.exe"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: mosaic-windows-installer
-          path: dist/*
+          name: MosaicVPN-Windows
+          path: |
+            dist/windows/MosaicVPN-Portable-x64-v*.zip
+            dist/windows/MosaicVPN-Setup-x64-v*.exe
 
-      - name: attach to release (tag push only)
+      - name: Attach Windows packages to tagged release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: |
+            dist/windows/MosaicVPN-Portable-x64-v*.zip
+            dist/windows/MosaicVPN-Setup-x64-v*.exe
+
+  linux-packages:
+    name: Linux portable and DEB
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.0
+          cache: true
+
+      - name: Install Linux packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev dpkg-dev
+
+      - name: Build daemon
+        run: |
+          mkdir -p build
+          go build -trimpath -ldflags='-s -w' -o build/mosaicd_linux_amd64 ./cmd/mosaicd
+
+      - name: Download and verify official sing-box
+        env:
+          SINGBOX_VERSION: 1.13.18
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/SagerNet/sing-box/releases/tags/v${SINGBOX_VERSION}"
+          url="$(curl -fsSL "$api" | jq -r '.assets[] | select(.name == "sing-box-'"${SINGBOX_VERSION}"'-linux-amd64-glibc.tar.gz") | .browser_download_url')"
+          digest="$(curl -fsSL "$api" | jq -r '.assets[] | select(.name == "sing-box-'"${SINGBOX_VERSION}"'-linux-amd64-glibc.tar.gz") | .digest' | sed 's/^sha256://')"
+          test -n "$url" && test -n "$digest"
+          curl -fsSL "$url" -o /tmp/sing-box.tar.gz
+          test "$(sha256sum /tmp/sing-box.tar.gz | awk '{print $1}')" = "$digest"
+          tar -xzf /tmp/sing-box.tar.gz -C /tmp
+          install -m 0755 "$(find /tmp -path '*linux-amd64-glibc/sing-box' -type f | head -1)" build/sing-box_linux_amd64
+
+      - name: Build portable archive and DEB installer
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}" \
+          SING_BOX_BINARY="$PWD/build/sing-box_linux_amd64" \
+          DAEMON_BINARY="$PWD/build/mosaicd_linux_amd64" \
+          ./scripts/build_linux_packages.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MosaicVPN-Linux
+          path: |
+            dist/linux/MosaicVPN-Portable-x86_64-v*.tar.gz
+            dist/linux/MosaicVPN_*_amd64.deb
+
+      - name: Attach Linux packages to tagged release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/linux/MosaicVPN-Portable-x86_64-v*.tar.gz
+            dist/linux/MosaicVPN_*_amd64.deb
+
+  android-validation:
+    name: Android branding and APK validation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.0
+          cache: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Build branded debug APK
+        working-directory: flutter
+        run: flutter build apk --debug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MosaicVPN-Android-debug-validation
+          path: flutter/build/app/outputs/flutter-apk/app-debug.apk
+
+      # A public release APK requires a dedicated Android signing key. Do not
+      # attach a debug-signed APK to GitHub Releases.

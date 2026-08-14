@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mosaic_vpn/app/app_shell.dart';
 import 'package:mosaic_vpn/core/api/mock_daemon_api.dart';
@@ -17,7 +18,16 @@ Widget _harness() => ProviderScope(
         daemonApiProvider.overrideWithValue(MockDaemonApi()),
         vpnStatusProvider.overrideWith((ref) => Stream.value(VpnStatus())),
       ],
-      child: const MaterialApp(home: AppShell()),
+      child: const MaterialApp(
+        locale: Locale('ru'),
+        supportedLocales: [Locale('en'), Locale('ru')],
+        localizationsDelegates: [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        home: AppShell(),
+      ),
     );
 
 /// Sets a targeted device surface and lets the tree build.
@@ -69,10 +79,10 @@ void main() {
 
     expect(find.byType(BottomNavigationBar), findsNothing,
         reason: 'wide layout uses the compact sidebar');
-    expect(find.text('VPN не подключён'), findsOneWidget,
+    expect(find.text('Не подключено'), findsWidgets,
         reason: 'the primary desktop screen must be ConnectionDashboard');
     expect(
-        find.text('Выберите маршрут и нажмите «Подключиться»'), findsOneWidget);
+        find.text('Выберите маршрут — Подключиться'), findsOneWidget);
     expect(tester.takeException(), isNull,
         reason: 'desktop dashboard must render without an exception');
   });

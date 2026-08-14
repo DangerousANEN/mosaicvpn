@@ -284,19 +284,33 @@ class _AppShellState extends ConsumerState<AppShell>
                               child: Container(
                                 width: 36,
                                 height: 36,
+                                padding: const EdgeInsets.all(3),
                                 decoration: BoxDecoration(
+                                  color: c.isDark
+                                      ? AtlasTheme.darkBgElevated
+                                      : AtlasTheme.bgCard,
                                   borderRadius: BorderRadius.circular(
                                       AtlasTheme.radiusSm),
-                                ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(
-                                      AtlasTheme.radiusSm),
-                                  child: Image.asset(
-                                    'assets/icon.png',
-                                    width: 36,
-                                    height: 36,
-                                    fit: BoxFit.cover,
+                                  border: Border.all(
+                                    color: c.isDark
+                                        ? AtlasTheme.accent.withValues(alpha: .48)
+                                        : c.border,
                                   ),
+                                  boxShadow: c.isDark
+                                      ? [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(alpha: .28),
+                                            blurRadius: 8,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ]
+                                      : null,
+                                ),
+                                child: Image.asset(
+                                  'assets/icon_adaptive.png',
+                                  width: 30,
+                                  height: 30,
+                                  fit: BoxFit.contain,
                                 ),
                               ),
                             ),

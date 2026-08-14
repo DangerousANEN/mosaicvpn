@@ -21,7 +21,7 @@ import tarfile
 from pathlib import Path
 
 # Files that must be executable after extraction.
-EXECUTABLES = {"mosaic_vpn", "mosaicd", "mosaic", "sing-box"}
+EXECUTABLES = {"mosaicvpn", "mosaicd", "mosaic", "sing-box"}
 
 
 def main() -> int:

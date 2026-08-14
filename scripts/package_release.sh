@@ -2,9 +2,9 @@
 # Package built artifacts into distributable archives for the website.
 #
 # Produces, under dist/downloads/:
-#   MosaicVPN-windows-x64.zip      GUI + mosaicd.exe + mosaic.exe
-#   MosaicVPN-linux-x86_64.tar.gz  GUI + mosaicd + mosaic
-#   MosaicBox-android.apk          release APK
+#   MosaicVPN-Portable-x64-v<version>.zip       GUI + mosaicd.exe + mosaic.exe
+#   MosaicVPN-Portable-x86_64-v<version>.tar.gz GUI + mosaicd + mosaic
+#   MosaicVPN-Android-v<version>.apk            release APK
 #
 # Run from the repo root:  bash scripts/package_release.sh
 set -uo pipefail
@@ -23,7 +23,7 @@ ok=0; skip=0
 
 # ── Windows ────────────────────────────────────────────────────────
 WIN_SRC="$ROOT/flutter/build/windows/x64/runner/Release"
-if [ -f "$WIN_SRC/mosaic_vpn.exe" ]; then
+if [ -f "$WIN_SRC/MosaicVPN.exe" ]; then
   D="$STAGE/MosaicVPN"
   mkdir -p "$D"
   cp -r "$WIN_SRC"/* "$D"/
@@ -41,16 +41,16 @@ if [ -f "$WIN_SRC/mosaic_vpn.exe" ]; then
   fi
   ( cd "$STAGE" && \
     if command -v zip >/dev/null 2>&1; then
-      zip -qr "$OUT/MosaicVPN-windows-x64.zip" MosaicVPN
+      zip -qr "$OUT/MosaicVPN-Portable-x64-v$VERSION.zip" MosaicVPN
     else
       # git-bash on Windows has no zip(1); fall back to PowerShell.
-      powershell -NoProfile -Command "Compress-Archive -Path 'MosaicVPN' -DestinationPath '$(cygpath -w "$OUT/MosaicVPN-windows-x64.zip" 2>/dev/null || echo "$OUT/MosaicVPN-windows-x64.zip")' -Force"
+      powershell -NoProfile -Command "Compress-Archive -Path 'MosaicVPN' -DestinationPath '$(cygpath -w "$OUT/MosaicVPN-Portable-x64-v$VERSION.zip" 2>/dev/null || echo "$OUT/MosaicVPN-Portable-x64-v$VERSION.zip")' -Force"
     fi )
   rm -rf "$D"
-  echo "OK   windows  -> MosaicVPN-windows-x64.zip"
+  echo "OK   windows  -> MosaicVPN-Portable-x64-v$VERSION.zip"
   ok=$((ok+1))
 else
-  echo "SKIP windows  (missing $WIN_SRC/mosaic_vpn.exe — run: flutter build windows --release)"
+  echo "SKIP windows  (missing $WIN_SRC/MosaicVPN.exe — run: flutter build windows --release)"
   skip=$((skip+1))
 fi
 
@@ -81,12 +81,12 @@ if [ -d "$LIN_SRC" ]; then
   winpath() { cygpath -w "$1" 2>/dev/null || printf '%s' "$1"; }
   if ! python "$(winpath "$ROOT/scripts/make_linux_tar.py")" \
               "$(winpath "$D")" \
-              "$(winpath "$OUT/MosaicVPN-linux-x86_64.tar.gz")"; then
+              "$(winpath "$OUT/MosaicVPN-Portable-x86_64-v$VERSION.tar.gz")"; then
     echo "FAIL linux    (tar build failed)" >&2
     exit 1
   fi
   rm -rf "$D"
-  echo "OK   linux    -> MosaicVPN-linux-x86_64.tar.gz"
+  echo "OK   linux    -> MosaicVPN-Portable-x86_64-v$VERSION.tar.gz"
   ok=$((ok+1))
 else
   echo "SKIP linux    (missing $LIN_SRC — run: flutter build linux --release)"
@@ -96,8 +96,8 @@ fi
 # ── Android ────────────────────────────────────────────────────────
 APK="$ROOT/flutter/build/app/outputs/flutter-apk/app-release.apk"
 if [ -f "$APK" ]; then
-  cp "$APK" "$OUT/MosaicBox-android.apk"
-  echo "OK   android  -> MosaicBox-android.apk"
+  cp "$APK" "$OUT/MosaicVPN-Android-v$VERSION.apk"
+  echo "OK   android  -> MosaicVPN-Android-v$VERSION.apk"
   ok=$((ok+1))
 else
   echo "SKIP android  (missing $APK — run: flutter build apk --release)"
