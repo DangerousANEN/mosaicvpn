@@ -49,7 +49,6 @@ class MockDaemonApi implements DaemonApiBase {
   );
   final Map<int, TopupStatusResponse> _mockTopups = {};
   int _nextInvoiceId = 1001;
-
   final _rand = Random(42);
 
   MockDaemonApi() {
@@ -235,14 +234,11 @@ class MockDaemonApi implements DaemonApiBase {
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────
-  Future<T> _delay<T>(T value) async {
-    await Future.delayed(Duration(milliseconds: 200 + _rand.nextInt(300)));
-    return value;
-  }
+  /// Test doubles return asynchronously without scheduling timers. This keeps
+  /// widget-test teardown deterministic while preserving the Future-based API.
+  Future<T> _delay<T>(T value) => Future<T>.value(value);
 
-  Future<void> _delayVoid() async {
-    await Future.delayed(Duration(milliseconds: 200 + _rand.nextInt(300)));
-  }
+  Future<void> _delayVoid() => Future<void>.value();
 
   // ─── Status & Connection ──────────────────────────────────────────
 

@@ -324,7 +324,7 @@ class _AppShellState extends ConsumerState<AppShell>
                                 final visibleIndices = isAdvanced
                                     ? List.generate(
                                         destinations.length, (i) => i)
-                                    : const [0, 1, 3, 5, 6, 11, 14];
+                                    : const [0, 1, 3, 5, 6, 11, 12];
 
                                 return ListView.builder(
                                   itemCount: visibleIndices.length,

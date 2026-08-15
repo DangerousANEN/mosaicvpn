@@ -313,7 +313,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     try {
       setState(() => _busy = true);
       if (AppPlatform.isAndroid) {
-        await _toggleAndroidRuntime(status);
+        await _toggleAndroidRuntime(status, selected);
       } else if (status.isConnected || status.isConnecting) {
         await api.disconnect();
       } else {
@@ -333,7 +333,8 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     }
   }
 
-  Future<void> _toggleAndroidRuntime(VpnStatus status) async {
+  Future<void> _toggleAndroidRuntime(
+      VpnStatus status, ManifestGroup selected) async {
     if (status.isConnected || status.isConnecting) {
       await AndroidVpnService.instance.stop();
       return;
@@ -346,8 +347,8 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     if (!approved) {
       throw StateError('Для подключения необходимо разрешение VPN Android.');
     }
-    final config =
-        await AndroidMosaicAccountService.instance.buildNativeTunConfig();
+    final config = await AndroidMosaicAccountService.instance
+        .buildNativeTunConfig(groupId: selected.id);
     final state = await AndroidVpnService.instance.start(config);
     if (state.state == 'error') {
       throw StateError(state.error ?? 'Нативный VPN runtime не запустился.');

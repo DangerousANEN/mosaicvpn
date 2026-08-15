@@ -9,13 +9,21 @@ import 'package:flutter/foundation.dart';
 class AppPlatform {
   const AppPlatform._();
 
+  /// Test-only target override. Production builds leave this null and always
+  /// read Flutter's real [defaultTargetPlatform].
+  @visibleForTesting
+  static TargetPlatform? debugTargetPlatformOverride;
+
+  static TargetPlatform get _targetPlatform =>
+      debugTargetPlatformOverride ?? defaultTargetPlatform;
+
   /// True on Windows, macOS and Linux desktop targets.
   ///
   /// Uses [defaultTargetPlatform] rather than `dart:io`'s `Platform` so this
   /// stays safe to evaluate on web, where `dart:io` is unavailable.
   static bool get isDesktop {
     if (kIsWeb) return false;
-    switch (defaultTargetPlatform) {
+    switch (_targetPlatform) {
       case TargetPlatform.windows:
       case TargetPlatform.macOS:
       case TargetPlatform.linux:
@@ -29,13 +37,13 @@ class AppPlatform {
 
   /// True only for the Android native VpnService runtime.
   static bool get isAndroid =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+      !kIsWeb && _targetPlatform == TargetPlatform.android;
 
   /// True on Android and iOS.
   static bool get isMobile {
     if (kIsWeb) return false;
-    return defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS;
+    return _targetPlatform == TargetPlatform.android ||
+        _targetPlatform == TargetPlatform.iOS;
   }
 
   /// True when `dart:io` APIs (File, Process, Platform.environment) are usable.

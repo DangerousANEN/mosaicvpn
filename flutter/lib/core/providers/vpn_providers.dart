@@ -13,6 +13,7 @@ import '../api/unavailable_daemon_api.dart';
 import '../config/app_config.dart';
 import '../platform/app_platform.dart';
 import '../models/models.dart';
+import '../services/android_mosaic_account_service.dart';
 import '../services/android_vpn_service.dart';
 import '../services/daemon_launcher.dart';
 import '../services/ui_preferences_service.dart';
@@ -482,10 +483,14 @@ final serverGroupsProvider =
   return api.listGroups();
 });
 
-/// Provider-owned smart groups are safe user-facing choices: their physical
-/// nodes stay inside the daemon and only the selected endpoint is returned.
+/// Provider-owned smart groups are safe user-facing choices. Desktop obtains
+/// the manifest through its loopback daemon; Android reads the production
+/// capability manifest directly because no desktop daemon runs on the device.
 final mosaicManifestProvider =
     FutureProvider.autoDispose<ProviderManifest>((ref) async {
+  if (AppPlatform.isAndroid) {
+    return AndroidMosaicAccountService.instance.getProviderManifest();
+  }
   final api = ref.watch(daemonApiProvider);
   return api.getProviderManifest();
 });

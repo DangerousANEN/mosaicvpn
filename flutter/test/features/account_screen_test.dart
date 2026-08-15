@@ -4,8 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mosaic_vpn/core/api/daemon_api_base.dart';
 import 'package:mosaic_vpn/core/models/models.dart';
+import 'package:mosaic_vpn/core/platform/app_platform.dart';
+import 'package:mosaic_vpn/core/providers/billing_provider.dart';
 import 'package:mosaic_vpn/core/providers/vpn_providers.dart';
 import 'package:mosaic_vpn/features/account/account_screen.dart';
+import 'package:mosaic_vpn/features/account/unified_account_panel.dart';
 
 /// Minimal fake: only the cabinet endpoints matter here, and going through
 /// MockDaemonApi would drag in unrelated network-ish behaviour.
@@ -74,10 +77,22 @@ BillingProfile _profile({
       description: '',
     );
 
+/// A bounded frame sequence for async providers. `AccountScreen` intentionally
+/// contains indeterminate progress affordances, so `pumpAndSettle` can never
+/// become idle in a widget test.
+Future<void> _pumpReady(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 50));
+  await tester.pump(const Duration(milliseconds: 50));
+}
+
 Widget _wrap(_FakeApi api, {Size size = const Size(390, 844)}) {
   return ProviderScope(
     overrides: [
       daemonApiProvider.overrideWithValue(api),
+      billingProfileProvider.overrideWith((ref) async => api.profile),
+      paymentHistoryProvider.overrideWith((ref) async => api.payments),
+      unifiedAccountProvider.overrideWith((ref) async => null),
     ],
     child: MediaQuery(
       data: MediaQueryData(size: size),
@@ -87,12 +102,15 @@ Widget _wrap(_FakeApi api, {Size size = const Size(390, 844)}) {
 }
 
 void main() {
+  setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux);
+  tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
   group('AccountScreen linking', () {
     testWidgets('unlinked account shows the pairing form, not a cabinet',
         (tester) async {
       final api = _FakeApi(profile: _profile(linked: false, username: ''));
       await tester.pumpWidget(_wrap(api));
-      await tester.pumpAndSettle();
+      await _pumpReady(tester);
 
       expect(find.text('Link account'), findsOneWidget);
       expect(find.text('Payment history'), findsNothing);
@@ -102,24 +120,27 @@ void main() {
         (tester) async {
       final api = _FakeApi(profile: _profile(linked: false));
       await tester.pumpWidget(_wrap(api));
-      await tester.pumpAndSettle();
+      await _pumpReady(tester);
 
       await tester.tap(find.text('Link account'));
-      await tester.pumpAndSettle();
+      await _pumpReady(tester);
 
       expect(api.linkCalls, 0);
-      expect(find.text('Enter the code from the bot.'), findsOneWidget);
+      expect(find.text('Enter the complete 8-character code from the bot.'),
+          findsOneWidget);
     });
 
     testWidgets('expired code surfaces the "ask for a new one" hint',
         (tester) async {
-      final api = _FakeApi(profile: _profile(linked: false), linkFailStatus: 410);
+      final api =
+          _FakeApi(profile: _profile(linked: false), linkFailStatus: 410);
       await tester.pumpWidget(_wrap(api));
-      await tester.pumpAndSettle();
+      await _pumpReady(tester);
 
-      await tester.enterText(find.byKey(const ValueKey('pairing-code-input')), 'AB23CD45');
+      await tester.enterText(
+          find.byKey(const ValueKey('pairing-code-input')), 'AB23CD45');
       await tester.tap(find.text('Link account'));
-      await tester.pumpAndSettle();
+      await _pumpReady(tester);
 
       expect(api.linkCalls, 1);
       expect(find.text('Code expired. Ask the bot for a new one.'),
@@ -127,13 +148,15 @@ void main() {
     });
 
     testWidgets('unknown code does not claim the code expired', (tester) async {
-      final api = _FakeApi(profile: _profile(linked: false), linkFailStatus: 404);
+      final api =
+          _FakeApi(profile: _profile(linked: false), linkFailStatus: 404);
       await tester.pumpWidget(_wrap(api));
-      await tester.pumpAndSettle();
+      await _pumpReady(tester);
 
-      await tester.enterText(find.byKey(const ValueKey('pairing-code-input')), 'ZZ99ZZ99');
+      await tester.enterText(
+          find.byKey(const ValueKey('pairing-code-input')), 'ZZ99ZZ99');
       await tester.tap(find.text('Link account'));
-      await tester.pumpAndSettle();
+      await _pumpReady(tester);
 
       expect(find.text('Code not recognised. Check the digits and try again.'),
           findsOneWidget);
@@ -142,15 +165,17 @@ void main() {
 
     testWidgets('lowercase input reaches the daemon as typed for normalisation',
         (tester) async {
-      final api = _FakeApi(profile: _profile(linked: false), linkFailStatus: 404);
+      final api =
+          _FakeApi(profile: _profile(linked: false), linkFailStatus: 404);
       await tester.pumpWidget(_wrap(api));
-      await tester.pumpAndSettle();
+      await _pumpReady(tester);
 
-      await tester.enterText(find.byKey(const ValueKey('pairing-code-input')), 'ab23cd45');
+      await tester.enterText(
+          find.byKey(const ValueKey('pairing-code-input')), 'ab23cd45');
       await tester.tap(find.text('Link account'));
-      await tester.pumpAndSettle();
+      await _pumpReady(tester);
 
-      expect(api.lastCode, 'ab23cd45');
+      expect(api.lastCode, 'AB23CD45');
     });
   });
 
@@ -173,7 +198,7 @@ void main() {
         ],
       );
       await tester.pumpWidget(_wrap(api));
-      await tester.pumpAndSettle();
+      await _pumpReady(tester);
 
       expect(find.text('nikita'), findsOneWidget);
       expect(find.text('ACTIVE'), findsOneWidget);
@@ -186,7 +211,7 @@ void main() {
         (tester) async {
       final api = _FakeApi(profile: _profile(daysLeft: 0, status: 'EXPIRED'));
       await tester.pumpWidget(_wrap(api));
-      await tester.pumpAndSettle();
+      await _pumpReady(tester);
 
       expect(find.text('expired'), findsOneWidget);
       expect(find.textContaining('in 0'), findsNothing);
@@ -203,7 +228,7 @@ void main() {
         ),
       );
       await tester.pumpWidget(_wrap(api));
-      await tester.pumpAndSettle();
+      await _pumpReady(tester);
 
       final bar = tester.widget<LinearProgressIndicator>(
           find.byType(LinearProgressIndicator));
@@ -215,7 +240,7 @@ void main() {
         (tester) async {
       final api = _FakeApi(profile: _profile(limit: 0, used: 5 * 1024 * 1024));
       await tester.pumpWidget(_wrap(api));
-      await tester.pumpAndSettle();
+      await _pumpReady(tester);
 
       expect(find.byType(LinearProgressIndicator), findsNothing);
       expect(find.textContaining('unlimited'), findsOneWidget);
@@ -225,7 +250,7 @@ void main() {
         (tester) async {
       final api = _FakeApi(profile: _profile(), payments: const []);
       await tester.pumpWidget(_wrap(api));
-      await tester.pumpAndSettle();
+      await _pumpReady(tester);
 
       expect(find.text('No payments yet.'), findsOneWidget);
     });
@@ -251,7 +276,7 @@ void main() {
         ],
       );
       await tester.pumpWidget(_wrap(api, size: const Size(360, 640)));
-      await tester.pumpAndSettle();
+      await _pumpReady(tester);
 
       expect(tester.takeException(), isNull);
     });

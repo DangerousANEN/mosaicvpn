@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../models/provider_profile.dart';
+
 /// Device-local account material required by Android's native direct runtime.
 class AndroidMosaicSession {
   const AndroidMosaicSession({
@@ -83,7 +85,24 @@ class AndroidMosaicAccountService {
   /// Downloads the per-device direct subscription and returns a full native
   /// sing-box configuration with one Android TUN inbound. Traffic egresses
   /// directly from the device to the selected provider node.
-  Future<String> buildNativeTunConfig() async {
+  /// Fetches the public capability manifest used by the direct client.
+  ///
+  /// It contains route metadata only, never a physical node pool, source URLs,
+  /// or account information. Android resolves the selected group locally from
+  /// the authenticated opaque direct feed.
+  Future<ProviderManifest> getProviderManifest() async {
+    final response = await _dio.get<Map<String, dynamic>>('/api/manifest.json');
+    final payload = Map<String, dynamic>.from(response.data ?? const {});
+    if (payload.isEmpty) {
+      throw StateError('Сервис не вернул список маршрутов.');
+    }
+    return ProviderManifest.fromJson(payload);
+  }
+
+  /// Downloads the authenticated opaque direct feed and builds an Android TUN
+  /// config. The selected user-facing group controls client-side filtering and
+  /// sing-box URLTest failover; traffic goes directly to the selected node.
+  Future<String> buildNativeTunConfig({String? groupId}) async {
     final session = await restoreSession();
     if (session == null) {
       throw StateError('Сначала войдите в MosaicVPN.');
@@ -97,7 +116,7 @@ class AndroidMosaicAccountService {
     if (payload.isEmpty) {
       throw StateError('Сервис не вернул конфигурацию для этого устройства.');
     }
-    return _withAndroidTunInbound(payload);
+    return _withAndroidTunInbound(payload, groupId: groupId);
   }
 
   static String normalizePairingCode(String raw) {
@@ -135,18 +154,74 @@ class AndroidMosaicAccountService {
     );
   }
 
-  static String _withAndroidTunInbound(String payload) {
+  static String _withAndroidTunInbound(String payload, {String? groupId}) {
     final decoded = jsonDecode(payload);
     if (decoded is! Map) {
       throw const FormatException(
           'Direct subscription is not a sing-box JSON configuration.');
     }
     final config = Map<String, dynamic>.from(decoded);
-    final outbounds = config['outbounds'];
-    if (outbounds is! List || outbounds.isEmpty) {
+    final rawOutbounds = config['outbounds'];
+    if (rawOutbounds is! List || rawOutbounds.isEmpty) {
       throw const FormatException('Direct configuration has no outbounds.');
     }
 
+    final candidates = <Map<String, dynamic>>[];
+    for (final value in rawOutbounds) {
+      if (value is! Map) continue;
+      final outbound = Map<String, dynamic>.from(value);
+      // `mosaic_*` values are feed-selection hints, not a sing-box schema.
+      // Remove them before handing the config to libbox.
+      final hintCountry = outbound.remove('mosaic_country')?.toString();
+      final hintStable = outbound.remove('mosaic_stable') == true;
+      final hintAllowlist = outbound.remove('mosaic_allowlist') == true;
+      final hintSpeed = outbound.remove('mosaic_speed_eligible') == true;
+      outbound.removeWhere((key, _) => key.toString().startsWith('mosaic_'));
+      final tag = outbound['tag']?.toString() ?? '';
+      final type = outbound['type']?.toString() ?? '';
+      if (tag.isEmpty ||
+          type.isEmpty ||
+          type == 'direct' ||
+          type == 'block' ||
+          type == 'dns') {
+        continue;
+      }
+      outbound['_mosaic_country'] = hintCountry;
+      outbound['_mosaic_stable'] = hintStable;
+      outbound['_mosaic_allowlist'] = hintAllowlist;
+      outbound['_mosaic_speed'] = hintSpeed;
+      candidates.add(outbound);
+    }
+    if (candidates.isEmpty) {
+      throw const FormatException(
+          'Direct configuration has no usable outbounds.');
+    }
+
+    bool matchesGroup(Map<String, dynamic> outbound) {
+      return switch (groupId) {
+        'auto-de' => outbound['_mosaic_country'] == 'DE',
+        'auto-ca' => outbound['_mosaic_country'] == 'CA',
+        'auto-stable' => outbound['_mosaic_stable'] == true,
+        'auto-allowlist' => outbound['_mosaic_allowlist'] == true,
+        'auto-speed' => outbound['_mosaic_speed'] == true,
+        _ => true,
+      };
+    }
+
+    var selected = candidates.where(matchesGroup).toList();
+    // A group is a preference, not a dead end: if its pool is temporarily
+    // empty, retain reachability through the full authenticated pool.
+    if (selected.isEmpty) selected = candidates;
+    final tags = <String>[];
+    final cleanOutbounds = <Map<String, dynamic>>[];
+    for (final outbound in selected) {
+      final clean = Map<String, dynamic>.from(outbound)
+        ..removeWhere((key, _) => key.toString().startsWith('_mosaic_'));
+      tags.add(clean['tag'] as String);
+      cleanOutbounds.add(clean);
+    }
+
+    const routeTag = 'mosaic-selected-route';
     config['inbounds'] = [
       {
         'type': 'tun',
@@ -159,23 +234,26 @@ class AndroidMosaicAccountService {
         'endpoint_independent_nat': true,
       },
     ];
+    config['outbounds'] = [
+      ...cleanOutbounds,
+      {
+        'type': 'urltest',
+        'tag': routeTag,
+        'outbounds': tags,
+        'url': 'https://www.gstatic.com/generate_204',
+        'interval': '15s',
+        'tolerance': 50,
+        'interrupt_exist_connections': true,
+      },
+      {'type': 'direct', 'tag': 'direct'},
+    ];
 
     final existingRoute = config['route'];
     final route = existingRoute is Map
         ? Map<String, dynamic>.from(existingRoute)
         : <String, dynamic>{};
     route['auto_detect_interface'] = true;
-    route.putIfAbsent('final', () {
-      for (final outbound in outbounds) {
-        if (outbound is Map && outbound['tag'] is String) {
-          final type = outbound['type']?.toString();
-          if (type != 'direct' && type != 'block' && type != 'dns') {
-            return outbound['tag'];
-          }
-        }
-      }
-      return (outbounds.first as Map)['tag'];
-    });
+    route['final'] = routeTag;
     config['route'] = route;
     return jsonEncode(config);
   }
