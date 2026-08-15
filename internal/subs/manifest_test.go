@@ -127,3 +127,54 @@ func TestResolveMosaicHintGroups(t *testing.T) {
 		t.Fatalf("allowlist group = %#v; expected the assigned Reality candidate", allowlist)
 	}
 }
+
+func TestParseManifestOrSynthesizeKeepsRawImportedFeedUnchanged(t *testing.T) {
+	raw := []proto.Server{{
+		ID:       "foreign-node",
+		Name:     "Foreign VLESS",
+		Protocol: proto.ProtoVLESS,
+	}}
+
+	manifest, servers := ParseManifestOrSynthesize(
+		[]byte("vless://not-a-provider-manifest"),
+		"foreign-subscription",
+		raw,
+	)
+
+	if len(manifest.Groups) != 0 {
+		t.Fatalf("raw imported feed received %d Mosaic groups; want none", len(manifest.Groups))
+	}
+	if len(servers) != 1 || servers[0].ID != "foreign-node" {
+		t.Fatalf("raw imported feed servers = %#v; want exactly its original node", servers)
+	}
+	if servers[0].IsVirtualGroup {
+		t.Fatal("raw imported feed node must not become a virtual group")
+	}
+}
+
+func TestParseManifestOrSynthesizePreservesExplicitProviderGroups(t *testing.T) {
+	raw := []proto.Server{{
+		ID:       "provider-node",
+		Name:     "Provider node",
+		Protocol: proto.ProtoVLESS,
+	}}
+	content := []byte(`{
+		"provider_name":"Example provider",
+		"groups":[{"id":"example-fast","title":"Fast","type":"urltest","category":"smart"}]
+	}`)
+
+	manifest, servers := ParseManifestOrSynthesize(content, "example-subscription", raw)
+	if len(manifest.Groups) != 1 || manifest.Groups[0].ID != "example-fast" {
+		t.Fatalf("explicit groups = %#v; want example-fast", manifest.Groups)
+	}
+	if len(servers) != 2 || !servers[0].IsVirtualGroup || servers[1].ID != "provider-node" {
+		t.Fatalf("explicit manifest servers = %#v; want virtual group and raw provider node", servers)
+	}
+}
+
+func TestSynthesizeManifestIsExplicitlyOptIn(t *testing.T) {
+	manifest := SynthesizeManifest("mosaic-direct", []proto.Server{{ID: "pool-node", Protocol: proto.ProtoVLESS}})
+	if len(manifest.Groups) == 0 {
+		t.Fatal("explicit Mosaic synthesis must still produce service groups")
+	}
+}

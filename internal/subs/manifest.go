@@ -180,8 +180,9 @@ func FetchProviderManifest(ctx context.Context, subURL string) (*proto.Subscript
 	return nil, nil
 }
 
-// ParseManifestOrSynthesize parses a JSON manifest or auto-generates Smart Virtual Groups
-// for a set of raw physical servers.
+// ParseManifestOrSynthesize parses an explicit provider manifest. A regular
+// imported feed remains a collection of its own raw nodes: it must never be
+// decorated with Mosaic-specific smart groups, labels or routing semantics.
 func ParseManifestOrSynthesize(content []byte, subID string, rawServers []proto.Server) (proto.SubscriptionManifest, []proto.Server) {
 	var manifest proto.SubscriptionManifest
 
@@ -195,11 +196,16 @@ func ParseManifestOrSynthesize(content []byte, subID string, rawServers []proto.
 		return manifest, allServers
 	}
 
-	// Synthesize Smart Virtual Groups automatically
-	manifest = SynthesizeManifest(subID, rawServers)
-	virtualServers := BuildVirtualServersFromManifest(manifest, subID)
-	allServers := append(virtualServers, rawServers...)
-	return manifest, allServers
+	// An arbitrary compatible subscription is not a Mosaic service profile.
+	// Returning its raw nodes unchanged avoids injecting Mosaic-branded virtual
+	// groups into another provider's source and prevents those groups being
+	// rendered as misleading VLESS nodes in the client.
+	manifest = proto.SubscriptionManifest{
+		ProviderName: "Imported subscription",
+		UserTier:     proto.TierFree,
+		Groups:       []proto.ManifestGroup{},
+	}
+	return manifest, rawServers
 }
 
 // SynthesizeManifest generates default smart groups & whitelist evader route for raw servers.

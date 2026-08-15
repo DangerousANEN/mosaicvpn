@@ -32,7 +32,7 @@ require_file "$BUNDLE/mosaicvpn" 'Verify flutter/linux/CMakeLists.txt sets BINAR
 
 mkdir -p "$ROOT/build" "$DIST_DIR"
 if [[ ! -f "$DAEMON_BINARY" ]]; then
-  (cd "$ROOT" && go build -trimpath -ldflags='-s -w' -o "$DAEMON_BINARY" ./cmd/mosaicd)
+  (cd "$ROOT" && go build -trimpath -ldflags="-s -w -X main.Version=$VERSION" -o "$DAEMON_BINARY" ./cmd/mosaicd)
 fi
 if [[ ! -f "$CLI_BINARY" && -d "$ROOT/cmd/mosaic" ]]; then
   (cd "$ROOT" && go build -trimpath -ldflags='-s -w' -o "$CLI_BINARY" ./cmd/mosaic)

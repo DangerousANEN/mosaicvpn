@@ -157,14 +157,16 @@ class UnifiedAccountPanel extends ConsumerWidget {
     try {
       providers = await api.getCheckoutOptions();
     } catch (_) {
-      if (context.mounted)
+      if (context.mounted) {
         _notice(context, 'Способы оплаты временно недоступны.', error: true);
+      }
       return;
     }
     providers = providers.where((p) => p.available).toList();
     if (providers.isEmpty) {
-      if (context.mounted)
+      if (context.mounted) {
         _notice(context, 'Сейчас нет доступных способов оплаты.', error: true);
+      }
       return;
     }
     if (!context.mounted) return;
@@ -181,13 +183,15 @@ class UnifiedAccountPanel extends ConsumerWidget {
       if (!context.mounted) return;
       final opened = await launchUrl(checkout.checkoutUrl,
           mode: LaunchMode.externalApplication);
-      if (!opened && context.mounted)
+      if (!opened && context.mounted) {
         _notice(context, 'Не удалось открыть оплату. Попробуйте ещё раз.',
             error: true);
+      }
     } catch (_) {
-      if (context.mounted)
+      if (context.mounted) {
         _notice(context, 'Не удалось создать счёт. Попробуйте позже.',
             error: true);
+      }
     }
   }
 
@@ -231,10 +235,11 @@ class UnifiedAccountPanel extends ConsumerWidget {
               ));
       ref.invalidate(unifiedAccountProvider);
     } catch (_) {
-      if (context.mounted)
+      if (context.mounted) {
         _notice(context,
             'Не удалось перевыпустить ссылку. Повторите через несколько минут.',
             error: true);
+      }
     }
   }
 
@@ -292,12 +297,14 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                         (p) => DropdownMenuItem(value: p, child: Text(p.title)))
                     .toList(),
                 onChanged: (value) {
-                  if (value != null)
+                  if (value != null) {
                     setState(() {
                       provider = value;
-                      if (int.tryParse(amount.text) == null)
+                      if (int.tryParse(amount.text) == null) {
                         amount.text = '${value.minAmountRub}';
+                      }
                     });
+                  }
                 },
                 decoration: const InputDecoration(labelText: 'Способ оплаты')),
             const SizedBox(height: 12),

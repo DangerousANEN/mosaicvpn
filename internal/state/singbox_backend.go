@@ -98,6 +98,22 @@ func (b *SingBoxBackend) Stats() (uint64, uint64, int) {
 	return b.bytesIn.Load(), b.bytesOut.Load(), int(b.latencyMS.Load())
 }
 
+// preferredListenerPort obtains a valid requested port from a persisted
+// loopback address. It deliberately falls back only when the preference is
+// malformed, while pickPort below still finds an available alternative if the
+// requested port is currently busy.
+func preferredListenerPort(address string, fallback int) int {
+	_, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return fallback
+	}
+	value, err := strconv.Atoi(port)
+	if err != nil || value < 1 || value > 65535 {
+		return fallback
+	}
+	return value
+}
+
 // Start implements Backend.
 func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, prefs store.Prefs, rules []proto.Rule) error {
 	b.mu.Lock()
@@ -118,9 +134,11 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, prefs s
 		return fmt.Errorf("sing-box binary %q: %w", bin, err)
 	}
 
-	// Pick free SOCKS / HTTP / clash-api loopback ports.
-	socksPort := pickPort(2080)
-	httpPort := pickPort(2081)
+	// Honour the addresses displayed and saved in preferences. If a requested
+	// port is busy, pickPort selects a free fallback and exposes the actual
+	// listener address through status.Proxies().
+	socksPort := pickPort(preferredListenerPort(prefs.SocksAddr, 2080))
+	httpPort := pickPort(preferredListenerPort(prefs.HTTPAddr, 2081))
 	clashPort := pickPort(9090)
 	if socksPort == 0 || httpPort == 0 || clashPort == 0 {
 		b.mu.Unlock()
@@ -366,6 +384,69 @@ func readTail(path string, n int) string {
 // Mosaic ruleset. Exposed for tests.
 func BuildSingBoxConfig(server proto.Server, socksPort, httpPort int, prefs store.Prefs, rules []proto.Rule, dns proto.DNSConfig, clashPort int, clashSecret string) ([]byte, error) {
 	return BuildSingBoxConfigWithServers(server, socksPort, httpPort, prefs, rules, dns, clashPort, clashSecret, nil, nil)
+}
+
+// singBoxDNSServer translates the user-facing resolver notation (for example
+// udp://77.88.8.8 or https://1.1.1.1/dns-query) into sing-box 1.13's DNS
+// server object. Passing a whole URL as `server` makes sing-box try to resolve
+// the literal string as a domain and prevents the runtime from starting.
+func singBoxDNSServer(tag, endpoint, detour string) map[string]any {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		endpoint = "udp://1.1.1.1"
+	}
+	if !strings.Contains(endpoint, "://") {
+		endpoint = "udp://" + endpoint
+	}
+
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Hostname() == "" {
+		return map[string]any{
+			"type":   "udp",
+			"tag":    tag,
+			"server": strings.TrimPrefix(endpoint, "udp://"),
+		}
+	}
+
+	typeName := strings.ToLower(u.Scheme)
+	switch typeName {
+	case "udp", "tcp", "tls", "https", "quic", "http3":
+	default:
+		typeName = "udp"
+	}
+	if typeName == "http3" {
+		typeName = "h3"
+	}
+
+	port := u.Port()
+	if port == "" {
+		switch typeName {
+		case "https", "h3":
+			port = "443"
+		case "tls":
+			port = "853"
+		default:
+			port = "53"
+		}
+	}
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
+		portNumber = 53
+	}
+
+	entry := map[string]any{
+		"type":        typeName,
+		"tag":         tag,
+		"server":      u.Hostname(),
+		"server_port": portNumber,
+	}
+	if (typeName == "https" || typeName == "h3") && u.EscapedPath() != "" {
+		entry["path"] = u.EscapedPath()
+	}
+	if detour != "" {
+		entry["detour"] = detour
+	}
+	return entry
 }
 
 // virtualGroupAllowsCandidate applies provider-supplied aggregate hints locally.
@@ -674,28 +755,13 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 	dnsServerTag := "dns-direct"
 	if dns.Mode != "disabled" {
 		servers := []any{}
-		// Primary resolver (direct / real DNS)
+		// Primary resolver (direct / real DNS). Preferences retain URL notation,
+		// but sing-box requires host, port and transport in separate fields.
 		primaryTag := "dns-primary"
-		if dns.Direct != "" {
-			servers = append(servers, map[string]any{
-				"type":   "udp",
-				"tag":    primaryTag,
-				"server": dns.Direct,
-			})
-		} else {
-			servers = append(servers, map[string]any{
-				"type":   "udp",
-				"tag":    primaryTag,
-				"server": "1.1.1.1",
-			})
-		}
-		// Proxied resolver (used for domains going through proxy)
+		servers = append(servers, singBoxDNSServer(primaryTag, dns.Direct, ""))
+		// Proxied resolver is optional and uses the selected tunnel outbound.
 		if dns.Proxied != "" {
-			servers = append(servers, map[string]any{
-				"type":   "udp",
-				"tag":    "dns-proxied",
-				"server": dns.Proxied,
-			})
+			servers = append(servers, singBoxDNSServer("dns-proxied", dns.Proxied, "proxy"))
 		}
 		// FakeIP server (new format: standalone server object)
 		if dns.Mode == "fake-ip" {

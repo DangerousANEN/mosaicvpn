@@ -30,7 +30,9 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path build | Out-Null
-          go build -trimpath -ldflags="-s -w" -o build/mosaicd.exe ./cmd/mosaicd
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          if ([string]::IsNullOrWhiteSpace($version)) { $version = (Select-String -Path flutter/pubspec.yaml -Pattern '^version:\s*(.+)$').Matches[0].Groups[1].Value.Split('+')[0] }
+          go build -trimpath -ldflags="-s -w -X main.Version=$version" -o build/mosaicd.exe ./cmd/mosaicd
           if (Test-Path cmd/mosaic) { go build -trimpath -ldflags="-s -w" -o build/mosaic.exe ./cmd/mosaic }
 
       - name: Download and verify official sing-box
@@ -105,7 +107,9 @@ jobs:
       - name: Build daemon
         run: |
           mkdir -p build
-          go build -trimpath -ldflags='-s -w' -o build/mosaicd_linux_amd64 ./cmd/mosaicd
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -z "$VERSION" ]; then VERSION="$(grep -E '^version:' flutter/pubspec.yaml | head -1 | sed -E 's/version:[[:space:]]*//' | cut -d+ -f1)"; fi
+          go build -trimpath -ldflags="-s -w -X main.Version=$VERSION" -o build/mosaicd_linux_amd64 ./cmd/mosaicd
 
       - name: Download and verify official sing-box
         env:
@@ -203,15 +207,15 @@ jobs:
           storeFile=$RUNNER_TEMP/mosaicvpn-release.jks
           EOF
 
-      - name: Build signed Android technical preview APK
+      - name: Build signed Android APK
         if: startsWith(github.ref, 'refs/tags/v')
         working-directory: flutter
         run: |
           set -euo pipefail
           flutter build apk --release
           mkdir -p ../dist/android
-          cp build/app/outputs/flutter-apk/app-release.apk "../dist/android/MosaicVPN-Android-Technical-Preview-${GITHUB_REF_NAME}.apk"
-          "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner" verify --verbose --print-certs "../dist/android/MosaicVPN-Android-Technical-Preview-${GITHUB_REF_NAME}.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "../dist/android/MosaicVPN-Android-${GITHUB_REF_NAME}.apk"
+          "$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner" verify --verbose --print-certs "../dist/android/MosaicVPN-Android-${GITHUB_REF_NAME}.apk"
 
       - name: Build branded debug APK
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
@@ -221,9 +225,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: startsWith(github.ref, 'refs/tags/v')
         with:
-          name: MosaicVPN-Android-signed-preview
+          name: MosaicVPN-Android-signed
           if-no-files-found: error
-          path: dist/android/MosaicVPN-Android-Technical-Preview-v*.apk
+          path: dist/android/MosaicVPN-Android-v*.apk
 
       - uses: actions/upload-artifact@v4
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
@@ -231,8 +235,8 @@ jobs:
           name: MosaicVPN-Android-debug-validation
           path: flutter/build/app/outputs/flutter-apk/app-debug.apk
 
-      - name: Attach Android technical preview to tagged release
+      - name: Attach Android APK to tagged release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/android/MosaicVPN-Android-Technical-Preview-v*.apk
+          files: dist/android/MosaicVPN-Android-v*.apk

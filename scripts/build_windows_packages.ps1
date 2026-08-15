@@ -23,6 +23,19 @@ function Require-File([string]$Path, [string]$Hint) {
   }
 }
 
+if ([string]::IsNullOrWhiteSpace($DaemonPath)) {
+  $BuildDir = Join-Path $Root 'build'
+  New-Item -ItemType Directory -Path $BuildDir -Force | Out-Null
+  $DaemonPath = Join-Path $BuildDir 'mosaicd.exe'
+  Push-Location $Root
+  try {
+    go build -trimpath -ldflags "-s -w -X main.Version=$Version" -o $DaemonPath ./cmd/mosaicd
+    if ($LASTEXITCODE -ne 0) { throw "mosaicd build exited with code $LASTEXITCODE" }
+  } finally {
+    Pop-Location
+  }
+}
+
 Push-Location $FlutterDir
 try {
   flutter pub get

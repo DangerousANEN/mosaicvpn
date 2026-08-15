@@ -1116,8 +1116,15 @@ func (s *Server) handleGetManifest(w http.ResponseWriter, _ *http.Request) {
 		if snap.ActiveManifest != nil && len(snap.ActiveManifest.Groups) > 0 {
 			m = snap.ActiveManifest
 		} else {
-			synth := subs.SynthesizeManifest("default", snap.Servers)
-			m = &synth
+			// Do not synthesize Mosaic routes from manually imported nodes. Until
+			// an authenticated Mosaic account loads its direct feed, the dashboard
+			// intentionally has no Mosaic smart groups to offer.
+			empty := proto.SubscriptionManifest{
+				ProviderName: "MosaicVPN",
+				UserTier:     proto.TierFree,
+				Groups:       []proto.ManifestGroup{},
+			}
+			m = &empty
 		}
 	}
 	writeJSON(w, http.StatusOK, m)
@@ -1146,10 +1153,15 @@ func (s *Server) refresh(ctx context.Context, sub proto.Subscription) error {
 	}
 
 	manifest, finalServers := subs.ParseManifestOrSynthesize(manifestBytes, sub.ID, res.Servers)
-	s.manifestMu.Lock()
-	s.activeManifest = &manifest
-	s.manifestMu.Unlock()
-	_ = s.store.SaveManifest(&manifest)
+	// The account-owned Mosaic feed is the sole source of global smart routes.
+	// A manually imported profile may expose its own explicit groups, but must
+	// never overwrite the service manifest used by the primary dashboard.
+	if sub.ID == "mosaic-direct" {
+		s.manifestMu.Lock()
+		s.activeManifest = &manifest
+		s.manifestMu.Unlock()
+		_ = s.store.SaveManifest(&manifest)
+	}
 
 	sub.Format = res.Format
 	sub.ServerCount = len(finalServers)
