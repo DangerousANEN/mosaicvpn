@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pupspochta-cpu/mosaicvpn/internal/api"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/apiclient"
@@ -68,6 +69,43 @@ func TestStatusEndpointAuth(t *testing.T) {
 // without first being rejected by the bearer-token check. The Tauri
 // renderer (and `vite dev`) sit at a different origin than the loopback
 // API and rely on this to talk to the daemon.
+func TestRuntimeShutdownRequiresAuthAndSignalsLifecycle(t *testing.T) {
+	srv, _, hs := newTestServer(t, nil)
+
+	unauthorized, err := http.NewRequest(http.MethodPost, hs.URL+"/v1/runtime/shutdown", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := hs.Client().Do(unauthorized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthorized shutdown status = %d, want %d", response.StatusCode, http.StatusUnauthorized)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, hs.URL+"/v1/runtime/shutdown", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+srv.Token())
+	response, err = hs.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("shutdown status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+
+	select {
+	case <-srv.ShutdownRequested():
+	case <-time.After(time.Second):
+		t.Fatal("shutdown lifecycle signal was not delivered")
+	}
+}
+
 func TestCORSPreflight(t *testing.T) {
 	_, _, hs := newTestServer(t, nil)
 
@@ -250,4 +288,3 @@ func TestPrefsRoundTrip(t *testing.T) {
 		t.Fatalf("prefs not updated: %+v", out)
 	}
 }
-

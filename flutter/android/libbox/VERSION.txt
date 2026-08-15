@@ -1,0 +1,9 @@
+Runtime: sing-box experimental/libbox
+Version: 1.13.18
+Source repository: https://github.com/SagerNet/sing-box.git
+Source revision: 45ca32dcb966f07f97fc888fe8586e359dbe8405
+Build targets: android/arm64, android/arm, android/amd64, android/386
+Build tool: github.com/sagernet/gomobile v0.1.12
+License: GPL-3.0-or-later
+895f7ba24184f3da73e76a675aa358a5c3513ed6956e59bf2da365c06a5d618d  /home/ubuntu/mosaicvpn-client-source/flutter/android/app/libs/libbox.aar
+c26ec5ff8e3df5a3c7db1337aacbf840e4dffb459e9c9b647456218a53dfcac5  /home/ubuntu/mosaicvpn-client-source/flutter/android/app/libs/libbox-legacy.aar

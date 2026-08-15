@@ -27,6 +27,10 @@ class AppPlatform {
     }
   }
 
+  /// True only for the Android native VpnService runtime.
+  static bool get isAndroid =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
   /// True on Android and iOS.
   static bool get isMobile {
     if (kIsWeb) return false;

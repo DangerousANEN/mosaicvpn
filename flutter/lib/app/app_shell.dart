@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,9 +13,6 @@ import '../core/models/models.dart';
 import '../core/services/tray_service.dart';
 import '../shared/widgets/atlas_widgets.dart';
 import '../features/dashboard/connection_dashboard.dart';
-import '../features/servers/servers_screen.dart';
-import '../features/profiles/profiles_screen.dart';
-import '../features/subscriptions/subscriptions_screen.dart';
 import '../features/connections/connections_screen.dart';
 import '../features/routing/routing_screen.dart';
 import '../features/egresses/egresses_screen.dart';
@@ -43,6 +42,7 @@ class _AppShellState extends ConsumerState<AppShell>
     with WidgetsBindingObserver, WindowListener {
   int _currentIndex = 0;
   bool _autoConnectTriggered = false;
+  bool _quitting = false;
 
   // Only build a tab after the user opens it. This prevents hidden technical
   // screens from starting network polls or timers on first launch, while the
@@ -82,25 +82,13 @@ class _AppShellState extends ConsumerState<AppShell>
           activeIcon: Icons.dashboard,
           label: s.t('connection')),
       _NavDestination(
-          icon: Icons.dns_outlined,
-          activeIcon: Icons.dns,
-          label: s.t('stations')),
-      _NavDestination(
-          icon: Icons.book_outlined,
-          activeIcon: Icons.book,
-          label: s.t('profiles')),
-      _NavDestination(
-          icon: Icons.subscriptions_outlined,
-          activeIcon: Icons.subscriptions,
-          label: s.t('subscriptions')),
+          icon: Icons.public_outlined,
+          activeIcon: Icons.public,
+          label: s.t('routes')),
       _NavDestination(
           icon: Icons.account_balance_wallet_outlined,
           activeIcon: Icons.account_balance_wallet,
           label: s.t('balance')),
-      _NavDestination(
-          icon: Icons.bolt_outlined,
-          activeIcon: Icons.bolt,
-          label: s.t('groups')),
       _NavDestination(
           icon: Icons.person_outline,
           activeIcon: Icons.person,
@@ -150,6 +138,13 @@ class _AppShellState extends ConsumerState<AppShell>
     WidgetsBinding.instance.addObserver(this);
     if (AppPlatform.isDesktop) {
       windowManager.addListener(this);
+      TrayService.instance.configure(
+        minimizeToTray: true,
+        onConnect: _connectFromTray,
+        onDisconnect: _disconnectFromTray,
+        onOpenRoutes: _openRoutesFromTray,
+        onQuit: _quitApplication,
+      );
     }
   }
 
@@ -158,7 +153,7 @@ class _AppShellState extends ConsumerState<AppShell>
     WidgetsBinding.instance.removeObserver(this);
     if (AppPlatform.isDesktop) {
       windowManager.removeListener(this);
-      TrayService.instance.dispose();
+      unawaited(TrayService.instance.dispose());
     }
     super.dispose();
   }
@@ -170,8 +165,7 @@ class _AppShellState extends ConsumerState<AppShell>
     if (TrayService.instance.shouldInterceptClose) {
       await TrayService.instance.hideToTray();
     } else {
-      await windowManager.setPreventClose(false);
-      await windowManager.destroy();
+      await _quitApplication();
     }
   }
 
@@ -192,11 +186,8 @@ class _AppShellState extends ConsumerState<AppShell>
   /// Full pages list for wide screen sidebar navigation (>900px)
   List<Widget> get _allPages => [
         const _KeepAlive(child: ConnectionDashboard()),
-        const _KeepAlive(child: ServersScreen()),
-        const _KeepAlive(child: ProfilesScreen()),
-        const _KeepAlive(child: SubscriptionsScreen()),
-        const _KeepAlive(child: BillingScreen()),
         const _KeepAlive(child: GroupsScreen()),
+        const _KeepAlive(child: BillingScreen()),
         const _KeepAlive(child: AccountScreen()),
         const _KeepAlive(child: ProviderProfileScreen()),
         const _KeepAlive(child: RoutingScreen()),
@@ -212,6 +203,13 @@ class _AppShellState extends ConsumerState<AppShell>
   @override
   Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
+    final trayStatus = ref.watch(vpnStatusProvider).valueOrNull;
+    if (AppPlatform.isDesktop) {
+      TrayService.instance.setConnectionState(
+        trayStatus?.state == 'connected',
+        routeLabel: trayStatus?.server?.name ?? '',
+      );
+    }
     final mq = MediaQuery.of(context);
     // Use the shortest side so a phone in landscape (wide but short)
     // still gets the mobile layout.  A typical 6" phone in landscape
@@ -293,13 +291,15 @@ class _AppShellState extends ConsumerState<AppShell>
                                       AtlasTheme.radiusSm),
                                   border: Border.all(
                                     color: c.isDark
-                                        ? AtlasTheme.accent.withValues(alpha: .48)
+                                        ? AtlasTheme.accent
+                                            .withValues(alpha: .48)
                                         : c.border,
                                   ),
                                   boxShadow: c.isDark
                                       ? [
                                           BoxShadow(
-                                            color: Colors.black.withValues(alpha: .28),
+                                            color: Colors.black
+                                                .withValues(alpha: .28),
                                             blurRadius: 8,
                                             offset: const Offset(0, 2),
                                           ),
@@ -421,6 +421,75 @@ class _AppShellState extends ConsumerState<AppShell>
     );
   }
 
+  Future<void> _connectFromTray() async {
+    try {
+      final api = ref.read(daemonApiProvider);
+      final status = await api.getStatus();
+      if (status.state == 'connected' || status.state == 'connecting') return;
+
+      final manifest = await api.getProviderManifest();
+      if (manifest.groups.isNotEmpty) {
+        final selected =
+            await api.selectNodeFromGroup(manifest.groups.first.id);
+        await api.connect(selected.id);
+      } else {
+        final servers = await api.listServers();
+        if (servers.isEmpty) {
+          if (mounted) _showNoServersDialog();
+          return;
+        }
+        await api.connect(servers.first.id);
+      }
+      ref.invalidate(vpnStatusProvider);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Не удалось подключиться: $error')),
+        );
+      }
+    }
+  }
+
+  Future<void> _disconnectFromTray() async {
+    try {
+      await ref.read(daemonApiProvider).disconnect();
+      ref.invalidate(vpnStatusProvider);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Не удалось отключиться: $error')),
+        );
+      }
+    }
+  }
+
+  Future<void> _openRoutesFromTray() async {
+    if (!mounted) return;
+    setState(() => _currentIndex = 1);
+  }
+
+  Future<void> _quitApplication() async {
+    if (_quitting) return;
+    _quitting = true;
+    try {
+      // This asks mosaicd to disconnect the active runtime first. Its own
+      // lifecycle then stops the sing-box child and releases the lockfile.
+      await ref
+          .read(daemonApiProvider)
+          .shutdownDaemon()
+          .timeout(const Duration(seconds: 4));
+    } catch (_) {
+      // A stale/missing daemon must not trap the user in the window. The
+      // launcher only owns the process it started; daemon shutdown remains
+      // best-effort when the lockfile is already gone.
+    } finally {
+      if (AppPlatform.isDesktop) {
+        await TrayService.instance.dispose();
+        await TrayService.instance.closeWindowWithoutIntercept();
+      }
+    }
+  }
+
   void _tryAutoConnect({required bool showLegacySetupPrompt}) {
     // Defer to next frame to let providers initialize
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -492,8 +561,8 @@ class _AppShellState extends ConsumerState<AppShell>
           ElevatedButton.icon(
             onPressed: () {
               Navigator.pop(dialogContext);
-              // Switch to Subscriptions tab
-              setState(() => _currentIndex = 2);
+              // Open the unified Profiles & Routes workspace.
+              setState(() => _currentIndex = 1);
               // Trigger add-subscription dialog
               ref.read(addSubscriptionTriggerProvider.notifier).state = true;
             },
@@ -689,22 +758,6 @@ class _QuickStatusBar extends ConsumerWidget {
                         : const SizedBox.shrink(),
                 loading: () => const SizedBox.shrink(),
                 error: (_, __) => const SizedBox.shrink(),
-              ),
-
-              const SizedBox(width: 8),
-
-              // ── Settings shortcut ──
-              IconButton(
-                icon: const Icon(Icons.settings, size: 18),
-                tooltip: 'Настройки',
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                  );
-                },
-                constraints: const BoxConstraints(),
-                padding: const EdgeInsets.all(8),
               ),
             ],
           );

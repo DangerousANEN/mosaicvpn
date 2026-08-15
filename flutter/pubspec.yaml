@@ -1,7 +1,7 @@
 name: mosaic_vpn
 description: MosaicVPN — lightweight cross-platform VPN client
 publish_to: 'none'
-version: 0.3.6+1
+version: 0.3.7+1
 
 environment:
   sdk: ^3.5.0
@@ -36,6 +36,8 @@ dependencies:
   flutter_svg: ^2.0.10+1
   path_provider: ^2.1.4
   file_picker: ^8.1.4
+  shared_preferences: ^2.3.3
+  flutter_secure_storage: ^9.2.4
 
   # QR decoding (pure Dart, works on Windows/Linux/macOS)
   zxing_lib: ^1.1.4

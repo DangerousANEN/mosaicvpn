@@ -32,7 +32,7 @@ func TestBotLinkVerifierSuccess(t *testing.T) {
 	defer srv.Close()
 
 	v := NewBotLinkVerifier(srv.URL)
-	res, err := v.Verify(context.Background(), "AB23CD45")
+	res, err := v.Verify(context.Background(), "ab23-cd45")
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestBotLinkVerifierStatusMapping(t *testing.T) {
 			w.WriteHeader(tc.status)
 		}))
 		v := NewBotLinkVerifier(srv.URL)
-		_, err := v.Verify(context.Background(), "X")
+		_, err := v.Verify(context.Background(), "AB23CD45")
 		if !errors.Is(err, tc.want) {
 			t.Errorf("status %d: err = %v, want %v", tc.status, err, tc.want)
 		}
@@ -76,7 +76,7 @@ func TestBotLinkVerifierServerErrorIsUnavailableNotRejection(t *testing.T) {
 	defer srv.Close()
 
 	v := NewBotLinkVerifier(srv.URL)
-	_, err := v.Verify(context.Background(), "X")
+	_, err := v.Verify(context.Background(), "AB23CD45")
 	if !errors.Is(err, ErrVerifierUnavailable) {
 		t.Fatalf("err = %v, want ErrVerifierUnavailable", err)
 	}
@@ -95,14 +95,14 @@ func TestBotLinkVerifierUnreachableHost(t *testing.T) {
 
 	v := NewBotLinkVerifier(url)
 	v.Client = &http.Client{Timeout: 2 * time.Second}
-	if _, err := v.Verify(context.Background(), "X"); !errors.Is(err, ErrVerifierUnavailable) {
+	if _, err := v.Verify(context.Background(), "AB23CD45"); !errors.Is(err, ErrVerifierUnavailable) {
 		t.Fatalf("err = %v, want ErrVerifierUnavailable", err)
 	}
 }
 
 func TestBotLinkVerifierEmptyBaseURL(t *testing.T) {
 	v := &BotLinkVerifier{}
-	if _, err := v.Verify(context.Background(), "X"); !errors.Is(err, ErrVerifierUnavailable) {
+	if _, err := v.Verify(context.Background(), "AB23CD45"); !errors.Is(err, ErrVerifierUnavailable) {
 		t.Fatalf("err = %v, want ErrVerifierUnavailable", err)
 	}
 }
@@ -117,10 +117,17 @@ func TestBotLinkVerifierRejectsMalformedOK(t *testing.T) {
 			_, _ = w.Write([]byte(body))
 		}))
 		v := NewBotLinkVerifier(srv.URL)
-		if _, err := v.Verify(context.Background(), "X"); !errors.Is(err, ErrVerifierUnavailable) {
+		if _, err := v.Verify(context.Background(), "AB23CD45"); !errors.Is(err, ErrVerifierUnavailable) {
 			t.Errorf("body %q: err = %v, want ErrVerifierUnavailable", body, err)
 		}
 		srv.Close()
+	}
+}
+
+func TestBotLinkVerifierRejectsMalformedPairingCodeBeforeRequest(t *testing.T) {
+	v := NewBotLinkVerifier("https://authority.invalid")
+	if _, err := v.Verify(context.Background(), "AB-0"); !errors.Is(err, ErrLinkCodeMalformed) {
+		t.Fatalf("err = %v, want ErrLinkCodeMalformed", err)
 	}
 }
 
@@ -158,7 +165,7 @@ func TestBotLinkVerifierHonoursContextCancel(t *testing.T) {
 	defer cancel()
 
 	v := NewBotLinkVerifier(srv.URL)
-	if _, err := v.Verify(ctx, "X"); !errors.Is(err, ErrVerifierUnavailable) {
+	if _, err := v.Verify(ctx, "AB23CD45"); !errors.Is(err, ErrVerifierUnavailable) {
 		t.Fatalf("err = %v, want ErrVerifierUnavailable", err)
 	}
 }

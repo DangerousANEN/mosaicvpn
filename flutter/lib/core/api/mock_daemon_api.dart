@@ -13,6 +13,11 @@ import 'daemon_api_base.dart';
 /// To switch back to the real daemon, change `daemonApiProvider` in
 /// `vpn_providers.dart` to use `DaemonApi` instead of `MockDaemonApi`.
 class MockDaemonApi implements DaemonApiBase {
+  @override
+  Future<void> shutdownDaemon() async {
+    await disconnect();
+  }
+
   // ─── In-memory state ──────────────────────────────────────────────
   final List<Subscription> _subscriptions = [];
   final List<Server> _servers = [];
@@ -1467,7 +1472,8 @@ class MockDaemonApi implements DaemonApiBase {
   Future<BillingProfile> getBillingProfile() => _delay(_billingProfile);
 
   @override
-  Future<void> linkBillingAccount(int telegramId, {String? sessionToken}) async {
+  Future<void> linkBillingAccount(int telegramId,
+      {String? sessionToken}) async {
     await _delayVoid();
     _billingProfile = BillingProfile(
       linked: true,
@@ -1572,14 +1578,16 @@ class MockDaemonApi implements DaemonApiBase {
     }
     _mockLinked = true;
     _unifiedAccount = _demoAccount();
-    return const LinkResult(ok: true, telegramId: 424242, username: 'mock_user');
+    return const LinkResult(
+        ok: true, telegramId: 424242, username: 'mock_user');
   }
 
   @override
   Future<void> loginWithEmail(String email, String password) async {
     await _delayVoid();
     if (!email.contains('@') || password.length < 8) {
-      throw DioException(requestOptions: RequestOptions(path: '/v1/account/email-login'));
+      throw DioException(
+          requestOptions: RequestOptions(path: '/v1/account/email-login'));
     }
     _mockLinked = true;
     _unifiedAccount = _demoAccount();
@@ -1633,13 +1641,22 @@ class MockDaemonApi implements DaemonApiBase {
   Future<UnifiedAccount> freezeAccount() async {
     await _delayVoid();
     final current = _unifiedAccount;
-    if (!_mockLinked || current == null) throw DioException(requestOptions: RequestOptions(path: '/v1/account/freeze'));
+    if (!_mockLinked || current == null) {
+      throw DioException(
+          requestOptions: RequestOptions(path: '/v1/account/freeze'));
+    }
     return _unifiedAccount = UnifiedAccount(
-      accountId: current.accountId, status: 'frozen', tier: current.tier,
-      balanceKopecks: current.balanceKopecks, currency: current.currency,
-      trialEndsAt: current.trialEndsAt, shortUuid: current.shortUuid,
-      subscriptionUrl: current.subscriptionUrl, pricePerDayKopecks: current.pricePerDayKopecks,
-      timezone: current.timezone, checkoutDiscountPercent: current.checkoutDiscountPercent,
+      accountId: current.accountId,
+      status: 'frozen',
+      tier: current.tier,
+      balanceKopecks: current.balanceKopecks,
+      currency: current.currency,
+      trialEndsAt: current.trialEndsAt,
+      shortUuid: current.shortUuid,
+      subscriptionUrl: current.subscriptionUrl,
+      pricePerDayKopecks: current.pricePerDayKopecks,
+      timezone: current.timezone,
+      checkoutDiscountPercent: current.checkoutDiscountPercent,
     );
   }
 
@@ -1647,34 +1664,66 @@ class MockDaemonApi implements DaemonApiBase {
   Future<UnifiedAccount> unfreezeAccount() async {
     await _delayVoid();
     final current = _unifiedAccount;
-    if (!_mockLinked || current == null) throw DioException(requestOptions: RequestOptions(path: '/v1/account/unfreeze'));
+    if (!_mockLinked || current == null) {
+      throw DioException(
+          requestOptions: RequestOptions(path: '/v1/account/unfreeze'));
+    }
     return _unifiedAccount = UnifiedAccount(
-      accountId: current.accountId, status: 'active', tier: current.tier,
-      balanceKopecks: current.balanceKopecks, currency: current.currency,
-      trialEndsAt: current.trialEndsAt, shortUuid: current.shortUuid,
-      subscriptionUrl: current.subscriptionUrl, pricePerDayKopecks: current.pricePerDayKopecks,
-      timezone: current.timezone, checkoutDiscountPercent: current.checkoutDiscountPercent,
+      accountId: current.accountId,
+      status: 'active',
+      tier: current.tier,
+      balanceKopecks: current.balanceKopecks,
+      currency: current.currency,
+      trialEndsAt: current.trialEndsAt,
+      shortUuid: current.shortUuid,
+      subscriptionUrl: current.subscriptionUrl,
+      pricePerDayKopecks: current.pricePerDayKopecks,
+      timezone: current.timezone,
+      checkoutDiscountPercent: current.checkoutDiscountPercent,
     );
   }
 
   @override
   Future<List<CheckoutProviderOption>> getCheckoutOptions() async {
     await _delayVoid();
-    return const [CheckoutProviderOption(id: 'cryptopay', title: 'Crypto Pay', currency: 'USDT', available: true, minAmountRub: 10, maxAmountRub: 365)];
+    return const [
+      CheckoutProviderOption(
+          id: 'cryptopay',
+          title: 'Crypto Pay',
+          currency: 'USDT',
+          available: true,
+          minAmountRub: 10,
+          maxAmountRub: 365)
+    ];
   }
 
   @override
-  Future<CheckoutSession> createCheckout({required int amountRub, required String provider}) async {
+  Future<CheckoutSession> createCheckout(
+      {required int amountRub, required String provider}) async {
     await _delayVoid();
-    if (amountRub < 10 || amountRub > 365) throw DioException(requestOptions: RequestOptions(path: '/v1/billing/checkout'));
-    return CheckoutSession(provider: provider, checkoutUrl: Uri.parse('https://pay.crypt.bot/mock-mosaic-invoice'), amountRub: amountRub, message: 'Оплата будет зачислена автоматически.');
+    if (amountRub < 10 || amountRub > 365) {
+      throw DioException(
+          requestOptions: RequestOptions(path: '/v1/billing/checkout'));
+    }
+    return CheckoutSession(
+        provider: provider,
+        checkoutUrl: Uri.parse('https://pay.crypt.bot/mock-mosaic-invoice'),
+        amountRub: amountRub,
+        message: 'Оплата будет зачислена автоматически.');
   }
 
   @override
   Future<RotatedSubscriptionLink> rotateSubscriptionLink() async {
     await _delayVoid();
-    if (!_mockLinked) throw DioException(requestOptions: RequestOptions(path: '/v1/account/subscription-link/rotate'));
-    return RotatedSubscriptionLink(subscriptionUrl: Uri.parse('https://sub.zxc1x1.ru/mock-rotated-subscription'), shortUuid: 'mock-rotated-subscription');
+    if (!_mockLinked) {
+      throw DioException(
+          requestOptions:
+              RequestOptions(path: '/v1/account/subscription-link/rotate'));
+    }
+    return RotatedSubscriptionLink(
+        subscriptionUrl:
+            Uri.parse('https://sub.zxc1x1.ru/mock-rotated-subscription'),
+        shortUuid: 'mock-rotated-subscription');
   }
 
   // ─── Provider Manifest ─────────────────────────────────────────────
@@ -1781,7 +1830,13 @@ class MockDaemonApi implements DaemonApiBase {
           'payment_methods': ['SBP'],
         },
         'services': [
-          {'id': 'support', 'type': 'link', 'title': 'Support', 'icon': 'support_agent', 'config': {'url': 'https://t.me/mosaicvpn_support'}},
+          {
+            'id': 'support',
+            'type': 'link',
+            'title': 'Support',
+            'icon': 'support_agent',
+            'config': {'url': 'https://t.me/mosaicvpn_support'}
+          },
         ],
         'widgets': [],
       },
@@ -1794,7 +1849,8 @@ class MockDaemonApi implements DaemonApiBase {
     return {
       'node-1': const NodeHealth(nodeId: 'node-1', alive: true, latencyMs: 42),
       'node-2': const NodeHealth(nodeId: 'node-2', alive: true, latencyMs: 87),
-      'node-3': const NodeHealth(nodeId: 'node-3', alive: false, error: 'timeout'),
+      'node-3':
+          const NodeHealth(nodeId: 'node-3', alive: false, error: 'timeout'),
     };
   }
 

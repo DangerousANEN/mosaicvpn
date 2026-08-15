@@ -42,6 +42,11 @@ class DaemonApi implements DaemonApiBase {
     await _dio.post('/v1/disconnect');
   }
 
+  @override
+  Future<void> shutdownDaemon() async {
+    await _dio.post('/v1/runtime/shutdown');
+  }
+
   // ─── Subscriptions ─────────────────────────────────────────────────
 
   @override
@@ -371,7 +376,8 @@ class DaemonApi implements DaemonApiBase {
   }
 
   @override
-  Future<void> linkBillingAccount(int telegramId, {String? sessionToken}) async {
+  Future<void> linkBillingAccount(int telegramId,
+      {String? sessionToken}) async {
     final data = <String, dynamic>{'telegram_id': telegramId};
     if (sessionToken != null && sessionToken.isNotEmpty) {
       data['session_token'] = sessionToken;
@@ -415,7 +421,8 @@ class DaemonApi implements DaemonApiBase {
 
   @override
   Future<void> loginWithEmail(String email, String password) async {
-    await _dio.post('/v1/account/email-login', data: {'email': email, 'password': password});
+    await _dio.post('/v1/account/email-login',
+        data: {'email': email, 'password': password});
   }
 
   @override
@@ -436,14 +443,17 @@ class DaemonApi implements DaemonApiBase {
     final r = await _dio.get('/v1/account/overview');
     final raw = r.data as Map;
     if (raw['linked'] != true || raw['account'] is! Map) return null;
-    return UnifiedAccount.fromJson(Map<String, dynamic>.from(raw['account'] as Map));
+    return UnifiedAccount.fromJson(
+        Map<String, dynamic>.from(raw['account'] as Map));
   }
 
   @override
   Future<UnifiedAccount> freezeAccount() async {
     await _dio.post('/v1/account/freeze', data: const {});
     final account = await getUnifiedAccount();
-    if (account == null) throw const FormatException('Account is no longer linked.');
+    if (account == null) {
+      throw const FormatException('Account is no longer linked.');
+    }
     return account;
   }
 
@@ -451,7 +461,9 @@ class DaemonApi implements DaemonApiBase {
   Future<UnifiedAccount> unfreezeAccount() async {
     await _dio.post('/v1/account/unfreeze', data: const {});
     final account = await getUnifiedAccount();
-    if (account == null) throw const FormatException('Account is no longer linked.');
+    if (account == null) {
+      throw const FormatException('Account is no longer linked.');
+    }
     return account;
   }
 
@@ -460,19 +472,27 @@ class DaemonApi implements DaemonApiBase {
     final r = await _dio.get('/v1/billing/checkout-options');
     final raw = (r.data as Map)['providers'];
     if (raw is! List) return const [];
-    return raw.whereType<Map>().map((item) => CheckoutProviderOption.fromJson(Map<String, dynamic>.from(item))).toList(growable: false);
+    return raw
+        .whereType<Map>()
+        .map((item) =>
+            CheckoutProviderOption.fromJson(Map<String, dynamic>.from(item)))
+        .toList(growable: false);
   }
 
   @override
-  Future<CheckoutSession> createCheckout({required int amountRub, required String provider}) async {
-    final r = await _dio.post('/v1/billing/checkout', data: {'amount_rub': amountRub, 'provider': provider});
+  Future<CheckoutSession> createCheckout(
+      {required int amountRub, required String provider}) async {
+    final r = await _dio.post('/v1/billing/checkout',
+        data: {'amount_rub': amountRub, 'provider': provider});
     return CheckoutSession.fromJson(Map<String, dynamic>.from(r.data as Map));
   }
 
   @override
   Future<RotatedSubscriptionLink> rotateSubscriptionLink() async {
-    final r = await _dio.post('/v1/account/subscription-link/rotate', data: const {});
-    return RotatedSubscriptionLink.fromJson(Map<String, dynamic>.from(r.data as Map));
+    final r =
+        await _dio.post('/v1/account/subscription-link/rotate', data: const {});
+    return RotatedSubscriptionLink.fromJson(
+        Map<String, dynamic>.from(r.data as Map));
   }
 
   // ─── Provider Manifest ─────────────────────────────────────────────

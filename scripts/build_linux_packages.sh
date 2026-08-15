@@ -69,7 +69,7 @@ Version: $VERSION
 Section: net
 Priority: optional
 Architecture: amd64
-Depends: libgtk-3-0, libayatana-appindicator3-1 | libappindicator3-1
+Depends: libgtk-3-0, libayatana-appindicator3-1 | libappindicator3-1, libcap2-bin
 Maintainer: MosaicVPN <support@mosaicvpn.local>
 Description: MosaicVPN desktop client
  A cross-platform desktop client for a protected network connection.
@@ -91,7 +91,23 @@ for directory in "$FLUTTER_DIR/assets/icons/hicolor"/*x*; do
   mkdir -p "$target"
   cp "$directory/apps/ru.mosaicvpn.client.png" "$target/"
 done
-chmod 0755 "$PACKAGE_ROOT/DEBIAN"
+cat > "$PACKAGE_ROOT/DEBIAN/postinst" <<'EOF'
+#!/bin/sh
+set -eu
+# sing-box needs only CAP_NET_ADMIN to create the TUN device and routing
+# table. Do not run the Flutter UI or mosaicd itself with blanket root rights.
+if command -v setcap >/dev/null 2>&1; then
+  setcap cap_net_admin+ep /opt/mosaicvpn/sing-box || true
+fi
+EOF
+cat > "$PACKAGE_ROOT/DEBIAN/prerm" <<'EOF'
+#!/bin/sh
+set -eu
+if command -v setcap >/dev/null 2>&1 && [ -e /opt/mosaicvpn/sing-box ]; then
+  setcap -r /opt/mosaicvpn/sing-box || true
+fi
+EOF
+chmod 0755 "$PACKAGE_ROOT/DEBIAN" "$PACKAGE_ROOT/DEBIAN/postinst" "$PACKAGE_ROOT/DEBIAN/prerm"
 dpkg-deb --root-owner-group --build "$PACKAGE_ROOT" "$DIST_DIR/MosaicVPN_${VERSION}_amd64.deb"
 
 printf '\nCreated artifacts:\n  %s\n  %s\n' \

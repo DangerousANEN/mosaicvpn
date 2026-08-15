@@ -29,6 +29,25 @@ import (
 // network blip should not tell the user their code is wrong.
 var ErrVerifierUnavailable = errors.New("link verifier unavailable")
 
+// ErrLinkCodeMalformed is returned before a remote request when the user
+// supplied fewer than eight symbols from the unambiguous Mosaic pairing
+// alphabet. This prevents an avoidable production HTTP 400 and lets every
+// client present the same actionable message.
+var ErrLinkCodeMalformed = errors.New("invalid pairing code format")
+
+const pairingCodeAlphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+func normalizePairingCode(raw string) string {
+	var normalized strings.Builder
+	normalized.Grow(8)
+	for _, r := range strings.ToUpper(raw) {
+		if strings.ContainsRune(pairingCodeAlphabet, r) {
+			normalized.WriteRune(r)
+		}
+	}
+	return normalized.String()
+}
+
 // LinkVerification is what the bot returns for a valid code.
 type LinkVerification struct {
 	TelegramID    int64  `json:"telegram_id"`
@@ -84,6 +103,10 @@ func NewBotLinkVerifier(baseURL string) *BotLinkVerifier {
 // Status mapping mirrors the daemon's own API so the Flutter client sees one
 // consistent contract regardless of which side actually burned the code.
 func (v *BotLinkVerifier) Verify(ctx context.Context, code string) (LinkVerification, error) {
+	code = normalizePairingCode(code)
+	if len(code) != 8 {
+		return LinkVerification{}, ErrLinkCodeMalformed
+	}
 	if v.BaseURL == "" {
 		return LinkVerification{}, ErrVerifierUnavailable
 	}

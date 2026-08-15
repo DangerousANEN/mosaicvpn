@@ -1,15 +1,19 @@
-import 'package:flutter/foundation.dart';
+import 'dart:async';
+import 'dart:io';
+
 import 'package:system_tray/system_tray.dart';
 import 'package:window_manager/window_manager.dart';
-import 'dart:io';
 
 import '../platform/app_platform.dart';
 
-/// Manages the system tray icon, menu, and window-show/hide logic.
+typedef TrayAction = FutureOr<void> Function();
+
+/// Manages the desktop tray icon, status-aware context menu and window state.
 ///
-/// When [minimizeToTray] is true, closing the window hides it to tray
-/// instead of exiting. The tray menu offers Show / Connect / Disconnect /
-/// Quit options.
+/// Closing the window can minimize the client to the tray while retaining an
+/// active VPN. Explicit **Quit MosaicVPN** is deliberately different: AppShell
+/// first asks the local daemon to shut down, which disconnects and reaps its
+/// sing-box child before the Flutter process exits.
 class TrayService {
   static final TrayService instance = TrayService._();
 
@@ -18,94 +22,124 @@ class TrayService {
   final SystemTray _tray = SystemTray();
   bool _initialized = false;
   bool _minimizeToTray = false;
-  VoidCallback? _onConnect;
-  VoidCallback? _onDisconnect;
-
-  bool get isInitialized => _initialized;
-
-  /// Whether the window is currently hidden to tray.
-  bool get isWindowHidden => _hidden;
+  bool _connected = false;
+  String _routeLabel = '';
   bool _hidden = false;
 
+  TrayAction? _onConnect;
+  TrayAction? _onDisconnect;
+  TrayAction? _onOpenRoutes;
+  TrayAction? _onQuit;
+
+  bool get isInitialized => _initialized;
+  bool get isWindowHidden => _hidden;
+
+  /// Updates retained callbacks only when a non-null action is supplied.
+  /// Settings can therefore change close-to-tray behavior without severing
+  /// application-level connect/disconnect/quit actions.
   void configure({
     required bool minimizeToTray,
-    VoidCallback? onConnect,
-    VoidCallback? onDisconnect,
+    TrayAction? onConnect,
+    TrayAction? onDisconnect,
+    TrayAction? onOpenRoutes,
+    TrayAction? onQuit,
   }) {
     _minimizeToTray = minimizeToTray;
-    _onConnect = onConnect;
-    _onDisconnect = onDisconnect;
+    if (onConnect != null) _onConnect = onConnect;
+    if (onDisconnect != null) _onDisconnect = onDisconnect;
+    if (onOpenRoutes != null) _onOpenRoutes = onOpenRoutes;
+    if (onQuit != null) _onQuit = onQuit;
+    if (_initialized) _buildMenu();
+  }
+
+  /// Reflects the current connection state in the next context menu rebuild.
+  void setConnectionState(bool connected, {String routeLabel = ''}) {
+    if (_connected == connected && _routeLabel == routeLabel) return;
+    _connected = connected;
+    _routeLabel = routeLabel;
+    if (_initialized) _buildMenu();
   }
 
   Future<void> init() async {
-    // system_tray and window_manager are desktop-only plugins; calling them on
-    // web or mobile throws MissingPluginException.
     if (_initialized || !AppPlatform.isDesktop) return;
 
-    String iconPath;
-    if (Platform.isWindows) {
-      iconPath = 'assets/icons/app_icon.ico';
-    } else if (Platform.isMacOS) {
-      iconPath = 'assets/icons/app_icon.png';
-    } else {
-      iconPath = 'assets/icons/app_icon.png';
-    }
+    final iconPath = Platform.isWindows
+        ? 'assets/icons/app_icon.ico'
+        : 'assets/icons/app_icon.png';
 
     try {
-      await _tray.initSystemTray(
-        title: 'MosaicBox',
-        iconPath: iconPath,
-      );
+      await _tray.initSystemTray(title: 'MosaicVPN', iconPath: iconPath);
     } catch (_) {
-      return; // Tray not available; run without it.
+      return;
     }
 
-    _buildMenu();
     _initialized = true;
+    _buildMenu();
+    _tray.registerSystemTrayEventHandler((eventName) {
+      if (eventName == kSystemTrayEventClick ||
+          eventName == kSystemTrayEventRightClick) {
+        unawaited(showWindow());
+      }
+    });
   }
 
   void _buildMenu() {
     final menu = Menu();
+    final connectionLabel = _connected
+        ? 'Подключено${_routeLabel.isEmpty ? '' : ' · $_routeLabel'}'
+        : 'Не подключено';
+
     menu.buildFrom([
       MenuItemLabel(
-        label: 'Show MosaicBox',
-        onClicked: (item) => showWindow(),
+        label: 'MosaicVPN',
+        onClicked: (_) => showWindow(),
+      ),
+      MenuItemLabel(
+        label: connectionLabel,
+        onClicked: (_) => showWindow(),
       ),
       MenuSeparator(),
       MenuItemLabel(
-        label: 'Quick Connect',
-        onClicked: (item) {
-          _onConnect?.call();
-          showWindow();
+        label: 'Подключить',
+        onClicked: (_) async {
+          await _onConnect?.call();
+          await showWindow();
         },
       ),
       MenuItemLabel(
-        label: 'Disconnect',
-        onClicked: (item) {
-          _onDisconnect?.call();
+        label: 'Отключить',
+        onClicked: (_) async {
+          await _onDisconnect?.call();
+        },
+      ),
+      MenuItemLabel(
+        label: 'Профили и маршруты',
+        onClicked: (_) async {
+          await _onOpenRoutes?.call();
+          await showWindow();
         },
       ),
       MenuSeparator(),
       MenuItemLabel(
-        label: 'Quit',
-        onClicked: (item) async {
-          await _tray.destroy();
-          await windowManager.setPreventClose(false);
-          await windowManager.close();
+        label: 'Выйти из MosaicVPN',
+        onClicked: (_) async {
+          if (_onQuit != null) {
+            await _onQuit!.call();
+            return;
+          }
+          await closeWindowWithoutIntercept();
         },
       ),
     ]);
     _tray.setContextMenu(menu);
   }
 
-  /// Hide the window to tray.
   Future<void> hideToTray() async {
     if (!_initialized) return;
     _hidden = true;
     await windowManager.hide();
   }
 
-  /// Show the window from tray.
   Future<void> showWindow() async {
     if (!_initialized) return;
     await windowManager.show();
@@ -114,21 +148,19 @@ class TrayService {
     _hidden = false;
   }
 
-  /// Called when the user clicks the tray icon.
-  void handleTrayClick() {
-    if (_hidden) {
-      showWindow();
-    } else {
-      hideToTray();
+  /// Allows a final exit after the daemon has stopped cleanly.
+  Future<void> closeWindowWithoutIntercept() async {
+    if (AppPlatform.isDesktop) {
+      await windowManager.setPreventClose(false);
+      await windowManager.destroy();
     }
   }
 
-  /// Whether close should be intercepted (hiding to tray instead).
   bool get shouldInterceptClose => _minimizeToTray && _initialized;
 
-  void dispose() {
+  Future<void> dispose() async {
     if (_initialized) {
-      _tray.destroy();
+      await _tray.destroy();
       _initialized = false;
     }
   }

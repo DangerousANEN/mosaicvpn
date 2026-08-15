@@ -9,10 +9,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/daemon_api.dart';
 import '../api/daemon_api_base.dart';
-import '../api/mock_daemon_api.dart';
+import '../api/unavailable_daemon_api.dart';
 import '../config/app_config.dart';
+import '../platform/app_platform.dart';
 import '../models/models.dart';
+import '../services/android_vpn_service.dart';
 import '../services/daemon_launcher.dart';
+import '../services/ui_preferences_service.dart';
 
 // ─── Lockfile helper ────────────────────────────────────────────────
 
@@ -125,9 +128,8 @@ Future<({String baseUrl, String token})?> _tryRealDaemon() async {
 /// Provides the API client for the MosaicVPN daemon.
 ///
 /// Attempts to connect to the real Go daemon via lockfile-discovered
-/// port+token. If the daemon is unreachable (not running, stale lockfile,
-/// or health-check fails), falls back to [MockDaemonApi] so the UI remains
-/// functional for demo/development.
+/// port+token. If the daemon is unreachable, the provider returns an explicit
+/// unavailable-runtime error; production builds never fabricate demo data.
 final daemonApiProvider = Provider<DaemonApiBase>((ref) {
   // We return a placeholder synchronously; the actual resolution happens
   // in the async override below. But Provider needs to return something
@@ -137,6 +139,7 @@ final daemonApiProvider = Provider<DaemonApiBase>((ref) {
 
 /// Async provider that resolves the real-or-mock daemon API.
 final resolvedDaemonApiProvider = FutureProvider<DaemonApiBase>((ref) async {
+  if (AppPlatform.isAndroid) return const UnavailableDaemonApi();
   var real = await _tryRealDaemon();
   if (real == null) {
     await DaemonLauncher.instance.ensureDaemonRunning(() async {
@@ -148,7 +151,7 @@ final resolvedDaemonApiProvider = FutureProvider<DaemonApiBase>((ref) async {
   if (found != null) {
     return DaemonApi(baseUrl: found.baseUrl, token: found.token);
   }
-  return MockDaemonApi();
+  return const UnavailableDaemonApi();
 });
 
 /// Placeholder that delegates all calls to a lazily-resolved backend.
@@ -159,6 +162,9 @@ class _ResolvedDaemonApi implements DaemonApiBase {
 
   Future<DaemonApiBase> _backend() async {
     if (_impl != null) return _impl!;
+    if (AppPlatform.isAndroid) {
+      return _impl = const UnavailableDaemonApi();
+    }
     _resolution ??= () async {
       var real = await _tryRealDaemon();
       if (real == null) {
@@ -170,7 +176,7 @@ class _ResolvedDaemonApi implements DaemonApiBase {
       final found = real;
       final impl = (found != null)
           ? DaemonApi(baseUrl: found.baseUrl, token: found.token)
-          : MockDaemonApi();
+          : const UnavailableDaemonApi();
       _impl = impl;
       return impl;
     }();
@@ -184,6 +190,8 @@ class _ResolvedDaemonApi implements DaemonApiBase {
       (await _backend()).connect(serverID);
   @override
   Future<void> disconnect() async => (await _backend()).disconnect();
+  @override
+  Future<void> shutdownDaemon() async => (await _backend()).shutdownDaemon();
   @override
   Future<List<Subscription>> listSubscriptions() async =>
       (await _backend()).listSubscriptions();
@@ -345,8 +353,10 @@ class _ResolvedDaemonApi implements DaemonApiBase {
   Future<BillingProfile> getBillingProfile() async =>
       (await _backend()).getBillingProfile();
   @override
-  Future<void> linkBillingAccount(int telegramId, {String? sessionToken}) async =>
-      (await _backend()).linkBillingAccount(telegramId, sessionToken: sessionToken);
+  Future<void> linkBillingAccount(int telegramId,
+          {String? sessionToken}) async =>
+      (await _backend())
+          .linkBillingAccount(telegramId, sessionToken: sessionToken);
   @override
   Future<void> unlinkBillingAccount() async =>
       (await _backend()).unlinkBillingAccount();
@@ -390,8 +400,10 @@ class _ResolvedDaemonApi implements DaemonApiBase {
   Future<List<CheckoutProviderOption>> getCheckoutOptions() async =>
       (await _backend()).getCheckoutOptions();
   @override
-  Future<CheckoutSession> createCheckout({required int amountRub, required String provider}) async =>
-      (await _backend()).createCheckout(amountRub: amountRub, provider: provider);
+  Future<CheckoutSession> createCheckout(
+          {required int amountRub, required String provider}) async =>
+      (await _backend())
+          .createCheckout(amountRub: amountRub, provider: provider);
   @override
   Future<RotatedSubscriptionLink> rotateSubscriptionLink() async =>
       (await _backend()).rotateSubscriptionLink();
@@ -425,7 +437,9 @@ final vpnStatusProvider = StreamProvider.autoDispose<VpnStatus>((ref) async* {
   void fetch() async {
     if (controller.isClosed) return;
     try {
-      final status = await api.getStatus();
+      final status = AppPlatform.isAndroid
+          ? await _androidVpnStatus()
+          : await api.getStatus();
       if (!controller.isClosed) controller.add(status);
     } catch (e) {
       if (!controller.isClosed) controller.add(VpnStatus());
@@ -442,6 +456,16 @@ final vpnStatusProvider = StreamProvider.autoDispose<VpnStatus>((ref) async* {
 
   yield* controller.stream;
 });
+
+Future<VpnStatus> _androidVpnStatus() async {
+  final native = await AndroidVpnService.instance.status();
+  return VpnStatus(
+    agentConnected: true,
+    state: native.state,
+    tunnelMode: 'tun',
+    lastError: native.error ?? '',
+  );
+}
 
 // ─── Servers ───────────────────────────────────────────────────────
 
@@ -620,37 +644,31 @@ class FavoriteServersNotifier extends StateNotifier<Set<String>> {
 //
 final themeModeProvider =
     StateNotifierProvider<ThemeModeNotifier, String>((ref) {
-  final api = ref.watch(daemonApiProvider);
-  return ThemeModeNotifier(api, ref);
+  return ThemeModeNotifier(UiPreferencesService());
 });
 
 class ThemeModeNotifier extends StateNotifier<String> {
-  final DaemonApiBase _api;
-  final Ref _ref;
+  final UiPreferencesService _preferences;
   bool _loaded = false;
 
-  ThemeModeNotifier(this._api, this._ref) : super('system') {
+  ThemeModeNotifier(this._preferences) : super('system') {
     _load();
   }
 
   static const values = ['system', 'light', 'dark'];
 
   Future<void> _load() async {
-    try {
-      final prefs = await _api.getPrefs();
-      if (!_loaded) {
-        state = prefs.themeMode;
-        _loaded = true;
-      }
-    } catch (_) {}
+    final mode = await _preferences.readThemeMode();
+    if (!_loaded && values.contains(mode)) {
+      state = mode!;
+    }
+    _loaded = true;
   }
 
   Future<void> set(String mode) async {
+    if (!values.contains(mode)) return;
     state = mode;
-    try {
-      await _api.setPrefs({'theme_mode': mode});
-      _ref.invalidate(prefsProvider);
-    } catch (_) {}
+    await _preferences.writeThemeMode(mode);
   }
 
   ThemeMode get flutterThemeMode => switch (state) {
@@ -663,37 +681,31 @@ class ThemeModeNotifier extends StateNotifier<String> {
 // ─── Language (i18n) ─────────────────────────────────────────────
 //
 final languageProvider = StateNotifierProvider<LanguageNotifier, String>((ref) {
-  final api = ref.watch(daemonApiProvider);
-  return LanguageNotifier(api, ref);
+  return LanguageNotifier(UiPreferencesService());
 });
 
 class LanguageNotifier extends StateNotifier<String> {
-  final DaemonApiBase _api;
-  final Ref _ref;
+  final UiPreferencesService _preferences;
   bool _loaded = false;
 
-  LanguageNotifier(this._api, this._ref) : super('system') {
+  LanguageNotifier(this._preferences) : super('system') {
     _load();
   }
 
   static const values = ['system', 'en', 'ru'];
 
   Future<void> _load() async {
-    try {
-      final prefs = await _api.getPrefs();
-      if (!_loaded) {
-        state = prefs.language;
-        _loaded = true;
-      }
-    } catch (_) {}
+    final language = await _preferences.readLanguage();
+    if (!_loaded && values.contains(language)) {
+      state = language!;
+    }
+    _loaded = true;
   }
 
   Future<void> set(String lang) async {
+    if (!values.contains(lang)) return;
     state = lang;
-    try {
-      await _api.setPrefs({'language': lang});
-      _ref.invalidate(prefsProvider);
-    } catch (_) {}
+    await _preferences.writeLanguage(lang);
   }
 }
 

@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/models.dart';
 import '../../core/providers/billing_provider.dart';
 import '../../core/providers/vpn_providers.dart';
+import '../../core/platform/app_platform.dart';
+import '../../core/services/android_mosaic_account_service.dart';
 import '../../core/theme/atlas_theme.dart';
 import 'unified_account_panel.dart';
 
@@ -40,19 +42,42 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     super.dispose();
   }
 
+  /// Normalizes a code copied from Telegram. Separators and spaces are only
+  /// presentation characters; the authority accepts the unambiguous 8-symbol
+  /// alphabet used by `/link`.
+  String _normalizePairingCode(String value) {
+    const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    final normalized = StringBuffer();
+    for (final rune in value.toUpperCase().runes) {
+      final symbol = String.fromCharCode(rune);
+      if (alphabet.contains(symbol)) normalized.write(symbol);
+    }
+    return normalized.toString();
+  }
+
   Future<void> _submitCode() async {
-    final raw = _codeController.text.trim();
-    if (raw.isEmpty) {
-      setState(() => _linkError = 'Enter the code from the bot.');
+    final code = _normalizePairingCode(_codeController.text);
+    if (code.length != 8) {
+      setState(() => _linkError = LinkCodeError.invalidFormat.message);
       return;
     }
+    // Keep the visible value aligned with the exact token sent to the daemon.
+    _codeController.value = TextEditingValue(
+      text: code,
+      selection: TextSelection.collapsed(offset: code.length),
+    );
     setState(() {
       _linking = true;
       _linkError = null;
     });
     try {
-      final api = ref.read(daemonApiProvider);
-      await api.redeemLinkCode(raw);
+      if (AppPlatform.isAndroid) {
+        await AndroidMosaicAccountService.instance.redeemTelegramCode(code);
+        ref.invalidate(androidMosaicSessionProvider);
+      } else {
+        final api = ref.read(daemonApiProvider);
+        await api.redeemLinkCode(code);
+      }
       if (!mounted) return;
       // Refresh both the profile and the history: linking changes what the
       // account endpoints return.
@@ -79,12 +104,22 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
     if (!email.contains('@') || password.length < 8) {
-      setState(() => _linkError = 'Enter a valid email and a password of at least 8 characters.');
+      setState(() => _linkError =
+          'Enter a valid email and a password of at least 8 characters.');
       return;
     }
-    setState(() { _linking = true; _linkError = null; });
+    setState(() {
+      _linking = true;
+      _linkError = null;
+    });
     try {
-      await ref.read(daemonApiProvider).loginWithEmail(email, password);
+      if (AppPlatform.isAndroid) {
+        await AndroidMosaicAccountService.instance
+            .loginWithEmail(email, password);
+        ref.invalidate(androidMosaicSessionProvider);
+      } else {
+        await ref.read(daemonApiProvider).loginWithEmail(email, password);
+      }
       if (!mounted) return;
       ref.invalidate(billingProfileProvider);
       ref.invalidate(paymentHistoryProvider);
@@ -92,7 +127,11 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
       setState(() => _linking = false);
     } catch (_) {
       if (!mounted) return;
-      setState(() { _linking = false; _linkError = 'Email or password is incorrect. Try again or create an account on the website.'; });
+      setState(() {
+        _linking = false;
+        _linkError =
+            'Email or password is incorrect. Try again or create an account on the website.';
+      });
     }
   }
 
@@ -114,7 +153,8 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
             builder: (context, constraints) {
               // Cap the column so the cabinet does not stretch into
               // unreadable full-width lines on a desktop window.
-              final maxW = constraints.maxWidth > 720.0 ? 720.0 : double.infinity;
+              final maxW =
+                  constraints.maxWidth > 720.0 ? 720.0 : double.infinity;
               return ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
@@ -196,8 +236,7 @@ class _CabinetError extends StatelessWidget {
           const SizedBox(height: 8),
           // Show the real reason rather than a generic message: "daemon not
           // running" and "Remnawave unreachable" need different fixes.
-          Text(message,
-              style: TextStyle(color: c.textSecondary, fontSize: 12)),
+          Text(message, style: TextStyle(color: c.textSecondary, fontSize: 12)),
         ],
       ),
     );
@@ -249,15 +288,17 @@ class _LinkForm extends StatelessWidget {
             enabled: !busy,
             autocorrect: false,
             textCapitalization: TextCapitalization.characters,
-            maxLength: 9, // 8 chars plus an optional dash
+            maxLength: 10, // 8 symbols plus visual separators in pasted text
             onSubmitted: busy ? null : (_) => onSubmit(),
             inputFormatters: [
               // The daemon's alphabet excludes look-alike characters, so
               // filtering here keeps typos from becoming failed requests.
-              FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9\-]')),
+              FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9\-\s]')),
             ],
             style: TextStyle(
-                color: c.textPrimary, letterSpacing: 2, fontFamily: 'monospace'),
+                color: c.textPrimary,
+                letterSpacing: 2,
+                fontFamily: 'monospace'),
             decoration: InputDecoration(
               labelText: 'Pairing code',
               hintText: 'AB23CD45',
@@ -292,13 +333,16 @@ class _LinkForm extends StatelessWidget {
           const SizedBox(height: 20),
           Divider(color: c.border),
           const SizedBox(height: 12),
-          Text('Sign in with email', style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.w600)),
+          Text('Sign in with email',
+              style:
+                  TextStyle(color: c.textPrimary, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
           TextField(
             controller: emailController,
             enabled: !busy,
             keyboardType: TextInputType.emailAddress,
-            decoration: InputDecoration(labelText: 'Email', filled: true, fillColor: c.bgChild),
+            decoration: InputDecoration(
+                labelText: 'Email', filled: true, fillColor: c.bgChild),
           ),
           const SizedBox(height: 8),
           TextField(
@@ -306,13 +350,21 @@ class _LinkForm extends StatelessWidget {
             enabled: !busy,
             obscureText: true,
             onSubmitted: busy ? null : (_) => onEmailSubmit(),
-            decoration: InputDecoration(labelText: 'Password', filled: true, fillColor: c.bgChild),
+            decoration: InputDecoration(
+                labelText: 'Password', filled: true, fillColor: c.bgChild),
           ),
           const SizedBox(height: 10),
-          SizedBox(height: 44, child: OutlinedButton(
-            onPressed: busy ? null : onEmailSubmit,
-            child: busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('Sign in with email'),
-          )),
+          SizedBox(
+              height: 44,
+              child: OutlinedButton(
+                onPressed: busy ? null : onEmailSubmit,
+                child: busy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('Sign in with email'),
+              )),
         ],
       ),
     );
@@ -347,7 +399,9 @@ class _LinkedBody extends ConsumerWidget {
               child: Padding(
                 padding: EdgeInsets.all(12),
                 child: SizedBox(
-                    width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2)),
               ),
             ),
           ),
@@ -382,7 +436,9 @@ class _SubscriptionCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  profile.username.isEmpty ? 'Linked account' : profile.username,
+                  profile.username.isEmpty
+                      ? 'Linked account'
+                      : profile.username,
                   style: TextStyle(
                       color: c.textPrimary,
                       fontSize: 16,
@@ -391,8 +447,7 @@ class _SubscriptionCard extends StatelessWidget {
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: accent.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(6),
@@ -408,7 +463,9 @@ class _SubscriptionCard extends StatelessWidget {
           const SizedBox(height: 10),
           _KeyValue(
             label: 'Expires',
-            value: days <= 0 ? 'expired' : 'in $days ${days == 1 ? "day" : "days"}',
+            value: days <= 0
+                ? 'expired'
+                : 'in $days ${days == 1 ? "day" : "days"}',
           ),
           if (profile.telegramId != 0)
             _KeyValue(label: 'Telegram ID', value: '${profile.telegramId}'),
@@ -464,8 +521,8 @@ class _TrafficCard extends StatelessWidget {
                 value: ratio,
                 minHeight: 8,
                 backgroundColor: c.bgChild,
-                valueColor: AlwaysStoppedAnimation(
-                    ratio >= 0.9 ? c.danger : c.accent),
+                valueColor:
+                    AlwaysStoppedAnimation(ratio >= 0.9 ? c.danger : c.accent),
               ),
             ),
             const SizedBox(height: 8),
@@ -527,7 +584,9 @@ class _PaymentRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          Container(width: 6, height: 6,
+          Container(
+              width: 6,
+              height: 6,
               decoration: BoxDecoration(color: tint, shape: BoxShape.circle)),
           const SizedBox(width: 10),
           Expanded(

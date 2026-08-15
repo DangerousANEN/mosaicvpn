@@ -104,6 +104,7 @@ class LinkResult {
 /// Modelled explicitly so the UI can tell the user what to do next — "ask the
 /// bot for a fresh code" is useful, "request failed" is not.
 enum LinkCodeError {
+  invalidFormat,
   notFound,
   expired,
   alreadyUsed,
@@ -114,6 +115,8 @@ enum LinkCodeError {
   /// Maps the daemon's HTTP status onto a cause.
   static LinkCodeError fromStatus(int? status) {
     switch (status) {
+      case 400:
+        return LinkCodeError.invalidFormat;
       case 404:
         return LinkCodeError.notFound;
       case 410:
@@ -131,6 +134,8 @@ enum LinkCodeError {
 
   String get message {
     switch (this) {
+      case LinkCodeError.invalidFormat:
+        return 'Enter the complete 8-character code from the bot.';
       case LinkCodeError.notFound:
         return 'Code not recognised. Check the digits and try again.';
       case LinkCodeError.expired:

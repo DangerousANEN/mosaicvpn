@@ -165,7 +165,11 @@ func (s *Server) handleLinkCodeRedeem(w http.ResponseWriter, r *http.Request) {
 				"username":     res.Username,
 			})
 			return
+		case errors.Is(verr, ErrLinkCodeMalformed):
+			writeError(w, http.StatusBadRequest, "pairing code must contain 8 valid symbols")
+			return
 		case errors.Is(verr, errLinkNotFound):
+
 			writeError(w, http.StatusNotFound, "code not found")
 			return
 		case errors.Is(verr, errLinkExpired):

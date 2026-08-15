@@ -15,6 +15,10 @@ abstract class DaemonApiBase {
   Future<void> connect(String serverID);
   Future<void> disconnect();
 
+  /// Stops the local daemon after it has disconnected the active runtime.
+  /// Desktop callers use this only for an explicit application exit.
+  Future<void> shutdownDaemon();
+
   // ─── Subscriptions ─────────────────────────────────────────────────
 
   Future<List<Subscription>> listSubscriptions();

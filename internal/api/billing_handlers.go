@@ -129,6 +129,14 @@ func (s *Server) handleBillingLink(w http.ResponseWriter, r *http.Request) {
 //
 // POST /v1/billing/unlink
 func (s *Server) handleBillingUnlink(w http.ResponseWriter, r *http.Request) {
+	// The direct feed URL contains a per-device credential. Remove it with the
+	// account record so another person using this OS account cannot reuse a
+	// previous user's subscription after logout. Manually added subscriptions
+	// remain intact.
+	if err := s.store.DeleteSubscription("mosaic-direct"); err != nil {
+		writeError(w, http.StatusInternalServerError, "remove direct subscription: "+err.Error())
+		return
+	}
 	if err := s.store.ClearAccount(); err != nil {
 		writeError(w, http.StatusInternalServerError, "store: "+err.Error())
 		return

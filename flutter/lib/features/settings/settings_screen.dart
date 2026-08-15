@@ -6,8 +6,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/atlas_theme.dart';
 import '../../core/providers/vpn_providers.dart';
+import '../../core/providers/billing_provider.dart';
+import '../../core/platform/app_platform.dart';
 import '../../core/i18n/app_strings.dart';
 import '../../core/models/models.dart';
+import '../../core/services/android_mosaic_account_service.dart';
+import '../../core/services/android_vpn_service.dart';
 import '../../core/services/tray_service.dart';
 import '../../core/services/autostart_service.dart';
 import '../../core/config/app_config.dart';
@@ -118,6 +122,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   child: SizedBox(
                     width: 120,
                     child: TextFormField(
+                      spellCheckConfiguration:
+                          const SpellCheckConfiguration.disabled(),
                       initialValue: prefs.mtu.toString(),
                       decoration: const InputDecoration(suffix: Text('bytes')),
                       onChanged: (v) =>
@@ -136,6 +142,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   child: SizedBox(
                     width: 120,
                     child: TextFormField(
+                      spellCheckConfiguration:
+                          const SpellCheckConfiguration.disabled(),
                       initialValue: prefs.mixedPort.toString(),
                       decoration: const InputDecoration(suffix: Text('port')),
                       onChanged: (v) =>
@@ -229,6 +237,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: SizedBox(
                   width: 200,
                   child: TextFormField(
+                    spellCheckConfiguration:
+                        const SpellCheckConfiguration.disabled(),
                     initialValue: prefs.socksAddr,
                     onChanged: (v) => _update(prefs, socksAddr: v),
                   ),
@@ -243,6 +253,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: SizedBox(
                   width: 200,
                   child: TextFormField(
+                    spellCheckConfiguration:
+                        const SpellCheckConfiguration.disabled(),
                     initialValue: prefs.httpAddr,
                     onChanged: (v) => _update(prefs, httpAddr: v),
                   ),
@@ -266,6 +278,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   child: SizedBox(
                     width: 200,
                     child: TextFormField(
+                      spellCheckConfiguration:
+                          const SpellCheckConfiguration.disabled(),
                       initialValue: prefs.shareAddr,
                       onChanged: (v) => _update(prefs, shareAddr: v),
                     ),
@@ -304,6 +318,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: SizedBox(
                   width: 240,
                   child: TextFormField(
+                    spellCheckConfiguration:
+                        const SpellCheckConfiguration.disabled(),
                     initialValue: prefs.dnsProxied,
                     onChanged: (v) => _update(prefs, dnsProxied: v),
                   ),
@@ -318,6 +334,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: SizedBox(
                   width: 240,
                   child: TextFormField(
+                    spellCheckConfiguration:
+                        const SpellCheckConfiguration.disabled(),
                     initialValue: prefs.dnsDirect,
                     onChanged: (v) => _update(prefs, dnsDirect: v),
                   ),
@@ -385,6 +403,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: SizedBox(
                   width: 250,
                   child: TextFormField(
+                    spellCheckConfiguration:
+                        const SpellCheckConfiguration.disabled(),
                     initialValue: _warpLicenseKey,
                     decoration: const InputDecoration(
                       hintText: 'e.g. abc123...',
@@ -570,6 +590,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: SizedBox(
                   width: 250,
                   child: TextFormField(
+                    spellCheckConfiguration:
+                        const SpellCheckConfiguration.disabled(),
                     initialValue: prefs.testUrl,
                     onChanged: (v) => _update(prefs, testUrl: v),
                   ),
@@ -604,6 +626,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: SizedBox(
                   width: 200,
                   child: TextFormField(
+                    spellCheckConfiguration:
+                        const SpellCheckConfiguration.disabled(),
                     initialValue: prefs.mcpAddr,
                     onChanged: (v) => _update(prefs, mcpAddr: v),
                   ),
@@ -883,6 +907,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   child: SizedBox(
                     width: 240,
                     child: TextFormField(
+                      spellCheckConfiguration:
+                          const SpellCheckConfiguration.disabled(),
                       initialValue:
                           '${prefs.fragmentSizeMin}-${prefs.fragmentSizeMax}',
                       decoration:
@@ -929,6 +955,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   child: SizedBox(
                     width: 200,
                     child: TextFormField(
+                      spellCheckConfiguration:
+                          const SpellCheckConfiguration.disabled(),
                       initialValue: prefs.muxConcurrency.toString(),
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(hintText: '0 = auto'),
@@ -974,6 +1002,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   child: SizedBox(
                     width: 300,
                     child: TextFormField(
+                      spellCheckConfiguration:
+                          const SpellCheckConfiguration.disabled(),
                       initialValue: prefs.splitTunnelApps.join(', '),
                       onChanged: (v) => _update(
                         prefs,
@@ -994,6 +1024,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   child: SizedBox(
                     width: 300,
                     child: TextFormField(
+                      spellCheckConfiguration:
+                          const SpellCheckConfiguration.disabled(),
                       initialValue: prefs.splitTunnelDomains.join(', '),
                       onChanged: (v) => _update(
                         prefs,
@@ -1066,6 +1098,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: SizedBox(
                   width: 280,
                   child: TextFormField(
+                    spellCheckConfiguration:
+                        const SpellCheckConfiguration.disabled(),
                     initialValue: prefs.dnsProvider,
                     decoration: const InputDecoration(
                         hintText: 'https://... or tls://...'),
@@ -1079,6 +1113,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: SizedBox(
                   width: 120,
                   child: TextFormField(
+                    spellCheckConfiguration:
+                        const SpellCheckConfiguration.disabled(),
                     initialValue: prefs.connectTimeout.toString(),
                     keyboardType: TextInputType.number,
                     onChanged: (v) {
@@ -1094,6 +1130,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: SizedBox(
                   width: 120,
                   child: TextFormField(
+                    spellCheckConfiguration:
+                        const SpellCheckConfiguration.disabled(),
                     initialValue: prefs.maxRetries.toString(),
                     keyboardType: TextInputType.number,
                     onChanged: (v) {
@@ -1112,6 +1150,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: SizedBox(
                   width: 120,
                   child: TextFormField(
+                    spellCheckConfiguration:
+                        const SpellCheckConfiguration.disabled(),
                     initialValue: prefs.concurrentDials.toString(),
                     keyboardType: TextInputType.number,
                     onChanged: (v) {
@@ -1132,19 +1172,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _SettingsGroup(
             title: 'Interface & Geo',
             children: [
-              _SettingTile(
-                label: 'Language',
-                description: 'UI display language',
-                child: SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(value: 'system', label: Text('System')),
-                    ButtonSegment(value: 'en', label: Text('EN')),
-                    ButtonSegment(value: 'ru', label: Text('RU')),
-                  ],
-                  selected: {prefs.language},
-                  onSelectionChanged: (s) => _update(prefs, language: s.first),
-                ),
-              ),
               _SettingTile(
                 label: 'Compact Mode',
                 description: 'Denser UI for small displays',
@@ -1200,6 +1227,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: SizedBox(
                   width: 90,
                   child: TextFormField(
+                    spellCheckConfiguration:
+                        const SpellCheckConfiguration.disabled(),
                     initialValue: prefs.autoBackupInterval.toString(),
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(suffixText: 'h'),
@@ -1266,6 +1295,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   onPressed: () => _showDaemonInfo(context),
                 ),
               ),
+              _SettingTile(
+                label: 'Sign out',
+                description:
+                    'Disconnect and remove this device’s MosaicVPN account data',
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.logout, size: 18),
+                  label: const Text('Sign out'),
+                  style: OutlinedButton.styleFrom(foregroundColor: c.danger),
+                  onPressed: _signOut,
+                ),
+              ),
             ],
           ),
 
@@ -1273,6 +1313,59 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _signOut() async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Sign out of MosaicVPN?'),
+            content: const Text(
+              'The VPN will be disconnected and this device’s account tokens and personal configuration will be removed. Other manually added profiles remain available.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                    backgroundColor: ThemeColors.of(context).danger),
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Sign out'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
+
+    try {
+      if (AppPlatform.isAndroid) {
+        try {
+          await AndroidVpnService.instance.stop();
+        } catch (_) {
+          // Credential cleanup still proceeds if Android already stopped it.
+        }
+        await AndroidMosaicAccountService.instance.clearSession();
+        ref.invalidate(androidMosaicSessionProvider);
+      } else {
+        final api = ref.read(daemonApiProvider);
+        try {
+          await api.disconnect();
+        } catch (_) {
+          // Continue: stale runtime state must not prevent credential cleanup.
+        }
+        await api.unlinkBillingAccount();
+      }
+      ref.invalidate(vpnStatusProvider);
+      ref.invalidate(billingProfileProvider);
+      ref.invalidate(mosaicManifestProvider);
+      ref.invalidate(subscriptionsProvider);
+      _showSnack('Signed out on this device.');
+    } catch (error) {
+      _showSnack('Sign out failed: $error');
+    }
   }
 
   Future<void> _update(Preferences prefs,
@@ -1404,8 +1497,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       await api.setPrefs(updated.toJson());
       ref.invalidate(prefsProvider);
     } catch (e) {
-      // Keep optimistic UI value, log for diagnostics
-      debugPrint('setPrefs failed: $e');
+      // A setting that the runtime rejected must not remain visually enabled.
+      // Revert to the last confirmed daemon preferences and explain the cause.
+      if (mounted) setState(() => _localPrefs = prefs);
+      _showSnack('Setting was not applied: $e');
     }
 
     // ── Wire desktop services ──

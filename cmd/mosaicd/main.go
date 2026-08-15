@@ -76,8 +76,8 @@ func run(dataDirOverride string) error {
 		logx.Info("sing-box backend enabled", "bin", bin)
 		backend = state.NewSingBoxBackend(bin, dataDir, store)
 	} else {
-		logx.Warn("sing-box not found next to mosaicd or on PATH; falling back to mock backend (Connect will pretend to work but no proxy is opened)")
-		backend = state.NewMockBackend()
+		logx.Error("sing-box not found next to mosaicd or on PATH; connection attempts will be rejected")
+		backend = state.NewUnavailableBackend(state.ErrRuntimeUnavailable)
 	}
 	mgr := state.New(store, backend, Version)
 
@@ -157,10 +157,17 @@ func run(dataDirOverride string) error {
 		"api", fmt.Sprintf("http://%s:%d", host, port),
 	)
 
-	// Wait for SIGINT/SIGTERM.
+	// Exit on an OS signal or an authenticated local-client request. Both
+	// routes converge on the same orderly disconnect so sing-box is reaped
+	// before mosaicd releases its single-instance lock.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	<-sig
+	select {
+	case <-sig:
+		logx.Info("shutdown signal received")
+	case <-apiSrv.ShutdownRequested():
+		logx.Info("shutdown requested by local client")
+	}
 
 	logx.Info("shutting down")
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)

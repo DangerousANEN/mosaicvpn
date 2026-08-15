@@ -31,6 +31,9 @@ flutter/.flutter-plugins-dependencies
 flutter/android/.gradle/
 flutter/android/.kotlin/
 flutter/android/local.properties
+# Generated from the pinned GPLv3 sing-box source by scripts/build_android_libbox.sh
+flutter/android/app/libs/libbox.aar
+flutter/android/app/libs/libbox-legacy.aar
 flutter/linux/flutter/ephemeral/
 flutter/windows/flutter/ephemeral/
 *.iml

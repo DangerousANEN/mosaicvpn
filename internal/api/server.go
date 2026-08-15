@@ -53,7 +53,9 @@ type Server struct {
 	manifestMu         sync.RWMutex
 	pool               *subs.PoolEngine
 
-	mux *http.ServeMux
+	shutdownRequested chan struct{}
+	shutdownOnce      sync.Once
+	mux               *http.ServeMux
 }
 
 // NewServer constructs an API server.
@@ -62,14 +64,15 @@ func NewServer(s *store.Store, mgr *state.Manager, fetcher Fetcher) *Server {
 		fetcher = HTTPFetcher(http.DefaultClient)
 	}
 	srv := &Server{
-		store:   s,
-		mgr:     mgr,
-		token:   newToken(),
-		fetcher: fetcher,
-		billing: billing.NewClient(billing.Config{}),
-		lava:    billing.NewLavaProvider(),
-		pool:    subs.NewPoolEngine(),
-		mux:     http.NewServeMux(),
+		store:             s,
+		mgr:               mgr,
+		token:             newToken(),
+		fetcher:           fetcher,
+		billing:           billing.NewClient(billing.Config{}),
+		lava:              billing.NewLavaProvider(),
+		pool:              subs.NewPoolEngine(),
+		shutdownRequested: make(chan struct{}),
+		mux:               http.NewServeMux(),
 	}
 	srv.routes()
 	return srv
@@ -97,6 +100,11 @@ func (s *Server) SetLavaProvider(p billing.PaymentProvider) {
 // Token returns the secret bearer token. It is written into the lockfile
 // so trusted local clients can authenticate.
 func (s *Server) Token() string { return s.token }
+
+// ShutdownRequested is closed after an authenticated local client asks the
+// daemon to stop. The process owner performs the actual orderly shutdown so
+// the connection manager can stop its child runtime before lockfile cleanup.
+func (s *Server) ShutdownRequested() <-chan struct{} { return s.shutdownRequested }
 
 // Handler returns the underlying http.Handler, including the CORS,
 // auth, and logging middleware. CORS sits outermost so that preflight
@@ -138,6 +146,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/status", s.handleStatus)
 	s.mux.HandleFunc("POST /v1/connect", s.handleConnect)
 	s.mux.HandleFunc("POST /v1/disconnect", s.handleDisconnect)
+	s.mux.HandleFunc("POST /v1/runtime/shutdown", s.handleRuntimeShutdown)
 
 	s.mux.HandleFunc("GET /v1/subscriptions", s.handleListSubs)
 	s.mux.HandleFunc("POST /v1/subscriptions", s.handleAddSub)
@@ -328,6 +337,19 @@ func (s *Server) handleDisconnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, s.mgr.Status())
+}
+
+// handleRuntimeShutdown accepts an authenticated request from the local client
+// before it closes. Disconnecting here makes the intended ordering explicit;
+// cmd/mosaicd then receives the shutdown signal and closes its listener and
+// lockfile. The channel is closed once, making repeated tray clicks harmless.
+func (s *Server) handleRuntimeShutdown(w http.ResponseWriter, r *http.Request) {
+	if err := s.mgr.Disconnect(r.Context()); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "state": "stopping"})
+	s.shutdownOnce.Do(func() { close(s.shutdownRequested) })
 }
 
 func (s *Server) handleListSubs(w http.ResponseWriter, _ *http.Request) {

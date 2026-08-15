@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/models.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/theme/atlas_theme.dart';
+import '../subscriptions/subscriptions_screen.dart';
 
 /// Provider manifest backing the groups screen.
 final groupsManifestProvider = FutureProvider<ProviderManifest>((ref) async {
@@ -13,7 +14,8 @@ final groupsManifestProvider = FutureProvider<ProviderManifest>((ref) async {
 
 /// Per-group node health, fetched lazily when a card is expanded.
 final groupNodeHealthProvider =
-    FutureProvider.family<Map<String, NodeHealth>, String>((ref, groupId) async {
+    FutureProvider.family<Map<String, NodeHealth>, String>(
+        (ref, groupId) async {
   final api = ref.watch(daemonApiProvider);
   return api.getGroupHealth(groupId);
 });
@@ -48,6 +50,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   Widget build(BuildContext context) {
     final manifestAsync = ref.watch(groupsManifestProvider);
     final serversAsync = ref.watch(serversProvider);
+    final subscriptionsAsync = ref.watch(subscriptionsProvider);
     final status = ref.watch(vpnStatusProvider).valueOrNull;
     final activeId = status?.server?.id;
 
@@ -57,6 +60,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
         onRefresh: () async {
           ref.invalidate(groupsManifestProvider);
           ref.invalidate(serversProvider);
+          ref.invalidate(subscriptionsProvider);
           await ref.read(groupsManifestProvider.future);
         },
         child: manifestAsync.when(
@@ -65,6 +69,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
           data: (manifest) => _buildBody(
             manifest: manifest,
             servers: serversAsync.valueOrNull ?? const [],
+            subscriptions: subscriptionsAsync.valueOrNull ?? const [],
             activeId: activeId,
           ),
         ),
@@ -75,18 +80,43 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   Widget _buildBody({
     required ProviderManifest manifest,
     required List<Server> servers,
+    required List<Subscription> subscriptions,
     required String? activeId,
   }) {
     final tt = Theme.of(context).textTheme;
 
-    if (manifest.groups.isEmpty && servers.isEmpty) {
+    if (manifest.groups.isEmpty && servers.isEmpty && subscriptions.isEmpty) {
       return const _EmptyState();
     }
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final twoColumns = constraints.maxWidth >= _twoColumnBreakpoint;
-        final sections = <Widget>[];
+        final sections = <Widget>[
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Профили и маршруты',
+                  style: tt.headlineSmall?.copyWith(
+                    fontFamily: AtlasTheme.serifFamily,
+                    fontSize: 22,
+                  ),
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: _showAddSource,
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Добавить источник'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Умные маршруты, личная подписка MosaicVPN и совместимые источники других сервисов.',
+            style: tt.bodySmall?.copyWith(color: AtlasTheme.textMuted),
+          ),
+        ];
 
         if (manifest.providerName.isNotEmpty) {
           sections.add(Padding(
@@ -115,6 +145,14 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
               ),
           ];
           sections.addAll(_layoutCards(cards, twoColumns));
+        }
+
+        if (subscriptions.isNotEmpty) {
+          sections.add(const _SectionHeader('Источники профиля'));
+          sections.addAll([
+            for (final subscription in subscriptions)
+              _SubscriptionSourceCard(subscription: subscription),
+          ]);
         }
 
         if (servers.isNotEmpty) {
@@ -217,8 +255,8 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       final server = await api.selectNodeFromGroup(groupId);
       await api.connect(server.id);
       if (mounted) {
-        _showMessage('Подключено через $groupId → ${server.name}',
-            AtlasTheme.success);
+        _showMessage(
+            'Подключено через $groupId → ${server.name}', AtlasTheme.success);
       }
     } catch (e) {
       _showMessage('Не удалось подключиться: $e', AtlasTheme.error);
@@ -238,10 +276,117 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     }
   }
 
+  void _showAddSource() {
+    showDialog<void>(
+      context: context,
+      builder: (_) => const AddSubscriptionFeedDialog(),
+    );
+  }
+
   void _showMessage(String msg, Color background) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: background),
+    );
+  }
+}
+
+class _SubscriptionSourceCard extends ConsumerWidget {
+  final Subscription subscription;
+
+  const _SubscriptionSourceCard({required this.subscription});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tt = Theme.of(context).textTheme;
+    final isMosaicDirect = subscription.id == 'mosaic-direct';
+    final statusColor =
+        subscription.hasError ? AtlasTheme.error : AtlasTheme.success;
+    final statusLabel = subscription.hasError
+        ? 'Требуется обновление'
+        : '${subscription.serverCount} маршрутов доступно';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AtlasTheme.bgCard,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AtlasTheme.border),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AtlasTheme.accent.withValues(alpha: .14),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                isMosaicDirect
+                    ? Icons.verified_user_outlined
+                    : Icons.rss_feed_outlined,
+                color: AtlasTheme.accent,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    subscription.name.isEmpty
+                        ? 'Безымянный источник'
+                        : subscription.name,
+                    style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    isMosaicDirect
+                        ? 'Персональный профиль MosaicVPN'
+                        : (subscription.hasError
+                            ? subscription.lastError
+                            : statusLabel),
+                    style: tt.bodySmall?.copyWith(color: statusColor),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Обновить источник',
+              icon: const Icon(Icons.refresh, size: 20),
+              onPressed: () async {
+                try {
+                  await ref
+                      .read(daemonApiProvider)
+                      .refreshSubscription(subscription.id);
+                  ref.invalidate(subscriptionsProvider);
+                  ref.invalidate(serversProvider);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Источник обновлён.')),
+                    );
+                  }
+                } catch (error) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                          content:
+                              Text('Не удалось обновить источник: $error')),
+                    );
+                  }
+                }
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -284,7 +429,8 @@ class _EmptyState extends StatelessWidget {
             Icon(Icons.rss_feed, size: 48, color: AtlasTheme.textMuted),
             const SizedBox(height: 12),
             Text('Нет доступных групп и серверов',
-                style: tt.bodyMedium?.copyWith(color: AtlasTheme.textSecondary)),
+                style:
+                    tt.bodyMedium?.copyWith(color: AtlasTheme.textSecondary)),
             const SizedBox(height: 4),
             Text('Добавьте подписку, чтобы импортировать конфигурации.',
                 style: tt.bodySmall?.copyWith(color: AtlasTheme.textMuted),
@@ -312,7 +458,8 @@ class _ErrorState extends StatelessWidget {
             Icon(Icons.cloud_off, size: 48, color: AtlasTheme.textMuted),
             const SizedBox(height: 12),
             Text('Не удалось загрузить группы',
-                style: tt.bodyMedium?.copyWith(color: AtlasTheme.textSecondary)),
+                style:
+                    tt.bodyMedium?.copyWith(color: AtlasTheme.textSecondary)),
             const SizedBox(height: 4),
             // The raw error is kept: a generic message gives the user nothing
             // to act on and nothing to report.
@@ -378,8 +525,8 @@ class _GroupCard extends ConsumerWidget {
                     Expanded(
                       child: Text(
                         group.title,
-                        style:
-                            tt.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                        style: tt.bodyMedium
+                            ?.copyWith(fontWeight: FontWeight.w500),
                         // Names wrap rather than truncating to a few glyphs.
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -647,8 +794,8 @@ class _Badge extends StatelessWidget {
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(label,
-          style:
-              tt.labelSmall?.copyWith(color: AtlasTheme.textOnInk, fontSize: 9)),
+          style: tt.labelSmall
+              ?.copyWith(color: AtlasTheme.textOnInk, fontSize: 9)),
     );
   }
 }

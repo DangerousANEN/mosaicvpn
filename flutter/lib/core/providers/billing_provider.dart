@@ -2,19 +2,40 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/daemon_api_base.dart';
 import '../models/models.dart';
+import '../platform/app_platform.dart';
+import '../services/android_mosaic_account_service.dart';
 import 'vpn_providers.dart';
+
+/// Restores the Android device-scoped hosted account session. This contains
+/// only a direct-feed credential stored in Android Keystore, never mock data.
+final androidMosaicSessionProvider =
+    FutureProvider.autoDispose<AndroidMosaicSession?>((ref) async {
+  if (!AppPlatform.isAndroid) return null;
+  return AndroidMosaicAccountService.instance.restoreSession();
+});
 
 /// Provider fetching the current user's [BillingProfile].
 final billingProfileProvider =
     FutureProvider.autoDispose<BillingProfile>((ref) async {
+  if (AppPlatform.isAndroid) {
+    final session = await ref.watch(androidMosaicSessionProvider.future);
+    return BillingProfile(
+      linked: session != null,
+      username: session?.username ?? '',
+      email: session?.username?.contains('@') == true ? session!.username! : '',
+      status: session == null ? '' : 'active',
+      description: session == null
+          ? ''
+          : 'Android device is linked to a MosaicVPN direct profile.',
+    );
+  }
   final api = ref.watch(daemonApiProvider);
   return api.getBillingProfile();
 });
 
 /// Family provider checking the status of a CryptoBot invoice by ID.
-final activeTopupStatusProvider =
-    FutureProvider.family.autoDispose<TopupStatusResponse, int>(
-        (ref, invoiceId) async {
+final activeTopupStatusProvider = FutureProvider.family
+    .autoDispose<TopupStatusResponse, int>((ref, invoiceId) async {
   final api = ref.watch(daemonApiProvider);
   return api.getTopupStatus(invoiceId);
 });

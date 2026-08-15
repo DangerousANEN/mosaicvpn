@@ -48,6 +48,12 @@ android {
         }
     }
 
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     buildTypes {
         release {
             signingConfig = if (hasReleaseSigning) {
@@ -56,6 +62,10 @@ android {
                 signingConfigs.getByName("debug")
             }
         }
+    }
+
+    dependencies {
+        implementation(files("libs/libbox.aar"))
     }
 }
 

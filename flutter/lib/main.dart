@@ -26,17 +26,8 @@ void main() async {
       },
     );
 
-    // System tray
+    // System tray actions are registered by AppShell once Riverpod is ready.
     await TrayService.instance.init();
-    TrayService.instance.configure(
-      minimizeToTray: true,
-      onConnect: () {
-        // TODO: wire to VPN provider connect
-      },
-      onDisconnect: () {
-        // TODO: wire to VPN provider disconnect
-      },
-    );
 
     // Intercept close: hide to tray instead of quitting
     windowManager.setPreventClose(true);

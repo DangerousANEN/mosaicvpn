@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/models.dart';
 import '../../core/providers/vpn_providers.dart';
+import '../../core/platform/app_platform.dart';
+import '../../core/services/android_mosaic_account_service.dart';
+import '../../core/services/android_vpn_service.dart';
 import '../../core/i18n/app_strings.dart';
 import '../../core/theme/atlas_theme.dart';
 
@@ -309,17 +312,19 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     final api = ref.read(daemonApiProvider);
     try {
       setState(() => _busy = true);
-      if (status.isConnected || status.isConnecting) {
+      if (AppPlatform.isAndroid) {
+        await _toggleAndroidRuntime(status);
+      } else if (status.isConnected || status.isConnecting) {
         await api.disconnect();
       } else {
         final node = await api.selectNodeFromGroup(selected.id);
         await api.connect(node.id);
       }
       ref.invalidate(vpnStatusProvider);
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         _notice(
-          AppStrings.of(context).t('connection_failed'),
+          '${AppStrings.of(context).t('connection_failed')}: $error',
           error: true,
         );
       }
@@ -328,42 +333,84 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     }
   }
 
+  Future<void> _toggleAndroidRuntime(VpnStatus status) async {
+    if (status.isConnected || status.isConnecting) {
+      await AndroidVpnService.instance.stop();
+      return;
+    }
+    final session = await AndroidMosaicAccountService.instance.restoreSession();
+    if (session == null) {
+      throw StateError('Войдите в аккаунт через Telegram-код или email.');
+    }
+    final approved = await AndroidVpnService.instance.requestPermission();
+    if (!approved) {
+      throw StateError('Для подключения необходимо разрешение VPN Android.');
+    }
+    final config =
+        await AndroidMosaicAccountService.instance.buildNativeTunConfig();
+    final state = await AndroidVpnService.instance.start(config);
+    if (state.state == 'error') {
+      throw StateError(state.error ?? 'Нативный VPN runtime не запустился.');
+    }
+  }
+
   Future<void> _pickGroup(BuildContext context, List<ManifestGroup> groups,
       ManifestGroup current) async {
     final selected = await showModalBottomSheet<ManifestGroup>(
       context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
       builder: (context) => SafeArea(
-          child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-        child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(AppStrings.of(context).t('route_picker'),
-                  style: TextStyle(
-                      fontFamily: AtlasTheme.serifFamily,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 23,
-                      color: ThemeColors.of(context).textPrimary)),
-              const SizedBox(height: 6),
-              Text(AppStrings.of(context).t('route_picker_hint'),
-                  style: TextStyle(
-                      color: ThemeColors.of(context).textSecondary,
-                      fontSize: 12)),
-              const SizedBox(height: 10),
-              ...groups.map((group) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: _groupIcon(group.icon),
-                    title: Text(_localizedGroupTitle(context, group)),
-                    subtitle: Text(_localizedGroupDescription(context, group)),
-                    trailing: group.id == current.id
-                        ? const Icon(Icons.check_circle,
-                            color: AtlasTheme.accent)
-                        : const Icon(Icons.chevron_right),
-                    onTap: () => Navigator.pop(context, group),
-                  )),
-            ]),
-      )),
+        child: DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.72,
+          minChildSize: 0.42,
+          maxChildSize: 0.92,
+          builder: (context, scrollController) => Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(AppStrings.of(context).t('route_picker'),
+                    style: TextStyle(
+                        fontFamily: AtlasTheme.serifFamily,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 23,
+                        color: ThemeColors.of(context).textPrimary)),
+                const SizedBox(height: 6),
+                Text(AppStrings.of(context).t('route_picker_hint'),
+                    style: TextStyle(
+                        color: ThemeColors.of(context).textSecondary,
+                        fontSize: 12)),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: ListView.separated(
+                    controller: scrollController,
+                    itemCount: groups.length,
+                    separatorBuilder: (_, __) => Divider(
+                        height: 1, color: ThemeColors.of(context).border),
+                    itemBuilder: (context, index) {
+                      final group = groups[index];
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: _groupIcon(group.icon),
+                        title: Text(_localizedGroupTitle(context, group)),
+                        subtitle:
+                            Text(_localizedGroupDescription(context, group)),
+                        trailing: group.id == current.id
+                            ? const Icon(Icons.check_circle,
+                                color: AtlasTheme.accent)
+                            : const Icon(Icons.chevron_right),
+                        onTap: () => Navigator.pop(context, group),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
     if (selected != null && mounted) {
       setState(() => _selectedGroupId = selected.id);
