@@ -277,6 +277,13 @@ class MockDaemonApi implements DaemonApiBase {
   }
 
   @override
+  Future<void> connectGroup(String groupID) async {
+    // The UI sees only the group identity; a real daemon resolves physical
+    // candidates privately. Keep the mock aligned with that contract.
+    await connect('group:$groupID');
+  }
+
+  @override
   Future<void> disconnect() async {
     await _delayVoid();
     _status = VpnStatus(

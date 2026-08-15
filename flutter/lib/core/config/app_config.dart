@@ -17,7 +17,7 @@ class AppConfig {
       'http://$defaultDaemonHost:$defaultDaemonPort';
 
   /// Daemon lockfile path (relative to user home).
-  static const String lockfilePath = '.mosaicvpn/daemon.lock';
+  static const String lockfilePath = '.mosaic/daemon.lock';
 
   // ── Timeouts ──
   static const Duration connectTimeout = Duration(seconds: 5);
@@ -40,8 +40,8 @@ class AppConfig {
   static const int defaultHttpPort = 2080;
 
   // ── App metadata ──
-  static const String appName = 'MosaicBox';
-  static const String appVersion = '0.1.0';
+  static const String appName = 'MosaicVPN';
+  static const String appVersion = '0.3.9';
   static const String appAuthor = 'MosaicVPN';
 
   // ── Supported protocols ──

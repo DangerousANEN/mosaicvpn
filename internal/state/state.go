@@ -69,15 +69,15 @@ type ProxyListener interface {
 
 // Manager owns the connection state and is safe for concurrent use.
 type Manager struct {
-	mu       sync.Mutex
-	st       proto.Status
-	store    *store.Store
-	backend  Backend
-	cancel   context.CancelFunc
-	subs     []chan proto.Status
-	version  string
-	pid      int
-	started  time.Time
+	mu      sync.Mutex
+	st      proto.Status
+	store   *store.Store
+	backend Backend
+	cancel  context.CancelFunc
+	subs    []chan proto.Status
+	version string
+	pid     int
+	started time.Time
 }
 
 // New constructs a Manager around an existing store and backend.
@@ -106,6 +106,9 @@ func (m *Manager) Status() proto.Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	st := m.st
+	// Reaching this method over the authenticated loopback API is itself proof
+	// that mosaicd is alive. `agent_connected` must not mirror tunnel state.
+	st.AgentConnected = true
 	if m.backend != nil && st.State == proto.StateConnected {
 		in, out, lat := m.backend.Stats()
 		st.BytesIn = in

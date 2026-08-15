@@ -27,6 +27,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     vsync: this,
     duration: const Duration(milliseconds: 2600),
   )..repeat();
+  String? _selectedSubscriptionId;
   String? _selectedGroupId;
   bool _busy = false;
 
@@ -41,19 +42,48 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     final c = ThemeColors.of(context);
     final status = ref.watch(vpnStatusProvider).valueOrNull ?? VpnStatus();
     final manifest = ref.watch(mosaicManifestProvider);
-    final manifestGroups = manifest.valueOrNull?.groups ?? <ManifestGroup>[];
-    final routeGroups = manifestGroups
+    final manifestGroups = (manifest.valueOrNull?.groups ?? <ManifestGroup>[])
         .where((group) =>
             group.category == 'smart' || group.category == 'whitelist')
         .toList();
-    final groups = routeGroups.isEmpty ? _fallbackGroups : routeGroups;
-    final selected = groups.firstWhere(
-      (group) => group.id == _selectedGroupId,
-      orElse: () => groups.first,
+    final loadedSubscriptions =
+        ref.watch(subscriptionsProvider).valueOrNull ?? <Subscription>[];
+    final hasMosaicSource = loadedSubscriptions
+        .any((subscription) => subscription.id == 'mosaic-direct');
+    final subscriptions = <Subscription>[
+      if (!hasMosaicSource && manifestGroups.isNotEmpty)
+        Subscription(id: 'mosaic-direct', name: 'MosaicVPN'),
+      ...loadedSubscriptions,
+    ];
+    final selectedSubscription = subscriptions.firstWhere(
+      (subscription) => subscription.id == _selectedSubscriptionId,
+      orElse: () =>
+          subscriptions.isNotEmpty ? subscriptions.first : Subscription(),
     );
-    if (_selectedGroupId == null && groups.isNotEmpty) {
+    final isMosaicSource = selectedSubscription.id == 'mosaic-direct';
+    final userServers = ref.watch(serversProvider).valueOrNull ?? <Server>[];
+    final List<_RouteChoice> groups = isMosaicSource
+        ? manifestGroups.map<_RouteChoice>(_manifestAsRouteChoice).toList()
+        : userServers
+            .where((server) => server.subscriptionID == selectedSubscription.id)
+            .map<_RouteChoice>(_serverAsRouteChoice)
+            .toList();
+
+    if (_selectedSubscriptionId != selectedSubscription.id &&
+        selectedSubscription.id.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _selectedGroupId == null) {
+        if (mounted) {
+          setState(() {
+            _selectedSubscriptionId = selectedSubscription.id;
+            _selectedGroupId = null;
+          });
+        }
+      });
+    }
+    if (groups.isNotEmpty &&
+        !groups.any((group) => group.id == _selectedGroupId)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && groups.isNotEmpty) {
           setState(() => _selectedGroupId = groups.first.id);
         }
       });
@@ -62,14 +92,26 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     return Scaffold(
       backgroundColor: c.bgBase,
       body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final isDesktop = constraints.maxWidth >= 760;
-            return isDesktop
-                ? _buildDesktopLayout(context, c, status, groups, selected)
-                : _buildMobileLayout(context, c, status, groups, selected);
-          },
-        ),
+        child: groups.isEmpty
+            ? _NoDashboardRoutes(
+                subscriptions: subscriptions,
+                selectedSubscription: selectedSubscription,
+                onSubscriptionChanged: _selectSubscription,
+              )
+            : LayoutBuilder(
+                builder: (context, constraints) {
+                  final selected = groups.firstWhere(
+                    (group) => group.id == _selectedGroupId,
+                    orElse: () => groups.first,
+                  );
+                  final isDesktop = constraints.maxWidth >= 760;
+                  return isDesktop
+                      ? _buildDesktopLayout(context, c, status, subscriptions,
+                          selectedSubscription, groups, selected)
+                      : _buildMobileLayout(context, c, status, subscriptions,
+                          selectedSubscription, groups, selected);
+                },
+              ),
       ),
     );
   }
@@ -78,8 +120,10 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     BuildContext context,
     ThemeColors c,
     VpnStatus status,
-    List<ManifestGroup> groups,
-    ManifestGroup selected,
+    List<Subscription> subscriptions,
+    Subscription selectedSubscription,
+    List<_RouteChoice> groups,
+    _RouteChoice selected,
   ) {
     final s = AppStrings.of(context);
     return SingleChildScrollView(
@@ -89,6 +133,12 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
         children: [
           _DashboardHeader(
             onRefresh: () => ref.invalidate(vpnStatusProvider),
+          ),
+          const SizedBox(height: 14),
+          _SubscriptionSelector(
+            subscriptions: subscriptions,
+            selected: selectedSubscription,
+            onChanged: _selectSubscription,
           ),
           const SizedBox(height: 18),
           _ConnectionVisual(status: status, animation: _pulse),
@@ -116,8 +166,10 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     BuildContext context,
     ThemeColors c,
     VpnStatus status,
-    List<ManifestGroup> groups,
-    ManifestGroup selected,
+    List<Subscription> subscriptions,
+    Subscription selectedSubscription,
+    List<_RouteChoice> groups,
+    _RouteChoice selected,
   ) {
     final s = AppStrings.of(context);
     return SingleChildScrollView(
@@ -170,6 +222,13 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                _SubscriptionSelector(
+                                  subscriptions: subscriptions,
+                                  selected: selectedSubscription,
+                                  onChanged: _selectSubscription,
+                                  compact: true,
+                                ),
+                                const SizedBox(height: 18),
                                 _SectionTitle(s.t('route_picker')),
                                 const SizedBox(height: 12),
                                 _RouteSelector(
@@ -203,7 +262,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
   Widget _connectionButton(
     ThemeColors c,
     VpnStatus status,
-    ManifestGroup selected, {
+    _RouteChoice selected, {
     bool expand = false,
   }) {
     final button = SizedBox(
@@ -232,15 +291,14 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
 
   Widget _quickGroups(
     ThemeColors c,
-    List<ManifestGroup> groups,
-    ManifestGroup selected, {
+    List<_RouteChoice> groups,
+    _RouteChoice selected, {
     bool vertical = false,
   }) {
     final chips = groups.take(vertical ? 6 : 5).map((group) {
       final active = group.id == selected.id;
       return ChoiceChip(
-        label: Text(_localizedGroupTitle(context, group),
-            overflow: TextOverflow.ellipsis),
+        label: Text(group.title, overflow: TextOverflow.ellipsis),
         selected: active,
         onSelected: (_) => setState(() => _selectedGroupId = group.id),
         selectedColor: AtlasTheme.accent.withValues(alpha: .18),
@@ -288,7 +346,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                     const SizedBox(width: 9),
                     Expanded(
                       child: Text(
-                        _localizedGroupTitle(context, group),
+                        group.title,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: active ? AtlasTheme.accent : c.textPrimary,
@@ -308,7 +366,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     );
   }
 
-  Future<void> _toggle(VpnStatus status, ManifestGroup selected) async {
+  Future<void> _toggle(VpnStatus status, _RouteChoice selected) async {
     final api = ref.read(daemonApiProvider);
     try {
       setState(() => _busy = true);
@@ -316,15 +374,17 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
         await _toggleAndroidRuntime(status, selected);
       } else if (status.isConnected || status.isConnecting) {
         await api.disconnect();
+      } else if (selected.isGroup) {
+        await api.connectGroup(selected.id);
       } else {
-        final node = await api.selectNodeFromGroup(selected.id);
-        await api.connect(node.id);
+        await api.connect(selected.id);
       }
       ref.invalidate(vpnStatusProvider);
     } catch (error) {
       if (mounted) {
         _notice(
-          '${AppStrings.of(context).t('connection_failed')}: $error',
+          '${AppStrings.of(context).t('connection_failed')}. '
+          'Обновите маршрут и повторите попытку.',
           error: true,
         );
       }
@@ -334,7 +394,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
   }
 
   Future<void> _toggleAndroidRuntime(
-      VpnStatus status, ManifestGroup selected) async {
+      VpnStatus status, _RouteChoice selected) async {
     if (status.isConnected || status.isConnecting) {
       await AndroidVpnService.instance.stop();
       return;
@@ -347,6 +407,9 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     if (!approved) {
       throw StateError('Для подключения необходимо разрешение VPN Android.');
     }
+    if (!selected.isGroup) {
+      throw StateError('На Android доступны маршруты профиля MosaicVPN.');
+    }
     final config = await AndroidMosaicAccountService.instance
         .buildNativeTunConfig(groupId: selected.id);
     final state = await AndroidVpnService.instance.start(config);
@@ -355,9 +418,9 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     }
   }
 
-  Future<void> _pickGroup(BuildContext context, List<ManifestGroup> groups,
-      ManifestGroup current) async {
-    final selected = await showModalBottomSheet<ManifestGroup>(
+  Future<void> _pickGroup(BuildContext context, List<_RouteChoice> groups,
+      _RouteChoice current) async {
+    final selected = await showModalBottomSheet<_RouteChoice>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -395,9 +458,8 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                       return ListTile(
                         contentPadding: EdgeInsets.zero,
                         leading: _groupIcon(group.icon),
-                        title: Text(_localizedGroupTitle(context, group)),
-                        subtitle:
-                            Text(_localizedGroupDescription(context, group)),
+                        title: Text(group.title),
+                        subtitle: Text(group.subtitle),
                         trailing: group.id == current.id
                             ? const Icon(Icons.check_circle,
                                 color: AtlasTheme.accent)
@@ -418,10 +480,153 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     }
   }
 
+  void _selectSubscription(Subscription subscription) {
+    if (subscription.id == _selectedSubscriptionId) return;
+    setState(() {
+      _selectedSubscriptionId = subscription.id;
+      _selectedGroupId = null;
+    });
+  }
+
+  _RouteChoice _manifestAsRouteChoice(ManifestGroup group) => _RouteChoice(
+        id: group.id,
+        title: _localizedGroupTitle(context, group),
+        subtitle: _localizedGroupDescription(context, group),
+        icon: group.icon,
+        isGroup: true,
+      );
+
+  _RouteChoice _serverAsRouteChoice(Server server) => _RouteChoice(
+        id: server.id,
+        title: server.name.isEmpty ? 'Безымянный сервер' : server.name,
+        subtitle: server.hasLatency
+            ? '${server.protocol.displayName} · ${server.lastTestMS} мс'
+            : server.protocol.displayName,
+        icon: 'node',
+        isGroup: false,
+      );
+
   void _notice(String value, {bool error = false}) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(value),
           backgroundColor: error ? ThemeColors.of(context).danger : null));
+}
+
+class _RouteChoice {
+  const _RouteChoice({
+    required this.id,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.isGroup,
+  });
+
+  final String id;
+  final String title;
+  final String subtitle;
+  final String icon;
+  final bool isGroup;
+}
+
+class _SubscriptionSelector extends StatelessWidget {
+  const _SubscriptionSelector({
+    required this.subscriptions,
+    required this.selected,
+    required this.onChanged,
+    this.compact = false,
+  });
+
+  final List<Subscription> subscriptions;
+  final Subscription selected;
+  final ValueChanged<Subscription> onChanged;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeColors.of(context);
+    if (subscriptions.isEmpty) return const SizedBox.shrink();
+    return DropdownButtonFormField<String>(
+      initialValue: selected.id.isEmpty ? null : selected.id,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: compact ? 'Подписка' : 'Источник маршрутов',
+        prefixIcon: const Icon(Icons.layers_outlined),
+        filled: true,
+        fillColor: c.bgCard,
+        contentPadding:
+            EdgeInsets.symmetric(horizontal: 12, vertical: compact ? 10 : 12),
+      ),
+      items: subscriptions
+          .map((subscription) => DropdownMenuItem<String>(
+                value: subscription.id,
+                child: Text(
+                  subscription.name.isEmpty
+                      ? 'Безымянная подписка'
+                      : subscription.name,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ))
+          .toList(),
+      onChanged: (id) {
+        final subscription = subscriptions.firstWhere(
+          (candidate) => candidate.id == id,
+          orElse: () => selected,
+        );
+        onChanged(subscription);
+      },
+    );
+  }
+}
+
+class _NoDashboardRoutes extends StatelessWidget {
+  const _NoDashboardRoutes({
+    required this.subscriptions,
+    required this.selectedSubscription,
+    required this.onSubscriptionChanged,
+  });
+
+  final List<Subscription> subscriptions;
+  final Subscription selectedSubscription;
+  final ValueChanged<Subscription> onSubscriptionChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeColors.of(context);
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _SubscriptionSelector(
+                subscriptions: subscriptions,
+                selected: selectedSubscription,
+                onChanged: onSubscriptionChanged,
+              ),
+              const SizedBox(height: 24),
+              Icon(Icons.route_outlined, size: 48, color: c.textMuted),
+              const SizedBox(height: 12),
+              Text('Нет доступных маршрутов',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: c.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 8),
+              Text(
+                'Обновите выбранную подписку или добавьте совместимый источник в разделе «Маршруты».',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: c.textSecondary),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _DashboardHeader extends StatelessWidget {
@@ -700,7 +905,7 @@ class _RoutePulsePainter extends CustomPainter {
 }
 
 class _RouteSelector extends StatelessWidget {
-  final ManifestGroup group;
+  final _RouteChoice group;
   final VoidCallback onTap;
   const _RouteSelector({required this.group, required this.onTap});
   @override
@@ -722,16 +927,15 @@ class _RouteSelector extends StatelessWidget {
                     child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                      Text(
-                          '${s.t('routes')}: ${_localizedGroupTitle(context, group)}',
+                      Text('${s.t('routes')}: ${group.title}',
                           style: TextStyle(
                               color: c.textPrimary,
                               fontWeight: FontWeight.w700)),
                       const SizedBox(height: 2),
                       Text(
-                          group.description.isEmpty
+                          group.subtitle.isEmpty
                               ? s.t('route_picker_hint')
-                              : _localizedGroupDescription(context, group),
+                              : group.subtitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: c.textMuted, fontSize: 12)),
@@ -804,6 +1008,7 @@ Widget _groupIcon(String raw) {
     'flag_de' => Icons.flag_outlined,
     'flag_us' => Icons.flag_outlined,
     'flag_ca' => Icons.flag_outlined,
+    'node' => Icons.dns_outlined,
     _ => Icons.public_rounded,
   };
   return Container(
@@ -814,27 +1019,3 @@ Widget _groupIcon(String raw) {
           borderRadius: BorderRadius.circular(12)),
       child: Icon(icon, color: AtlasTheme.accent));
 }
-
-final List<ManifestGroup> _fallbackGroups = [
-  ManifestGroup(
-      id: 'rg-all',
-      title: 'Минимальный пинг',
-      badge: 'Оптимально',
-      category: 'smart',
-      icon: 'lightning',
-      description: 'Самый быстрый отклик'),
-  ManifestGroup(
-      id: 'auto-de',
-      title: 'Германия',
-      badge: 'EU Fast',
-      category: 'smart',
-      icon: 'flag_de',
-      description: 'Проверенные узлы Германии'),
-  ManifestGroup(
-      id: 'auto-speed',
-      title: 'Максимальная скорость',
-      badge: 'Speed',
-      category: 'smart',
-      icon: 'speed',
-      description: 'Приоритет свежей скорости'),
-];

@@ -18,8 +18,9 @@ class VpnRuntimeUnavailableException implements Exception {
 
 /// A deliberately non-functional implementation used only while the actual
 /// runtime is unavailable. Every request fails predictably instead of exposing
-/// mock content. `noSuchMethod` provides the `Future<T>` API surface declared
-/// by [DaemonApiBase]; events is explicitly a failing stream.
+/// mock content. Unsupported calls throw immediately so generic callers do
+/// not receive an unsound `Future<dynamic>` in place of `Future<T>`; events is
+/// explicitly a failing stream.
 class UnavailableDaemonApi implements DaemonApiBase {
   final String reason;
 
@@ -32,7 +33,7 @@ class UnavailableDaemonApi implements DaemonApiBase {
       VpnRuntimeUnavailableException(reason);
 
   @override
-  dynamic noSuchMethod(Invocation invocation) => Future<dynamic>.error(_error);
+  Never noSuchMethod(Invocation invocation) => throw _error;
 
   @override
   Stream<(String, Map<String, dynamic>)> events() => Stream.error(_error);

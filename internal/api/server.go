@@ -511,19 +511,18 @@ func (s *Server) handleRenameSub(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
 	snap := s.store.Snapshot()
 	subID := r.URL.Query().Get("subscription_id")
-	out := snap.Servers
-	if subID != "" {
-		out = out[:0]
-		for _, sv := range snap.Servers {
-			if sv.SubscriptionID == subID {
-				out = append(out, sv)
-			}
+	out := make([]proto.Server, 0, len(snap.Servers))
+	for _, sv := range snap.Servers {
+		if subID != "" && sv.SubscriptionID != subID {
+			continue
 		}
-	}
-	if out == nil {
-		// JSON-encode an empty slice as `[]` rather than `null` so the
-		// renderer can iterate it unconditionally.
-		out = []proto.Server{}
+		// Mosaic direct nodes are service infrastructure, not a user-selectable
+		// resource. Users select a named smart group; only the daemon resolves
+		// physical candidates, addresses and IDs inside the protected pool.
+		if sv.SubscriptionID == "mosaic-direct" && !sv.IsVirtualGroup {
+			continue
+		}
+		out = append(out, sv)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -1538,21 +1537,12 @@ func (s *Server) handleGroupSelect(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "group not found"})
 		return
 	}
-	snap := s.store.Snapshot()
-	userTier := manifest.UserTier
-	if userTier == "" {
-		userTier = proto.TierFree
-	}
-	if group.UserTier != "" && !subs.IsTierAllowed(userTier, group.UserTier) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": fmt.Sprintf("group requires %s tier", group.UserTier)})
-		return
-	}
-	srv, err := s.pool.SelectNode(*group, snap.Servers)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, srv)
+	// Returning a selected physical node would reveal internal pool metadata to
+	// the UI. Callers must use POST /v1/connect with {"group_id": ...}; the
+	// daemon resolves and dials the candidate atomically.
+	writeJSON(w, http.StatusGone, map[string]string{
+		"error": "physical node selection is private; connect using group_id",
+	})
 }
 
 func (s *Server) handleGroupHealth(w http.ResponseWriter, r *http.Request) {
@@ -1579,18 +1569,11 @@ func (s *Server) handleGroupHealth(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "group not found"})
 		return
 	}
-	snap := s.store.Snapshot()
-	nodeSet := make(map[string]bool)
-	for _, n := range group.Nodes {
-		nodeSet[n.ID] = true
-	}
-	result := make(map[string]subs.HealthStatus)
-	for _, srv := range snap.Servers {
-		if len(group.Nodes) == 0 || nodeSet[srv.ID] {
-			result[srv.ID] = s.pool.GetHealthStatus(srv.ID)
-		}
-	}
-	writeJSON(w, http.StatusOK, result)
+	// Pool health includes physical node IDs and must remain server-side. The
+	// public manifest is the complete user-facing route capability contract.
+	writeJSON(w, http.StatusGone, map[string]string{
+		"error": "per-node health is private for provider smart groups",
+	})
 }
 
 func (s *Server) handleAllHealth(w http.ResponseWriter, _ *http.Request) {

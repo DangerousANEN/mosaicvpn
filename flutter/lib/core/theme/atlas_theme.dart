@@ -247,6 +247,17 @@ class AtlasTheme {
           thickness: 1,
           space: 1,
         ),
+        scrollbarTheme: ScrollbarThemeData(
+          thumbVisibility: const WidgetStatePropertyAll(false),
+          trackVisibility: const WidgetStatePropertyAll(false),
+          thickness: const WidgetStatePropertyAll(7),
+          radius: const Radius.circular(10),
+          mainAxisMargin: 6,
+          crossAxisMargin: 4,
+          thumbColor: WidgetStateProperty.resolveWith((states) =>
+              states.contains(WidgetState.dragged) ? accent : borderInk),
+          trackColor: const WidgetStatePropertyAll(bgElevated),
+        ),
         iconTheme: const IconThemeData(color: textPrimary, size: 20),
       );
 
@@ -381,6 +392,19 @@ class AtlasTheme {
         ),
         dividerTheme:
             const DividerThemeData(color: darkBorder, thickness: 1, space: 1),
+        scrollbarTheme: ScrollbarThemeData(
+          thumbVisibility: const WidgetStatePropertyAll(false),
+          trackVisibility: const WidgetStatePropertyAll(false),
+          thickness: const WidgetStatePropertyAll(7),
+          radius: const Radius.circular(10),
+          mainAxisMargin: 6,
+          crossAxisMargin: 4,
+          thumbColor: WidgetStateProperty.resolveWith((states) =>
+              states.contains(WidgetState.dragged)
+                  ? accentHover
+                  : darkTextMuted),
+          trackColor: const WidgetStatePropertyAll(darkBgElevated),
+        ),
         iconTheme: const IconThemeData(color: darkTextPrimary, size: 20),
       );
 }

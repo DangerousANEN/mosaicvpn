@@ -469,28 +469,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 description:
                     'Show advanced tabs (Profiles, Routes, Egresses, Activity, Stats, Cores, Logs)',
                 tooltip:
-                    'When disabled (default), MosaicBox hides complex developer tools and keeps a clean 4-tab layout (Dashboard, Stations, Subscriptions, Settings).',
+                    'When disabled (default), MosaicVPN hides complex developer tools and keeps a clean 4-tab layout (Dashboard, Stations, Subscriptions, Settings).',
                 child: Switch(
                   value: prefs.advancedMode,
                   onChanged: (v) => _update(prefs, advancedMode: v),
                 ),
               ),
               _SettingTile(
-                label: 'Show Raw Nodes (Expert Mode)',
-                description:
-                    'Show individual raw servers instead of Smart Virtual Groups',
-                tooltip:
-                    'When disabled (default), MosaicBox displays clean Smart Presets (Fastest Latency, Whitelist Evader 🛡, Countries). Enable to see raw VLESS/Hysteria2 nodes.',
-                child: Switch(
-                  value: prefs.showRawNodes,
-                  onChanged: (v) => _update(prefs, showRawNodes: v),
-                ),
-              ),
-              _SettingTile(
                 label: 'Run as Administrator',
                 description: 'Always prompt UAC elevation on startup',
                 tooltip:
-                    'Required for TUN mode. When enabled, Windows will show a UAC prompt each time MosaicBox starts. Disable if you only use Proxy mode.',
+                    'Required for TUN mode. When enabled, Windows will show a UAC prompt each time MosaicVPN starts. Disable if you only use Proxy mode.',
                 difficulty: 1,
                 child: Switch(
                   value: prefs.alwaysRunAsAdmin,
@@ -555,30 +544,32 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           const SizedBox(height: 24),
 
-          // ── Tray (q9) ──
-          _SettingsGroup(
-            title: 'System Tray',
-            children: [
-              _SettingTile(
-                label: 'Minimize to Tray',
-                description: 'Hide to system tray instead of closing',
-                child: Switch(
-                  value: prefs.minimizeToTray,
-                  onChanged: (v) => _update(prefs, minimizeToTray: v),
+          // ── Desktop tray ──
+          if (AppPlatform.isDesktop) ...[
+            _SettingsGroup(
+              title: 'Системный трей',
+              children: [
+                _SettingTile(
+                  label: 'При закрытии сворачивать в трей',
+                  description:
+                      'Окно скрывается, VPN продолжает работать. Полный выход доступен через меню трея.',
+                  child: Switch(
+                    value: prefs.minimizeToTray,
+                    onChanged: (v) => _update(prefs, minimizeToTray: v),
+                  ),
                 ),
-              ),
-              _SettingTile(
-                label: 'Auto-connect Egresses',
-                description: 'Start egresses marked AUTO on launch',
-                child: Switch(
-                  value: prefs.autoConnectEgresses,
-                  onChanged: (v) => _update(prefs, autoConnectEgresses: v),
+                _SettingTile(
+                  label: 'Автоподключение расширенных маршрутов',
+                  description: 'Запускать маршруты с отметкой AUTO при старте',
+                  child: Switch(
+                    value: prefs.autoConnectEgresses,
+                    onChanged: (v) => _update(prefs, autoConnectEgresses: v),
+                  ),
                 ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 24),
+              ],
+            ),
+            const SizedBox(height: 24),
+          ],
 
           // ── Testing ──
           _SettingsGroup(
@@ -610,7 +601,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 label: 'Enable MCP',
                 description: 'Remote control API for automation',
                 tooltip:
-                    'MCP lets AI assistants (Claude, GPT, etc.) and scripts control MosaicBox remotely — connect, switch servers, view status, manage egresses. Disable if you don\'t use AI automation.',
+                    'MCP lets AI assistants (Claude, GPT, etc.) and scripts control MosaicVPN remotely — connect, switch servers, view status, manage egresses. Disable if you don\'t use AI automation.',
                 difficulty: 2,
                 child: Switch(
                   value: prefs.mcpEnabled,
@@ -654,7 +645,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 label: 'Confirm Actions',
                 description: 'Require UI confirmation for MCP actions',
                 tooltip:
-                    'When enabled, MosaicBox shows a dialog before executing any MCP command (connect, egress change, etc.). Click Allow or Deny. Recommended for Full permission mode.',
+                    'When enabled, MosaicVPN shows a dialog before executing any MCP command (connect, egress change, etc.). Click Allow or Deny. Recommended for Full permission mode.',
                 difficulty: 1,
                 child: Switch(
                   value: prefs.mcpConfirm,
@@ -693,7 +684,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                   color: c.textPrimary)),
                           const SizedBox(height: 4),
                           Text(
-                            'Model Context Protocol (MCP) is an open standard for AI assistants to interact with external tools. MosaicBox exposes an MCP server that lets AI agents (Claude Desktop, Cursor, etc.) and automation scripts control your VPN connection programmatically.',
+                            'Model Context Protocol (MCP) is an open standard for AI assistants to interact with external tools. MosaicVPN exposes an MCP server that lets AI agents (Claude Desktop, Cursor, etc.) and automation scripts control your VPN connection programmatically.',
                             style: TextStyle(
                                 fontSize: 11,
                                 color: c.textSecondary,
@@ -1280,7 +1271,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: 'About',
             children: [
               _SettingTile(
-                label: 'MosaicBox',
+                label: 'MosaicVPN',
                 description: 'v${AppConfig.appVersion}',
                 child: IconButton(
                   icon: const Icon(Icons.info_outline, size: 20),
@@ -1570,7 +1561,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _importConfig() async {
     final pick = await FilePicker.platform.pickFiles(
-      dialogTitle: 'Choose MosaicBox backup file',
+      dialogTitle: 'Choose MosaicVPN backup file',
       type: FileType.custom,
       allowedExtensions: const ['json'],
     );
@@ -1688,7 +1679,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         title: const Text('Administrator Privileges Required',
             style: TextStyle(fontFamily: AtlasTheme.serifFamily)),
         content: const Text(
-          'TUN mode requires administrative privileges to configure virtual network adapters and routing tables.\n\nMosaicBox will restart with elevated credentials.',
+          'TUN mode requires administrative privileges to configure virtual network adapters and routing tables.\n\nMosaicVPN will restart with elevated credentials.',
         ),
         actions: [
           TextButton(
@@ -1729,7 +1720,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         backgroundColor: c.bgCard,
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AtlasTheme.radiusMd)),
-        title: const Text('About MosaicBox',
+        title: const Text('About MosaicVPN',
             style: TextStyle(fontFamily: AtlasTheme.serifFamily)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1740,7 +1731,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     color: c.textPrimary, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             Text(
-              'MosaicBox is a cross-platform VPN client built with Flutter and Go.',
+              'MosaicVPN is a cross-platform VPN client built with Flutter and Go.',
               style: TextStyle(color: c.textSecondary, fontSize: 13),
             ),
           ],
@@ -1878,70 +1869,89 @@ class _SettingTile extends StatelessWidget {
     final c = ThemeColors.of(context);
     final difficultyStars =
         difficulty > 0 ? ' ${'★' * difficulty}${'☆' * (3 - difficulty)}' : '';
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+    final details = Tooltip(
+      message: tooltip ?? description,
+      waitDuration: const Duration(milliseconds: 500),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: Tooltip(
-              message: tooltip ?? description,
-              waitDuration: const Duration(milliseconds: 500),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          label,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: c.textPrimary,
-                          ),
-                        ),
-                      ),
-                      if (difficulty > 0)
-                        Tooltip(
-                          message: difficulty == 1
-                              ? 'Beginner — safe to change'
-                              : difficulty == 2
-                                  ? 'Intermediate — may affect connectivity'
-                                  : 'Advanced — requires networking knowledge',
-                          child: Padding(
-                            padding: const EdgeInsets.only(left: 6),
-                            child: Text(
-                              difficultyStars,
-                              style: TextStyle(
-                                fontSize: 9,
-                                color: difficulty == 1
-                                    ? AtlasTheme.success
-                                    : difficulty == 2
-                                        ? AtlasTheme.warning
-                                        : AtlasTheme.accent,
-                                letterSpacing: 0.3,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
+          Row(
+            children: [
+              Flexible(
+                child: Text(
+                  label,
+                  softWrap: true,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: c.textPrimary,
                   ),
-                  Text(
-                    description,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: c.textMuted,
+                ),
+              ),
+              if (difficulty > 0)
+                Tooltip(
+                  message: difficulty == 1
+                      ? 'Beginner — safe to change'
+                      : difficulty == 2
+                          ? 'Intermediate — may affect connectivity'
+                          : 'Advanced — requires networking knowledge',
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: Text(
+                      difficultyStars,
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: difficulty == 1
+                            ? AtlasTheme.success
+                            : difficulty == 2
+                                ? AtlasTheme.warning
+                                : AtlasTheme.accent,
+                        letterSpacing: 0.3,
+                      ),
                     ),
                   ),
-                ],
-              ),
-            ),
+                ),
+            ],
           ),
-          const SizedBox(width: 16),
-          child,
+          const SizedBox(height: 2),
+          Text(
+            description,
+            softWrap: true,
+            style: TextStyle(fontSize: 11, color: c.textMuted),
+          ),
         ],
       ),
     );
+
+    return LayoutBuilder(builder: (context, constraints) {
+      final narrow = constraints.maxWidth < 620;
+      final control = narrow
+          ? SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: child,
+            )
+          : child;
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: narrow
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  details,
+                  const SizedBox(height: 12),
+                  Align(alignment: Alignment.centerLeft, child: control),
+                ],
+              )
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(child: details),
+                  const SizedBox(width: 20),
+                  Flexible(child: control),
+                ],
+              ),
+      );
+    });
   }
 }

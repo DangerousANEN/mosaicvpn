@@ -18,16 +18,10 @@ final androidMosaicSessionProvider =
 final billingProfileProvider =
     FutureProvider.autoDispose<BillingProfile>((ref) async {
   if (AppPlatform.isAndroid) {
-    final session = await ref.watch(androidMosaicSessionProvider.future);
-    return BillingProfile(
-      linked: session != null,
-      username: session?.username ?? '',
-      email: session?.username?.contains('@') == true ? session!.username! : '',
-      status: session == null ? '' : 'active',
-      description: session == null
-          ? ''
-          : 'Android device is linked to a MosaicVPN direct profile.',
-    );
+    // Android has no loopback daemon. The hosted account service uses the
+    // session stored in Android Keystore and degrades to a linked-device card
+    // during a transient billing backend outage.
+    return AndroidMosaicAccountService.instance.getBillingProfile();
   }
   final api = ref.watch(daemonApiProvider);
   return api.getBillingProfile();

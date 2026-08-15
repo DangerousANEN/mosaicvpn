@@ -1,18 +1,16 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/atlas_theme.dart';
+import '../../core/i18n/app_strings.dart';
 import '../account/account_screen.dart';
-import '../servers/servers_screen.dart';
 import '../profiles/profiles_screen.dart';
-import '../provider_profile/provider_profile_screen.dart';
 import '../routing/routing_screen.dart';
-import '../egresses/egresses_screen.dart';
 import '../connections/connections_screen.dart';
 import '../stats/stats_screen.dart';
 import '../speedtest/speedtest_screen.dart';
-import '../cores/cores_screen.dart';
 import '../logs/logs_screen.dart';
 import '../settings/settings_screen.dart';
+import '../groups/groups_screen.dart';
 
 class MoreScreen extends StatelessWidget {
   const MoreScreen({super.key});
@@ -20,76 +18,59 @@ class MoreScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
+    final s = AppStrings.of(context);
 
     final items = <_MoreItem>[
       _MoreItem(
-        title: 'Account',
+        title: s.t('account'),
         subtitle: 'Subscription, traffic and payments',
         icon: Icons.person_outline,
         builder: (_) => const AccountScreen(),
       ),
       _MoreItem(
-        title: 'Stations',
-        subtitle: 'VPN servers and nodes',
-        icon: Icons.dns_outlined,
-        builder: (_) => const ServersScreen(),
+        title: s.t('routes'),
+        subtitle: 'Subscriptions, smart groups and your own nodes',
+        icon: Icons.route_outlined,
+        builder: (_) => const GroupsScreen(),
       ),
       _MoreItem(
-        title: 'Profiles',
+        title: s.t('profiles'),
         subtitle: 'Named configurations and presets',
         icon: Icons.book_outlined,
         builder: (_) => const ProfilesScreen(),
       ),
       _MoreItem(
-        title: 'Provider',
-        subtitle: 'Provider manifest and account profile',
-        icon: Icons.verified_outlined,
-        builder: (_) => const ProviderProfileScreen(),
-      ),
-      _MoreItem(
-        title: 'Routes',
+        title: s.t('routing'),
         subtitle: 'Routing rules and split tunneling',
         icon: Icons.hub_outlined,
         builder: (_) => const RoutingScreen(),
       ),
       _MoreItem(
-        title: 'Egresses',
-        subtitle: 'Outbound network chains and nodes',
-        icon: Icons.account_tree_outlined,
-        builder: (_) => const EgressesScreen(),
-      ),
-      _MoreItem(
-        title: 'Activity',
+        title: s.t('activity'),
         subtitle: 'Active connections and bandwidth',
         icon: Icons.visibility_outlined,
         builder: (_) => const ConnectionsScreen(),
       ),
       _MoreItem(
-        title: 'Stats',
+        title: s.t('stats'),
         subtitle: 'Traffic statistics and graphs',
         icon: Icons.bar_chart_outlined,
         builder: (_) => const StatsScreen(),
       ),
       _MoreItem(
-        title: 'Speed Test',
+        title: s.t('speed'),
         subtitle: 'Latency and throughput benchmarks',
         icon: Icons.speed_outlined,
         builder: (_) => const SpeedTestScreen(),
       ),
       _MoreItem(
-        title: 'Cores',
-        subtitle: 'Core engines and executable management',
-        icon: Icons.memory_outlined,
-        builder: (_) => const CoresScreen(),
-      ),
-      _MoreItem(
-        title: 'Logs',
+        title: s.t('logs'),
         subtitle: 'System events and daemon logs',
         icon: Icons.receipt_long_outlined,
         builder: (_) => const LogsScreen(),
       ),
       _MoreItem(
-        title: 'Settings',
+        title: s.t('settings'),
         subtitle: 'App preferences and core configuration',
         icon: Icons.settings_outlined,
         builder: (_) => const SettingsScreen(),
@@ -105,7 +86,7 @@ class MoreScreen extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.all(24.0),
                 child: Text(
-                  'More Tools & Settings',
+                  s.t('more'),
                   style: TextStyle(
                     fontFamily: AtlasTheme.serifFamily,
                     fontSize: 24,
@@ -162,7 +143,8 @@ class MoreScreen extends StatelessWidget {
                                     item.title,
                                     style: TextStyle(color: c.textPrimary),
                                   ),
-                                  iconTheme: IconThemeData(color: c.textPrimary),
+                                  iconTheme:
+                                      IconThemeData(color: c.textPrimary),
                                 ),
                                 body: target,
                               );

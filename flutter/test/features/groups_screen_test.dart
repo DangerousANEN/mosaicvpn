@@ -6,25 +6,17 @@ import 'package:mosaic_vpn/core/models/models.dart';
 import 'package:mosaic_vpn/core/providers/vpn_providers.dart';
 import 'package:mosaic_vpn/features/groups/groups_screen.dart';
 
-/// GroupsScreen merges the former ManifestGroupsScreen and
-/// MixedSubscriptionsScreen. Those two listed the same manifest groups with
-/// different affordances, so connecting from one left the other showing stale
-/// state. These tests pin the merged behaviour: both groups and individual
-/// servers appear in one list, and the card sizing rules from
-/// GROUP_SYSTEM_SPEC section 8.2 hold.
-///
-/// Every async provider the screen watches is overridden so nothing reaches
-/// the real HTTP client, whose retry timers outlive the widget tree and trip
-/// the binding's pending-timer assertion on teardown.
 Widget _harness({
   required ProviderManifest manifest,
+  List<Subscription> subscriptions = const [],
   List<Server> servers = const [],
-  Size size = const Size(400, 800),
+  Size size = const Size(800, 900),
 }) {
   return ProviderScope(
     overrides: [
       daemonApiProvider.overrideWithValue(MockDaemonApi()),
       groupsManifestProvider.overrideWith((ref) async => manifest),
+      subscriptionsProvider.overrideWith((ref) async => subscriptions),
       serversProvider.overrideWith((ref) async => servers),
       groupNodeHealthProvider.overrideWith((ref, groupId) async => {}),
       vpnStatusProvider.overrideWith((ref) => Stream.value(VpnStatus())),
@@ -39,109 +31,90 @@ Widget _harness({
 }
 
 ManifestGroup _group(String id, String title) =>
-    ManifestGroup(id: id, title: title);
+    ManifestGroup(id: id, title: title, category: 'smart');
 
 void main() {
-  group('GroupsScreen merged content', () {
-    testWidgets('renders manifest groups', (tester) async {
-      await tester.pumpWidget(_harness(
-        manifest: ProviderManifest(
-          providerName: 'Test Provider',
-          groups: [_group('pool-auto', 'Автовыбор')],
-        ),
-      ));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Автовыбор'), findsOneWidget);
-    });
-
-    testWidgets('renders individual servers alongside groups', (tester) async {
-      // The whole point of the merge: a user should not have to switch screens
-      // to see the servers that are not part of a group.
-      await tester.pumpWidget(_harness(
-        manifest: ProviderManifest(
-          providerName: 'Test Provider',
-          groups: [_group('pool-auto', 'Автовыбор')],
-        ),
-        servers: [Server(id: 's1', name: 'Direct Node', address: '10.0.0.1', port: 443)],
-        size: const Size(400, 1200),
-      ));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Автовыбор'), findsOneWidget);
-      expect(find.text('Direct Node'), findsOneWidget);
-    });
-
-    testWidgets('empty manifest and no servers shows the empty state',
+  group('GroupsScreen route inventory', () {
+    testWidgets('renders Mosaic smart groups in the safe route table',
         (tester) async {
       await tester.pumpWidget(_harness(
-        manifest: ProviderManifest(providerName: 'Test Provider'),
-      ));
-      await tester.pumpAndSettle();
-
-      expect(find.textContaining('Нет доступных групп'), findsOneWidget);
-    });
-
-    testWidgets('load failure surfaces the underlying error', (tester) async {
-      // A generic "something went wrong" leaves the user with nothing to act on
-      // and nothing to report.
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            daemonApiProvider.overrideWithValue(MockDaemonApi()),
-            groupsManifestProvider
-                .overrideWith((ref) async => throw Exception('daemon offline')),
-            serversProvider.overrideWith((ref) async => <Server>[]),
-            vpnStatusProvider.overrideWith((ref) => Stream.value(VpnStatus())),
-          ],
-          child: const MaterialApp(home: GroupsScreen()),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.textContaining('daemon offline'), findsOneWidget);
-    });
-  });
-
-  group('GroupsScreen card sizing', () {
-    testWidgets('caps card width at 520 on a wide window', (tester) async {
-      tester.view.physicalSize = const Size(1600, 1000);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.reset);
-
-      await tester.pumpWidget(_harness(
         manifest: ProviderManifest(
-          providerName: 'Test Provider',
-          groups: [_group('pool-auto', 'Автовыбор')],
+          providerName: 'MosaicVPN',
+          groups: [_group('rg-all', 'Минимальный пинг')],
         ),
-        size: const Size(1600, 1000),
       ));
       await tester.pumpAndSettle();
 
-      final cardWidth = tester.getSize(find.text('Автовыбор')).width;
-      expect(cardWidth, lessThanOrEqualTo(520.0),
-          reason: 'a card stretched across a desktop window is unreadable');
+      expect(find.text('MosaicVPN'), findsWidgets);
+      expect(find.text('Минимальный пинг'), findsOneWidget);
+      expect(find.text('Группа'), findsOneWidget);
+      expect(find.text('Тип'), findsOneWidget);
+      expect(find.text('Название'), findsOneWidget);
+      expect(find.text('Пинг'), findsOneWidget);
+      expect(find.text('Трафик'), findsOneWidget);
     });
 
-    testWidgets('long group titles wrap instead of being clipped to a few glyphs',
+    testWidgets('shows a third-party node only after its source is selected',
         (tester) async {
-      const longTitle =
-          'Очень длинное название группы серверов для проверки переноса';
-
+      final external = Subscription(id: 'external', name: 'Example service');
       await tester.pumpWidget(_harness(
         manifest: ProviderManifest(
-          providerName: 'Test Provider',
-          groups: [_group('g1', longTitle)],
+          providerName: 'MosaicVPN',
+          groups: [_group('rg-all', 'Минимальный пинг')],
         ),
+        subscriptions: [external],
+        servers: [
+          Server(
+            id: 'external-node',
+            subscriptionID: 'external',
+            name: 'Berlin node',
+            address: '198.51.100.10',
+            port: 443,
+          ),
+        ],
       ));
       await tester.pumpAndSettle();
 
-      final titleFinder = find.text(longTitle);
-      expect(titleFinder, findsOneWidget);
+      expect(find.text('Berlin node'), findsNothing);
+      await tester.tap(find.text('Example service'));
+      await tester.pumpAndSettle();
+      expect(find.text('Berlin node'), findsOneWidget);
+      expect(find.text('Custom'), findsOneWidget);
+    });
 
-      final textWidget = tester.widget<Text>(titleFinder);
-      expect(textWidget.maxLines, greaterThan(1),
-          reason: 'names must wrap rather than truncate to a few characters');
+    testWidgets('does not expose a Mosaic direct physical node',
+        (tester) async {
+      await tester.pumpWidget(_harness(
+        manifest: ProviderManifest(
+          providerName: 'MosaicVPN',
+          groups: [_group('rg-all', 'Минимальный пинг')],
+        ),
+        subscriptions: [Subscription(id: 'mosaic-direct', name: 'MosaicVPN')],
+        servers: [
+          Server(
+            id: 'private-pool-node',
+            subscriptionID: 'mosaic-direct',
+            name: 'INTERNAL NODE MUST NOT RENDER',
+            address: '203.0.113.25',
+            port: 443,
+          ),
+        ],
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('INTERNAL NODE MUST NOT RENDER'), findsNothing);
+      expect(find.text('Минимальный пинг'), findsOneWidget);
+    });
+
+    testWidgets('shows a useful empty state without raw daemon errors',
+        (tester) async {
+      await tester.pumpWidget(_harness(
+        manifest: ProviderManifest(providerName: 'MosaicVPN'),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Нет подключённых источников'), findsOneWidget);
+      expect(find.textContaining('DioException'), findsNothing);
     });
   });
 }

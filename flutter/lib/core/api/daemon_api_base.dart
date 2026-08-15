@@ -12,7 +12,14 @@ abstract class DaemonApiBase {
   // ─── Status & Connection ──────────────────────────────────────────
 
   Future<VpnStatus> getStatus();
+
+  /// Connects an explicit server from a user-owned third-party subscription.
   Future<void> connect(String serverID);
+
+  /// Resolves and connects a provider smart group entirely inside the daemon.
+  /// The client receives no physical pool node ID or endpoint details.
+  Future<void> connectGroup(String groupID);
+
   Future<void> disconnect();
 
   /// Stops the local daemon after it has disconnected the active runtime.

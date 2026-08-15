@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,33 +7,44 @@ import '../../core/providers/vpn_providers.dart';
 import '../../core/theme/atlas_theme.dart';
 import '../subscriptions/subscriptions_screen.dart';
 
-/// Provider manifest backing the groups screen.
-final groupsManifestProvider = FutureProvider<ProviderManifest>((ref) async {
-  final api = ref.watch(daemonApiProvider);
-  return api.getProviderManifest();
-});
+/// Backward-compatible alias used by auxiliary route screens and tests. It is
+/// the Android-aware provider and never makes a daemon-only request on mobile.
+final groupsManifestProvider = mosaicManifestProvider;
 
-/// Per-group node health, fetched lazily when a card is expanded.
+/// Retained only for older test overrides. The user-facing routes inventory no
+/// longer loads or renders private per-node health information.
 final groupNodeHealthProvider =
     FutureProvider.family<Map<String, NodeHealth>, String>(
         (ref, groupId) async {
-  final api = ref.watch(daemonApiProvider);
-  return api.getGroupHealth(groupId);
+  return const <String, NodeHealth>{};
 });
 
-/// Card sizing, per GROUP_SYSTEM_SPEC section 8.2. A card stretched across a
-/// desktop window is unreadable, so it caps at 520px; past 900px there is room
-/// for two columns rather than dead margin.
-const _maxCardWidth = 520.0;
-const _twoColumnBreakpoint = 900.0;
-const _columnGap = 16.0;
+enum _RouteSort { type, name, ping, traffic }
 
-/// GroupsScreen replaces ManifestGroupsScreen and MixedSubscriptionsScreen.
-///
-/// Both screens listed the same manifest groups with different affordances,
-/// so a user connecting from one saw different state than the other. This
-/// merges them: groups auto-select a node from their pool, individual servers
-/// connect directly, and both live in one list.
+class _RouteRow {
+  const _RouteRow({
+    required this.id,
+    required this.type,
+    required this.name,
+    required this.ping,
+    required this.traffic,
+    required this.isGroup,
+    required this.icon,
+  });
+
+  final String id;
+  final String type;
+  final String name;
+  final int? ping;
+  final String traffic;
+  final bool isGroup;
+  final IconData icon;
+}
+
+/// A single route inventory. A user first chooses a subscription/source and
+/// then sees only the user-facing routes belonging to it. MosaicVPN physical
+/// pool nodes never cross this UI boundary: its source exposes provider smart
+/// groups only, while other services can expose their own imported nodes.
 class GroupsScreen extends ConsumerStatefulWidget {
   const GroupsScreen({super.key});
 
@@ -41,236 +53,269 @@ class GroupsScreen extends ConsumerStatefulWidget {
 }
 
 class _GroupsScreenState extends ConsumerState<GroupsScreen> {
-  /// Tracks the in-flight connect target, namespaced so a group and a server
-  /// sharing an id cannot both show a spinner.
+  String? _selectedSubscriptionId;
   String? _connectingId;
-  final _expandedGroups = <String>{};
+  _RouteSort _sort = _RouteSort.name;
+  bool _ascending = true;
 
   @override
   Widget build(BuildContext context) {
-    final manifestAsync = ref.watch(groupsManifestProvider);
-    final serversAsync = ref.watch(serversProvider);
-    final subscriptionsAsync = ref.watch(subscriptionsProvider);
+    final colors = ThemeColors.of(context);
+    final manifestAsync = ref.watch(mosaicManifestProvider);
+    final subscriptions =
+        ref.watch(subscriptionsProvider).valueOrNull ?? const <Subscription>[];
+    final servers = ref.watch(serversProvider).valueOrNull ?? const <Server>[];
     final status = ref.watch(vpnStatusProvider).valueOrNull;
-    final activeId = status?.server?.id;
+
+    if (manifestAsync.isLoading && subscriptions.isEmpty) {
+      return Scaffold(
+        backgroundColor: colors.bgBase,
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final manifest = manifestAsync.valueOrNull;
+    final sources = _sourcesFor(manifest, subscriptions);
+    final selectedSource = sources.firstWhere(
+      (source) => source.id == _selectedSubscriptionId,
+      orElse: () => sources.isNotEmpty ? sources.first : Subscription(),
+    );
+    final rows = _rowsFor(
+      manifest: manifest,
+      source: selectedSource,
+      servers: servers,
+    )..sort(_compareRows);
+
+    if (sources.isNotEmpty && selectedSource.id != _selectedSubscriptionId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() => _selectedSubscriptionId = selectedSource.id);
+        }
+      });
+    }
 
     return Scaffold(
-      backgroundColor: AtlasTheme.bgBase,
+      backgroundColor: colors.bgBase,
       body: RefreshIndicator(
-        onRefresh: () async {
-          ref.invalidate(groupsManifestProvider);
-          ref.invalidate(serversProvider);
-          ref.invalidate(subscriptionsProvider);
-          await ref.read(groupsManifestProvider.future);
-        },
-        child: manifestAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (err, _) => _ErrorState(error: err),
-          data: (manifest) => _buildBody(
-            manifest: manifest,
-            servers: serversAsync.valueOrNull ?? const [],
-            subscriptions: subscriptionsAsync.valueOrNull ?? const [],
-            activeId: activeId,
+        onRefresh: _refresh,
+        child: LayoutBuilder(
+          builder: (context, constraints) => ListView(
+            padding: EdgeInsets.fromLTRB(
+              constraints.maxWidth >= 760 ? 32 : 16,
+              24,
+              constraints.maxWidth >= 760 ? 32 : 16,
+              32,
+            ),
+            children: [
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1180),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _Header(onAddSource: _showAddSource, onRefresh: _refresh),
+                      const SizedBox(height: 18),
+                      if (sources.isNotEmpty) ...[
+                        Text(
+                          'Подписки',
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    color: colors.textPrimary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                        ),
+                        const SizedBox(height: 10),
+                        _SourceTabs(
+                          sources: sources,
+                          selectedId: selectedSource.id,
+                          onSelected: _selectSource,
+                        ),
+                        const SizedBox(height: 18),
+                      ],
+                      _SourceSummary(
+                        source: selectedSource,
+                        isMosaic: selectedSource.id == 'mosaic-direct',
+                      ),
+                      const SizedBox(height: 14),
+                      if (manifestAsync.hasError &&
+                          selectedSource.id == 'mosaic-direct')
+                        _InlineNotice(
+                          icon: Icons.sync_problem_outlined,
+                          text:
+                              'Маршруты MosaicVPN временно недоступны. Потяните экран вниз, чтобы повторить попытку.',
+                        ),
+                      if (rows.isEmpty)
+                        _EmptyRoutes(
+                          hasSource: selectedSource.id.isNotEmpty,
+                          onAddSource: _showAddSource,
+                        )
+                      else
+                        _RouteTable(
+                          rows: rows,
+                          activeId: status?.isConnected == true
+                              ? status?.server?.id
+                              : null,
+                          connectingId: _connectingId,
+                          sort: _sort,
+                          ascending: _ascending,
+                          onSort: _applySort,
+                          onSortMenu: _showSortMenu,
+                          onConnect: _connect,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildBody({
-    required ProviderManifest manifest,
+  List<Subscription> _sourcesFor(
+    ProviderManifest? manifest,
+    List<Subscription> subscriptions,
+  ) {
+    final hasMosaic =
+        subscriptions.any((source) => source.id == 'mosaic-direct');
+    return <Subscription>[
+      if (!hasMosaic && (manifest?.groups.isNotEmpty ?? false))
+        Subscription(id: 'mosaic-direct', name: 'MosaicVPN'),
+      ...subscriptions,
+    ];
+  }
+
+  List<_RouteRow> _rowsFor({
+    required ProviderManifest? manifest,
+    required Subscription source,
     required List<Server> servers,
-    required List<Subscription> subscriptions,
-    required String? activeId,
   }) {
-    final tt = Theme.of(context).textTheme;
-
-    if (manifest.groups.isEmpty && servers.isEmpty && subscriptions.isEmpty) {
-      return const _EmptyState();
+    if (source.id == 'mosaic-direct') {
+      return (manifest?.groups ?? const <ManifestGroup>[])
+          .where((group) =>
+              group.category == 'smart' || group.category == 'whitelist')
+          .map(
+            (group) => _RouteRow(
+              id: group.id,
+              type: 'Группа',
+              name: _groupTitle(group),
+              ping: null,
+              traffic: 'Авто',
+              isGroup: true,
+              icon: _groupIcon(group.icon),
+            ),
+          )
+          .toList();
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final twoColumns = constraints.maxWidth >= _twoColumnBreakpoint;
-        final sections = <Widget>[
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Профили и маршруты',
-                  style: tt.headlineSmall?.copyWith(
-                    fontFamily: AtlasTheme.serifFamily,
-                    fontSize: 22,
-                  ),
-                ),
-              ),
-              FilledButton.icon(
-                onPressed: _showAddSource,
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('Добавить источник'),
-              ),
-            ],
+    // The daemon API itself filters mosaic-direct physical nodes. This UI
+    // applies the same rule as defence in depth for any future provider change.
+    return servers
+        .where((server) =>
+            server.subscriptionID == source.id &&
+            server.subscriptionID != 'mosaic-direct')
+        .map(
+          (server) => _RouteRow(
+            id: server.id,
+            type: server.protocol.displayName,
+            name: server.name.isEmpty ? 'Безымянный сервер' : server.name,
+            ping: server.hasLatency ? server.lastTestMS : null,
+            traffic: '—',
+            isGroup: false,
+            icon: Icons.dns_outlined,
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Умные маршруты, личная подписка MosaicVPN и совместимые источники других сервисов.',
-            style: tt.bodySmall?.copyWith(color: AtlasTheme.textMuted),
-          ),
-        ];
-
-        if (manifest.providerName.isNotEmpty) {
-          sections.add(Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: Text(
-              manifest.providerName,
-              style: tt.headlineSmall?.copyWith(
-                fontFamily: AtlasTheme.serifFamily,
-                fontSize: 22,
-              ),
-            ),
-          ));
-        }
-
-        if (manifest.groups.isNotEmpty) {
-          sections.add(const _SectionHeader('Группы · автоподбор'));
-          final cards = [
-            for (final group in manifest.groups)
-              _GroupCard(
-                group: group,
-                isExpanded: _expandedGroups.contains(group.id),
-                isConnecting: _connectingId == 'group:${group.id}',
-                isActive: _isGroupActive(group.id, activeId),
-                onToggle: () => _toggleGroup(group.id),
-                onConnect: () => _connectGroup(group.id),
-              ),
-          ];
-          sections.addAll(_layoutCards(cards, twoColumns));
-        }
-
-        if (subscriptions.isNotEmpty) {
-          sections.add(const _SectionHeader('Источники профиля'));
-          sections.addAll([
-            for (final subscription in subscriptions)
-              _SubscriptionSourceCard(subscription: subscription),
-          ]);
-        }
-
-        if (servers.isNotEmpty) {
-          sections.add(const _SectionHeader('Отдельные серверы'));
-          final cards = [
-            for (final server in servers)
-              _ServerCard(
-                server: server,
-                isActive: activeId == server.id,
-                isConnecting: _connectingId == 'server:${server.id}',
-                onConnect: () => _connectServer(server.id),
-              ),
-          ];
-          sections.addAll(_layoutCards(cards, twoColumns));
-        }
-
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
-          children: [
-            Center(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: twoColumns
-                      ? _maxCardWidth * 2 + _columnGap
-                      : _maxCardWidth,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: sections,
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
+        )
+        .toList();
   }
 
-  /// Arranges cards in one or two columns, capping each at _maxCardWidth.
-  List<Widget> _layoutCards(List<Widget> cards, bool twoColumns) {
-    if (!twoColumns) {
-      return [
-        for (final card in cards)
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: _maxCardWidth),
-            child: card,
-          ),
-      ];
+  int _compareRows(_RouteRow left, _RouteRow right) {
+    int result;
+    switch (_sort) {
+      case _RouteSort.type:
+        result = left.type.toLowerCase().compareTo(right.type.toLowerCase());
+      case _RouteSort.name:
+        result = left.name.toLowerCase().compareTo(right.name.toLowerCase());
+      case _RouteSort.ping:
+        result = (left.ping ?? 1 << 30).compareTo(right.ping ?? 1 << 30);
+      case _RouteSort.traffic:
+        result = left.traffic.compareTo(right.traffic);
     }
-
-    final rows = <Widget>[];
-    for (var i = 0; i < cards.length; i += 2) {
-      final left = cards[i];
-      final right = i + 1 < cards.length ? cards[i + 1] : null;
-      rows.add(Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: _maxCardWidth),
-              child: left,
-            ),
-          ),
-          const SizedBox(width: _columnGap),
-          Expanded(
-            child: right == null
-                ? const SizedBox.shrink()
-                : ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: _maxCardWidth),
-                    child: right,
-                  ),
-          ),
-        ],
-      ));
-    }
-    return rows;
+    if (result == 0) result = left.name.compareTo(right.name);
+    return _ascending ? result : -result;
   }
 
-  bool _isGroupActive(String groupId, String? activeId) {
-    if (activeId == null) return false;
-    final servers = ref.read(serversProvider).valueOrNull ?? const [];
-    for (final s in servers) {
-      if (s.id == activeId && s.groupId == groupId) return true;
+  Future<void> _refresh() async {
+    ref.invalidate(mosaicManifestProvider);
+    ref.invalidate(subscriptionsProvider);
+    ref.invalidate(serversProvider);
+    ref.invalidate(vpnStatusProvider);
+    try {
+      await ref.read(mosaicManifestProvider.future);
+    } catch (_) {
+      // The screen renders a safe retry state; raw transport errors stay out of UI.
     }
-    return false;
   }
 
-  void _toggleGroup(String groupId) {
+  void _selectSource(String sourceId) {
+    if (sourceId == _selectedSubscriptionId) return;
+    setState(() => _selectedSubscriptionId = sourceId);
+  }
+
+  void _applySort(_RouteSort sort) {
     setState(() {
-      if (!_expandedGroups.remove(groupId)) {
-        _expandedGroups.add(groupId);
+      if (_sort == sort) {
+        _ascending = !_ascending;
+      } else {
+        _sort = sort;
+        _ascending = sort != _RouteSort.ping;
       }
     });
   }
 
-  Future<void> _connectGroup(String groupId) async {
-    setState(() => _connectingId = 'group:$groupId');
-    try {
-      final api = ref.read(daemonApiProvider);
-      final server = await api.selectNodeFromGroup(groupId);
-      await api.connect(server.id);
-      if (mounted) {
-        _showMessage(
-            'Подключено через $groupId → ${server.name}', AtlasTheme.success);
-      }
-    } catch (e) {
-      _showMessage('Не удалось подключиться: $e', AtlasTheme.error);
-    } finally {
-      if (mounted) setState(() => _connectingId = null);
-    }
+  Future<void> _showSortMenu(Offset globalPosition) async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final selected = await showMenu<_RouteSort>(
+      context: context,
+      position: RelativeRect.fromRect(
+        globalPosition & const Size(1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: const [
+        PopupMenuItem(
+            value: _RouteSort.type, child: Text('Сортировать по типу')),
+        PopupMenuItem(
+            value: _RouteSort.name, child: Text('Сортировать по названию')),
+        PopupMenuItem(
+            value: _RouteSort.ping, child: Text('Сортировать по пингу')),
+        PopupMenuItem(
+            value: _RouteSort.traffic, child: Text('Сортировать по трафику')),
+      ],
+    );
+    if (selected != null && mounted) _applySort(selected);
   }
 
-  Future<void> _connectServer(String serverId) async {
-    setState(() => _connectingId = 'server:$serverId');
+  Future<void> _connect(_RouteRow row) async {
+    setState(() => _connectingId = row.id);
     try {
-      await ref.read(daemonApiProvider).connect(serverId);
-    } catch (e) {
-      _showMessage('Не удалось подключиться: $e', AtlasTheme.error);
+      final api = ref.read(daemonApiProvider);
+      if (row.isGroup) {
+        await api.connectGroup(row.id);
+      } else {
+        await api.connect(row.id);
+      }
+      ref.invalidate(vpnStatusProvider);
+      if (mounted) {
+        _showMessage(
+            'Подключение установлено.', ThemeColors.of(context).success);
+      }
+    } catch (_) {
+      if (mounted) {
+        _showMessage(
+          'Не удалось подключиться. Обновите маршрут и повторите попытку.',
+          ThemeColors.of(context).danger,
+        );
+      }
     } finally {
       if (mounted) setState(() => _connectingId = null);
     }
@@ -283,519 +328,404 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     );
   }
 
-  void _showMessage(String msg, Color background) {
-    if (!mounted) return;
+  void _showMessage(String message, Color background) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: background),
+      SnackBar(content: Text(message), backgroundColor: background),
     );
   }
 }
 
-class _SubscriptionSourceCard extends ConsumerWidget {
-  final Subscription subscription;
+class _Header extends StatelessWidget {
+  const _Header({required this.onAddSource, required this.onRefresh});
 
-  const _SubscriptionSourceCard({required this.subscription});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final tt = Theme.of(context).textTheme;
-    final isMosaicDirect = subscription.id == 'mosaic-direct';
-    final statusColor =
-        subscription.hasError ? AtlasTheme.error : AtlasTheme.success;
-    final statusLabel = subscription.hasError
-        ? 'Требуется обновление'
-        : '${subscription.serverCount} маршрутов доступно';
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: AtlasTheme.bgCard,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AtlasTheme.border),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: AtlasTheme.accent.withValues(alpha: .14),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                isMosaicDirect
-                    ? Icons.verified_user_outlined
-                    : Icons.rss_feed_outlined,
-                color: AtlasTheme.accent,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    subscription.name.isEmpty
-                        ? 'Безымянный источник'
-                        : subscription.name,
-                    style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    isMosaicDirect
-                        ? 'Персональный профиль MosaicVPN'
-                        : (subscription.hasError
-                            ? subscription.lastError
-                            : statusLabel),
-                    style: tt.bodySmall?.copyWith(color: statusColor),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-            IconButton(
-              tooltip: 'Обновить источник',
-              icon: const Icon(Icons.refresh, size: 20),
-              onPressed: () async {
-                try {
-                  await ref
-                      .read(daemonApiProvider)
-                      .refreshSubscription(subscription.id);
-                  ref.invalidate(subscriptionsProvider);
-                  ref.invalidate(serversProvider);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Источник обновлён.')),
-                    );
-                  }
-                } catch (error) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                          content:
-                              Text('Не удалось обновить источник: $error')),
-                    );
-                  }
-                }
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Shared pieces ────────────────────────────────────────────────────────
-
-class _SectionHeader extends StatelessWidget {
-  final String label;
-  const _SectionHeader(this.label);
+  final VoidCallback onAddSource;
+  final Future<void> Function() onRefresh;
 
   @override
   Widget build(BuildContext context) {
-    final tt = Theme.of(context).textTheme;
-    return Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 8),
-      child: Text(
-        label.toUpperCase(),
-        style: tt.labelSmall?.copyWith(
-          color: AtlasTheme.textMuted,
-          letterSpacing: 1.2,
-          fontWeight: FontWeight.w600,
+    final colors = ThemeColors.of(context);
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        SizedBox(
+          width: 420,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Профили и маршруты',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      color: colors.textPrimary,
+                      fontFamily: AtlasTheme.serifFamily,
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Выберите подписку, затем маршрут. MosaicVPN раскрывает только безопасные группы — внутренний пул остаётся приватным.',
+                style: TextStyle(color: colors.textSecondary, height: 1.35),
+              ),
+            ],
+          ),
         ),
-      ),
+        const SizedBox(width: 4),
+        OutlinedButton.icon(
+          onPressed: () => onRefresh(),
+          icon: const Icon(Icons.refresh_rounded),
+          label: const Text('Обновить'),
+        ),
+        FilledButton.icon(
+          onPressed: onAddSource,
+          icon: const Icon(Icons.add_rounded),
+          label: const Text('Добавить источник'),
+        ),
+      ],
     );
   }
 }
 
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    final tt = Theme.of(context).textTheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.rss_feed, size: 48, color: AtlasTheme.textMuted),
-            const SizedBox(height: 12),
-            Text('Нет доступных групп и серверов',
-                style:
-                    tt.bodyMedium?.copyWith(color: AtlasTheme.textSecondary)),
-            const SizedBox(height: 4),
-            Text('Добавьте подписку, чтобы импортировать конфигурации.',
-                style: tt.bodySmall?.copyWith(color: AtlasTheme.textMuted),
-                textAlign: TextAlign.center),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorState extends StatelessWidget {
-  final Object error;
-  const _ErrorState({required this.error});
-
-  @override
-  Widget build(BuildContext context) {
-    final tt = Theme.of(context).textTheme;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.cloud_off, size: 48, color: AtlasTheme.textMuted),
-            const SizedBox(height: 12),
-            Text('Не удалось загрузить группы',
-                style:
-                    tt.bodyMedium?.copyWith(color: AtlasTheme.textSecondary)),
-            const SizedBox(height: 4),
-            // The raw error is kept: a generic message gives the user nothing
-            // to act on and nothing to report.
-            Text('$error',
-                style: tt.bodySmall?.copyWith(color: AtlasTheme.textMuted),
-                textAlign: TextAlign.center),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Group card ───────────────────────────────────────────────────────────
-
-class _GroupCard extends ConsumerWidget {
-  final ManifestGroup group;
-  final bool isExpanded;
-  final bool isConnecting;
-  final bool isActive;
-  final VoidCallback onToggle;
-  final VoidCallback onConnect;
-
-  const _GroupCard({
-    required this.group,
-    required this.isExpanded,
-    required this.isConnecting,
-    required this.isActive,
-    required this.onToggle,
-    required this.onConnect,
+class _SourceTabs extends StatelessWidget {
+  const _SourceTabs({
+    required this.sources,
+    required this.selectedId,
+    required this.onSelected,
   });
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final tt = Theme.of(context).textTheme;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Container(
-        decoration: BoxDecoration(
-          color: isActive ? AtlasTheme.successDim : AtlasTheme.bgCard,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: isActive ? AtlasTheme.success : AtlasTheme.border,
-          ),
-        ),
-        child: Column(
-          children: [
-            InkWell(
-              onTap: onToggle,
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(10)),
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                child: Row(
-                  children: [
-                    Icon(Icons.bolt,
-                        size: 18,
-                        color:
-                            isActive ? AtlasTheme.success : AtlasTheme.accent),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        group.title,
-                        style: tt.bodyMedium
-                            ?.copyWith(fontWeight: FontWeight.w500),
-                        // Names wrap rather than truncating to a few glyphs.
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    if (isActive)
-                      const _Badge(label: 'АКТИВНА', color: AtlasTheme.success)
-                    else
-                      Flexible(
-                        child: Text(
-                          group.strategyLabel,
-                          style: tt.bodySmall?.copyWith(
-                              color: AtlasTheme.textMuted, fontSize: 11),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    Icon(isExpanded ? Icons.expand_less : Icons.expand_more,
-                        size: 18, color: AtlasTheme.textMuted),
-                  ],
-                ),
-              ),
-            ),
-            if (isExpanded) _HealthPanel(groupId: group.id),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: isConnecting || isActive ? null : onConnect,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor:
-                        isActive ? AtlasTheme.success : AtlasTheme.accent,
-                    foregroundColor: AtlasTheme.textOnInk,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(6)),
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                  ),
-                  icon: isConnecting
-                      ? const SizedBox(
-                          width: 12,
-                          height: 12,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: AtlasTheme.textOnInk))
-                      : Icon(isActive ? Icons.check : Icons.bolt, size: 14),
-                  label: Text(
-                    isActive
-                        ? 'Подключено'
-                        : (isConnecting ? 'Подключение…' : 'Автоподключение'),
-                    style: const TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Node health for one group, loaded when the card is expanded.
-class _HealthPanel extends ConsumerWidget {
-  final String groupId;
-  const _HealthPanel({required this.groupId});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final tt = Theme.of(context).textTheme;
-    final healthAsync = ref.watch(groupNodeHealthProvider(groupId));
-
-    return Container(
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: AtlasTheme.borderLight)),
-      ),
-      child: healthAsync.when(
-        loading: () => const Padding(
-          padding: EdgeInsets.all(16),
-          child: Center(
-            child: SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(strokeWidth: 2)),
-          ),
-        ),
-        error: (err, _) => Padding(
-          padding: const EdgeInsets.all(12),
-          child: Text('Нет данных о состоянии узлов',
-              style: tt.bodySmall?.copyWith(color: AtlasTheme.textMuted)),
-        ),
-        data: (healthMap) {
-          if (healthMap.isEmpty) {
-            return Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text('Узлы ещё не определены',
-                  style: tt.bodySmall?.copyWith(color: AtlasTheme.textMuted)),
-            );
-          }
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            child: Column(
-              children: [
-                for (final entry in healthMap.entries)
-                  _NodeHealthRow(name: entry.key, health: entry.value),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _NodeHealthRow extends StatelessWidget {
-  final String name;
-  final NodeHealth health;
-
-  const _NodeHealthRow({required this.name, required this.health});
+  final List<Subscription> sources;
+  final String selectedId;
+  final ValueChanged<String> onSelected;
 
   @override
   Widget build(BuildContext context) {
-    final tt = Theme.of(context).textTheme;
-    final dotColor = health.alive
-        ? AtlasTheme.success
-        : health.isUnknown
-            ? AtlasTheme.textMuted
-            : AtlasTheme.error;
+    final colors = ThemeColors.of(context);
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: sources
+            .map(
+              (source) => Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  avatar: Icon(
+                    source.id == 'mosaic-direct'
+                        ? Icons.verified_user_outlined
+                        : Icons.rss_feed_outlined,
+                    size: 17,
+                    color: source.id == selectedId
+                        ? AtlasTheme.accent
+                        : colors.textMuted,
+                  ),
+                  label: Text(source.name.isEmpty
+                      ? 'Безымянный источник'
+                      : source.name),
+                  selected: source.id == selectedId,
+                  onSelected: (_) => onSelected(source.id),
+                  selectedColor: AtlasTheme.accent.withValues(alpha: .16),
+                  labelStyle: TextStyle(
+                    color: source.id == selectedId
+                        ? AtlasTheme.accent
+                        : colors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+}
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+class _SourceSummary extends StatelessWidget {
+  const _SourceSummary({required this.source, required this.isMosaic});
+
+  final Subscription source;
+  final bool isMosaic;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = ThemeColors.of(context);
+    final title = source.name.isEmpty ? 'Источник маршрутов' : source.name;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colors.bgCard,
+        border: Border.all(color: colors.border),
+        borderRadius: BorderRadius.circular(18),
+      ),
       child: Row(
         children: [
           Container(
-            width: 7,
-            height: 7,
-            decoration: BoxDecoration(shape: BoxShape.circle, color: dotColor),
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: AtlasTheme.accent.withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(
+              isMosaic ? Icons.shield_outlined : Icons.layers_outlined,
+              color: AtlasTheme.accent,
+            ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              name,
-              style: tt.bodySmall?.copyWith(fontSize: 12),
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: colors.textPrimary,
+                      fontWeight: FontWeight.w700,
+                    )),
+                const SizedBox(height: 3),
+                Text(
+                  isMosaic
+                      ? 'Выберите группу. Подходящий физический узел выбирается внутри защищённого пула.'
+                      : 'Импортированные маршруты этого источника доступны только вам.',
+                  style: TextStyle(color: colors.textSecondary, fontSize: 12),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 8),
-          if (health.alive)
-            Text('${health.latencyMs} мс',
-                style: tt.bodySmall
-                    ?.copyWith(color: AtlasTheme.success, fontSize: 12))
-          else if (health.error != null)
-            // Constrained so a long error cannot squeeze the node name away.
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 140),
-              child: Text(
-                health.error!,
-                style: tt.bodySmall
-                    ?.copyWith(color: AtlasTheme.error, fontSize: 11),
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.right,
-              ),
-            ),
         ],
       ),
     );
   }
 }
 
-// ─── Server card ──────────────────────────────────────────────────────────
+class _InlineNotice extends StatelessWidget {
+  const _InlineNotice({required this.icon, required this.text});
 
-class _ServerCard extends StatelessWidget {
-  final Server server;
-  final bool isActive;
-  final bool isConnecting;
-  final VoidCallback onConnect;
-
-  const _ServerCard({
-    required this.server,
-    required this.isActive,
-    required this.isConnecting,
-    required this.onConnect,
-  });
+  final IconData icon;
+  final String text;
 
   @override
   Widget build(BuildContext context) {
-    final tt = Theme.of(context).textTheme;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Container(
-        decoration: BoxDecoration(
-          color: isActive ? AtlasTheme.successDim : AtlasTheme.bgCard,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isActive ? AtlasTheme.success : AtlasTheme.border,
-          ),
-        ),
-        child: InkWell(
-          onTap: isConnecting ? null : onConnect,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            child: Row(
-              children: [
-                Icon(Icons.dns,
-                    size: 16,
-                    color: isActive
-                        ? AtlasTheme.success
-                        : AtlasTheme.textSecondary),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        server.name,
-                        style: tt.bodyMedium
-                            ?.copyWith(fontWeight: FontWeight.w500),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (server.address.isNotEmpty)
-                        Text(
-                          '${server.address}:${server.port}',
-                          style: tt.bodySmall?.copyWith(
-                              color: AtlasTheme.textMuted, fontSize: 11),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                if (isConnecting)
-                  const SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                else if (isActive)
-                  const _Badge(label: 'АКТИВЕН', color: AtlasTheme.success)
-                else
-                  Icon(Icons.chevron_right,
-                      size: 18, color: AtlasTheme.textMuted),
-              ],
-            ),
-          ),
-        ),
+    final colors = ThemeColors.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: colors.warning.withValues(alpha: .10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colors.warning.withValues(alpha: .30)),
       ),
+      child: Row(children: [
+        Icon(icon, color: colors.warning),
+        const SizedBox(width: 10),
+        Expanded(
+            child: Text(text, style: TextStyle(color: colors.textPrimary))),
+      ]),
     );
   }
 }
 
-class _Badge extends StatelessWidget {
-  final String label;
-  final Color color;
-  const _Badge({required this.label, required this.color});
+class _EmptyRoutes extends StatelessWidget {
+  const _EmptyRoutes({required this.hasSource, required this.onAddSource});
+
+  final bool hasSource;
+  final VoidCallback onAddSource;
 
   @override
   Widget build(BuildContext context) {
-    final tt = Theme.of(context).textTheme;
+    final colors = ThemeColors.of(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 42),
       decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(4),
+        color: colors.bgCard,
+        border: Border.all(color: colors.border),
+        borderRadius: BorderRadius.circular(18),
       ),
-      child: Text(label,
-          style: tt.labelSmall
-              ?.copyWith(color: AtlasTheme.textOnInk, fontSize: 9)),
+      child: Column(children: [
+        Icon(Icons.route_outlined, color: colors.textMuted, size: 44),
+        const SizedBox(height: 12),
+        Text(
+          hasSource
+              ? 'В этой подписке пока нет маршрутов'
+              : 'Нет подключённых источников',
+          textAlign: TextAlign.center,
+          style:
+              TextStyle(color: colors.textPrimary, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          hasSource
+              ? 'Обновите источник или выберите другую подписку.'
+              : 'Добавьте совместимый профиль, чтобы увидеть его маршруты.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: colors.textSecondary),
+        ),
+        const SizedBox(height: 16),
+        if (!hasSource)
+          FilledButton.icon(
+            onPressed: onAddSource,
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('Добавить источник'),
+          ),
+      ]),
     );
   }
+}
+
+class _RouteTable extends StatelessWidget {
+  const _RouteTable({
+    required this.rows,
+    required this.activeId,
+    required this.connectingId,
+    required this.sort,
+    required this.ascending,
+    required this.onSort,
+    required this.onSortMenu,
+    required this.onConnect,
+  });
+
+  final List<_RouteRow> rows;
+  final String? activeId;
+  final String? connectingId;
+  final _RouteSort sort;
+  final bool ascending;
+  final ValueChanged<_RouteSort> onSort;
+  final Future<void> Function(Offset) onSortMenu;
+  final ValueChanged<_RouteRow> onConnect;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = ThemeColors.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.bgCard,
+        border: Border.all(color: colors.border),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            headingRowColor: WidgetStatePropertyAll(colors.bgElevated),
+            dataRowMinHeight: 62,
+            dataRowMaxHeight: 68,
+            sortColumnIndex: _columnFor(sort),
+            sortAscending: ascending,
+            columns: [
+              _column(context, 'Тип', _RouteSort.type),
+              _column(context, 'Название', _RouteSort.name),
+              _column(context, 'Пинг', _RouteSort.ping, numeric: true),
+              _column(context, 'Трафик', _RouteSort.traffic, numeric: true),
+            ],
+            rows: rows.map((row) {
+              final isConnected =
+                  activeId == row.id || activeId == 'group:${row.id}';
+              final isConnecting = connectingId == row.id;
+              return DataRow(
+                selected: isConnected,
+                onSelectChanged: isConnecting ? null : (_) => onConnect(row),
+                cells: [
+                  DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(row.icon,
+                        size: 18,
+                        color:
+                            row.isGroup ? AtlasTheme.accent : colors.textMuted),
+                    const SizedBox(width: 8),
+                    Text(row.type,
+                        style: TextStyle(color: colors.textSecondary)),
+                  ])),
+                  DataCell(SizedBox(
+                    width: 310,
+                    child: Row(children: [
+                      Expanded(
+                        child: Text(row.name,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: colors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                            )),
+                      ),
+                      if (isConnecting)
+                        const Padding(
+                          padding: EdgeInsets.only(left: 8),
+                          child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2)),
+                        )
+                      else if (isConnected)
+                        const Padding(
+                          padding: EdgeInsets.only(left: 8),
+                          child: Icon(Icons.check_circle_rounded,
+                              color: AtlasTheme.success, size: 18),
+                        ),
+                    ]),
+                  )),
+                  DataCell(Text(row.ping == null ? 'Авто' : '${row.ping} мс',
+                      style: TextStyle(color: colors.textPrimary))),
+                  DataCell(Text(row.traffic,
+                      style: TextStyle(color: colors.textPrimary))),
+                ],
+              );
+            }).toList(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  DataColumn _column(BuildContext context, String label, _RouteSort field,
+      {bool numeric = false}) {
+    final colors = ThemeColors.of(context);
+    return DataColumn(
+      numeric: numeric,
+      onSort: (_, __) => onSort(field),
+      label: Listener(
+        onPointerDown: (event) {
+          if (event.buttons == kSecondaryMouseButton) {
+            onSortMenu(event.position);
+          }
+        },
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(label,
+              style: TextStyle(
+                  color: colors.textPrimary, fontWeight: FontWeight.w700)),
+          const SizedBox(width: 3),
+          if (sort == field)
+            Icon(
+                ascending
+                    ? Icons.arrow_upward_rounded
+                    : Icons.arrow_downward_rounded,
+                size: 14,
+                color: AtlasTheme.accent),
+        ]),
+      ),
+    );
+  }
+
+  int _columnFor(_RouteSort value) => switch (value) {
+        _RouteSort.type => 0,
+        _RouteSort.name => 1,
+        _RouteSort.ping => 2,
+        _RouteSort.traffic => 3,
+      };
+}
+
+String _groupTitle(ManifestGroup group) {
+  return switch (group.id) {
+    'rg-all' => 'Минимальный пинг',
+    'auto-stable' => 'Стабильное соединение',
+    'auto-speed' => 'Максимальная скорость',
+    'auto-whitelist' || 'auto-allowlist' => 'Доступ через allowlist',
+    _ => group.title,
+  };
+}
+
+IconData _groupIcon(String icon) {
+  return switch (icon) {
+    'lightning' => Icons.bolt_rounded,
+    'speed' => Icons.speed_rounded,
+    'shield' => Icons.shield_outlined,
+    'flag_de' || 'flag_ca' || 'flag_us' => Icons.flag_outlined,
+    _ => Icons.route_outlined,
+  };
 }

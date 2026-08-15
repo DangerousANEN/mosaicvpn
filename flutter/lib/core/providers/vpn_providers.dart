@@ -190,6 +190,9 @@ class _ResolvedDaemonApi implements DaemonApiBase {
   Future<void> connect(String serverID) async =>
       (await _backend()).connect(serverID);
   @override
+  Future<void> connectGroup(String groupID) async =>
+      (await _backend()).connectGroup(groupID);
+  @override
   Future<void> disconnect() async => (await _backend()).disconnect();
   @override
   Future<void> shutdownDaemon() async => (await _backend()).shutdownDaemon();

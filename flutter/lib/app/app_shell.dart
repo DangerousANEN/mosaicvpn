@@ -204,7 +204,10 @@ class _AppShellState extends ConsumerState<AppShell>
   Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
     final trayStatus = ref.watch(vpnStatusProvider).valueOrNull;
+    final closeToTray =
+        ref.watch(prefsProvider).valueOrNull?.minimizeToTray ?? true;
     if (AppPlatform.isDesktop) {
+      TrayService.instance.configure(minimizeToTray: closeToTray);
       TrayService.instance.setConnectionState(
         trayStatus?.state == 'connected',
         routeLabel: trayStatus?.server?.name ?? '',
@@ -429,9 +432,7 @@ class _AppShellState extends ConsumerState<AppShell>
 
       final manifest = await api.getProviderManifest();
       if (manifest.groups.isNotEmpty) {
-        final selected =
-            await api.selectNodeFromGroup(manifest.groups.first.id);
-        await api.connect(selected.id);
+        await api.connectGroup(manifest.groups.first.id);
       } else {
         final servers = await api.listServers();
         if (servers.isEmpty) {
@@ -444,7 +445,10 @@ class _AppShellState extends ConsumerState<AppShell>
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось подключиться: $error')),
+          const SnackBar(
+            content: Text(
+                'Не удалось подключиться. Обновите маршрут и повторите попытку.'),
+          ),
         );
       }
     }
@@ -457,7 +461,9 @@ class _AppShellState extends ConsumerState<AppShell>
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось отключиться: $error')),
+          const SnackBar(
+            content: Text('Не удалось отключиться. Повторите попытку.'),
+          ),
         );
       }
     }

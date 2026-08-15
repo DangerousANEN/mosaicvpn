@@ -38,6 +38,11 @@ class DaemonApi implements DaemonApiBase {
   }
 
   @override
+  Future<void> connectGroup(String groupID) async {
+    await _dio.post('/v1/connect', data: {'group_id': groupID});
+  }
+
+  @override
   Future<void> disconnect() async {
     await _dio.post('/v1/disconnect');
   }

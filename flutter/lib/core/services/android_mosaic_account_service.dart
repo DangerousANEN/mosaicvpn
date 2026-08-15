@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../models/billing_profile.dart';
 import '../models/provider_profile.dart';
 
 /// Device-local account material required by Android's native direct runtime.
@@ -97,6 +98,57 @@ class AndroidMosaicAccountService {
       throw StateError('Сервис не вернул список маршрутов.');
     }
     return ProviderManifest.fromJson(payload);
+  }
+
+  /// Returns the Android account cabinet through the hosted authority. A brief
+  /// billing-sync outage must never make an already-linked device look signed
+  /// out, so the persisted device session is used as a safe fallback.
+  Future<BillingProfile> getBillingProfile() async {
+    final session = await restoreSession();
+    if (session == null) return BillingProfile();
+
+    final local = BillingProfile(
+      linked: true,
+      username: session.username ?? '',
+      email: session.username?.contains('@') == true ? session.username! : '',
+      status: 'active',
+      description: 'This Android device is linked to a MosaicVPN profile.',
+    );
+    final token = session.sessionToken;
+    if (token == null || token.isEmpty) return local;
+
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/api/billing/profile',
+        queryParameters: {'token': token},
+      );
+      final payload = Map<String, dynamic>.from(response.data ?? const {});
+      final rawTrialEndsAt = payload['trial_ends_at']?.toString();
+      final trialEndsAt =
+          rawTrialEndsAt == null ? null : DateTime.tryParse(rawTrialEndsAt);
+      final now = DateTime.now();
+      final daysLeft = trialEndsAt == null
+          ? 0
+          : trialEndsAt
+              .difference(DateTime(now.year, now.month, now.day))
+              .inDays
+              .clamp(0, 9999);
+      return BillingProfile(
+        linked: true,
+        username: session.username ?? '',
+        email: session.username?.contains('@') == true ? session.username! : '',
+        shortUuid: payload['short_uuid']?.toString() ?? '',
+        status: payload['status']?.toString() ?? 'active',
+        tag: payload['tier']?.toString() ?? '',
+        expireAt: trialEndsAt,
+        daysLeft: daysLeft,
+        description: 'MosaicVPN direct profile on this Android device.',
+      );
+    } on DioException {
+      // A server-side billing refresh is not a reason to block VPN access or
+      // turn the cabinet into an opaque Dio error. The next refresh retries.
+      return local;
+    }
   }
 
   /// Downloads the authenticated opaque direct feed and builds an Android TUN

@@ -76,9 +76,10 @@ class TrayService {
     _initialized = true;
     _buildMenu();
     _tray.registerSystemTrayEventHandler((eventName) {
-      if (eventName == kSystemTrayEventClick ||
-          eventName == kSystemTrayEventRightClick) {
+      if (eventName == kSystemTrayEventClick) {
         unawaited(showWindow());
+      } else if (eventName == kSystemTrayEventRightClick) {
+        unawaited(_tray.popUpContextMenu());
       }
     });
   }
@@ -90,17 +91,16 @@ class TrayService {
         : 'Не подключено';
 
     menu.buildFrom([
-      MenuItemLabel(
-        label: 'MosaicVPN',
-        onClicked: (_) => showWindow(),
-      ),
-      MenuItemLabel(
-        label: connectionLabel,
-        onClicked: (_) => showWindow(),
-      ),
+      MenuItemLabel(label: 'MosaicVPN', enabled: false),
+      MenuItemLabel(label: connectionLabel, enabled: false),
       MenuSeparator(),
       MenuItemLabel(
+        label: 'Открыть приложение',
+        onClicked: (_) => showWindow(),
+      ),
+      MenuItemLabel(
         label: 'Подключить',
+        enabled: !_connected,
         onClicked: (_) async {
           await _onConnect?.call();
           await showWindow();
@@ -108,12 +108,11 @@ class TrayService {
       ),
       MenuItemLabel(
         label: 'Отключить',
-        onClicked: (_) async {
-          await _onDisconnect?.call();
-        },
+        enabled: _connected,
+        onClicked: (_) async => _onDisconnect?.call(),
       ),
       MenuItemLabel(
-        label: 'Профили и маршруты',
+        label: 'Выбрать маршрут',
         onClicked: (_) async {
           await _onOpenRoutes?.call();
           await showWindow();
@@ -121,7 +120,13 @@ class TrayService {
       ),
       MenuSeparator(),
       MenuItemLabel(
-        label: 'Выйти из MosaicVPN',
+        label: 'Свернуть в трей',
+        enabled: !_hidden,
+        onClicked: (_) => hideToTray(),
+      ),
+      MenuSeparator(),
+      MenuItemLabel(
+        label: 'Выйти полностью',
         onClicked: (_) async {
           if (_onQuit != null) {
             await _onQuit!.call();

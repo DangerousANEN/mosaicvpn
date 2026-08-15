@@ -6,6 +6,7 @@ import 'package:mosaic_vpn/app/app_shell.dart';
 import 'package:mosaic_vpn/core/api/mock_daemon_api.dart';
 import 'package:mosaic_vpn/core/models/models.dart';
 import 'package:mosaic_vpn/core/providers/vpn_providers.dart';
+import 'package:mosaic_vpn/core/platform/app_platform.dart';
 
 /// Smoke tests for the shell that owns navigation.
 ///
@@ -49,6 +50,13 @@ Future<void> _pumpAt(WidgetTester tester, Size size) async {
 }
 
 void main() {
+  setUp(() {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+  });
+  tearDown(() {
+    AppPlatform.debugTargetPlatformOverride = null;
+  });
+
   testWidgets('phone shell exposes four clear primary tabs', (tester) async {
     await _pumpAt(tester, const Size(390, 844));
 
@@ -81,8 +89,7 @@ void main() {
         reason: 'wide layout uses the compact sidebar');
     expect(find.text('Не подключено'), findsWidgets,
         reason: 'the primary desktop screen must be ConnectionDashboard');
-    expect(
-        find.text('Выберите маршрут — Подключиться'), findsOneWidget);
+    expect(find.textContaining('Маршруты: Минимальный пинг'), findsOneWidget);
     expect(tester.takeException(), isNull,
         reason: 'desktop dashboard must render without an exception');
   });
