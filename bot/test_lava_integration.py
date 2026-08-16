@@ -93,17 +93,34 @@ class LavaIntegrationTest(unittest.TestCase):
         self.assertEqual(bot_module.lava_store_config("site")["webhook_path"], "/api/billing/lava/webhook/site")
         self.assertEqual(bot_module.lava_store_config("bot")["webhook_path"], "/api/billing/lava/webhook/bot")
 
-    def test_new_invoice_restricts_checkout_to_sbp_and_cards(self):
+    def test_new_invoice_restricts_checkout_to_active_sbp_and_cards(self):
         with mock.patch.object(
             bot_module,
             "_lava_signed_request",
-            return_value={"id": "provider-1", "url": "https://pay.example.invalid/invoice"},
+            side_effect=[
+                [
+                    {"service_id": "lava_pay_in"},
+                    {"service_id": "card_ru"},
+                    {"service_id": "sbp"},
+                ],
+                {"id": "provider-1", "url": "https://pay.example.invalid/invoice"},
+            ],
         ) as request:
             invoice = bot_module.create_lava_invoice("site", 42, 10, 10)
-        payload = request.call_args.args[1]
-        self.assertEqual(payload["includeService"], ["sbp", "card"])
+        self.assertEqual(request.call_args_list[0].args[0], "invoice/get-available-tariffs")
+        payload = request.call_args_list[1].args[1]
+        self.assertEqual(payload["includeService"], ["card_ru", "sbp"])
         self.assertNotIn("lava_pay_in", payload["includeService"])
         self.assertEqual(invoice["payment_url"], "https://pay.example.invalid/invoice")
+
+    def test_invoice_fails_clearly_when_only_internal_wallet_is_active(self):
+        with mock.patch.object(
+            bot_module,
+            "_lava_signed_request",
+            return_value=[{"service_id": "lava_pay_in"}],
+        ):
+            with self.assertRaisesRegex(RuntimeError, "СБП или банковской картой"):
+                bot_module.create_lava_invoice("bot", 42, 10, 10)
 
 
 if __name__ == "__main__":

@@ -42,10 +42,15 @@ LAVA_SITE_FAIL_URL = os.environ.get("MOSAIC_LAVA_SITE_FAIL_URL", "https://sub.zx
 LAVA_BOT_SUCCESS_URL = os.environ.get("MOSAIC_LAVA_BOT_SUCCESS_URL", LAVA_SITE_SUCCESS_URL)
 LAVA_BOT_FAIL_URL = os.environ.get("MOSAIC_LAVA_BOT_FAIL_URL", LAVA_SITE_FAIL_URL)
 # New invoices must offer consumer methods only. Do not send MosaicVPN
-# customers to the internal Lava wallet sign-in page.
-LAVA_PAYMENT_SERVICES = tuple(
+# customers to the internal Lava wallet sign-in page. Lava returns exact active
+# service IDs per shop (for example, `card_ru`), so this is an allow-list rather
+# than an unconditional payload sent to every invoice.
+LAVA_CONSUMER_SERVICES = frozenset(
     item.strip().lower()
-    for item in os.environ.get("MOSAIC_LAVA_PAYMENT_SERVICES", "sbp,card").split(",")
+    for item in os.environ.get(
+        "MOSAIC_LAVA_PAYMENT_SERVICES",
+        "sbp,card,card_ru,mir_card,mir_pay,sber_pay",
+    ).split(",")
     if item.strip()
 )
 LAVA_WEBHOOK_SITE_PATH = "/api/billing/lava/webhook/site"
@@ -976,6 +981,28 @@ def _lava_value(data, *keys, default=None):
     return default
 
 
+def available_lava_consumer_services(store):
+    """Return active SBP/card service IDs for one merchant shop.
+
+    Lava projects can have a different approved method set. Querying the
+    official tariff endpoint prevents showing an empty checkout or the
+    merchant's internal Lava wallet sign-in to ordinary MosaicVPN customers.
+    """
+    config = lava_store_config(store)
+    data = _lava_signed_request(
+        "invoice/get-available-tariffs",
+        {"shopId": config["shop_id"]},
+        config["secret_key"],
+    )
+    tariffs = data if isinstance(data, list) else []
+    return [
+        str(item.get("service_id")).lower()
+        for item in tariffs
+        if isinstance(item, dict)
+        and str(item.get("service_id", "")).lower() in LAVA_CONSUMER_SERVICES
+    ]
+
+
 def create_lava_invoice(store, telegram_id, amount, days, description=None):
     config = lava_store_config(store)
     amount = round(float(amount), 2)
@@ -983,6 +1010,12 @@ def create_lava_invoice(store, telegram_id, amount, days, description=None):
         raise ValueError("amount must be between 1 and 100000 RUB")
     if days < 1 or days > 100000:
         raise ValueError("days must be between 1 and 100000")
+    active_services = available_lava_consumer_services(store)
+    if not active_services:
+        raise RuntimeError(
+            "В магазине пока не активированы способы оплаты СБП или банковской картой. "
+            "Пожалуйста, попробуйте позже."
+        )
     internal_id = secrets.randbelow(9_000_000_000_000_000_000) + 1
     order_id = f"mosaic-{store}-{telegram_id}-{secrets.token_urlsafe(10)}"
     payload = {
@@ -993,7 +1026,7 @@ def create_lava_invoice(store, telegram_id, amount, days, description=None):
         "hookUrl": f"https://sub.zxc1x1.ru{config['webhook_path']}",
         "successUrl": config["success_url"],
         "failUrl": config["fail_url"],
-        "includeService": list(LAVA_PAYMENT_SERVICES),
+        "includeService": active_services,
     }
     data = _lava_signed_request("invoice/create", payload, config["secret_key"])
     provider_id = str(_lava_value(data, "id", "invoiceId", "invoice_id", default=internal_id))
