@@ -2,295 +2,213 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Личный кабинет — MosaicVPN</title>
-<meta name="description" content="Личный кабинет MosaicVPN: баланс, срок действия доступа, устройства, история платежей и пополнение. Вход через Telegram-бот." />
+<meta name="description" content="Личный кабинет MosaicVPN: статус доступа, баланс, история платежей и пополнение. Единый аккаунт для Telegram, приложения и веб-кабинета." />
 <link rel="canonical" href="https://sub.zxc1x1.ru/cabinet.html" />
 <meta name="robots" content="noindex, nofollow" />
+<meta name="theme-color" content="#F4EFE6" />
 <style>
   :root{
-    --bg:#F4EFE6; --card:#FBF8F2; --border:#DED3C0; --text:#241F1A;
-    --text-2:#6B6157; --muted:#8A7F72; --accent:#B85C38; --accent-2:#7A6A55;
-    --ok:#3F6B4A; --warn:#8A6A1F; --err:#8C3A2E;
-    --serif:'Playfair Display',Georgia,'Times New Roman',serif;
+    --bg:#F4EFE6; --card:#FBF8F2; --card-strong:#EDE5D6; --border:#DED3C0;
+    --text:#241F1A; --text-2:#6B6157; --muted:#8A7F72; --accent:#B85C38;
+    --accent-soft:rgba(184,92,56,.12); --ok:#3F6B4A; --ok-soft:rgba(63,107,74,.1);
+    --warn:#8A6A1F; --warn-soft:rgba(138,106,31,.1); --err:#8C3A2E;
+    --serif:'Iowan Old Style','Palatino Linotype','Book Antiqua',Georgia,serif;
     --mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+    --sans:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
   }
   *{box-sizing:border-box}
-  body{margin:0; background:var(--bg); color:var(--text);
-       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
-       line-height:1.65; -webkit-font-smoothing:antialiased}
-  .wrap{max-width:960px; margin:0 auto; padding:0 24px}
-  a{color:var(--accent)}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased;
+       background-image:linear-gradient(rgba(196,184,158,.14) 1px,transparent 1px),linear-gradient(90deg,rgba(196,184,158,.14) 1px,transparent 1px);background-size:32px 32px}
+  button,input{font:inherit}
+  button{cursor:pointer}
+  a{color:inherit}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 24px}
+  .hidden{display:none!important}
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 
-  header{border-bottom:1px solid var(--border); background:rgba(244,239,230,.92);
-         position:sticky; top:0; z-index:20; backdrop-filter:blur(8px)}
-  .nav{display:flex; align-items:center; gap:16px; height:64px}
-  .brand{display:flex; align-items:center; gap:10px; font-family:var(--serif);
-         font-size:20px; font-weight:600; text-decoration:none; color:var(--text)}
+  header{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--border);background:rgba(244,239,230,.9);backdrop-filter:blur(10px)}
+  .nav{min-height:64px;display:flex;align-items:center;gap:18px}
+  .brand{display:inline-flex;align-items:center;gap:9px;font-family:var(--serif);font-size:20px;font-weight:600;text-decoration:none}
   .brand .dot{color:var(--accent)}
-  .nav-links{margin-left:auto; display:flex; flex-wrap:wrap; gap:20px; font-size:14px; color:var(--text-2)}
-  .nav-links a{text-decoration:none; white-space:nowrap}
-  @media(max-width:760px){ .nav-links{display:none} }
+  .nav-links{margin-left:auto;display:flex;align-items:center;gap:18px;font-size:14px;color:var(--text-2)}
+  .nav-links a{text-decoration:none}.nav-links a:hover{color:var(--accent)}
+  .nav-home{display:none;margin-left:auto;font-size:14px;text-decoration:none;color:var(--text-2)}
 
-  .head{padding:48px 0 28px; border-bottom:1px solid var(--border)}
-  .fig{font-family:var(--mono); font-size:11px; letter-spacing:.18em;
-       text-transform:uppercase; color:var(--muted)}
-  h1{font-family:var(--serif); font-size:clamp(28px,5vw,42px); margin:10px 0 12px; font-weight:600}
-  .lede{color:var(--text-2); max-width:60ch; margin:0}
+  .page-head{padding:48px 0 30px;border-bottom:1px solid var(--border)}
+  .fig{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+  h1,h2,h3{font-family:var(--serif);font-weight:600}
+  h1{font-size:clamp(32px,5vw,46px);line-height:1.08;margin:10px 0 13px;letter-spacing:-.03em}
+  h2{font-size:clamp(22px,3vw,29px);line-height:1.15;margin:0}
+  h3{font-size:20px;line-height:1.2;margin:0}
+  .lede{max-width:66ch;margin:0;color:var(--text-2);font-size:16px}
 
-  section{padding:32px 0}
-  h2{font-family:var(--serif); font-size:24px; margin:0 0 14px; font-weight:600}
+  main section{padding:30px 0}
+  .surface{background:var(--card);border:1px solid var(--border);border-radius:16px}
+  .section-title{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:14px}
+  .section-title p{margin:0;color:var(--text-2);font-size:14px;text-align:right}
 
-  /* auth gate */
-  .gate{border:1px solid var(--border); border-radius:14px; background:var(--card);
-        padding:28px; text-align:center; margin:8px 0 4px}
-  .gate .icon{width:52px; height:52px; margin:0 auto 14px; border-radius:50%;
-              background:rgba(184,92,56,.12); display:flex; align-items:center; justify-content:center}
-  .gate h3{font-family:var(--serif); font-size:22px; margin:0 0 8px; font-weight:600}
-  .gate p{color:var(--text-2); margin:0 auto 20px; max-width:46ch}
-  .btn{display:inline-block; padding:13px 26px; border-radius:9px; text-decoration:none;
-       font-weight:600; font-size:15px; border:1px solid transparent}
-  .btn-primary{background:var(--accent); color:#fff}
-  .btn-primary:hover{background:#a04f30}
-  .btn-ghost{border-color:var(--border); color:var(--text); background:transparent}
-  .btn-ghost:hover{border-color:var(--accent); color:var(--accent)}
-  .btn-row{display:flex; gap:10px; flex-wrap:wrap; justify-content:center}
+  .gate{max-width:680px;margin:4px auto 0;padding:clamp(22px,5vw,38px);text-align:center}
+  .gate-icon{display:grid;place-items:center;width:54px;height:54px;margin:0 auto 17px;border-radius:50%;background:var(--accent-soft);color:var(--accent)}
+  .gate p{max-width:46ch;margin:10px auto 22px;color:var(--text-2)}
+  .code-form{max-width:356px;margin:0 auto}
+  .code-input{width:100%;padding:14px 16px;border:2px solid var(--border);border-radius:10px;background:#fff;color:var(--text);outline:none;text-align:center;text-transform:uppercase;font-family:var(--mono);font-size:21px;letter-spacing:.22em}
+  .code-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .form-error{min-height:20px;margin:9px 0 0;color:var(--err);font-size:13px}
+  .gate-note{margin:15px 0 0;color:var(--muted);font-size:12.5px}
+  code{font-family:var(--mono);font-size:.9em;background:rgba(0,0,0,.05);padding:2px 5px;border-radius:4px}
 
-  /* account panel */
-  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px}
-  .card{border:1px solid var(--border); border-radius:12px; background:var(--card); padding:18px}
-  .card .k{font-family:var(--mono); font-size:10.5px; letter-spacing:.14em;
-           text-transform:uppercase; color:var(--muted); margin-bottom:8px}
-  .card .v{font-family:var(--serif); font-size:26px; font-weight:600; line-height:1.2}
-  .card .sub{font-size:12.5px; color:var(--text-2); margin-top:6px}
-  .v.ok{color:var(--ok)} .v.warn{color:var(--warn)} .v.err{color:var(--err)}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:45px;padding:11px 18px;border:1px solid transparent;border-radius:10px;text-decoration:none;font-weight:600;font-size:14px;transition:transform .12s ease,background .15s ease,border-color .15s ease}
+  .btn:hover{transform:translateY(-1px)}.btn:focus-visible,.copy-btn:focus-visible{outline:3px solid rgba(184,92,56,.28);outline-offset:2px}
+  .btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:#A04F30}
+  .btn-secondary{background:var(--card);border-color:var(--border);color:var(--text)}.btn-secondary:hover{border-color:var(--accent);color:var(--accent)}
+  .btn-soft{background:var(--card-strong);border-color:var(--border);color:var(--text)}
+  .btn-block{width:100%}.btn-row{display:flex;flex-wrap:wrap;gap:10px}
 
-  .tbl-wrap{overflow-x:auto; border:1px solid var(--border); border-radius:10px;
-            background:var(--card); margin:14px 0}
-  table{border-collapse:collapse; width:100%; font-size:14px}
-  th,td{padding:11px 14px; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap}
-  th{font-family:var(--mono); font-size:10.5px; letter-spacing:.12em;
-     text-transform:uppercase; color:var(--muted); font-weight:500}
-  tr:last-child td{border-bottom:none}
+  .identity{padding:clamp(20px,4vw,30px);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:22px;align-items:center}
+  .identity-main{min-width:0}.identity-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .status{display:inline-flex;align-items:center;gap:7px;padding:6px 9px;border-radius:999px;background:var(--ok-soft);color:var(--ok);font-size:12px;font-weight:700}
+  .status::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor}.status.warn{background:var(--warn-soft);color:var(--warn)}.status.err{background:rgba(140,58,46,.1);color:var(--err)}
+  .account-name{margin:12px 0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--serif);font-size:clamp(24px,4vw,34px);line-height:1.1}
+  .account-id{display:inline-flex;align-items:center;gap:9px;max-width:100%;padding:7px 9px 7px 11px;border:1px solid var(--border);border-radius:9px;background:var(--card-strong);font-family:var(--mono);font-size:12px;color:var(--text-2)}
+  .account-id-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.copy-btn{display:inline-grid;place-items:center;width:27px;height:27px;margin:-3px -4px -3px 0;padding:0;border:0;border-radius:6px;background:transparent;color:var(--accent)}.copy-btn:hover{background:var(--accent-soft)}
+  .identity-side{min-width:185px;padding:14px 16px;border-left:1px solid var(--border)}
+  .identity-side .label{font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted)}
+  .identity-side .date{margin-top:5px;font-family:var(--serif);font-size:22px;line-height:1.2}.identity-side .note{margin-top:3px;font-size:12px;color:var(--text-2)}
 
-  .note{border-left:3px solid var(--accent); background:var(--card);
-        padding:14px 18px; border-radius:0 10px 10px 0; margin:16px 0}
-  .note .t{font-weight:600; margin-bottom:5px}
-  .note p{margin:0; color:var(--text-2); font-size:14px}
+  .metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:14px}
+  .metric{min-height:138px;padding:18px;border:1px solid var(--border);border-radius:13px;background:var(--card)}
+  .metric .label{font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted)}
+  .metric .value{margin-top:8px;font-family:var(--serif);font-size:clamp(24px,3vw,31px);line-height:1.05}.metric .sub{margin-top:7px;font-size:12px;color:var(--text-2)}
+  .metric .value.warn{color:var(--warn)}.metric .value.err{color:var(--err)}
 
+  .action-card{padding:clamp(20px,4vw,28px)}
+  .payment-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:18px}
+  .pay-option{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--text);text-align:left}
+  .pay-option:hover{border-color:var(--accent);background:var(--card)}.pay-option .sum{font-family:var(--serif);font-size:22px;line-height:1.1}.pay-option .hint{margin-top:4px;font-size:12px;color:var(--text-2)}.pay-option svg{width:19px;height:19px;flex:none;color:var(--accent)}
+  .custom-form{display:grid;grid-template-columns:auto minmax(130px,170px) auto;align-items:center;gap:10px;margin-top:13px}.custom-form label{font-size:14px;color:var(--text-2)}
+  .field{width:100%;min-height:45px;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:#fff;color:var(--text);outline:none}.field:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .message{min-height:21px;margin:11px 0 0;color:var(--text-2);font-size:13px}
 
+  .activity{display:grid;gap:9px}.activity-row{display:grid;grid-template-columns:minmax(120px,1fr) auto auto;gap:18px;align-items:center;padding:14px 16px;border:1px solid var(--border);border-radius:11px;background:var(--card)}
+  .activity-main{min-width:0}.activity-title{font-size:14px;font-weight:600}.activity-meta{margin-top:3px;color:var(--text-2);font-size:12px}.activity-amount{font-family:var(--serif);font-size:19px;white-space:nowrap}.activity-status{font-size:12px;white-space:nowrap;color:var(--ok)}.activity-status.pending{color:var(--warn)}.activity-empty{padding:18px;border:1px dashed var(--border);border-radius:11px;color:var(--muted);font-size:14px}
+  .desktop-table{width:100%;border-collapse:collapse}.desktop-table th,.desktop-table td{padding:12px 14px;border-bottom:1px solid var(--border);text-align:left;font-size:14px}.desktop-table th{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:500}.desktop-table tr:last-child td{border-bottom:0}
+  .table-wrap{overflow:auto;border:1px solid var(--border);border-radius:12px;background:var(--card)}.mobile-activity{display:none}
 
-  code{font-family:var(--mono); font-size:13px; background:rgba(0,0,0,.05);
-       padding:2px 6px; border-radius:4px}
+  .devices-card{padding:22px}.device-empty{padding:12px 0;color:var(--text-2);font-size:14px}
+  .account-guide{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.guide-item{padding:18px;border:1px solid var(--border);border-radius:12px;background:var(--card)}.guide-item .n{display:grid;place-items:center;width:27px;height:27px;margin-bottom:12px;border:1px solid var(--accent);border-radius:50%;font-family:var(--mono);font-size:10px;color:var(--accent)}.guide-item h3{font-size:17px}.guide-item p{margin:7px 0 0;color:var(--text-2);font-size:13px}
 
-  footer{border-top:1px solid var(--border); padding:28px 0 40px; margin-top:20px;
-         font-size:13px; color:var(--muted)}
-  footer a{color:var(--text-2); text-decoration:none}
-  footer a:hover{color:var(--accent)}
-  .hidden{display:none}
+  .admin-entry{padding:20px 22px;border:1px solid var(--accent);border-radius:14px;background:linear-gradient(135deg,var(--accent-soft),rgba(237,229,214,.78));display:flex;align-items:center;justify-content:space-between;gap:18px}.admin-entry h2{font-size:22px}.admin-entry p{margin:6px 0 0;color:var(--text-2);font-size:13px;max-width:55ch}
+  .logout-row{display:flex;justify-content:flex-end;margin-top:18px}.logout{padding:0;border:0;background:none;color:var(--text-2);font-size:13px;text-decoration:underline}.logout:hover{color:var(--accent)}
+
+  footer{margin-top:22px;border-top:1px solid var(--border);padding:27px 0 42px;color:var(--muted);font-size:13px}footer a{color:var(--text-2);text-decoration:none}footer a:hover{color:var(--accent)}.footer-links{display:flex;flex-wrap:wrap;gap:6px 13px;margin-top:8px}
+
+  @media(max-width:760px){.wrap{padding:0 16px}.nav{min-height:58px}.nav-links{display:none}.nav-home{display:block}.brand{font-size:18px}.page-head{padding:31px 0 22px}.lede{font-size:15px}main section{padding:22px 0}.section-title{display:block;margin-bottom:12px}.section-title p{margin-top:6px;text-align:left}.identity{grid-template-columns:1fr;padding:20px}.identity-side{min-width:0;padding:14px 0 0;border-left:0;border-top:1px solid var(--border)}.metrics{grid-template-columns:1fr 1fr}.metric{min-height:122px;padding:15px}.metric:last-child{grid-column:1/-1}.payment-options{grid-template-columns:1fr}.pay-option{padding:14px}.custom-form{grid-template-columns:1fr}.custom-form .btn{width:100%}.desktop-table{display:none}.table-wrap{display:none}.mobile-activity{display:grid}.devices-card{padding:19px}.account-guide{grid-template-columns:1fr}.admin-entry{display:block;padding:19px}.admin-entry .btn{width:100%;margin-top:14px}.btn-row .btn{flex:1}.gate{padding:25px 18px}.code-input{font-size:19px}.footer-links{gap:6px 11px}}
+  @media(max-width:380px){.metrics{grid-template-columns:1fr}.metric:last-child{grid-column:auto}.identity{padding:18px}.account-id{font-size:11px}.btn-row{display:grid;grid-template-columns:1fr}.btn-row .btn{width:100%}}
 </style>
 </head>
 <body>
-
 <header>
   <div class="wrap nav">
-    <a class="brand" href="/">
-      <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
-        <circle cx="16" cy="16" r="14" fill="none" stroke="#B85C38" stroke-width="1.6"/>
-        <path d="M16 5 L19 16 L16 27 L13 16 Z" fill="#B85C38"/>
-      </svg>
+    <a class="brand" href="/" aria-label="MosaicVPN — на главную">
+      <svg width="25" height="25" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="#B85C38" stroke-width="1.6"/><path d="M16 5 L19 16 L16 27 L13 16 Z" fill="#B85C38"/></svg>
       MosaicVPN<span class="dot">.</span>
     </a>
-    <nav class="nav-links">
-      <a href="/">Главная</a>
-      <a href="/#pricing">Тариф</a>
-      <a href="/docs.html">Провайдерам</a>
-      <a href="/contacts.html">Поддержка</a>
+    <nav class="nav-links" aria-label="Основная навигация">
+      <a href="/">Главная</a><a href="/#pricing">Тариф</a><a href="/docs.html">Провайдерам</a><a href="/contacts.html">Поддержка</a>
     </nav>
+    <a class="nav-home" href="/">На главную</a>
   </div>
 </header>
 
-<div class="wrap">
-
-  <div class="head">
+<main class="wrap">
+  <div class="page-head">
     <div class="fig">Личный кабинет</div>
     <h1>Ваш аккаунт</h1>
-    <p class="lede">
-      Баланс, срок доступа, устройства и история платежей. Один и тот же аккаунт
-      работает в Telegram-боте, в приложении и здесь — данные везде одинаковые.
-    </p>
+    <p class="lede">Доступ, пополнение и история операций в одном месте. Этот же аккаунт работает в Telegram-боте, приложении и веб-кабинете.</p>
   </div>
 
-  <!-- ─── AUTH GATE (shown when not signed in) ───────────── -->
-  <section id="gate-section">
-    <div class="gate" id="gate">
-      <div class="icon">
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#B85C38" stroke-width="1.8">
-          <path d="M21 11.5a8.5 8.5 0 1 1-4.6-7.6"/>
-          <path d="M9 12l2.5 2.5L21 5"/>
-        </svg>
-      </div>
-      <h3>Вход по коду из Telegram</h3>
-      <p>
-        Отправьте команду <code>/link</code> боту <a href="https://t.me/mosaicvpnbot" target="_blank" rel="noopener">@mosaicvpnbot</a>,
-        получите 6-значный код и введите его здесь.
-      </p>
-      <form id="code-form" style="max-width:340px; margin:0 auto 16px;">
-        <input id="code-input" type="text" maxlength="6" placeholder="AB3XK7"
-               style="width:100%; padding:14px 16px; border:2px solid var(--border); border-radius:9px;
-                      font-family:var(--mono); font-size:22px; letter-spacing:.25em; text-align:center;
-                      text-transform:uppercase; background:#fff; color:var(--text); outline:none;" />
-        <div id="code-error" style="color:var(--err); font-size:14px; margin:10px 0 0; min-height:20px;"></div>
-        <button type="submit" class="btn btn-primary" style="width:100%; margin-top:12px; border:none; cursor:pointer;">
-          Войти
-        </button>
+  <section id="gate-section" aria-labelledby="login-title">
+    <div class="surface gate">
+      <div class="gate-icon" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 1 1-4.6-7.6"/><path d="m9 12 2.5 2.5L21 5"/></svg></div>
+      <h2 id="login-title">Вход по коду из Telegram</h2>
+      <p>Отправьте команду <code>/link</code> боту <a href="https://t.me/mosaicvpnbot" target="_blank" rel="noopener">@mosaicvpnbot</a>, получите 8-символьный код и введите его здесь.</p>
+      <form id="code-form" class="code-form" novalidate>
+        <label class="sr-only" for="code-input">Код входа</label>
+        <input id="code-input" class="code-input" type="text" inputmode="text" autocomplete="one-time-code" maxlength="8" pattern="[A-Za-z0-9]{8}" placeholder="AB3X7K9Q" aria-describedby="code-error" />
+        <div id="code-error" class="form-error" role="alert"></div>
+        <button type="submit" class="btn btn-primary btn-block">Войти в кабинет</button>
       </form>
-      <div style="font-size:13px; color:var(--muted); margin-top:14px;">
-        Код действителен 10 минут. Нужен бот? —
-        <a href="https://t.me/mosaicvpnbot" target="_blank" rel="noopener">Открыть @mosaicvpnbot</a>
-      </div>
+      <p class="gate-note">Код действует 10 минут и используется один раз. Нужен бот? <a href="https://t.me/mosaicvpnbot" target="_blank" rel="noopener">Открыть @mosaicvpnbot</a></p>
     </div>
   </section>
 
-  <!-- ─── ACCOUNT (rendered once the session API is live) ── -->
-  <section id="account-section" class="hidden">
-    <h2>Состояние аккаунта</h2>
-    <div class="grid">
-      <div class="card">
-        <div class="k">Аккаунт</div>
-        <div class="v" data-field="username" style="font-size:20px;">—</div>
-        <div class="sub">Telegram ID</div>
+  <section id="account-section" class="hidden" aria-live="polite">
+    <div class="surface identity">
+      <div class="identity-main">
+        <div class="identity-top"><span id="account-status" class="status">Доступ активен</span><span class="fig">Mosaic account</span></div>
+        <div id="account-name" class="account-name">Ваш аккаунт</div>
+        <div class="account-id" title="ID аккаунта используется для обращения в поддержку и админских операций">
+          <span>ID аккаунта:</span><span id="account-id" class="account-id-value">—</span>
+          <button id="copy-account-id" class="copy-btn" type="button" aria-label="Скопировать ID аккаунта" title="Скопировать ID"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+        </div>
       </div>
-      <div class="card">
-        <div class="k">Доступ активен до</div>
-        <div class="v" data-field="expires">—</div>
-        <div class="sub" data-field="expires_note">—</div>
-      </div>
-      <div class="card">
-        <div class="k">Осталось дней</div>
-        <div class="v" data-field="balance">—</div>
-        <div class="sub" data-field="balance_note">списание 1 ₽ в сутки</div>
-      </div>
-      <div class="card">
-        <div class="k">Трафик</div>
-        <div class="v" data-field="devices">—</div>
-        <div class="sub" data-field="tier_note">посуточная оплата</div>
-      </div>
-      <div class="card">
-        <div class="k">Тариф</div>
-        <div class="v" data-field="tier">—</div>
-        <div class="sub" data-field="tier_note">посуточная оплата</div>
-      </div>
+      <div class="identity-side"><div class="label">Доступ до</div><div id="access-date" class="date">—</div><div id="access-note" class="note">Загружаем данные…</div></div>
     </div>
 
-    <h2 style="margin-top:34px">Пополнение</h2>
-    <p class="lede" style="margin-bottom:14px">1 ₽ = 1 день доступа. Оплата через СБП или банковскую карту.</p>
-    <div class="btn-row" style="justify-content:flex-start">
-      <button class="btn btn-primary lava-pay" data-amount="10" type="button">10 дней · 10 ₽</button>
-      <button class="btn btn-primary lava-pay" data-amount="30" type="button">30 дней · 30 ₽</button>
-      <a class="btn btn-ghost" href="https://t.me/mosaicvpnbot?start=topup" target="_blank" rel="noopener">Пополнить в боте</a>
-    </div>
-    <form id="custom-payment-form" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px">
-      <label for="custom-amount" style="font-size:14px;color:var(--text-2)">Своя сумма, ₽</label>
-      <input id="custom-amount" type="number" min="1" max="100000" step="1" placeholder="например, 45"
-             style="width:150px;padding:12px;border:1px solid var(--border);border-radius:9px;background:#fff;color:var(--text)" />
-      <button class="btn btn-ghost" type="submit">Оплатить</button>
-    </form>
-    <div id="payment-message" style="min-height:24px;margin-top:10px;color:var(--text-2)"></div>
-
-    <h2 style="margin-top:34px">История платежей</h2>
-    <div class="tbl-wrap">
-      <table>
-        <thead>
-          <tr><th>Дата</th><th>Сумма</th><th>Способ</th><th>Статус</th></tr>
-        </thead>
-        <tbody data-field="payments">
-          <tr><td colspan="4" style="color:var(--muted)">Нет операций</td></tr>
-        </tbody>
-      </table>
+    <div class="metrics" aria-label="Основные показатели аккаунта">
+      <article class="metric"><div class="label">Баланс доступа</div><div id="balance" class="value">—</div><div id="balance-note" class="sub">1 ₽ = 1 день доступа</div></article>
+      <article class="metric"><div class="label">Тариф</div><div id="tier" class="value">—</div><div class="sub">Единый доступ для ваших устройств</div></article>
+      <article class="metric"><div class="label">Использовано трафика</div><div id="traffic" class="value">—</div><div class="sub">По данным подключённого аккаунта</div></article>
     </div>
 
-    <h2 style="margin-top:34px">Устройства</h2>
-    <div class="tbl-wrap">
-      <table>
-        <thead>
-          <tr><th>Устройство</th><th>Платформа</th><th>Последняя активность</th></tr>
-        </thead>
-        <tbody data-field="device_list">
-          <tr><td colspan="3" style="color:var(--muted)">Нет привязанных устройств</td></tr>
-        </tbody>
-      </table>
-    </div>
+    <section aria-labelledby="topup-title">
+      <div class="surface action-card">
+        <div class="section-title"><div><div class="fig">Продлить доступ</div><h2 id="topup-title">Пополнение без лишних шагов</h2></div><p>1 ₽ добавляет 1 день доступа. Сумма зачисляется после подтверждения платежа.</p></div>
+        <div class="payment-options">
+          <button class="pay-option lava-pay" data-amount="10" type="button"><span><span class="sum">10 ₽</span><span class="hint">10 дней доступа</span></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg></button>
+          <button class="pay-option lava-pay" data-amount="30" type="button"><span><span class="sum">30 ₽</span><span class="hint">30 дней доступа</span></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg></button>
+          <a class="pay-option" href="https://t.me/mosaicvpnbot?start=topup" target="_blank" rel="noopener"><span><span class="sum">В боте</span><span class="hint">Открыть @mosaicvpnbot</span></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg></a>
+        </div>
+        <form id="custom-payment-form" class="custom-form"><label for="custom-amount">Своя сумма, ₽</label><input id="custom-amount" class="field" type="number" min="1" max="100000" step="1" inputmode="numeric" placeholder="Например, 45" /><button class="btn btn-secondary" type="submit">Перейти к оплате</button></form>
+        <div id="payment-message" class="message" role="status"></div>
+      </div>
+    </section>
+
+    <section aria-labelledby="payments-title">
+      <div class="section-title"><div><div class="fig">Операции</div><h2 id="payments-title">История платежей</h2></div><p>Здесь появляются подтверждённые и ожидающие оплаты.</p></div>
+      <div class="table-wrap"><table class="desktop-table"><thead><tr><th>Дата</th><th>Сумма</th><th>Способ</th><th>Статус</th></tr></thead><tbody id="payments-table"><tr><td colspan="4" style="color:var(--muted)">Загружаем историю…</td></tr></tbody></table></div>
+      <div id="payments-mobile" class="mobile-activity activity"><div class="activity-empty">Загружаем историю…</div></div>
+    </section>
+
+    <section aria-labelledby="devices-title">
+      <div class="surface devices-card"><div class="section-title"><div><div class="fig">Устройства</div><h2 id="devices-title">Подключения</h2></div><p>До 5 устройств с одним аккаунтом.</p></div><div id="device-list" class="device-empty">Список устройств появится после первой синхронизации клиента.</div></div>
+    </section>
+
+    <section id="admin-entry" class="hidden" aria-labelledby="admin-title">
+      <div class="admin-entry"><div><div class="fig" style="color:var(--accent)">Только для администратора</div><h2 id="admin-title">Управление сервисом</h2><p>Начисляйте доступ по ID аккаунта и проверяйте журнал административных операций в отдельной защищённой панели.</p></div><a class="btn btn-primary" href="/admin.html">Открыть админку</a></div>
+    </section>
+
+    <section aria-labelledby="guide-title">
+      <div class="section-title"><div><div class="fig">Единый аккаунт</div><h2 id="guide-title">Один доступ в трёх местах</h2></div></div>
+      <div class="account-guide"><article class="guide-item"><div class="n">01</div><h3>Telegram</h3><p>Получайте код входа, управляйте доступом и обращайтесь в поддержку в боте.</p></article><article class="guide-item"><div class="n">02</div><h3>Кабинет</h3><p>Проверяйте срок доступа, ID аккаунта и пополняйте баланс с телефона или компьютера.</p></article><article class="guide-item"><div class="n">03</div><h3>Приложение</h3><p>Подключайтесь к сервису и управляйте маршрутом на Windows, Linux или Android.</p></article></div>
+    </section>
+
+    <div class="logout-row"><button id="logout-button" class="logout" type="button">Выйти из кабинета на этом устройстве</button></div>
   </section>
+</main>
 
-  <section>
-    <h2>Один аккаунт в трёх местах</h2>
-    <div class="tbl-wrap">
-      <table>
-        <thead>
-          <tr><th>Где</th><th>Что доступно</th><th>Статус</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Telegram-бот</td>
-            <td>Баланс, пополнение, заморозка, подписка</td>
-            <td style="color:var(--ok)">Работает</td>
-          </tr>
-          <tr>
-            <td>Приложение</td>
-            <td>Баланс, срок доступа, привязка аккаунта</td>
-            <td style="color:var(--ok)">Работает</td>
-          </tr>
-          <tr>
-            <td>Этот кабинет</td>
-            <td>Те же данные в браузере</td>
-            <td style="color:var(--ok)">Работает</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="note">
-      <div class="t">Почему аккаунт один</div>
-      <p>
-        Аккаунт определяется вашим Telegram ID. Бот выдаёт сессионный токен,
-        приложение и кабинет обращаются с ним к одному и тому же биллингу,
-        поэтому баланс и срок доступа совпадают везде без синхронизации вручную.
-      </p>
-    </div>
-  </section>
-
-</div>
-
-<footer>
-  <div class="wrap">
-    MosaicVPN · Atlas of routes · Edition I<br/>
-    <a href="/">Главная</a> ·
-    <a href="/cabinet.html">Кабинет</a> ·
-    <a href="/docs.html">Провайдерам</a> ·
-    <a href="/delivery.html">Доставка</a> · <a href="/contacts.html">Контакты</a> ·
-    <a href="/offer.html">Оферта</a> ·
-    <a href="/privacy.html">Политика ПДн</a> ·
-    <a href="/refund.html">Возврат</a> ·
-    <a href="/terms.html">Условия</a> ·
-    <a href="https://t.me/mosaicvpnbot" target="_blank" rel="noopener">@mosaicvpnbot</a>
-  </div>
-</footer>
+<footer><div class="wrap">MosaicVPN · Atlas of routes · Edition I<div class="footer-links"><a href="/">Главная</a><a href="/cabinet.html">Кабинет</a><a href="/docs.html">Провайдерам</a><a href="/delivery.html">Доставка</a><a href="/contacts.html">Контакты</a><a href="/offer.html">Оферта</a><a href="/privacy.html">Политика ПДн</a><a href="/refund.html">Возврат</a><a href="/terms.html">Условия</a><a href="https://t.me/mosaicvpnbot" target="_blank" rel="noopener">@mosaicvpnbot</a></div></div></footer>
 
 <script>
-// Web cabinet — real auth flow:
-//   1) User enters pairing code (obtained via /link in @mosaicvpnbot)
-//   2) POST /api/session { code } -> { token }
-//   3) GET /api/billing/profile?token=... -> profile
-//   4) GET /api/billing/payments?token=... -> payments[]
 (function () {
   'use strict';
-
-  // Endpoints on the same origin (proxoed to bot:12223 by nginx)
-  var API_SESSION  = '/api/session';
-  var API_PROFILE  = '/api/billing/profile';
+  var API_SESSION = '/api/session';
+  var API_PROFILE = '/api/billing/profile';
   var API_PAYMENTS = '/api/billing/payments';
   var API_LAVA_CREATE = '/api/billing/lava/create';
-
   var TOKEN_KEY = 'mv_session_token';
   var savedToken = localStorage.getItem(TOKEN_KEY);
   var gate = document.getElementById('gate-section');
@@ -298,160 +216,88 @@
   var codeForm = document.getElementById('code-form');
   var codeInput = document.getElementById('code-input');
   var codeError = document.getElementById('code-error');
+  var profileState = null;
 
-  /* ---- DOM helpers ---- */
-  function $(name) { return document.querySelector('[data-field="' + name + '"]'); }
-  function money(v, cur) {
-    return new Intl.NumberFormat('ru-RU').format(v || 0) + ' ' + (cur === 'USDT' ? 'USDT' : '₽');
-  }
-  function esc(s) {
-    return String(s).replace(/[&<>"']/g, function (c) {
-      return {'&':'&','<':'<','>':'>','"':'"',"'":'&#39;'}[c];
-    });
-  }
+  function esc(value) { return String(value == null ? '' : value).replace(/[&<>"']/g, function (char) { return {'&':'&','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]; }); }
+  function money(value, currency) { return new Intl.NumberFormat('ru-RU').format(Number(value) || 0) + ' ' + (currency === 'USDT' ? 'USDT' : '₽'); }
+  function formatDate(value) { if (!value) return '—'; var date = new Date(value); return isNaN(date.getTime()) ? '—' : date.toLocaleDateString('ru-RU', {day:'numeric',month:'long',year:'numeric'}); }
+  function formatTraffic(bytes) { var value = Number(bytes) || 0; if (!value) return '—'; if (value >= 1073741824) return (value / 1073741824).toFixed(value >= 10737418240 ? 0 : 1).replace('.', ',') + ' ГБ'; return Math.max(1, Math.round(value / 1048576)) + ' МБ'; }
+  function setMessage(text, kind) { var node = document.getElementById('payment-message'); node.textContent = text || ''; node.style.color = kind === 'error' ? 'var(--err)' : kind === 'success' ? 'var(--ok)' : 'var(--text-2)'; }
+  function showGate(message) { account.classList.add('hidden'); gate.classList.remove('hidden'); if (message) codeError.textContent = message; }
 
-  /* ---- Show account panel ---- */
   function showAccount(profile) {
-    gate.classList.add('hidden');
-    account.classList.remove('hidden');
+    profileState = profile;
+    gate.classList.add('hidden'); account.classList.remove('hidden');
+    var accountId = String(profile.telegram_id || '—');
+    var username = String(profile.username || '').replace(/^@/, '');
+    document.getElementById('account-id').textContent = accountId;
+    document.getElementById('account-name').textContent = username ? '@' + username : 'Аккаунт MosaicVPN';
 
-    $('balance').textContent = money(profile.balance, profile.currency || 'RUB');
-    $('balance_note').textContent = profile.days_left > 0
-      ? 'хватит на ' + profile.days_left + ' сут.'
-      : 'подписка не активна';
-    $('tier').textContent = profile.tier === 'trial' ? 'Пробный' : 'Стандарт';
+    var days = Number(profile.days_left) || 0;
+    var displayedBalance = profile.balance !== undefined && profile.balance !== null ? Number(profile.balance) : days;
+    if (!displayedBalance && days > 0) displayedBalance = days;
+    var balanceNode = document.getElementById('balance');
+    balanceNode.textContent = money(displayedBalance, profile.currency || 'RUB');
+    balanceNode.className = 'value' + (days <= 0 ? ' err' : days <= 3 ? ' warn' : '');
+    document.getElementById('balance-note').textContent = days > 0 ? 'ориентировочно на ' + days + ' ' + dayWord(days) : 'нужно пополнение для активации';
+    document.getElementById('tier').textContent = profile.tier === 'trial' ? 'Пробный' : 'Стандарт';
+    document.getElementById('traffic').textContent = formatTraffic(profile.traffic_used);
+    document.getElementById('access-date').textContent = formatDate(profile.expires_at);
+    document.getElementById('access-note').textContent = days > 0 ? 'осталось ' + days + ' ' + dayWord(days) : 'активного доступа нет';
 
-    if (profile.expires_at) {
-      var dt = new Date(profile.expires_at);
-      $('expires').textContent = dt.toLocaleDateString('ru-RU');
-      $('expires_note').textContent = profile.days_left > 0
-        ? 'осталось ' + profile.days_left + ' дн.'
-        : 'истёк';
-    } else {
-      $('expires').textContent = '—';
-      $('expires_note').textContent = 'нет активной подписки';
-    }
-
-    if (profile.username) {
-      $('username').textContent = '@' + profile.username;
-    }
-
-    // Traffic (if provided)
-    if (profile.traffic_used !== undefined) {
-      $('devices').textContent = Math.round(profile.traffic_used / 1048576) + ' МБ';
-    } else {
-      $('devices').textContent = '—';
-    }
-
-    // Color the balance
-    var bal = $('balance');
-    bal.classList.toggle('warn', profile.days_left > 0 && profile.days_left <= 3);
-    bal.classList.toggle('err', profile.days_left <= 0);
+    var status = document.getElementById('account-status');
+    status.className = 'status' + (days <= 0 ? ' err' : days <= 3 ? ' warn' : '');
+    status.textContent = days <= 0 ? 'Доступ не активен' : days <= 3 ? 'Скоро закончится' : 'Доступ активен';
+    document.getElementById('admin-entry').classList.toggle('hidden', profile.is_admin !== true);
   }
 
-  /* ---- Render payments table ---- */
+  function dayWord(value) { var mod10 = value % 10, mod100 = value % 100; if (mod10 === 1 && mod100 !== 11) return 'день'; if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'дня'; return 'дней'; }
+
   function showPayments(payments) {
-    var tbody = document.querySelector('[data-field="payments"]');
-    if (!payments || payments.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" style="color:var(--muted)">Нет операций</td></tr>';
-      return;
-    }
-    tbody.innerHTML = payments.map(function (p) {
-      var status = p.status === 'paid' ? 'Оплачен' : p.status === 'pending' ? 'Ожидает' : p.status;
-      var statusColor = p.status === 'paid' ? 'var(--ok)' : 'var(--warn)';
-      return '<tr>'
-        + '<td>' + esc(p.date || '—') + '</td>'
-        + '<td>' + money(p.amount, 'RUB') + '</td>'
-        + '<td>Telegram-бот</td>'
-        + '<td style="color:' + statusColor + '">' + esc(status) + '</td>'
-        + '</tr>';
-    }).join('');
+    var table = document.getElementById('payments-table');
+    var mobile = document.getElementById('payments-mobile');
+    if (!payments || !payments.length) { table.innerHTML = '<tr><td colspan="4" style="color:var(--muted)">Операций пока нет</td></tr>'; mobile.innerHTML = '<div class="activity-empty">Операций пока нет. После пополнения история появится здесь.</div>'; return; }
+    table.innerHTML = payments.map(function (payment) { var paid = payment.status === 'paid'; var label = paid ? 'Оплачен' : payment.status === 'pending' ? 'Ожидает оплаты' : payment.status || '—'; return '<tr><td>' + esc(payment.date || '—') + '</td><td>' + esc(money(payment.amount, 'RUB')) + '</td><td>' + esc(payment.source || 'MosaicVPN') + '</td><td style="color:' + (paid ? 'var(--ok)' : 'var(--warn)') + '">' + esc(label) + '</td></tr>'; }).join('');
+    mobile.innerHTML = payments.map(function (payment) { var paid = payment.status === 'paid'; var label = paid ? 'Оплачен' : payment.status === 'pending' ? 'Ожидает оплаты' : payment.status || '—'; return '<article class="activity-row"><div class="activity-main"><div class="activity-title">' + esc(payment.source || 'Пополнение MosaicVPN') + '</div><div class="activity-meta">' + esc(payment.date || '—') + '</div></div><div class="activity-amount">' + esc(money(payment.amount, 'RUB')) + '</div><div class="activity-status' + (paid ? '' : ' pending') + '">' + esc(label) + '</div></article>'; }).join('');
   }
 
-  /* ---- Fetch profile + payments with token ---- */
-  function startLavaPayment(amount) {
-    var message = document.getElementById('payment-message');
-    if (!savedToken) { message.textContent = 'Сначала войдите в кабинет.'; return; }
-    amount = Number(amount);
-    if (!Number.isInteger(amount) || amount < 1 || amount > 100000) { message.textContent = 'Введите целую сумму от 1 до 100000 ₽.'; return; }
-    message.textContent = 'Создаём счёт…';
-    fetch(API_LAVA_CREATE, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token:savedToken, amount:amount}) })
-      .then(function(r){ return r.json().then(function(b){ return {status:r.status,body:b}; }); })
-      .then(function(result){
-        if (result.status !== 200 || !result.body.payment_url) { message.textContent = result.body.error || 'Не удалось создать счёт.'; return; }
-        message.textContent = 'Счёт создан. Открываем страницу оплаты…';
-        window.location.href = result.body.payment_url;
-      })
-      .catch(function(){ message.textContent = 'Не удалось подключиться к платёжному сервису.'; });
-  }
-
+  function requestJSON(url, options) { return fetch(url, options).then(function (response) { return response.json().catch(function () { return {}; }).then(function (body) { return {status:response.status, body:body}; }); }); }
   function loadProfile(token) {
-    Promise.all([
-      fetch(API_PROFILE + '?token=' + encodeURIComponent(token)).then(function (r) { return r.json(); }),
-      fetch(API_PAYMENTS + '?token=' + encodeURIComponent(token)).then(function (r) { return r.json(); }),
-    ]).then(function (results) {
-      var profile = results[0];
-      var payments = results[1];
-      if (profile.error) {
-        console.error('profile error:', profile.error);
-        return;
-      }
-      showAccount(profile);
-      showPayments(payments.payments || []);
-    }).catch(function (e) {
-      console.error('load failed:', e);
-    });
+    Promise.all([requestJSON(API_PROFILE + '?token=' + encodeURIComponent(token)), requestJSON(API_PAYMENTS + '?token=' + encodeURIComponent(token))]).then(function (result) {
+      var profile = result[0], payments = result[1];
+      if (profile.status === 401 || profile.body.error) { localStorage.removeItem(TOKEN_KEY); showGate('Сессия закончилась. Получите новый код в боте.'); return; }
+      if (profile.status !== 200) { showGate('Не удалось загрузить кабинет. Попробуйте ещё раз.'); return; }
+      showAccount(profile.body); showPayments(payments.status === 200 ? payments.body.payments || [] : []);
+    }).catch(function () { showGate('Не удалось подключиться к сервису. Проверьте сеть и повторите попытку.'); });
   }
 
-  /* ---- Handle code submission ---- */
   function submitCode(code) {
     codeError.textContent = '';
-    fetch(API_SESSION, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: code }),
-    }).then(function (r) {
-      return r.json().then(function (data) {
-        return { status: r.status, body: data };
-      });
-    }).then(function (result) {
-      if (result.status !== 200) {
-        var msg = { not_found: 'Код не найден', expired: 'Код истёк', used: 'Код уже использован', attempts: 'Слишком много попыток' };
-        codeError.textContent = msg[result.body.error] || 'Ошибка входа';
-        return;
-      }
-      localStorage.setItem(TOKEN_KEY, result.body.token);
-      loadProfile(result.body.token);
-    }).catch(function () {
-      codeError.textContent = 'Не удалось подключиться к серверу';
-    });
+    if (!/^[A-Z0-9]{8}$/.test(code)) { codeError.textContent = 'Введите 8 символов из кода /link.'; return; }
+    requestJSON(API_SESSION, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code})}).then(function (result) {
+      if (result.status !== 200 || !result.body.token) { var labels = {not_found:'Код не найден',expired:'Код истёк',used:'Код уже использован',attempts:'Слишком много попыток. Получите новый код.'}; codeError.textContent = labels[result.body.error] || 'Не удалось войти. Попробуйте новый код.'; return; }
+      localStorage.setItem(TOKEN_KEY, result.body.token); savedToken = result.body.token; loadProfile(savedToken);
+    }).catch(function () { codeError.textContent = 'Не удалось подключиться к сервису.'; });
   }
 
-  document.querySelectorAll('.lava-pay').forEach(function(button){
-    button.addEventListener('click', function(){ startLavaPayment(button.getAttribute('data-amount')); });
-  });
-  var customPaymentForm = document.getElementById('custom-payment-form');
-  if (customPaymentForm) customPaymentForm.addEventListener('submit', function(e){
-    e.preventDefault();
-    startLavaPayment(document.getElementById('custom-amount').value);
-  });
-
-  if (codeForm) {
-    codeForm.addEventListener('submit', function (e) {
-      e.preventDefault();
-      var code = (codeInput.value || '').trim().toUpperCase();
-      if (!code) { codeError.textContent = 'Введите код'; return; }
-      submitCode(code);
-    });
+  function startLavaPayment(amount) {
+    amount = Number(amount); if (!savedToken) { setMessage('Сначала войдите в кабинет.', 'error'); return; }
+    if (!Number.isInteger(amount) || amount < 1 || amount > 100000) { setMessage('Введите целую сумму от 1 до 100000 ₽.', 'error'); return; }
+    setMessage('Создаём счёт…');
+    requestJSON(API_LAVA_CREATE, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:savedToken,amount:amount})}).then(function (result) {
+      if (result.status !== 200 || !result.body.payment_url) { setMessage(result.body.error || 'Не удалось создать счёт.', 'error'); return; }
+      setMessage('Счёт создан. Открываем страницу оплаты…', 'success'); window.location.assign(result.body.payment_url);
+    }).catch(function () { setMessage('Не удалось подключиться к платёжному сервису.', 'error'); });
   }
 
-  // Auto-login if token is in localStorage
-  if (savedToken) {
-    loadProfile(savedToken);
-  }
+  codeForm.addEventListener('submit', function (event) { event.preventDefault(); submitCode((codeInput.value || '').trim().toUpperCase()); });
+  codeInput.addEventListener('input', function () { this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8); });
+  document.querySelectorAll('.lava-pay').forEach(function (button) { button.addEventListener('click', function () { startLavaPayment(button.getAttribute('data-amount')); }); });
+  document.getElementById('custom-payment-form').addEventListener('submit', function (event) { event.preventDefault(); startLavaPayment(document.getElementById('custom-amount').value); });
+  document.getElementById('logout-button').addEventListener('click', function () { localStorage.removeItem(TOKEN_KEY); savedToken = null; profileState = null; codeInput.value = ''; codeError.textContent = ''; showGate(); window.scrollTo({top:0,behavior:'smooth'}); });
+  document.getElementById('copy-account-id').addEventListener('click', function () { var id = profileState && profileState.telegram_id ? String(profileState.telegram_id) : ''; if (!id) return; var done = function () { setMessage('ID аккаунта скопирован.'); }; if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(id).then(done).catch(function () { window.prompt('Скопируйте ID аккаунта:', id); }); } else { window.prompt('Скопируйте ID аккаунта:', id); } });
+  if (savedToken) loadProfile(savedToken);
 })();
-
-  </script>
-
-  </body>
-  </html>
+</script>
+</body>
+</html>

@@ -115,12 +115,39 @@
     padding:3px 8px; border-radius:999px; border:1px solid var(--border); color:var(--text-2); background:var(--elev);
   }
 
-  /* features */
-  .feat-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:22px}
-  .feat{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:24px}
-  .feat h3{font-family:var(--serif); font-size:18px; margin-bottom:8px; font-weight:600}
-  .feat p{font-size:14px; color:var(--text-2)}
-  .feat .ico{font-size:22px; margin-bottom:12px; display:block}
+  /* value story and route selection */
+  .story-grid{display:grid; grid-template-columns:1.35fr 1fr 1fr; gap:16px}
+  .story-card{position:relative; overflow:hidden; min-height:218px; padding:26px; border:1px solid var(--border); border-radius:14px; background:var(--card)}
+  .story-card.featured{grid-row:span 2; min-height:452px; background:var(--ink); color:var(--on-ink); display:flex; flex-direction:column; justify-content:space-between}
+  .story-card h3{font-family:var(--serif); font-size:clamp(19px,2vw,25px); line-height:1.18; font-weight:600; margin:14px 0 9px}
+  .story-card p{font-size:14px; color:var(--text-2); max-width:33ch}
+  .story-card.featured p{color:rgba(244,239,230,.75)}
+  .story-icon{display:grid; place-items:center; width:42px; height:42px; border:1px solid var(--border); border-radius:11px; color:var(--accent); background:var(--elev)}
+  .story-card.featured .story-icon{border-color:rgba(244,239,230,.26); background:rgba(244,239,230,.08); color:#E9A783}
+  .route-visual{display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:10px; margin-top:24px; padding:15px; border:1px solid rgba(244,239,230,.22); border-radius:12px; background:rgba(244,239,230,.06); font-family:var(--mono); font-size:11px; letter-spacing:.02em}
+  .route-point{display:flex; align-items:center; gap:8px; min-width:0}
+  .route-point:last-child{justify-content:flex-end; text-align:right}
+  .route-point span:last-child{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .route-dot{width:8px; height:8px; flex:none; border-radius:50%; background:#E9A783; box-shadow:0 0 0 5px rgba(233,167,131,.12)}
+  .route-line{width:34px; height:1px; background:linear-gradient(90deg,#E9A783,rgba(233,167,131,.25))}
+  .story-foot{display:flex; align-items:center; gap:9px; margin-top:18px; font-size:12px; color:rgba(244,239,230,.62)}
+  .story-foot .shield{display:grid; place-items:center; width:24px; height:24px; border-radius:50%; background:rgba(233,167,131,.14); color:#E9A783}
+  .choice-panel{border:1px solid var(--border); border-radius:14px; background:var(--card); padding:clamp(22px,4vw,34px)}
+  .choice-layout{display:grid; grid-template-columns:minmax(0,.95fr) minmax(0,1.25fr); gap:34px; align-items:center}
+  .choice-copy h3{font-family:var(--serif); font-size:clamp(24px,3vw,32px); line-height:1.15; font-weight:600; margin:9px 0 12px}
+  .choice-copy p{font-size:15px; color:var(--text-2); max-width:37ch}
+  .choice-flow{display:grid; gap:10px}
+  .choice-step{display:grid; grid-template-columns:40px minmax(0,1fr); gap:14px; align-items:start; padding:15px; border-radius:11px; background:var(--elev); border:1px solid var(--border-light)}
+  .choice-num{display:grid; place-items:center; width:32px; height:32px; border-radius:50%; border:1px solid var(--accent); color:var(--accent); font-family:var(--mono); font-size:11px}
+  .choice-step h4{font-family:var(--serif); font-size:17px; line-height:1.2; margin:1px 0 4px; font-weight:600}
+  .choice-step p{font-size:13px; line-height:1.48; color:var(--text-2)}
+  .choice-cases{display:flex; flex-wrap:wrap; gap:8px; margin-top:18px}
+  .choice-case{display:inline-flex; align-items:center; gap:7px; padding:8px 10px; border:1px solid var(--border); border-radius:999px; background:var(--bg); font-size:12px; color:var(--text-2)}
+  .choice-case svg{width:13px; height:13px; color:var(--accent)}
+  .choice-note{display:flex; align-items:flex-start; gap:10px; margin-top:18px; padding:13px 15px; border-left:3px solid var(--accent); background:var(--elev); color:var(--text-2); font-size:13px}
+  .choice-note svg{width:18px; height:18px; flex:none; color:var(--accent); margin-top:1px}
+  @media(max-width:840px){.story-grid{grid-template-columns:1fr 1fr}.story-card.featured{grid-column:1/-1; grid-row:auto; min-height:300px}.choice-layout{grid-template-columns:1fr;gap:24px}}
+  @media(max-width:540px){.story-grid{grid-template-columns:1fr}.story-card{min-height:auto;padding:22px}.story-card.featured{min-height:294px}.route-visual{font-size:10px}.route-line{width:18px}.choice-panel{padding:20px}.choice-step{padding:13px}.choice-cases{gap:6px}}
 
   /* specs table */
   .specs{background:var(--card); border:1px solid var(--border); border-radius:12px; overflow:hidden}
@@ -194,7 +221,7 @@
       <a href="#downloads">Загрузки</a>
       <a href="#pricing">Тариф</a>
       <a href="#features">Возможности</a>
-      <a href="#groups">Группы</a>
+      <a href="#groups">Как работает</a>
       <a href="#protocols">Протоколы</a>
       <a href="/delivery.html">Доставка</a>
       <a href="/contacts.html">Контакты</a>
@@ -344,81 +371,94 @@
   <!-- ─── FEATURES ───────────────────────────────────────────── -->
   <section id="features">
     <div class="sec-head">
-      <div class="fig">Раздел III</div>
-      <h2>Возможности</h2>
-      <p>Архитектура без централизованного узла и без логов</p>
+      <div class="fig">Раздел III · для повседневного использования</div>
+      <h2>Всё нужное — без сложных настроек</h2>
+      <p>Откройте приложение, выберите понятный сценарий и подключитесь. Детали остаются в интерфейсе только тогда, когда они действительно нужны.</p>
     </div>
-    <div class="feat-grid">
-      <div class="feat">
-        <span class="ico">🗺️</span>
-        <h3>Карта станций</h3>
-        <p>Равнопромежуточная проекция мира с пином на каждую станцию. GeoIP резолвится автоматически и кэшируется локально.</p>
-      </div>
-      <div class="feat">
-        <span class="ico">⚙️</span>
-        <h3>Движок sing-box</h3>
-        <p>Кнопка «Подключить» поднимает локальный прокси на <code>127.0.0.1:2080</code> (SOCKS) и <code>:2081</code> (HTTP).</p>
-      </div>
-      <div class="feat">
-        <span class="ico">📥</span>
-        <h3>Любые подписки</h3>
-        <p>Автоопределение формата: sing-box JSON, Clash YAML, v2ray base64 и SIP008. Дедупликация узлов при импорте.</p>
-      </div>
-      <div class="feat">
-        <span class="ico">🛡️</span>
-        <h3>Kill switch</h3>
-        <p>Блокировка трафика на уровне WFP, если туннель упал. Локальная сеть направляется напрямую по настройке.</p>
-      </div>
-      <div class="feat">
-        <span class="ico">🧭</span>
-        <h3>Правила маршрутизации</h3>
-        <p>Домены, IP-CIDR, GeoSite, GeoIP, процессы и порты с логикой AND/OR. Перетаскиванием меняется приоритет.</p>
-      </div>
-      <div class="feat">
-        <span class="ico">📊</span>
-        <h3>Замер скорости</h3>
-        <p>Тест текущего подключения или всей группы разом. Задержка и пропускная способность по каждой станции.</p>
-      </div>
+    <div class="story-grid">
+      <article class="story-card featured">
+        <div>
+          <div class="story-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>
+          </div>
+          <h3>Подключение, которое не требует разбираться в сети</h3>
+          <p>На главном экране — статус, выбор маршрута и одна заметная кнопка. Всё остальное можно настроить позже, когда это потребуется.</p>
+          <div class="route-visual" aria-label="Пример защищённого маршрута">
+            <div class="route-point"><span class="route-dot"></span><span>Ваше устройство</span></div>
+            <span class="route-line" aria-hidden="true"></span>
+            <div class="route-point"><span>Защищённое соединение</span><span class="route-dot"></span></div>
+          </div>
+        </div>
+        <div class="story-foot"><span class="shield" aria-hidden="true">✓</span><span>Состояние соединения всегда видно в клиенте и трее.</span></div>
+      </article>
+      <article class="story-card">
+        <div class="story-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>
+        </div>
+        <h3>Один аккаунт на всех устройствах</h3>
+        <p>Баланс и срок доступа совпадают в Telegram, личном кабинете и приложении. Ничего не нужно переносить вручную.</p>
+      </article>
+      <article class="story-card">
+        <div class="story-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 16 0 8 8 0 0 0-16 0Z"/><path d="M12 8v4l3 2"/></svg>
+        </div>
+        <h3>Быстрый старт за несколько минут</h3>
+        <p>Получите доступ в боте или кабинете, установите клиент и подключитесь. Цифровая активация приходит сразу после оформления.</p>
+      </article>
+      <article class="story-card">
+        <div class="story-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="8"/></svg>
+        </div>
+        <h3>Только нужный уровень контроля</h3>
+        <p>Можно просто выбрать сценарий подключения. Для тех, кому нужно больше, доступны режимы, правила и импорт совместимых подписок.</p>
+      </article>
+      <article class="story-card">
+        <div class="story-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M8 12h8"/></svg>
+        </div>
+        <h3>Понятный статус защиты</h3>
+        <p>Клиент показывает, когда соединение активно, и помогает быстро восстановить доступ, если сеть изменилась или подключение прервалось.</p>
+      </article>
     </div>
   </section>
 
   <!-- ─── GROUPS ────────────────────────────────────────────── -->
   <section id="groups">
     <div class="sec-head">
-      <div class="fig">Раздел IV</div>
-      <h2>Смарт-группы</h2>
-      <p>Провайдер описывает пул станций — клиент сам выбирает лучшую</p>
+      <div class="fig">Раздел IV · интеллектуальный маршрут</div>
+      <h2>Выберите задачу — остальное сделает Mosaic</h2>
+      <p>Вам не нужно выбирать отдельные технические узлы. Клиент работает с понятными группами и подбирает подходящий маршрут внутри них.</p>
     </div>
-    <div class="feat-grid">
-      <div class="feat">
-        <span class="ico">🎯</span>
-        <h3>urltest</h3>
-        <p>Станция с наименьшей задержкой. Клиент периодически пингует весь пул и переключается на самую быструю.</p>
+    <div class="choice-panel">
+      <div class="choice-layout">
+        <div class="choice-copy">
+          <div class="fig">Как это работает</div>
+          <h3>Стабильность без ручной сортировки серверов</h3>
+          <p>Группа — это сценарий подключения, а не список инфраструктуры. Благодаря этому выбор остаётся простым, а внутренние параметры сервиса не раскрываются пользователю.</p>
+          <div class="choice-cases" aria-label="Примеры сценариев">
+            <span class="choice-case"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>Минимальная задержка</span>
+            <span class="choice-case"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 12h18"/></svg>Стабильное соединение</span>
+            <span class="choice-case"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 17 6-6 4 4 7-8"/></svg>Высокая скорость</span>
+          </div>
+        </div>
+        <div class="choice-flow">
+          <div class="choice-step">
+            <div class="choice-num">01</div>
+            <div><h4>Выберите понятный сценарий</h4><p>Например, минимальная задержка или устойчивое подключение. Сценарий можно поменять в любой момент.</p></div>
+          </div>
+          <div class="choice-step">
+            <div class="choice-num">02</div>
+            <div><h4>Клиент подбирает подходящий маршрут</h4><p>Сервис сопоставляет доступные варианты внутри выбранной группы, не показывая внутренний пул инфраструктуры.</p></div>
+          </div>
+          <div class="choice-step">
+            <div class="choice-num">03</div>
+            <div><h4>Соединение поддерживается в рабочем состоянии</h4><p>Если параметры сети меняются, клиент помогает сохранить доступность и показывает актуальное состояние подключения.</p></div>
+          </div>
+        </div>
       </div>
-      <div class="feat">
-        <span class="ico">⚖️</span>
-        <h3>weighted_round_robin</h3>
-        <p>Распределение по весам: нагруженные станции получают меньше подключений. Оценка считается как задержка, делённая на вес.</p>
-      </div>
-      <div class="feat">
-        <span class="ico">🪂</span>
-        <h3>fallback</h3>
-        <p>Строгий приоритет по списку. Пока первая станция жива — трафик идёт через неё, при падении подхватывает следующая.</p>
-      </div>
-      <div class="feat">
-        <span class="ico">📍</span>
-        <h3>direct_node</h3>
-        <p>Одна конкретная станция без балансировки. Если она недоступна, группа честно возвращает ошибку вместо тихой подмены.</p>
-      </div>
-      <div class="feat">
-        <span class="ico">🔑</span>
-        <h3>Уровни доступа</h3>
-        <p>Группа помечается тиром <code>free</code>, <code>pro</code> или <code>vip</code>. Станции выше своего уровня клиенту не отдаются.</p>
-      </div>
-      <div class="feat">
-        <span class="ico">📡</span>
-        <h3>Проверка живости</h3>
-        <p>Интервал пинга, число попыток и задержка переключения задаются на каждую группу отдельно. Манифест кэшируется — без сети клиент работает на последнем известном.</p>
+      <div class="choice-note">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+        <span>Для владельцев собственных сервисов доступна документация по интеграции групп и профилей в клиент MosaicVPN.</span>
       </div>
     </div>
   </section>

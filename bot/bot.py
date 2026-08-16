@@ -504,6 +504,27 @@ def init_db():
         expires_at TEXT NOT NULL
     )
     """)
+    # Administrative balance credits are an auditable, idempotent ledger.
+    # A request remains `processing` until the remote subscription is updated,
+    # so retrying after a network error never applies the same credit twice.
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS admin_balance_credits (
+        request_id TEXT PRIMARY KEY,
+        admin_telegram_id INTEGER NOT NULL,
+        target_telegram_id INTEGER NOT NULL,
+        amount_rub INTEGER NOT NULL,
+        reason TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        completed_at TEXT,
+        error TEXT,
+        resulting_short_uuid TEXT
+    )
+    """)
+    cursor.execute("""
+    CREATE INDEX IF NOT EXISTS idx_admin_balance_credits_created
+    ON admin_balance_credits(created_at DESC)
+    """)
     conn.commit()
     conn.close()
 
@@ -685,6 +706,92 @@ def get_payments_history(telegram_id):
     ]
 
 
+ADMIN_CREDIT_MAX_RUB = 100000
+
+
+def claim_admin_balance_credit(request_id, admin_telegram_id, target_telegram_id, amount_rub, reason):
+    """Atomically record an admin credit before touching the subscription API.
+
+    Returns the current record and whether this call inserted it. A duplicate
+    request id is intentionally not retried: it lets the caller distinguish a
+    completed action from one that needs manual reconciliation after an outage.
+    """
+    conn = sqlite3.connect(DB_PATH, timeout=8)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("BEGIN IMMEDIATE")
+        cursor.execute(
+            "SELECT admin_telegram_id, target_telegram_id, amount_rub, reason, status, "
+            "created_at, completed_at, error, resulting_short_uuid "
+            "FROM admin_balance_credits WHERE request_id = ?", (request_id,))
+        row = cursor.fetchone()
+        if row:
+            conn.commit()
+            return {
+                "request_id": request_id, "admin_telegram_id": row[0], "target_telegram_id": row[1],
+                "amount_rub": row[2], "reason": row[3], "status": row[4], "created_at": row[5],
+                "completed_at": row[6], "error": row[7], "resulting_short_uuid": row[8],
+            }, False
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        cursor.execute(
+            "INSERT INTO admin_balance_credits "
+            "(request_id, admin_telegram_id, target_telegram_id, amount_rub, reason, status, created_at) "
+            "VALUES (?, ?, ?, ?, ?, 'processing', ?)",
+            (request_id, admin_telegram_id, target_telegram_id, amount_rub, reason, now))
+        conn.commit()
+        return {
+            "request_id": request_id, "admin_telegram_id": admin_telegram_id,
+            "target_telegram_id": target_telegram_id, "amount_rub": amount_rub,
+            "reason": reason, "status": "processing", "created_at": now,
+            "completed_at": None, "error": None, "resulting_short_uuid": None,
+        }, True
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def finish_admin_balance_credit(request_id, status, error=None, resulting_short_uuid=None):
+    """Finalize a claimed admin credit without ever moving it back to pending."""
+    if status not in {"succeeded", "failed"}:
+        raise ValueError("invalid admin credit status")
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE admin_balance_credits SET status = ?, completed_at = ?, error = ?, resulting_short_uuid = ? "
+            "WHERE request_id = ? AND status = 'processing'",
+            (status, datetime.datetime.now(datetime.timezone.utc).isoformat(), error, resulting_short_uuid, request_id))
+        conn.commit()
+        return cursor.rowcount == 1
+    finally:
+        conn.close()
+
+
+def get_admin_balance_credit_history(limit=50):
+    """Return the recent administrative credits; callers must authorize first."""
+    safe_limit = max(1, min(int(limit), 100))
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT request_id, admin_telegram_id, target_telegram_id, amount_rub, reason, status, "
+            "created_at, completed_at, error FROM admin_balance_credits "
+            "ORDER BY created_at DESC LIMIT ?", (safe_limit,))
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+    return [
+        {
+            "request_id": row[0], "admin_telegram_id": row[1], "target_telegram_id": row[2],
+            "amount": row[3], "reason": row[4], "status": row[5], "created_at": row[6],
+            "completed_at": row[7], "error": row[8],
+        }
+        for row in rows
+    ]
+
+
 def get_user(telegram_id):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -835,17 +942,20 @@ def is_admin(telegram_id):
     # Fast path: check the in-memory ADMIN_IDS set (env var or owner fallback).
     if telegram_id in ADMIN_IDS:
         return True
-    # Slow path: check the admins.txt file for ad-hoc additions.
-    if not os.path.exists(ADMIN_FILE):
-        # Create empty admins file so an operator can add IDs manually.
-        os.makedirs(os.path.dirname(ADMIN_FILE), exist_ok=True)
-        with open(ADMIN_FILE, "w") as f:
-            f.write("")  # empty — ADMIN_IDS is the source of truth
+    # Slow path: optionally check the admins.txt file for ad-hoc additions.
+    # The web profile endpoint must remain available even in read-only test or
+    # container environments where /opt/mosaic-bot cannot be created.
     try:
+        if not os.path.exists(ADMIN_FILE):
+            admin_dir = os.path.dirname(ADMIN_FILE)
+            if admin_dir:
+                os.makedirs(admin_dir, exist_ok=True)
+            with open(ADMIN_FILE, "w") as f:
+                f.write("")  # empty — ADMIN_IDS is the source of truth
         with open(ADMIN_FILE, "r") as f:
             admins = [int(line.strip()) for line in f if line.strip().isdigit()]
         return telegram_id in admins
-    except Exception:
+    except (OSError, ValueError):
         return False
 
 # Remnawave API helper functions
@@ -1833,6 +1943,10 @@ def show_profile(message):
             else:
                 srv_block = "\n⚠️ Сервер: проверка..." if lang == "ru" else "\n⚠️ Server: checking..."
             
+            account_id_line = (
+                f"\n\nID аккаунта: `{telegram_id}`"
+                if lang == "ru" else f"\n\nAccount ID: `{telegram_id}`"
+            )
             if user_data.get("status") == "ACTIVE" and days_left > 0:
                 text = t["profile_active"].format(
                     username=username,
@@ -1840,12 +1954,12 @@ def show_profile(message):
                     days=days_left,
                     expire_date=expire_date,
                     sub_url=sub_url
-                ) + ref_block + srv_block
+                ) + account_id_line + ref_block + srv_block
             else:
                 text = t["profile_inactive"].format(
                     username=username,
                     expire_date=expire_date
-                ) + ref_block + srv_block
+                ) + account_id_line + ref_block + srv_block
                 
             markup = types.InlineKeyboardMarkup()
             markup.add(types.InlineKeyboardButton("🗺 Web Map" if lang == 'en' else "🗺 Открыть веб-карту", url=sub_url))
@@ -2698,6 +2812,8 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             return self._handle_lava_webhook("site" if path == LAVA_WEBHOOK_SITE_PATH else "bot")
         if path == "/api/billing/lava/create":
             return self._handle_lava_create()
+        if path == "/api/admin/balance-credit":
+            return self._handle_admin_balance_credit()
         # T-19: the daemon runs behind NAT on the user's machine, so it is the
         # side that reaches out. The bot issues codes; this endpoint burns them.
         if path == "/api/link/redeem":
@@ -2774,6 +2890,120 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             return
         processed = process_lava_paid_invoice(invoice)
         self._send_json(200, {"status": "processed" if processed else "already_processed"})
+
+    def _get_admin_session(self, token):
+        """Validate a web session and require a server-configured administrator."""
+        session = get_web_session(token)
+        if not session:
+            self._send_json(401, {"error": "invalid or expired session"})
+            return None
+        if not is_admin(session["telegram_id"]):
+            self._send_json(403, {"error": "admin access required"})
+            return None
+        return session
+
+    def _handle_admin_balance_credit(self):
+        """Add paid-access days by account ID with auditability and idempotency."""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length <= 0 or length > 4096:
+                raise ValueError("invalid body")
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+            self._send_json(400, {"error": "invalid body"})
+            return
+
+        session = self._get_admin_session(str(payload.get("token") or ""))
+        if not session:
+            return
+        if payload.get("confirmed") is not True:
+            self._send_json(400, {"error": "explicit confirmation required"})
+            return
+
+        request_id = str(payload.get("request_id") or "").strip()
+        allowed_request_chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+        if not (16 <= len(request_id) <= 128) or any(ch not in allowed_request_chars for ch in request_id):
+            self._send_json(400, {"error": "invalid request id"})
+            return
+
+        target_raw = str(payload.get("target_id") or "").strip()
+        amount_raw = str(payload.get("amount") or "").strip()
+        reason = str(payload.get("reason") or "").strip()
+        if not target_raw.isdigit() or len(target_raw) > 19 or int(target_raw) <= 0:
+            self._send_json(400, {"error": "target account ID must be a positive integer"})
+            return
+        if not amount_raw.isdigit() or int(amount_raw) < 1 or int(amount_raw) > ADMIN_CREDIT_MAX_RUB:
+            self._send_json(400, {"error": f"amount must be an integer from 1 to {ADMIN_CREDIT_MAX_RUB} RUB"})
+            return
+        if not 3 <= len(reason) <= 240:
+            self._send_json(400, {"error": "reason must contain 3 to 240 characters"})
+            return
+
+        target_telegram_id = int(target_raw)
+        amount_rub = int(amount_raw)
+        try:
+            credit, claimed = claim_admin_balance_credit(
+                request_id, session["telegram_id"], target_telegram_id, amount_rub, reason)
+        except Exception:
+            logger.exception("Admin credit ledger claim failed for request %s", request_id)
+            self._send_json(503, {"error": "admin credit ledger is unavailable"})
+            return
+
+        if not claimed:
+            same_request = (
+                credit["admin_telegram_id"] == session["telegram_id"]
+                and credit["target_telegram_id"] == target_telegram_id
+                and credit["amount_rub"] == amount_rub
+                and credit["reason"] == reason
+            )
+            if not same_request:
+                self._send_json(409, {"error": "request id conflict"})
+                return
+            if credit["status"] == "succeeded":
+                self._send_json(200, {
+                    "status": "succeeded", "already_processed": True,
+                    "request_id": request_id, "target_id": target_telegram_id,
+                    "amount": amount_rub, "days": amount_rub,
+                })
+                return
+            self._send_json(409, {
+                "error": "request has already been recorded",
+                "status": credit["status"],
+                "request_id": request_id,
+            })
+            return
+
+        api_username = f"tg_{target_telegram_id}"
+        try:
+            target_user = api_get_user(api_username)
+            if not target_user:
+                finish_admin_balance_credit(request_id, "failed", "account_not_found")
+                self._send_json(404, {"error": "account ID not found"})
+                return
+            updated = api_extend_user(api_username, amount_rub)
+            if not updated:
+                finish_admin_balance_credit(request_id, "failed", "subscription_update_failed")
+                self._send_json(502, {"error": "could not update subscription"})
+                return
+            short_uuid = updated.get("shortUuid") or ""
+            finish_admin_balance_credit(request_id, "succeeded", resulting_short_uuid=short_uuid)
+        except Exception:
+            logger.exception("Admin credit execution failed for request %s", request_id)
+            try:
+                finish_admin_balance_credit(request_id, "failed", "internal_error")
+            except Exception:
+                logger.exception("Admin credit ledger completion failed for request %s", request_id)
+            self._send_json(502, {"error": "could not update subscription"})
+            return
+
+        logger.info(
+            "Admin %s credited %s RUB/days to account %s; request=%s",
+            session["telegram_id"], amount_rub, target_telegram_id, request_id)
+        self._send_json(200, {
+            "status": "succeeded", "already_processed": False,
+            "request_id": request_id, "target_id": target_telegram_id,
+            "amount": amount_rub, "days": amount_rub,
+        })
 
     def _handle_link_redeem(self):
         try:
@@ -2888,6 +3118,9 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         # Web cabinet: payments history
         if path == "/api/billing/payments":
             return self._handle_billing_payments(query)
+        # Administrative journal, authorization is performed inside the handler.
+        if path == "/api/admin/balance-credits":
+            return self._handle_admin_balance_credit_history(query)
 
         self.send_response(404)
         self._cors_headers()
@@ -2921,6 +3154,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             "balance": 0,
             "currency": "RUB",
             "devices": [],
+            "is_admin": is_admin(telegram_id),
         }
 
         if user_data:
@@ -2939,6 +3173,16 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             profile["traffic_limit"] = traffic_limit
 
         self._send_json(200, profile)
+
+    def _handle_admin_balance_credit_history(self, query):
+        session = self._get_admin_session(query.get("token", [""])[0])
+        if not session:
+            return
+        try:
+            limit = int(query.get("limit", ["50"])[0])
+        except (TypeError, ValueError):
+            limit = 50
+        self._send_json(200, {"credits": get_admin_balance_credit_history(limit)})
 
     def _handle_billing_payments(self, query):
         token = query.get("token", [""])[0]

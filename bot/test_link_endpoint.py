@@ -38,6 +38,10 @@ _ns = {
     "logging": __import__("logging"),
     "json": json,
     "BaseHTTPRequestHandler": BaseHTTPRequestHandler,
+    # The real do_POST checks webhook paths before the link route. The test
+    # only exercises /api/link/redeem, so static route constants are enough.
+    "LAVA_WEBHOOK_SITE_PATH": "/api/billing/lava/webhook/site",
+    "LAVA_WEBHOOK_BOT_PATH": "/api/billing/lava/webhook/bot",
 }
 exec(compile(_helpers, BOT_PY, "exec"), _ns)
 exec(compile(_handler_src + "        pass\n", BOT_PY, "exec"), _ns)
