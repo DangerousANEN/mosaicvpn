@@ -139,15 +139,12 @@ MESSAGES = {
         "profile_not_found": "⚠️ Профиль не найден. Нажмите **🛒 Купить подписку** для создания.",
         "tariffs": (
             "💎 **Тарифы и правила**\n\n"
-            "```\n"
-            " RATE     · 1 RUB = 1 DAY\n"
-            " EXTEND   · TOP-UP = +DAYS\n"
-            " HIDDEN   · NO EXTRA FEES\n"
-            " ROUTES   · 6 INDEPENDENT\n"
-            "  ↳ CDN BYPASS + DIRECT\n"
-            " DEVICES  · 5 (HWID CONTROL)\n"
-            " ATLAS    · WEB MAP ACCESS\n"
-            "```\n\n"
+            "Стоимость доступа: **1 ₽ = 1 день**.\n"
+            "В стоимость уже включены маршруты и поддержка — дополнительных комиссий MosaicVPN нет.\n\n"
+            "• **10 дней — 10 ₽**\n"
+            "• **30 дней — 30 ₽**\n"
+            "• **Своя сумма — от 1 ₽**\n\n"
+            "После оплаты дни добавляются к вашему действующему сроку. Выберите готовый тариф или укажите произвольную сумму ниже.\n\n"
             "💬 Поддержка: @mosaicsup"
         ),
         "instructions": (
@@ -236,15 +233,12 @@ MESSAGES = {
         "profile_not_found": "⚠️ Profile not found. Click **🛒 Buy subscription** to create one.",
         "tariffs": (
             "💎 **Tariffs and Rules**\n\n"
-            "```\n"
-            " RATE     · 1 RUB = 1 DAY\n"
-            " EXTEND   · TOP-UP = +DAYS\n"
-            " HIDDEN   · NO EXTRA FEES\n"
-            " ROUTES   · 6 INDEPENDENT\n"
-            "  ↳ CDN BYPASS + DIRECT\n"
-            " DEVICES  · 5 (HWID CONTROL)\n"
-            " ATLAS    · WEB MAP ACCESS\n"
-            "```\n\n"
+            "Access costs **1 RUB = 1 day**.\n"
+            "Routes and support are included; MosaicVPN adds no extra service fee.\n\n"
+            "• **10 days — 10 RUB**\n"
+            "• **30 days — 30 RUB**\n"
+            "• **Custom amount — from 1 RUB**\n\n"
+            "After payment, the days are added to your current access period. Choose a package or enter any amount below.\n\n"
             "💬 Support: @mosaicsup"
         ),
         "instructions": (
@@ -1734,14 +1728,7 @@ def buy_subscription_menu(message):
     telegram_id = message.chat.id
     db_user = get_user(telegram_id)
     lang = db_user["language"] if db_user else "ru"
-    t = MESSAGES[lang]
-    
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    for days, pkg in PACKAGES.items():
-        text = pkg[lang]
-        markup.add(types.InlineKeyboardButton(text, callback_data=f"buy_{days}"))
-        
-    bot.send_message(message.chat.id, t["buy_title"] + t["p2p_info"], parse_mode="Markdown", reply_markup=markup)
+    send_buy_menu(telegram_id, lang)
 
 @bot.message_handler(commands=["profile"])
 @bot.message_handler(func=lambda m: m.text in [MESSAGES["ru"]["menu_profile"], MESSAGES["en"]["menu_profile"]])
@@ -2462,7 +2449,11 @@ def handle_show_tariffs_callback(call):
     db_user = get_user(telegram_id)
     lang = db_user["language"] if db_user else "ru"
     bot.answer_callback_query(call.id)
-    bot.send_message(telegram_id, MESSAGES[lang]["tariffs"], parse_mode="Markdown")
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for days, pkg in PACKAGES.items():
+        markup.add(types.InlineKeyboardButton(pkg[lang], callback_data=f"buy_{days}"))
+    markup.add(types.InlineKeyboardButton(MESSAGES[lang]["custom_button"], callback_data="buy_custom"))
+    bot.send_message(telegram_id, MESSAGES[lang]["tariffs"], parse_mode="Markdown", reply_markup=markup)
 
 @bot.callback_query_handler(func=lambda call: call.data == "buy_subscription")
 def handle_buy_subscription_callback(call):
