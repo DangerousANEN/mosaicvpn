@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -25,6 +26,24 @@ func TestDefaultPrefs(t *testing.T) {
 	}
 	if !snap.Prefs.KillSwitch {
 		t.Fatal("expected kill-switch on by default")
+	}
+	if !snap.Prefs.MinimizeToTray {
+		t.Fatal("expected minimize-to-tray on by default")
+	}
+}
+
+func TestLegacyStoreDefaultsMinimizeToTray(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "store.json")
+	legacy := []byte(`{"version":1,"prefs":{"socks_addr":"127.0.0.1:1080"}}`)
+	if err := os.WriteFile(path, legacy, 0o600); err != nil {
+		t.Fatalf("write legacy store: %v", err)
+	}
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("open legacy store: %v", err)
+	}
+	if !s.Snapshot().Prefs.MinimizeToTray {
+		t.Fatal("expected legacy store to migrate minimize-to-tray on")
 	}
 }
 

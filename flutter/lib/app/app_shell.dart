@@ -461,6 +461,7 @@ class _AppShellState extends ConsumerState<AppShell>
                           onDisconnect: _disconnectFromTray,
                           onChooseRoute: _openRoutesFromTray,
                           onOpenApp: _dismissTrayQuickPanel,
+                          onQuit: _quitApplication,
                           onDismiss: _dismissTrayQuickPanel,
                         ),
                       ),

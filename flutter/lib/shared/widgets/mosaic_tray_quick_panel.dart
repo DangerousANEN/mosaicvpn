@@ -20,6 +20,7 @@ class MosaicTrayQuickPanel extends StatelessWidget {
     required this.onDisconnect,
     required this.onChooseRoute,
     required this.onOpenApp,
+    required this.onQuit,
     required this.onDismiss,
   });
 
@@ -29,6 +30,7 @@ class MosaicTrayQuickPanel extends StatelessWidget {
   final FutureOr<void> Function() onDisconnect;
   final FutureOr<void> Function() onChooseRoute;
   final VoidCallback onOpenApp;
+  final FutureOr<void> Function() onQuit;
   final VoidCallback onDismiss;
 
   @override
@@ -210,6 +212,15 @@ class MosaicTrayQuickPanel extends StatelessWidget {
                   label: Text(s.t('tray_open_app')),
                   style: TextButton.styleFrom(
                     foregroundColor: AtlasTheme.textOnInk,
+                    alignment: Alignment.center,
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () async => onQuit(),
+                  icon: const Icon(Icons.power_settings_new_rounded, size: 17),
+                  label: Text(s.t('tray_quit')),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AtlasTheme.error,
                     alignment: Alignment.center,
                   ),
                 ),

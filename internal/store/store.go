@@ -175,8 +175,9 @@ func DefaultPrefs() Prefs {
 		ShareAddr:     "0.0.0.0:1080",
 		AutoStart:     "service",
 		AutoConnect:   true,
-		ShowOnLaunch:  true,
-		MCPEnabled:    true,
+		ShowOnLaunch:    true,
+		MinimizeToTray:  true,
+		MCPEnabled:      true,
 		MCPAddr:       "127.0.0.1:8731",
 		MCPPermission: "connect",
 		MCPConfirm:    true,
@@ -188,7 +189,7 @@ func Default() State {
 	return State{
 		Prefs:   DefaultPrefs(),
 		WARP:    proto.WARPConfig{},
-		Version: 1,
+		Version: 2,
 	}
 }
 
@@ -221,8 +222,18 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("decode store: %w", err)
 	}
 	// Backfill defaults for new fields.
+	needsPersist := false
 	if s.state.Prefs.SocksAddr == "" {
 		s.state.Prefs = DefaultPrefs()
+		needsPersist = true
+	}
+	// Version 2 establishes close-to-tray as the desktop default. This is a
+	// one-time migration for pre-0.3.11 stores; subsequent user changes are
+	// persisted normally and are not overwritten.
+	if s.state.Version < 2 {
+		s.state.Prefs.MinimizeToTray = true
+		s.state.Version = 2
+		needsPersist = true
 	}
 	if s.state.Profiles == nil {
 		s.state.Profiles = []proto.Profile{}
@@ -230,6 +241,9 @@ func Open(path string) (*Store, error) {
 	// Existing installs predate groups, so seed them here too rather than
 	// only on a fresh file. Persist only when something was actually added.
 	if seedDefaultGroups(&s.state) {
+		needsPersist = true
+	}
+	if needsPersist {
 		if err := s.persistLocked(); err != nil {
 			return nil, err
 		}
