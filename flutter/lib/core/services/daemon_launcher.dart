@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 
 /// Service responsible for locating and auto-launching the `mosaicd` Go daemon
 /// executable when the Flutter application starts.
@@ -18,24 +18,46 @@ class DaemonLauncher {
   /// and current application working/executable directory.
   List<String> candidateExecutablePaths() {
     if (kIsWeb) return [];
-    final paths = <String>[];
-    final appExe = Platform.resolvedExecutable;
-    final appDir = File(appExe).parent.path;
+    return candidateExecutablePathsFor(
+      appExecutable: Platform.resolvedExecutable,
+      isWindows: Platform.isWindows,
+      environment: Platform.environment,
+    );
+  }
 
-    if (Platform.isWindows) {
+  /// Builds the deterministic desktop lookup order used by [candidateExecutablePaths].
+  ///
+  /// `MOSAIC_DAEMON_PATH` is deliberately limited to an absolute local path. It
+  /// helps portable/self-hosted deployments while never falling back to a
+  /// developer-specific directory baked into a public release.
+  @visibleForTesting
+  static List<String> candidateExecutablePathsFor({
+    required String appExecutable,
+    required bool isWindows,
+    required Map<String, String> environment,
+  }) {
+    final paths = <String>[];
+    final configured = environment['MOSAIC_DAEMON_PATH'];
+    if (configured != null && configured.isNotEmpty && File(configured).isAbsolute) {
+      paths.add(configured);
+    }
+
+    final appDir = File(appExecutable).parent.path;
+    if (isWindows) {
       paths.add('$appDir\\mosaicd.exe');
       paths.add('$appDir\\bin\\mosaicd.exe');
-      paths.add(r'C:\Users\ANEN\mosaicvpn\bin\mosaicd.exe');
-      paths.add(r'C:\Program Files\MosaicVPN\bin\mosaicd.exe');
       paths.add(r'C:\Program Files\MosaicVPN\mosaicd.exe');
+      paths.add(r'C:\Program Files\MosaicVPN\bin\mosaicd.exe');
     } else {
       paths.add('$appDir/mosaicd');
       paths.add('$appDir/bin/mosaicd');
+      // DEB packages install the UI and the daemon side-by-side here.
+      paths.add('/opt/mosaicvpn/mosaicd');
       paths.add('/usr/local/bin/mosaicd');
       paths.add('/usr/bin/mosaicd');
     }
 
-    return paths;
+    return paths.toSet().toList(growable: false);
   }
 
   /// Locates the `mosaicd` executable if present on disk.
