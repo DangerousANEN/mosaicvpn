@@ -62,3 +62,9 @@ Production mobile screenshots at 390px confirm that the home header shows a visi
 The initial code audit returned false broken-link reports because the shell extractor retained closing quotation marks and treated inline data-URI images as page links. Production HTTP checks for the audited pages returned 200; a corrected link audit is still required before final publication verdict.
 
 Desktop production visual QA confirms the hero and downloads section retain the intended MosaicVPN hierarchy at 1440px. The admin page shows a clean locked state without exposing administrative fields or data before a valid session; its server-side protection message is visible and legible.
+
+## Client release v0.3.11 download verification
+
+The homepage download section now references the verified public `v0.3.11` assets. Windows offers separate Setup and portable ZIP actions; Linux offers separate DEB and portable TAR.GZ actions; Android links to the signed universal APK. Desktop rendering confirms that all five actions are visually separated rather than merged. A 390px mobile rendering preserves the cabinet entry in the header and keeps the page in a single-column flow without horizontal overflow in the checked viewport.
+
+Each inserted asset URL was checked against the public GitHub release before deployment. The remaining deployment step installs the current `site/index.html` in production after its repository commit.
