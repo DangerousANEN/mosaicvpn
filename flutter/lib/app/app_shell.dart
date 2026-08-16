@@ -12,6 +12,7 @@ import '../core/i18n/app_strings.dart';
 import '../core/models/models.dart';
 import '../core/services/tray_service.dart';
 import '../shared/widgets/atlas_widgets.dart';
+import '../shared/widgets/mosaic_tray_quick_panel.dart';
 import '../features/dashboard/connection_dashboard.dart';
 import '../features/connections/connections_screen.dart';
 import '../features/routing/routing_screen.dart';
@@ -43,6 +44,7 @@ class _AppShellState extends ConsumerState<AppShell>
   int _currentIndex = 0;
   bool _autoConnectTriggered = false;
   bool _quitting = false;
+  bool _trayQuickPanelVisible = false;
 
   // Only build a tab after the user opens it. This prevents hidden technical
   // screens from starting network polls or timers on first launch, while the
@@ -143,6 +145,7 @@ class _AppShellState extends ConsumerState<AppShell>
         onConnect: _connectFromTray,
         onDisconnect: _disconnectFromTray,
         onOpenRoutes: _openRoutesFromTray,
+        onQuickPanel: _showTrayQuickPanel,
         onQuit: _quitApplication,
       );
     }
@@ -276,166 +279,208 @@ class _AppShellState extends ConsumerState<AppShell>
       },
       child: Focus(
         autofocus: true,
-        child: Scaffold(
-          body: isWide
-              ? Row(
-                  children: [
-                    // ── Sidebar on wide screens (>900px) ──
-                    Container(
-                      width: 72,
+        child: Stack(
+          children: [
+            Scaffold(
+              body: isWide
+                  ? Row(
+                      children: [
+                        // ── Sidebar on wide screens (>900px) ──
+                        Container(
+                          width: 72,
+                          decoration: BoxDecoration(
+                            color: c.bgInk,
+                            border: Border(
+                              right: BorderSide(color: c.borderInk, width: 1),
+                            ),
+                          ),
+                          child: SafeArea(
+                            child: Column(
+                              children: [
+                                const SizedBox(height: 12),
+                                // Logo / app icon
+                                Tooltip(
+                                  message: 'MosaicVPN',
+                                  child: Container(
+                                    width: 36,
+                                    height: 36,
+                                    padding: const EdgeInsets.all(3),
+                                    decoration: BoxDecoration(
+                                      color: c.isDark
+                                          ? AtlasTheme.darkBgElevated
+                                          : AtlasTheme.bgCard,
+                                      borderRadius: BorderRadius.circular(
+                                          AtlasTheme.radiusSm),
+                                      border: Border.all(
+                                        color: c.isDark
+                                            ? AtlasTheme.accent
+                                                .withValues(alpha: .48)
+                                            : c.border,
+                                      ),
+                                      boxShadow: c.isDark
+                                          ? [
+                                              BoxShadow(
+                                                color: Colors.black
+                                                    .withValues(alpha: .28),
+                                                blurRadius: 8,
+                                                offset: const Offset(0, 2),
+                                              ),
+                                            ]
+                                          : null,
+                                    ),
+                                    child: Image.asset(
+                                      'assets/icon_adaptive.png',
+                                      width: 30,
+                                      height: 30,
+                                      fit: BoxFit.contain,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                // Full Sidebar Navigation icons
+                                Expanded(
+                                  child: () {
+                                    final prefs =
+                                        ref.watch(prefsProvider).valueOrNull;
+                                    final isAdvanced =
+                                        prefs?.advancedMode ?? false;
+                                    final visibleIndices = isAdvanced
+                                        ? List.generate(
+                                            destinations.length, (i) => i)
+                                        : const [0, 1, 3, 5, 6, 11, 12];
+
+                                    return ListView.builder(
+                                      itemCount: visibleIndices.length,
+                                      itemBuilder: (context, idx) {
+                                        final i = visibleIndices[idx];
+                                        final dest = destinations[i];
+                                        final isSelected = i == activeIndex;
+                                        return _SideIcon(
+                                          icon: isSelected
+                                              ? dest.activeIcon
+                                              : dest.icon,
+                                          label: dest.label,
+                                          isSelected: isSelected,
+                                          onTap: () =>
+                                              setState(() => _currentIndex = i),
+                                        );
+                                      },
+                                    );
+                                  }(),
+                                ),
+                                const SizedBox(height: 8),
+                              ],
+                            ),
+                          ),
+                        ),
+                        // ── Main content area ──
+                        Expanded(
+                          child: Column(
+                            children: [
+                              _QuickStatusBar(
+                                currentIndex: activeIndex,
+                                onNavigate: (i) =>
+                                    setState(() => _currentIndex = i),
+                              ),
+                              Expanded(
+                                child: _LazyTabStack(
+                                  pages: pages,
+                                  currentIndex: activeIndex,
+                                  visitedTabs: visitedTabs,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    )
+                  : Column(
+                      children: [
+                        _QuickStatusBar(
+                          currentIndex: activeIndex,
+                          onNavigate: (i) => setState(() => _currentIndex = i),
+                        ),
+                        Expanded(
+                          child: _LazyTabStack(
+                            pages: pages,
+                            currentIndex: activeIndex,
+                            visitedTabs: visitedTabs,
+                          ),
+                        ),
+                      ],
+                    ),
+              bottomNavigationBar: isWide
+                  ? null
+                  : Container(
                       decoration: BoxDecoration(
                         color: c.bgInk,
                         border: Border(
-                          right: BorderSide(color: c.borderInk, width: 1),
+                          top: BorderSide(color: c.borderInk, width: 1),
                         ),
                       ),
-                      child: SafeArea(
-                        child: Column(
-                          children: [
-                            const SizedBox(height: 12),
-                            // Logo / app icon
-                            Tooltip(
-                              message: 'MosaicVPN',
-                              child: Container(
-                                width: 36,
-                                height: 36,
-                                padding: const EdgeInsets.all(3),
-                                decoration: BoxDecoration(
-                                  color: c.isDark
-                                      ? AtlasTheme.darkBgElevated
-                                      : AtlasTheme.bgCard,
-                                  borderRadius: BorderRadius.circular(
-                                      AtlasTheme.radiusSm),
-                                  border: Border.all(
-                                    color: c.isDark
-                                        ? AtlasTheme.accent
-                                            .withValues(alpha: .48)
-                                        : c.border,
-                                  ),
-                                  boxShadow: c.isDark
-                                      ? [
-                                          BoxShadow(
-                                            color: Colors.black
-                                                .withValues(alpha: .28),
-                                            blurRadius: 8,
-                                            offset: const Offset(0, 2),
-                                          ),
-                                        ]
-                                      : null,
-                                ),
-                                child: Image.asset(
-                                  'assets/icon_adaptive.png',
-                                  width: 30,
-                                  height: 30,
-                                  fit: BoxFit.contain,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            // Full Sidebar Navigation icons
-                            Expanded(
-                              child: () {
-                                final prefs =
-                                    ref.watch(prefsProvider).valueOrNull;
-                                final isAdvanced = prefs?.advancedMode ?? false;
-                                final visibleIndices = isAdvanced
-                                    ? List.generate(
-                                        destinations.length, (i) => i)
-                                    : const [0, 1, 3, 5, 6, 11, 12];
-
-                                return ListView.builder(
-                                  itemCount: visibleIndices.length,
-                                  itemBuilder: (context, idx) {
-                                    final i = visibleIndices[idx];
-                                    final dest = destinations[i];
-                                    final isSelected = i == activeIndex;
-                                    return _SideIcon(
-                                      icon: isSelected
-                                          ? dest.activeIcon
-                                          : dest.icon,
-                                      label: dest.label,
-                                      isSelected: isSelected,
-                                      onTap: () =>
-                                          setState(() => _currentIndex = i),
-                                    );
-                                  },
-                                );
-                              }(),
-                            ),
-                            const SizedBox(height: 8),
-                          ],
-                        ),
-                      ),
-                    ),
-                    // ── Main content area ──
-                    Expanded(
-                      child: Column(
-                        children: [
-                          _QuickStatusBar(
-                            currentIndex: activeIndex,
-                            onNavigate: (i) =>
-                                setState(() => _currentIndex = i),
-                          ),
-                          Expanded(
-                            child: _LazyTabStack(
-                              pages: pages,
-                              currentIndex: activeIndex,
-                              visitedTabs: visitedTabs,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                )
-              : Column(
-                  children: [
-                    _QuickStatusBar(
-                      currentIndex: activeIndex,
-                      onNavigate: (i) => setState(() => _currentIndex = i),
-                    ),
-                    Expanded(
-                      child: _LazyTabStack(
-                        pages: pages,
+                      child: BottomNavigationBar(
                         currentIndex: activeIndex,
-                        visitedTabs: visitedTabs,
+                        onTap: (index) => setState(() => _currentIndex = index),
+                        type: BottomNavigationBarType.fixed,
+                        backgroundColor: Colors.transparent,
+                        elevation: 0,
+                        selectedItemColor: AtlasTheme.accent,
+                        unselectedItemColor: c.textMuted,
+                        selectedFontSize: 11,
+                        unselectedFontSize: 11,
+                        items: _mainDestinations(context)
+                            .map(
+                              (dest) => BottomNavigationBarItem(
+                                icon: Icon(dest.icon),
+                                activeIcon: Icon(dest.activeIcon),
+                                label: dest.label,
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ),
+            ),
+            if (AppPlatform.isDesktop && _trayQuickPanelVisible)
+              Positioned.fill(
+                child: Stack(
+                  children: [
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _dismissTrayQuickPanel,
+                      child:
+                          Container(color: Colors.black.withValues(alpha: .32)),
+                    ),
+                    Align(
+                      alignment: Alignment.topRight,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 58, right: 20),
+                        child: MosaicTrayQuickPanel(
+                          connected: trayStatus?.state == 'connected',
+                          routeLabel: trayStatus?.server?.name ?? '',
+                          onConnect: _connectFromTray,
+                          onDisconnect: _disconnectFromTray,
+                          onChooseRoute: _openRoutesFromTray,
+                          onOpenApp: _dismissTrayQuickPanel,
+                          onDismiss: _dismissTrayQuickPanel,
+                        ),
                       ),
                     ),
                   ],
                 ),
-          bottomNavigationBar: isWide
-              ? null
-              : Container(
-                  decoration: BoxDecoration(
-                    color: c.bgInk,
-                    border: Border(
-                      top: BorderSide(color: c.borderInk, width: 1),
-                    ),
-                  ),
-                  child: BottomNavigationBar(
-                    currentIndex: activeIndex,
-                    onTap: (index) => setState(() => _currentIndex = index),
-                    type: BottomNavigationBarType.fixed,
-                    backgroundColor: Colors.transparent,
-                    elevation: 0,
-                    selectedItemColor: AtlasTheme.accent,
-                    unselectedItemColor: c.textMuted,
-                    selectedFontSize: 11,
-                    unselectedFontSize: 11,
-                    items: _mainDestinations(context)
-                        .map(
-                          (dest) => BottomNavigationBarItem(
-                            icon: Icon(dest.icon),
-                            activeIcon: Icon(dest.activeIcon),
-                            label: dest.label,
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ),
+              ),
+          ],
         ),
       ),
     );
+  }
+
+  Future<void> _showTrayQuickPanel() async {
+    await TrayService.instance.showWindow();
+    if (mounted) setState(() => _trayQuickPanelVisible = true);
+  }
+
+  void _dismissTrayQuickPanel() {
+    if (mounted) setState(() => _trayQuickPanelVisible = false);
   }
 
   Future<void> _connectFromTray() async {

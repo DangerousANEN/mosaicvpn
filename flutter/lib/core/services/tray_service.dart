@@ -66,6 +66,7 @@ class TrayService {
   TrayAction? _onConnect;
   TrayAction? _onDisconnect;
   TrayAction? _onOpenRoutes;
+  TrayAction? _onQuickPanel;
   TrayAction? _onQuit;
 
   bool get isInitialized => _initialized;
@@ -80,6 +81,7 @@ class TrayService {
     TrayAction? onConnect,
     TrayAction? onDisconnect,
     TrayAction? onOpenRoutes,
+    TrayAction? onQuickPanel,
     TrayAction? onQuit,
   }) {
     var shouldRebuild = _minimizeToTray != minimizeToTray;
@@ -93,6 +95,7 @@ class TrayService {
     if (onConnect != null) _onConnect = onConnect;
     if (onDisconnect != null) _onDisconnect = onDisconnect;
     if (onOpenRoutes != null) _onOpenRoutes = onOpenRoutes;
+    if (onQuickPanel != null) _onQuickPanel = onQuickPanel;
     if (onQuit != null) _onQuit = onQuit;
     if (_initialized && shouldRebuild) _buildMenu();
   }
@@ -122,7 +125,11 @@ class TrayService {
     _buildMenu();
     _tray.registerSystemTrayEventHandler((eventName) {
       if (eventName == kSystemTrayEventClick) {
-        unawaited(showWindow());
+        if (_onQuickPanel != null) {
+          unawaited(Future.sync(_onQuickPanel!));
+        } else {
+          unawaited(showWindow());
+        }
       } else if (eventName == kSystemTrayEventRightClick) {
         unawaited(_tray.popUpContextMenu());
       }

@@ -194,6 +194,10 @@ class AppStrings {
     'tray_choose_route': 'Choose route',
     'tray_minimize': 'Minimize to tray',
     'tray_quit': 'Quit completely',
+    'tray_control_center': 'VPN control center',
+    'tray_protected_hint': 'Traffic is protected through the selected route',
+    'tray_ready_hint': 'Choose a route and connect when you are ready',
+    'tray_route_not_selected': 'Route not selected',
   };
 
   static const _ru = <String, String>{
@@ -378,6 +382,10 @@ class AppStrings {
     'tray_choose_route': 'Выбрать маршрут',
     'tray_minimize': 'Свернуть в трей',
     'tray_quit': 'Выйти полностью',
+    'tray_control_center': 'Центр управления VPN',
+    'tray_protected_hint': 'Трафик защищён через выбранный маршрут',
+    'tray_ready_hint': 'Выберите маршрут и подключитесь, когда будете готовы',
+    'tray_route_not_selected': 'Маршрут не выбран',
   };
 
   static AppStrings forLocale(Locale locale) {
