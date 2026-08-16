@@ -9,6 +9,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from unittest import mock
 
 os.environ.setdefault("MOSAIC_BOT_TOKEN", "123456:test-token")
 os.environ.setdefault("MOSAIC_REMNAWAVE_TOKEN", "test-token")
@@ -91,6 +92,18 @@ class LavaIntegrationTest(unittest.TestCase):
         self.assertNotEqual(bot_module.lava_store_config("site")["shop_id"], bot_module.lava_store_config("bot")["shop_id"])
         self.assertEqual(bot_module.lava_store_config("site")["webhook_path"], "/api/billing/lava/webhook/site")
         self.assertEqual(bot_module.lava_store_config("bot")["webhook_path"], "/api/billing/lava/webhook/bot")
+
+    def test_new_invoice_restricts_checkout_to_sbp_and_cards(self):
+        with mock.patch.object(
+            bot_module,
+            "_lava_signed_request",
+            return_value={"id": "provider-1", "url": "https://pay.example.invalid/invoice"},
+        ) as request:
+            invoice = bot_module.create_lava_invoice("site", 42, 10, 10)
+        payload = request.call_args.args[1]
+        self.assertEqual(payload["includeService"], ["sbp", "card"])
+        self.assertNotIn("lava_pay_in", payload["includeService"])
+        self.assertEqual(invoice["payment_url"], "https://pay.example.invalid/invoice")
 
 
 if __name__ == "__main__":

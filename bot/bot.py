@@ -41,6 +41,13 @@ LAVA_SITE_SUCCESS_URL = os.environ.get("MOSAIC_LAVA_SITE_SUCCESS_URL", "https://
 LAVA_SITE_FAIL_URL = os.environ.get("MOSAIC_LAVA_SITE_FAIL_URL", "https://sub.zxc1x1.ru/cabinet.html?payment=failed")
 LAVA_BOT_SUCCESS_URL = os.environ.get("MOSAIC_LAVA_BOT_SUCCESS_URL", LAVA_SITE_SUCCESS_URL)
 LAVA_BOT_FAIL_URL = os.environ.get("MOSAIC_LAVA_BOT_FAIL_URL", LAVA_SITE_FAIL_URL)
+# New invoices must offer consumer methods only. Do not send MosaicVPN
+# customers to the internal Lava wallet sign-in page.
+LAVA_PAYMENT_SERVICES = tuple(
+    item.strip().lower()
+    for item in os.environ.get("MOSAIC_LAVA_PAYMENT_SERVICES", "sbp,card").split(",")
+    if item.strip()
+)
 LAVA_WEBHOOK_SITE_PATH = "/api/billing/lava/webhook/site"
 LAVA_WEBHOOK_BOT_PATH = "/api/billing/lava/webhook/bot"
 
@@ -986,6 +993,7 @@ def create_lava_invoice(store, telegram_id, amount, days, description=None):
         "hookUrl": f"https://sub.zxc1x1.ru{config['webhook_path']}",
         "successUrl": config["success_url"],
         "failUrl": config["fail_url"],
+        "includeService": list(LAVA_PAYMENT_SERVICES),
     }
     data = _lava_signed_request("invoice/create", payload, config["secret_key"])
     provider_id = str(_lava_value(data, "id", "invoiceId", "invoice_id", default=internal_id))
