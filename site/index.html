@@ -57,8 +57,12 @@
   .nav-links{margin-left:auto; display:flex; flex-wrap:wrap; gap:18px; font-size:14px; color:var(--text-2)}
   .nav-links a{text-decoration:none; white-space:nowrap}
   .nav-links a:hover{color:var(--accent)}
+  .mobile-cabinet{display:none; margin-left:auto; align-items:center; gap:7px; min-height:38px; padding:8px 11px; border:1px solid var(--border); border-radius:9px; background:var(--card); color:var(--text); font-size:13px; font-weight:600; text-decoration:none; white-space:nowrap}
+  .mobile-cabinet:hover{border-color:var(--accent); color:var(--accent)}
+  .mobile-cabinet svg{width:16px; height:16px; color:var(--accent)}
   @media(max-width:1050px){ .nav-links{gap:12px} }
-  @media(max-width:920px){ .nav-links{display:none} }
+  @media(max-width:920px){ .nav-links{display:none}.mobile-cabinet{display:inline-flex} }
+  @media(max-width:360px){.wrap{padding:0 16px}.nav{gap:8px}.brand{gap:7px;font-size:18px}.brand svg{width:21px;height:21px}.mobile-cabinet{padding:7px 9px;font-size:12px}}
 
   /* hero */
   .hero{padding:76px 0 56px; text-align:center}
@@ -228,6 +232,10 @@
       <a href="/cabinet.html">Кабинет</a>
       <a href="/docs.html">Провайдерам</a>
     </nav>
+    <a class="mobile-cabinet" href="/cabinet.html" aria-label="Открыть личный кабинет">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+      Кабинет
+    </a>
   </div>
 </header>
 
