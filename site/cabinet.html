@@ -218,7 +218,7 @@
   var codeError = document.getElementById('code-error');
   var profileState = null;
 
-  function esc(value) { return String(value == null ? '' : value).replace(/[&<>"']/g, function (char) { return {'&':'&','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]; }); }
+  function esc(value) { return String(value == null ? '' : value).replace(/[&<>"']/g, function (char) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]; }); }
   function money(value, currency) { return new Intl.NumberFormat('ru-RU').format(Number(value) || 0) + ' ' + (currency === 'USDT' ? 'USDT' : '₽'); }
   function formatDate(value) { if (!value) return '—'; var date = new Date(value); return isNaN(date.getTime()) ? '—' : date.toLocaleDateString('ru-RU', {day:'numeric',month:'long',year:'numeric'}); }
   function formatTraffic(bytes) { var value = Number(bytes) || 0; if (!value) return '—'; if (value >= 1073741824) return (value / 1073741824).toFixed(value >= 10737418240 ? 0 : 1).replace('.', ',') + ' ГБ'; return Math.max(1, Math.round(value / 1048576)) + ' МБ'; }

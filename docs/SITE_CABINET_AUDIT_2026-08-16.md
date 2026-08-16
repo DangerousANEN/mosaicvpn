@@ -54,3 +54,11 @@ Mobile screenshot кабинета при ширине 390px подтвержд�
 ## Mobile fix: таблица протоколов
 
 Исходная таблица использовала desktop-ширины трёх колонок, из-за чего статус обрезался на узком экране. Для ширин до 540px она теперь преобразуется в компактные строки: название протокола и транспорт расположены слева, а статус вынесен в отдельную правую колонку с фиксированной минимально необходимой шириной. Это исключает обрезание текста без горизонтального скролла.
+
+## Финальная visual QA, 2026-08-16
+
+Production mobile screenshots at 390px confirm that the home header shows a visible `Кабинет` button without overlapping the MosaicVPN logo. The cabinet login card fits within the viewport, the 8-character Telegram code field and login CTA are fully visible, and no horizontal clipping is present on the first screen.
+
+The initial code audit returned false broken-link reports because the shell extractor retained closing quotation marks and treated inline data-URI images as page links. Production HTTP checks for the audited pages returned 200; a corrected link audit is still required before final publication verdict.
+
+Desktop production visual QA confirms the hero and downloads section retain the intended MosaicVPN hierarchy at 1440px. The admin page shows a clean locked state without exposing administrative fields or data before a valid session; its server-side protection message is visible and legible.

@@ -56,7 +56,7 @@
   var panel = document.getElementById('panel');
   var forbidden = document.getElementById('forbidden');
   var submit = document.getElementById('submit-credit');
-  function esc(value){return String(value == null ? '' : value).replace(/[&<>"']/g,function(char){return {'&':'&','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char];});}
+  function esc(value){return String(value == null ? '' : value).replace(/[&<>"']/g,function(char){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char];});}
   function json(url,options){return fetch(url,options).then(function(response){return response.json().catch(function(){return {};}).then(function(body){return {status:response.status,body:body};});});}
   function setMessage(text,kind){var node=document.getElementById('credit-message');node.textContent=text || '';node.className='form-message'+(kind ? ' '+kind : '');}
   function setVisible(which){gate.classList.toggle('hidden',which!=='gate');panel.classList.toggle('hidden',which!=='panel');forbidden.classList.toggle('hidden',which!=='forbidden');}
