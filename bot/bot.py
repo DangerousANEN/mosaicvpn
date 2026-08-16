@@ -17,6 +17,8 @@ import concurrent.futures
 import psycopg2
 import base64
 import secrets
+import hashlib
+import hmac
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -25,6 +27,22 @@ logger = logging.getLogger(__name__)
 # Tokens
 BOT_TOKEN = os.environ.get("MOSAIC_BOT_TOKEN", "")
 CRYPTO_PAY_TOKEN = os.environ.get("MOSAIC_CRYPTO_PAY_TOKEN", "")
+
+# Lava Business API: separate stores for Telegram and web checkout.
+# Secrets are read only from the VPS environment; never put them in source or frontend.
+LAVA_API_BASE = os.environ.get("MOSAIC_LAVA_API_BASE", "https://api.lava.ru/business").rstrip("/")
+LAVA_SITE_SHOP_ID = os.environ.get("MOSAIC_LAVA_SITE_SHOP_ID", "")
+LAVA_SITE_SECRET_KEY = os.environ.get("MOSAIC_LAVA_SITE_SECRET_KEY", "")
+LAVA_SITE_ADDITIONAL_KEY = os.environ.get("MOSAIC_LAVA_SITE_ADDITIONAL_KEY", "")
+LAVA_BOT_SHOP_ID = os.environ.get("MOSAIC_LAVA_BOT_SHOP_ID", "")
+LAVA_BOT_SECRET_KEY = os.environ.get("MOSAIC_LAVA_BOT_SECRET_KEY", "")
+LAVA_BOT_ADDITIONAL_KEY = os.environ.get("MOSAIC_LAVA_BOT_ADDITIONAL_KEY", "")
+LAVA_SITE_SUCCESS_URL = os.environ.get("MOSAIC_LAVA_SITE_SUCCESS_URL", "https://sub.zxc1x1.ru/cabinet.html?payment=success")
+LAVA_SITE_FAIL_URL = os.environ.get("MOSAIC_LAVA_SITE_FAIL_URL", "https://sub.zxc1x1.ru/cabinet.html?payment=failed")
+LAVA_BOT_SUCCESS_URL = os.environ.get("MOSAIC_LAVA_BOT_SUCCESS_URL", LAVA_SITE_SUCCESS_URL)
+LAVA_BOT_FAIL_URL = os.environ.get("MOSAIC_LAVA_BOT_FAIL_URL", LAVA_SITE_FAIL_URL)
+LAVA_WEBHOOK_SITE_PATH = "/api/billing/lava/webhook/site"
+LAVA_WEBHOOK_BOT_PATH = "/api/billing/lava/webhook/bot"
 
 # API Helpers (direct calls to Remnawave localhost)
 API_TOKEN = os.environ.get("MOSAIC_REMNAWAVE_TOKEN", "")
@@ -59,9 +77,8 @@ if not ADMIN_IDS:
 # Pricing Packages (1 RUB = 1 day)
 # Min 10 days = 10 RUB (0.10 USDT), Max 90 days = 90 RUB (0.90 USDT)
 PACKAGES = {
-    10: {"months": 0.3, "price_usdt": 0.10, "ru": "10 дней подписки — 0.10 USDT (10 руб)", "en": "10 subscription days — 0.10 USDT (10 RUB)"},
-    30: {"months": 1.0, "price_usdt": 0.30, "ru": "30 дней подписки — 0.30 USDT (30 руб)", "en": "30 subscription days — 0.30 USDT (30 RUB)"},
-    90: {"months": 3.0, "price_usdt": 0.90, "ru": "90 дней подписки (3 мес) — 0.90 USDT (90 руб)", "en": "90 subscription days (3 months) — 0.90 USDT (90 RUB)"}
+    10: {"months": 10 / 30.0, "price_rub": 10, "price_usdt": 0.10, "ru": "10 дней — 10 ₽", "en": "10 days — 10 RUB"},
+    30: {"months": 1.0, "price_rub": 30, "price_usdt": 0.30, "ru": "30 дней — 30 ₽", "en": "30 days — 30 RUB"},
 }
 
 # Bot Messages Dictionary
@@ -88,6 +105,8 @@ MESSAGES = {
         "buy_title": "🛒 Выберите пакет пополнения (1 рубль = 1 день):",
         "pay_title": "💳 **Счёт готов**\n\n```\n ITEM  · {days} DAYS TOP-UP\n AMOUNT · {amount:.2f} USDT\n```\n\nНажмите кнопку ниже для оплаты через CryptoBot.",
         "pay_button": "💳 Оплатить через CryptoBot",
+        "lava_button": "🏦 Оплатить через СБП / карту",
+        "custom_button": "✍️ Своя сумма",
         "p2p_info": (
             "\n\n*💳 Как оплатить картой РФ / СБП без криптовалюты?*\n"
             "1. Перейдите в @CryptoBot -> Маркет (P2P).\n"
@@ -183,6 +202,8 @@ MESSAGES = {
         "buy_title": "🛒 Select a top-up package (1 RUB = 1 day):",
         "pay_title": "💳 **Invoice ready**\n\n```\n ITEM  · {days} DAYS TOP-UP\n AMOUNT · {amount:.2f} USDT\n```\n\nClick the button below to pay via CryptoBot.",
         "pay_button": "💳 Pay via CryptoBot",
+        "lava_button": "🏦 Pay by SBP / card",
+        "custom_button": "✍️ Custom amount",
         "p2p_info": (
             "\n\n*💳 How to pay with RU card / SBP without crypto?*\n"
             "1. Open @CryptoBot → Market (P2P).\n"
@@ -356,6 +377,9 @@ def init_db():
     for col, decl in [
         ("promo_code", "TEXT"),
         ("bonus_days", "INTEGER DEFAULT 0"),
+        ("payment_provider", "TEXT DEFAULT 'cryptobot'"),
+        ("provider_invoice_id", "TEXT"),
+        ("order_id", "TEXT"),
     ]:
         try:
             cursor.execute(f"ALTER TABLE invoices ADD COLUMN {col} {decl}")
@@ -698,6 +722,63 @@ def save_invoice(invoice_id, telegram_id, amount, months, days):
     conn.commit()
     conn.close()
 
+def save_lava_invoice(internal_id, provider_invoice_id, order_id, telegram_id, amount, days, store):
+    """Persist a Lava invoice before showing its payment URL to the user."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO invoices (invoice_id, telegram_id, amount, months, days, status, created_at, payment_provider, provider_invoice_id, order_id) "
+        "VALUES (?, ?, ?, ?, ?, 'pending', ?, 'lava_' || ?, ?, ?)",
+        (internal_id, telegram_id, amount, days / 30.0, days, datetime.datetime.now().isoformat(), store, provider_invoice_id, order_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_lava_invoice(order_id=None, provider_invoice_id=None):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    if provider_invoice_id:
+        cursor.execute(
+            "SELECT invoice_id, telegram_id, days, amount, status, payment_provider FROM invoices "
+            "WHERE payment_provider LIKE 'lava_%' AND provider_invoice_id = ? LIMIT 1",
+            (str(provider_invoice_id),),
+        )
+    else:
+        cursor.execute(
+            "SELECT invoice_id, telegram_id, days, amount, status, payment_provider FROM invoices "
+            "WHERE payment_provider LIKE 'lava_%' AND order_id = ? LIMIT 1",
+            (str(order_id),),
+        )
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return {"invoice_id": row[0], "telegram_id": row[1], "days": row[2], "amount": row[3], "status": row[4], "store": row[5].replace("lava_", "", 1)}
+
+
+def process_lava_paid_invoice(invoice):
+    """Claim and credit a Lava invoice exactly once."""
+    if not invoice or not update_invoice_status(invoice["invoice_id"], "paid"):
+        return False
+    telegram_id = invoice["telegram_id"]
+    days = int(invoice["days"])
+    username = f"tg_{telegram_id}"
+    user = api_get_user(username)
+    lava_updater = api_extend_user if user else api_create_user
+    lava_updated = lava_updater(username, days) if user else lava_updater(username, days, telegram_id)
+    if not lava_updated:
+        logger.error("Lava payment %s claimed but subscription update failed", invoice["invoice_id"])
+        return False
+    lava_short_uuid = lava_updated.get("shortUuid")
+    db_user = get_user(telegram_id)
+    lang = db_user["language"] if db_user else "ru"
+    save_user(telegram_id, username, lava_short_uuid, lang, 1, db_user.get("referrer_id") if db_user else None)
+    send_payment_success_notification(telegram_id, days, lava_short_uuid, lava_updated.get("expireAt"), lang)
+    logger.info("Lava invoice %s paid by %s for %s days", invoice["invoice_id"], telegram_id, days)
+    return True
+
+
 def get_pending_invoices():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -837,6 +918,110 @@ def api_extend_user(username, days):
     except Exception as e:
         logger.error(f"Error extending user: {e}")
     return None
+
+# Lava Business API integration
+LAVA_STORE_CONFIG = {
+    "site": {
+        "shop_id": LAVA_SITE_SHOP_ID,
+        "secret_key": LAVA_SITE_SECRET_KEY,
+        "additional_key": LAVA_SITE_ADDITIONAL_KEY,
+        "success_url": LAVA_SITE_SUCCESS_URL,
+        "fail_url": LAVA_SITE_FAIL_URL,
+        "webhook_path": LAVA_WEBHOOK_SITE_PATH,
+    },
+    "bot": {
+        "shop_id": LAVA_BOT_SHOP_ID,
+        "secret_key": LAVA_BOT_SECRET_KEY,
+        "additional_key": LAVA_BOT_ADDITIONAL_KEY,
+        "success_url": LAVA_BOT_SUCCESS_URL,
+        "fail_url": LAVA_BOT_FAIL_URL,
+        "webhook_path": LAVA_WEBHOOK_BOT_PATH,
+    },
+}
+
+
+def lava_store_config(store):
+    config = LAVA_STORE_CONFIG.get(store)
+    if not config or not config["shop_id"] or not config["secret_key"] or not config["additional_key"]:
+        raise RuntimeError(f"Lava store {store!r} is not configured")
+    return config
+
+
+def _lava_signed_request(path, payload, secret_key):
+    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    signature = hmac.new(secret_key.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
+    response = requests.post(
+        f"{LAVA_API_BASE}/{path.lstrip('/')}",
+        data=body.encode("utf-8"),
+        headers={"Accept": "application/json", "Content-Type": "application/json", "Signature": signature},
+        timeout=20,
+    )
+    try:
+        data = response.json()
+    except ValueError:
+        data = {}
+    if response.status_code >= 400 or data.get("status_check") is False or data.get("error"):
+        raise RuntimeError(f"Lava API error {response.status_code}: {data.get('error', response.text[:300])}")
+    return data.get("data") or data
+
+
+def _lava_value(data, *keys, default=None):
+    if not isinstance(data, dict):
+        return default
+    for key in keys:
+        value = data.get(key)
+        if value is not None and value != "":
+            return value
+    return default
+
+
+def create_lava_invoice(store, telegram_id, amount, days, description=None):
+    config = lava_store_config(store)
+    amount = round(float(amount), 2)
+    if amount < 1 or amount > 100000:
+        raise ValueError("amount must be between 1 and 100000 RUB")
+    if days < 1 or days > 100000:
+        raise ValueError("days must be between 1 and 100000")
+    internal_id = secrets.randbelow(9_000_000_000_000_000_000) + 1
+    order_id = f"mosaic-{store}-{telegram_id}-{secrets.token_urlsafe(10)}"
+    payload = {
+        "sum": amount,
+        "orderId": order_id,
+        "shopId": config["shop_id"],
+        "comment": description or f"MosaicVPN: пополнение на {days} дней",
+        "hookUrl": f"https://sub.zxc1x1.ru{config['webhook_path']}",
+        "successUrl": config["success_url"],
+        "failUrl": config["fail_url"],
+    }
+    data = _lava_signed_request("invoice/create", payload, config["secret_key"])
+    provider_id = str(_lava_value(data, "id", "invoiceId", "invoice_id", default=internal_id))
+    payment_url = _lava_value(data, "paymentUrl", "payment_url", "url", "link")
+    if not payment_url:
+        raise RuntimeError("Lava API did not return a payment URL")
+    return {
+        "internal_id": internal_id,
+        "provider_id": provider_id,
+        "order_id": order_id,
+        "payment_url": payment_url,
+        "amount": amount,
+        "days": days,
+        "store": store,
+    }
+
+
+def verify_lava_webhook(store, body, signature):
+    config = lava_store_config(store)
+    if not signature:
+        return False
+    expected = hmac.new(config["additional_key"].encode("utf-8"), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(signature.strip(), expected)
+
+
+def get_lava_invoice_status(store, order_id):
+    config = lava_store_config(store)
+    data = _lava_signed_request("invoice/status", {"shopId": config["shop_id"], "orderId": order_id}, config["secret_key"])
+    return str(_lava_value(data, "status", "state", default="pending")).lower()
+
 
 # CryptoPay integration
 def create_cryptopay_invoice(amount, days):
@@ -1739,7 +1924,8 @@ def send_buy_menu(chat_id, lang):
     for days, pkg in PACKAGES.items():
         text = pkg[lang]
         markup.add(types.InlineKeyboardButton(text, callback_data=f"buy_{days}"))
-    bot.send_message(chat_id, t["buy_title"] + t["p2p_info"], parse_mode="Markdown", reply_markup=markup)
+    markup.add(types.InlineKeyboardButton(t["custom_button"], callback_data="buy_custom"))
+    bot.send_message(chat_id, t["buy_title"] + "\n\nОплата доступна через Lava: СБП или банковскую карту." if lang == "ru" else t["buy_title"] + "\n\nPay securely via Lava using SBP or bank card.", parse_mode="Markdown", reply_markup=markup)
 
 def send_buy_discount_menu(chat_id, lang):
     t = MESSAGES[lang]
@@ -2335,34 +2521,59 @@ def handle_buy_discount_callback(call):
     except Exception as e:
         logger.error(f"Discount callback error: {e}")
 
+def _send_lava_invoice_for_chat(telegram_id, amount, days, lang):
+    invoice = create_lava_invoice("bot", telegram_id, amount, days, f"MosaicVPN: пополнение на {days} дней")
+    save_lava_invoice(invoice["internal_id"], invoice["provider_id"], invoice["order_id"], telegram_id, amount, days, "bot")
+    text = (f"💳 **Счёт на оплату готов**\n\nПополнение: **{days} дней**\nСумма: **{amount:.0f} ₽**\n\nПосле оплаты доступ обновится автоматически." if lang == "ru" else f"💳 **Invoice ready**\n\nTop-up: **{days} days**\nAmount: **{amount:.0f} RUB**\n\nYour access will update automatically after payment.")
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton(MESSAGES[lang]["lava_button"], url=invoice["payment_url"]))
+    bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "buy_custom")
+def handle_buy_custom_callback(call):
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    lang = db_user["language"] if db_user else "ru"
+    bot.answer_callback_query(call.id)
+    prompt = "Введите целое количество рублей от 1 до 100000. 1 ₽ = 1 день." if lang == "ru" else "Enter a whole RUB amount from 1 to 100000. 1 RUB = 1 day."
+    msg = bot.send_message(telegram_id, prompt)
+    bot.register_next_step_handler(msg, process_custom_lava_amount)
+
+
+def process_custom_lava_amount(message):
+    telegram_id = message.chat.id
+    db_user = get_user(telegram_id)
+    lang = db_user["language"] if db_user else "ru"
+    raw = (message.text or "").replace("₽", "").replace(" ", "").strip()
+    try:
+        amount = float(raw.replace(",", "."))
+    except ValueError:
+        bot.send_message(telegram_id, "Введите целое число рублей." if lang == "ru" else "Enter a whole RUB amount.")
+        return
+    if amount < 1 or amount > 100000 or amount != int(amount):
+        bot.send_message(telegram_id, "Сумма должна быть целым числом от 1 до 100000 ₽." if lang == "ru" else "Amount must be a whole number from 1 to 100000 RUB.")
+        return
+    try:
+        _send_lava_invoice_for_chat(telegram_id, amount, int(amount), lang)
+    except (RuntimeError, ValueError) as exc:
+        logger.error("Custom Lava invoice failed: %s", exc)
+        bot.send_message(telegram_id, "Не удалось создать счёт. Попробуйте позже." if lang == "ru" else "Could not create the invoice. Please try again later.")
+
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith("buy_"))
 def handle_buy_callback(call):
     try:
         days = int(call.data.split("_")[1])
         pkg = PACKAGES[days]
-        amount = pkg["price_usdt"]
-        months = pkg["months"]
         telegram_id = call.message.chat.id
-        
         db_user = get_user(telegram_id)
         lang = db_user["language"] if db_user else "ru"
-        t = MESSAGES[lang]
-        
-        bot.answer_callback_query(call.id, "..." if lang == 'en' else "Создаем счет...")
-        
-        invoice_id, pay_url = create_cryptopay_invoice(amount, days)
-        
-        if invoice_id and pay_url:
-            save_invoice(invoice_id, telegram_id, amount, months, days)
-            text = t["pay_title"].format(days=days, amount=amount)
-            
-            markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton(t["pay_button"], url=pay_url))
-            bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
-        else:
-            bot.send_message(telegram_id, t["error_invoice"])
-    except Exception as e:
-        logger.error(f"Callback error: {e}")
+        bot.answer_callback_query(call.id, "..." if lang == "en" else "Создаем счет...")
+        _send_lava_invoice_for_chat(telegram_id, pkg["price_rub"], days, lang)
+    except (RuntimeError, ValueError, KeyError) as exc:
+        logger.error("Lava callback error: %s", exc)
+        bot.send_message(call.message.chat.id, "Не удалось создать счёт. Попробуйте позже.")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("lang_"))
 def handle_lang_callback(call):
@@ -2451,6 +2662,10 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.rstrip("/")
+        if path in (LAVA_WEBHOOK_SITE_PATH, LAVA_WEBHOOK_BOT_PATH):
+            return self._handle_lava_webhook("site" if path == LAVA_WEBHOOK_SITE_PATH else "bot")
+        if path == "/api/billing/lava/create":
+            return self._handle_lava_create()
         # T-19: the daemon runs behind NAT on the user's machine, so it is the
         # side that reaches out. The bot issues codes; this endpoint burns them.
         if path == "/api/link/redeem":
@@ -2462,6 +2677,71 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         self.send_response(404)
         self._cors_headers()
         self.end_headers()
+
+    def _handle_lava_create(self):
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length <= 0 or length > 4096:
+                raise ValueError("invalid body")
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+            self._send_json(400, {"error": "invalid body"})
+            return
+        token = str(payload.get("token") or "")
+        session = get_web_session(token)
+        if not session:
+            self._send_json(401, {"error": "invalid or expired session"})
+            return
+        try:
+            amount = float(payload.get("amount"))
+        except (TypeError, ValueError):
+            self._send_json(400, {"error": "amount must be an integer number of RUB"})
+            return
+        if amount < 1 or amount > 100000 or amount != int(amount):
+            self._send_json(400, {"error": "amount must be an integer from 1 to 100000 RUB"})
+            return
+        days = int(amount)
+        try:
+            invoice = create_lava_invoice("site", session["telegram_id"], amount, days, "MosaicVPN: пополнение веб-кабинета")
+            save_lava_invoice(invoice["internal_id"], invoice["provider_id"], invoice["order_id"], session["telegram_id"], amount, days, "site")
+        except (RuntimeError, ValueError) as exc:
+            logger.error("Lava site invoice creation failed: %s", exc)
+            self._send_json(502, {"error": "payment provider unavailable"})
+            return
+        self._send_json(200, {"payment_id": invoice["provider_id"], "order_id": invoice["order_id"], "amount": amount, "days": days, "status": "pending", "payment_url": invoice["payment_url"]})
+
+    def _handle_lava_webhook(self, store):
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length <= 0 or length > 65536:
+                raise ValueError("invalid body")
+            body = self.rfile.read(length)
+            payload = json.loads(body.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+            self._send_json(400, {"error": "invalid body"})
+            return
+        signature = self.headers.get("Signature", "")
+        if not signature:
+            signature = self.headers.get("X-Signature", "")
+        try:
+            valid = verify_lava_webhook(store, body, signature)
+        except RuntimeError:
+            valid = False
+        if not valid:
+            self._send_json(401, {"error": "invalid webhook signature"})
+            return
+        status = str(_lava_value(payload, "status", "state", "paymentStatus", default="")).lower()
+        if status not in {"paid", "success", "succeeded", "completed"}:
+            self._send_json(200, {"status": "ignored", "payment_status": status or "unknown"})
+            return
+        order_id = _lava_value(payload, "orderId", "order_id", "order")
+        provider_id = _lava_value(payload, "id", "invoiceId", "invoice_id", "paymentId", "payment_id")
+        invoice = get_lava_invoice(order_id=order_id, provider_invoice_id=provider_id)
+        if not invoice:
+            self._send_json(404, {"error": "invoice not found"})
+            return
+        processed = process_lava_paid_invoice(invoice)
+        self._send_json(200, {"status": "processed" if processed else "already_processed"})
 
     def _handle_link_redeem(self):
         try:

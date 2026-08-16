@@ -184,11 +184,19 @@
     </div>
 
     <h2 style="margin-top:34px">Пополнение</h2>
+    <p class="lede" style="margin-bottom:14px">1 ₽ = 1 день доступа. Оплата через СБП или банковскую карту.</p>
     <div class="btn-row" style="justify-content:flex-start">
-      <a class="btn btn-primary" href="https://t.me/mosaicvpnbot?start=topup" target="_blank" rel="noopener">
-        Пополнить в боте
-      </a>
+      <button class="btn btn-primary lava-pay" data-amount="10" type="button">10 дней · 10 ₽</button>
+      <button class="btn btn-primary lava-pay" data-amount="30" type="button">30 дней · 30 ₽</button>
+      <a class="btn btn-ghost" href="https://t.me/mosaicvpnbot?start=topup" target="_blank" rel="noopener">Пополнить в боте</a>
     </div>
+    <form id="custom-payment-form" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px">
+      <label for="custom-amount" style="font-size:14px;color:var(--text-2)">Своя сумма, ₽</label>
+      <input id="custom-amount" type="number" min="1" max="100000" step="1" placeholder="например, 45"
+             style="width:150px;padding:12px;border:1px solid var(--border);border-radius:9px;background:#fff;color:var(--text)" />
+      <button class="btn btn-ghost" type="submit">Оплатить</button>
+    </form>
+    <div id="payment-message" style="min-height:24px;margin-top:10px;color:var(--text-2)"></div>
 
     <h2 style="margin-top:34px">История платежей</h2>
     <div class="tbl-wrap">
@@ -281,8 +289,10 @@
   var API_SESSION  = '/api/session';
   var API_PROFILE  = '/api/billing/profile';
   var API_PAYMENTS = '/api/billing/payments';
+  var API_LAVA_CREATE = '/api/billing/lava/create';
 
   var TOKEN_KEY = 'mv_session_token';
+  var savedToken = localStorage.getItem(TOKEN_KEY);
   var gate = document.getElementById('gate-section');
   var account = document.getElementById('account-section');
   var codeForm = document.getElementById('code-form');
@@ -359,6 +369,22 @@
   }
 
   /* ---- Fetch profile + payments with token ---- */
+  function startLavaPayment(amount) {
+    var message = document.getElementById('payment-message');
+    if (!savedToken) { message.textContent = 'Сначала войдите в кабинет.'; return; }
+    amount = Number(amount);
+    if (!Number.isInteger(amount) || amount < 1 || amount > 100000) { message.textContent = 'Введите целую сумму от 1 до 100000 ₽.'; return; }
+    message.textContent = 'Создаём счёт…';
+    fetch(API_LAVA_CREATE, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token:savedToken, amount:amount}) })
+      .then(function(r){ return r.json().then(function(b){ return {status:r.status,body:b}; }); })
+      .then(function(result){
+        if (result.status !== 200 || !result.body.payment_url) { message.textContent = result.body.error || 'Не удалось создать счёт.'; return; }
+        message.textContent = 'Счёт создан. Открываем страницу оплаты…';
+        window.location.href = result.body.payment_url;
+      })
+      .catch(function(){ message.textContent = 'Не удалось подключиться к платёжному сервису.'; });
+  }
+
   function loadProfile(token) {
     Promise.all([
       fetch(API_PROFILE + '?token=' + encodeURIComponent(token)).then(function (r) { return r.json(); }),
@@ -401,6 +427,15 @@
     });
   }
 
+  document.querySelectorAll('.lava-pay').forEach(function(button){
+    button.addEventListener('click', function(){ startLavaPayment(button.getAttribute('data-amount')); });
+  });
+  var customPaymentForm = document.getElementById('custom-payment-form');
+  if (customPaymentForm) customPaymentForm.addEventListener('submit', function(e){
+    e.preventDefault();
+    startLavaPayment(document.getElementById('custom-amount').value);
+  });
+
   if (codeForm) {
     codeForm.addEventListener('submit', function (e) {
       e.preventDefault();
@@ -411,7 +446,6 @@
   }
 
   // Auto-login if token is in localStorage
-  var savedToken = localStorage.getItem(TOKEN_KEY);
   if (savedToken) {
     loadProfile(savedToken);
   }
