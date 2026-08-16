@@ -203,11 +203,25 @@ class _AppShellState extends ConsumerState<AppShell>
   @override
   Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
+    final s = AppStrings.of(context);
     final trayStatus = ref.watch(vpnStatusProvider).valueOrNull;
     final closeToTray =
         ref.watch(prefsProvider).valueOrNull?.minimizeToTray ?? true;
     if (AppPlatform.isDesktop) {
-      TrayService.instance.configure(minimizeToTray: closeToTray);
+      TrayService.instance.configure(
+        minimizeToTray: closeToTray,
+        labels: TrayLabels(
+          localeCode: Localizations.localeOf(context).languageCode,
+          connected: s.t('tray_connected'),
+          disconnected: s.t('tray_disconnected'),
+          openApp: s.t('tray_open_app'),
+          connect: s.t('connect_action'),
+          disconnect: s.t('disconnect_action'),
+          chooseRoute: s.t('tray_choose_route'),
+          minimize: s.t('tray_minimize'),
+          quit: s.t('tray_quit'),
+        ),
+      );
       TrayService.instance.setConnectionState(
         trayStatus?.state == 'connected',
         routeLabel: trayStatus?.server?.name ?? '',

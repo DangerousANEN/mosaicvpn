@@ -8,6 +8,42 @@ import '../platform/app_platform.dart';
 
 typedef TrayAction = FutureOr<void> Function();
 
+/// User-visible tray labels supplied by the localized Flutter shell.
+class TrayLabels {
+  const TrayLabels({
+    required this.localeCode,
+    required this.connected,
+    required this.disconnected,
+    required this.openApp,
+    required this.connect,
+    required this.disconnect,
+    required this.chooseRoute,
+    required this.minimize,
+    required this.quit,
+  });
+
+  const TrayLabels.russian()
+      : localeCode = 'ru',
+        connected = 'Подключено',
+        disconnected = 'Не подключено',
+        openApp = 'Открыть приложение',
+        connect = 'Подключить',
+        disconnect = 'Отключить',
+        chooseRoute = 'Выбрать маршрут',
+        minimize = 'Свернуть в трей',
+        quit = 'Выйти полностью';
+
+  final String localeCode;
+  final String connected;
+  final String disconnected;
+  final String openApp;
+  final String connect;
+  final String disconnect;
+  final String chooseRoute;
+  final String minimize;
+  final String quit;
+}
+
 /// Manages the desktop tray icon, status-aware context menu and window state.
 ///
 /// Closing the window can minimize the client to the tray while retaining an
@@ -25,6 +61,7 @@ class TrayService {
   bool _connected = false;
   String _routeLabel = '';
   bool _hidden = false;
+  TrayLabels _labels = const TrayLabels.russian();
 
   TrayAction? _onConnect;
   TrayAction? _onDisconnect;
@@ -39,17 +76,25 @@ class TrayService {
   /// application-level connect/disconnect/quit actions.
   void configure({
     required bool minimizeToTray,
+    TrayLabels? labels,
     TrayAction? onConnect,
     TrayAction? onDisconnect,
     TrayAction? onOpenRoutes,
     TrayAction? onQuit,
   }) {
+    var shouldRebuild = _minimizeToTray != minimizeToTray;
     _minimizeToTray = minimizeToTray;
+    if (labels != null && labels.localeCode != _labels.localeCode) {
+      _labels = labels;
+      shouldRebuild = true;
+    }
+    // Actions are resolved through fields when the menu is clicked, therefore
+    // replacing their closures never requires rebuilding the native menu.
     if (onConnect != null) _onConnect = onConnect;
     if (onDisconnect != null) _onDisconnect = onDisconnect;
     if (onOpenRoutes != null) _onOpenRoutes = onOpenRoutes;
     if (onQuit != null) _onQuit = onQuit;
-    if (_initialized) _buildMenu();
+    if (_initialized && shouldRebuild) _buildMenu();
   }
 
   /// Reflects the current connection state in the next context menu rebuild.
@@ -87,19 +132,19 @@ class TrayService {
   void _buildMenu() {
     final menu = Menu();
     final connectionLabel = _connected
-        ? 'Подключено${_routeLabel.isEmpty ? '' : ' · $_routeLabel'}'
-        : 'Не подключено';
+        ? '${_labels.connected}${_routeLabel.isEmpty ? '' : ' · $_routeLabel'}'
+        : _labels.disconnected;
 
     menu.buildFrom([
       MenuItemLabel(label: 'MosaicVPN', enabled: false),
       MenuItemLabel(label: connectionLabel, enabled: false),
       MenuSeparator(),
       MenuItemLabel(
-        label: 'Открыть приложение',
+        label: _labels.openApp,
         onClicked: (_) => showWindow(),
       ),
       MenuItemLabel(
-        label: 'Подключить',
+        label: _labels.connect,
         enabled: !_connected,
         onClicked: (_) async {
           await _onConnect?.call();
@@ -107,12 +152,12 @@ class TrayService {
         },
       ),
       MenuItemLabel(
-        label: 'Отключить',
+        label: _labels.disconnect,
         enabled: _connected,
         onClicked: (_) async => _onDisconnect?.call(),
       ),
       MenuItemLabel(
-        label: 'Выбрать маршрут',
+        label: _labels.chooseRoute,
         onClicked: (_) async {
           await _onOpenRoutes?.call();
           await showWindow();
@@ -120,13 +165,13 @@ class TrayService {
       ),
       MenuSeparator(),
       MenuItemLabel(
-        label: 'Свернуть в трей',
+        label: _labels.minimize,
         enabled: !_hidden,
         onClicked: (_) => hideToTray(),
       ),
       MenuSeparator(),
       MenuItemLabel(
-        label: 'Выйти полностью',
+        label: _labels.quit,
         onClicked: (_) async {
           if (_onQuit != null) {
             await _onQuit!.call();

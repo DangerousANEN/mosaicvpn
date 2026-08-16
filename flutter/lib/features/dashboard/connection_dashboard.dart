@@ -383,8 +383,8 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     } catch (error) {
       if (mounted) {
         _notice(
-          '${AppStrings.of(context).t('connection_failed')}. '
-          'Обновите маршрут и повторите попытку.',
+          '${AppStrings.of(context).t('connection_failed')} '
+          '${AppStrings.of(context).t('connection_try_other_route')}',
           error: true,
         );
       }
@@ -498,7 +498,9 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
 
   _RouteChoice _serverAsRouteChoice(Server server) => _RouteChoice(
         id: server.id,
-        title: server.name.isEmpty ? 'Безымянный сервер' : server.name,
+        title: server.name.isEmpty
+            ? AppStrings.of(context).t('unnamed_server')
+            : server.name,
         subtitle: server.hasLatency
             ? '${server.protocol.displayName} · ${server.lastTestMS} мс'
             : server.protocol.displayName,
@@ -544,12 +546,13 @@ class _SubscriptionSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
+    final s = AppStrings.of(context);
     if (subscriptions.isEmpty) return const SizedBox.shrink();
     return DropdownButtonFormField<String>(
       initialValue: selected.id.isEmpty ? null : selected.id,
       isExpanded: true,
       decoration: InputDecoration(
-        labelText: compact ? 'Подписка' : 'Источник маршрутов',
+        labelText: compact ? s.t('subscriptions') : s.t('route_source'),
         prefixIcon: const Icon(Icons.layers_outlined),
         filled: true,
         fillColor: c.bgCard,
@@ -561,7 +564,7 @@ class _SubscriptionSelector extends StatelessWidget {
                 value: subscription.id,
                 child: Text(
                   subscription.name.isEmpty
-                      ? 'Безымянная подписка'
+                      ? AppStrings.of(context).t('unnamed_subscription')
                       : subscription.name,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -609,7 +612,7 @@ class _NoDashboardRoutes extends StatelessWidget {
               const SizedBox(height: 24),
               Icon(Icons.route_outlined, size: 48, color: c.textMuted),
               const SizedBox(height: 12),
-              Text('Нет доступных маршрутов',
+              Text(AppStrings.of(context).t('no_routes_available'),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                       color: c.textPrimary,
@@ -617,7 +620,7 @@ class _NoDashboardRoutes extends StatelessWidget {
                       fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
               Text(
-                'Обновите выбранную подписку или добавьте совместимый источник в разделе «Маршруты».',
+                AppStrings.of(context).t('no_routes_hint'),
                 textAlign: TextAlign.center,
                 style: TextStyle(color: c.textSecondary),
               ),
@@ -673,7 +676,7 @@ class _DashboardHeader extends StatelessWidget {
           ),
         ),
         IconButton(
-          tooltip: 'Обновить состояние',
+          tooltip: s.t('refresh_status'),
           onPressed: onRefresh,
           icon: Icon(Icons.refresh_rounded, color: c.textSecondary),
         ),

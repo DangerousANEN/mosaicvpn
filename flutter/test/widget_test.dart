@@ -14,13 +14,13 @@ import 'package:mosaic_vpn/core/platform/app_platform.dart';
 /// value: the real provider polls on a periodic Timer that outlives the widget
 /// tree and trips the binding's pending-timer assertion on teardown, while an
 /// unmocked HttpClient makes the suite emit network warnings.
-Widget _harness() => ProviderScope(
+Widget _harness({Locale locale = const Locale('ru')}) => ProviderScope(
       overrides: [
         daemonApiProvider.overrideWithValue(MockDaemonApi()),
         vpnStatusProvider.overrideWith((ref) => Stream.value(VpnStatus())),
       ],
-      child: const MaterialApp(
-        locale: Locale('ru'),
+      child: MaterialApp(
+        locale: locale,
         supportedLocales: [Locale('en'), Locale('ru')],
         localizationsDelegates: [
           GlobalMaterialLocalizations.delegate,
@@ -37,12 +37,13 @@ Widget _harness() => ProviderScope(
 /// pumpAndSettle would never complete. The mock manifest resolves after 200 ms;
 /// a bounded sequence of pumps lets chained delayed mock requests from every
 /// cached tab finish without waiting for the animation.
-Future<void> _pumpAt(WidgetTester tester, Size size) async {
+Future<void> _pumpAt(WidgetTester tester, Size size,
+    {Locale locale = const Locale('ru')}) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
 
-  await tester.pumpWidget(_harness());
+  await tester.pumpWidget(_harness(locale: locale));
   for (var step = 0; step < 8; step++) {
     await tester.pump(const Duration(milliseconds: 500));
   }
@@ -92,5 +93,16 @@ void main() {
     expect(find.textContaining('Маршруты: Минимальный пинг'), findsOneWidget);
     expect(tester.takeException(), isNull,
         reason: 'desktop dashboard must render without an exception');
+  });
+
+  testWidgets('dashboard localizes its primary connection flow in English',
+      (tester) async {
+    await _pumpAt(tester, const Size(1440, 960), locale: const Locale('en'));
+
+    expect(find.text('Not connected'), findsWidgets);
+    expect(find.textContaining('Routes: Minimum ping'), findsOneWidget);
+    expect(find.text('Subscriptions'), findsWidgets);
+    expect(tester.takeException(), isNull,
+        reason: 'English dashboard must render without a framework exception');
   });
 }

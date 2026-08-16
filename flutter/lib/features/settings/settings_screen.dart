@@ -85,12 +85,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // ── Tunnel ──
           _SettingsGroup(
-            title: 'Tunnel',
+            title: s.t('tunnel'),
             children: [
               // Tunnel mode
               _SettingTile(
-                label: 'Tunnel Mode',
-                description: 'TUN (system-wide) or Proxy (SOCKS/HTTP only)',
+                label: s.t('tunnel_mode'),
+                description: s.t('tunnel_mode_description'),
                 tooltip:
                     'TUN mode captures all system traffic through a virtual network adapter (requires admin). Proxy mode only routes apps configured to use the local SOCKS/HTTP proxy.',
                 difficulty: 2,
@@ -115,7 +115,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               if (prefs.tunnelMode == 'tun')
                 _SettingTile(
                   label: 'MTU',
-                  description: 'Maximum transmission unit for the TUN device',
+                  description: s.t('mtu_description'),
                   tooltip:
                       'Larger MTU = more throughput but may cause fragmentation on some networks. 1420 is safe for most VPNs. Lower to 1280 if you experience packet loss.',
                   difficulty: 3,
@@ -134,8 +134,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               // Mixed port (proxy only)
               if (prefs.tunnelMode == 'proxy')
                 _SettingTile(
-                  label: 'Mixed Port',
-                  description: 'Single port for both SOCKS5 and HTTP proxy',
+                  label: s.t('mixed_port'),
+                  description: s.t('mixed_port_description'),
                   tooltip:
                       'The local port that SOCKS5 and HTTP proxy listeners share. Change if another app occupies 2080.',
                   difficulty: 1,
@@ -154,9 +154,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               // Kill switch (TUN only)
               if (prefs.tunnelMode == 'tun')
                 _SettingTile(
-                  label: 'Kill Switch',
-                  description:
-                      'Block all traffic when the tunnel is not connected',
+                  label: s.t('kill_switch'),
+                  description: s.t('kill_switch_description'),
                   tooltip:
                       'When enabled, all network traffic is blocked the moment the VPN disconnects, preventing data leaks. Recommended for privacy-sensitive use.',
                   difficulty: 1,
@@ -168,8 +167,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               // Allow LAN (TUN only)
               if (prefs.tunnelMode == 'tun')
                 _SettingTile(
-                  label: 'Allow LAN',
-                  description: 'Bypass local network traffic from the tunnel',
+                  label: s.t('allow_lan'),
+                  description: s.t('allow_lan_description'),
                   tooltip:
                       'Excludes traffic to 192.168.x.x, 10.x.x.x, and 172.16-31.x.x from the VPN tunnel. Needed for printers, NAS, local file sharing.',
                   difficulty: 2,
@@ -181,8 +180,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               // Block IPv6 (TUN only)
               if (prefs.tunnelMode == 'tun')
                 _SettingTile(
-                  label: 'Block IPv6',
-                  description: 'Disable IPv6 traffic through the tunnel',
+                  label: s.t('block_ipv6'),
+                  description: s.t('block_ipv6_description'),
                   tooltip:
                       'Some VPN providers lack IPv6 support. Blocking IPv6 prevents leaks when the tunnel is active, but disables IPv6-only services.',
                   difficulty: 2,
@@ -194,8 +193,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               // TUN Stack (TUN only) — gvisor / mixed / system
               if (prefs.tunnelMode == 'tun')
                 _SettingTile(
-                  label: 'TUN Stack',
-                  description: 'Network stack for the virtual adapter',
+                  label: s.t('tun_stack'),
+                  description: s.t('tun_stack_description'),
                   tooltip:
                       'system — uses the OS network stack (best compatibility, may need admin).\ngvisor — userspace stack from Google, no admin needed, good isolation.\nmixed — gvisor for TCP + system for UDP (recommended for most users).',
                   difficulty: 3,
@@ -226,11 +225,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // ── Proxy ──
           _SettingsGroup(
-            title: 'Proxy',
+            title: s.t('proxy'),
             children: [
               _SettingTile(
-                label: 'SOCKS5 Address',
-                description: 'Local SOCKS5 proxy endpoint',
+                label: s.t('socks_address'),
+                description: s.t('socks_address_description'),
                 tooltip:
                     'The address apps use to connect through the SOCKS5 proxy. Usually 127.0.0.1:1080 for local, or 0.0.0.0:1080 to allow LAN.',
                 difficulty: 2,
@@ -245,8 +244,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ),
               _SettingTile(
-                label: 'HTTP Proxy Address',
-                description: 'Local HTTP proxy endpoint',
+                label: s.t('http_proxy_address'),
+                description: s.t('http_proxy_address_description'),
                 tooltip:
                     'The address apps use to connect through the HTTP proxy. Usually 127.0.0.1:2080 for local, or 0.0.0.0:2080 to allow LAN.',
                 difficulty: 2,
@@ -261,8 +260,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ),
               _SettingTile(
-                label: 'Share Proxies in LAN',
-                description: 'Allow other local network devices to connect',
+                label: s.t('share_proxies'),
+                description: s.t('share_proxies_description'),
                 tooltip:
                     'Lets other devices on your local network use this machine as a proxy gateway. Disable on untrusted networks.',
                 difficulty: 2,
@@ -273,8 +272,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
               if (prefs.shareLAN)
                 _SettingTile(
-                  label: 'LAN Listen Address',
-                  description: 'IP and port to listen for LAN traffic',
+                  label: s.t('lan_listen_address'),
+                  description: s.t('lan_listen_address_description'),
                   child: SizedBox(
                     width: 200,
                     child: TextFormField(
@@ -295,8 +294,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: 'DNS',
             children: [
               _SettingTile(
-                label: 'DNS Mode',
-                description: 'fake-ip (recommended), real-ip, or disabled',
+                label: s.t('dns'),
+                description: s.t('dns_mode_description'),
                 tooltip:
                     'Fake-IP returns synthetic IPs for DNS queries, routing them through the tunnel. Faster and more private. Real-IP resolves directly, needed for apps that check DNS separately.',
                 difficulty: 3,
@@ -310,8 +309,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ),
               _SettingTile(
-                label: 'Proxied DNS',
-                description: 'Upstream DNS for proxy traffic',
+                label: s.t('proxied_dns'),
+                description: s.t('proxied_dns_description'),
                 tooltip:
                     'DNS server used to resolve domains that go through the VPN tunnel. Use DoH (https://...) for encrypted DNS. Examples: https://dns.google/dns-query, tls://8.8.8.8',
                 difficulty: 3,
@@ -326,8 +325,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ),
               _SettingTile(
-                label: 'Direct DNS',
-                description: 'Upstream DNS for direct traffic',
+                label: s.t('direct_dns'),
+                description: s.t('direct_dns_description'),
                 tooltip:
                     'DNS server for domains that bypass the tunnel (e.g. local domains). Usually your router or a public resolver like 1.1.1.1.',
                 difficulty: 3,
@@ -1268,7 +1267,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // ── About ──
           _SettingsGroup(
-            title: 'About',
+            title: s.t('about'),
             children: [
               _SettingTile(
                 label: 'MosaicVPN',
@@ -1279,20 +1278,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ),
               _SettingTile(
-                label: 'Daemon Status',
-                description: 'Check daemon connection and version',
+                label: s.t('daemon_status'),
+                description: s.t('daemon_status_description'),
                 child: IconButton(
                   icon: const Icon(Icons.router_outlined, size: 20),
                   onPressed: () => _showDaemonInfo(context),
                 ),
               ),
               _SettingTile(
-                label: 'Sign out',
-                description:
-                    'Disconnect and remove this device’s MosaicVPN account data',
+                label: s.t('sign_out'),
+                description: s.t('sign_out_description'),
                 child: OutlinedButton.icon(
                   icon: const Icon(Icons.logout, size: 18),
-                  label: const Text('Sign out'),
+                  label: Text(s.t('sign_out')),
                   style: OutlinedButton.styleFrom(foregroundColor: c.danger),
                   onPressed: _signOut,
                 ),
@@ -1307,23 +1305,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _signOut() async {
+    final s = AppStrings.of(context);
     final confirmed = await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
-            title: const Text('Sign out of MosaicVPN?'),
-            content: const Text(
-              'The VPN will be disconnected and this device’s account tokens and personal configuration will be removed. Other manually added profiles remain available.',
-            ),
+            title: Text(s.t('sign_out_title')),
+            content: Text(s.t('sign_out_confirm')),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: const Text('Cancel'),
+                child: Text(s.t('cancel')),
               ),
               FilledButton(
                 style: FilledButton.styleFrom(
                     backgroundColor: ThemeColors.of(context).danger),
                 onPressed: () => Navigator.of(dialogContext).pop(true),
-                child: const Text('Sign out'),
+                child: Text(s.t('sign_out')),
               ),
             ],
           ),
@@ -1353,9 +1350,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ref.invalidate(billingProfileProvider);
       ref.invalidate(mosaicManifestProvider);
       ref.invalidate(subscriptionsProvider);
-      _showSnack('Signed out on this device.');
+      _showSnack(s.t('sign_out_success'));
     } catch (error) {
-      _showSnack('Sign out failed: $error');
+      _showSnack('${s.t('sign_out_failed')}: $error');
     }
   }
 
@@ -1418,6 +1415,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       String? backupPath,
       int? autoBackupInterval,
       bool? includeSubscriptions}) async {
+    final s = AppStrings.of(context);
     final updated = prefs.copyWith(
       tunnelMode: tunnelMode,
       tunStack: tunStack,
@@ -1491,7 +1489,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       // A setting that the runtime rejected must not remain visually enabled.
       // Revert to the last confirmed daemon preferences and explain the cause.
       if (mounted) setState(() => _localPrefs = prefs);
-      _showSnack('Setting was not applied: $e');
+      _showSnack('${s.t('settings_not_applied')}: $e');
     }
 
     // ── Wire desktop services ──
@@ -1506,13 +1504,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   // ── Phase 2.5: Backup / Restore handlers ───────────────────────────
   Future<void> _exportConfig(Preferences prefs) async {
+    final s = AppStrings.of(context);
     final api = ref.read(daemonApiProvider);
     String json;
     try {
       json = await api.exportConfig(
           includeSubscriptions: prefs.includeSubscriptions);
     } catch (e) {
-      _showSnack('Export failed: $e');
+      _showSnack('${s.t('export_failed')}: $e');
       return;
     }
     final now = DateTime.now().toLocal();
@@ -1520,18 +1519,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         '${now.day.toString().padLeft(2, '0')}-'
         '${now.hour.toString().padLeft(2, '0')}'
         '${now.minute.toString().padLeft(2, '0')}';
-    final defaultName = 'mosaicbox-backup-$stamp.json';
+    final defaultName = 'mosaicvpn-backup-$stamp.json';
 
     String? outPath;
     if (prefs.backupPath.isNotEmpty) {
       // Auto-pick path from preferences if user has chosen one.
       final dir = prefs.backupPath;
-      outPath = '$dir\\$defaultName';
+      outPath = '$dir${Platform.pathSeparator}$defaultName';
       try {
         await File(outPath).writeAsString(json);
       } catch (_) {
         outPath = (await FilePicker.platform.saveFile(
-          dialogTitle: 'Save backup as',
+          dialogTitle: s.t('export_config'),
           fileName: defaultName,
           type: FileType.custom,
           allowedExtensions: const ['json'],
@@ -1542,7 +1541,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       }
     } else {
       outPath = (await FilePicker.platform.saveFile(
-        dialogTitle: 'Save backup as',
+        dialogTitle: s.t('export_config'),
         fileName: defaultName,
         type: FileType.custom,
         allowedExtensions: const ['json'],
@@ -1553,20 +1552,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
 
     if (outPath == null) {
-      _showSnack('Export cancelled');
+      _showSnack(s.t('export_cancelled'));
       return;
     }
-    _showSnack('Saved backup to $outPath');
+    _showSnack('${s.t('backup_saved')}: $outPath');
   }
 
   Future<void> _importConfig() async {
+    final s = AppStrings.of(context);
     final pick = await FilePicker.platform.pickFiles(
-      dialogTitle: 'Choose MosaicVPN backup file',
+      dialogTitle: s.t('import_config'),
       type: FileType.custom,
       allowedExtensions: const ['json'],
     );
     if (pick == null || pick.files.single.path == null) {
-      _showSnack('Import cancelled');
+      _showSnack(s.t('import_cancelled'));
       return;
     }
     final path = pick.files.single.path!;
@@ -1585,7 +1585,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     try {
       await api.importConfig(content, mode: mode);
     } catch (e) {
-      _showSnack('Import failed: $e');
+      _showSnack('${s.t('import_failed')}: $e');
       return;
     }
 
@@ -1646,6 +1646,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   void _checkTunElevation(
       BuildContext context, FutureOr<void> Function() onAllow) async {
+    // Linux packages receive the required capability during installation and
+    // macOS/Android follow their native permission flows. UAC applies only to
+    // Windows; do not invoke PowerShell on other desktop platforms.
+    if (!Platform.isWindows) {
+      await onAllow();
+      return;
+    }
     final c = ThemeColors.of(context);
     // Check if we're already running with admin privileges
     try {
