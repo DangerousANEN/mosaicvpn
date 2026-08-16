@@ -68,6 +68,7 @@ Build targets: android/arm64, android/arm, android/amd64, android/386
 Build tool: github.com/sagernet/gomobile v0.1.12
 License: GPL-3.0-or-later
 EOF
-sha256sum "$OUTPUT_DIR/libbox.aar" "$OUTPUT_DIR/libbox-legacy.aar" >> "$PROVENANCE"
+printf '%s  %s\n' "$(sha256sum "$OUTPUT_DIR/libbox.aar" | awk '{print $1}')" "libbox.aar" >> "$PROVENANCE"
+printf '%s  %s\n' "$(sha256sum "$OUTPUT_DIR/libbox-legacy.aar" | awk '{print $1}')" "libbox-legacy.aar" >> "$PROVENANCE"
 printf 'Built multi-ABI Android libbox runtime:\n'
 cat "$PROVENANCE"

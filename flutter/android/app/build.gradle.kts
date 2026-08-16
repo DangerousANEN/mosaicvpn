@@ -64,9 +64,10 @@ android {
         }
     }
 
-    dependencies {
-        implementation(files("libs/libbox.aar"))
-    }
+}
+
+dependencies {
+    implementation(files("libs/libbox.aar"))
 }
 
 tasks.configureEach {
