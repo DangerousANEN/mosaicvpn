@@ -160,6 +160,18 @@
   th{background:var(--elev); font-family:var(--mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-2)}
   tr:last-child td{border-bottom:none}
   td.mono{font-family:var(--mono); font-size:13px; color:var(--text-2)}
+  /* On phones the three desktop columns become compact protocol cards.
+     This preserves every value while giving the status a protected column. */
+  @media(max-width:540px){
+    .specs table,.specs tbody{display:block}
+    .specs thead{display:none}
+    .specs tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 12px;padding:14px 15px;border-bottom:1px solid var(--border-light)}
+    .specs tr:last-child{border-bottom:0}
+    .specs td{display:block;padding:0;border:0;min-width:0}
+    .specs td:first-child{font-family:var(--serif);font-size:17px;font-weight:600;line-height:1.22}
+    .specs td:nth-child(2){grid-column:1;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+    .specs td:last-child{grid-column:2;grid-row:1 / span 2;align-self:center;padding-left:12px;border-left:1px solid var(--border);font-size:12px;line-height:1.25;white-space:nowrap;color:var(--success)}
+  }
 
   /* pricing */
   .price-wrap{display:grid; grid-template-columns:minmax(300px,1fr) minmax(320px,1.15fr); gap:24px; align-items:start}
