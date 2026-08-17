@@ -57,6 +57,10 @@ Copy-Item -Force (Join-Path $FlutterDir 'assets\icons\app_icon.ico') (Join-Path 
 Copy-Item -Force $DaemonPath (Join-Path $PortableDir 'mosaicd.exe')
 Copy-Item -Force $SingBoxPath (Join-Path $PortableDir 'sing-box.exe')
 if (-not [string]::IsNullOrWhiteSpace($CliPath)) { Copy-Item -Force $CliPath (Join-Path $PortableDir 'mosaic.exe') }
+# The Flutter shell uses this marker to keep subscriptions, locks and logs in
+# the portable folder instead of mixing them with an installed profile.
+New-Item -ItemType File -Path (Join-Path $PortableDir 'portable.mode') -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $PortableDir 'data') -Force | Out-Null
 
 $Readme = @"
 MosaicVPN $Version — Windows portable
@@ -64,6 +68,7 @@ MosaicVPN $Version — Windows portable
 1. Run MosaicVPN.exe.
 2. Sign in or connect the application with your MosaicVPN account.
 3. Keep mosaicd.exe and sing-box.exe next to MosaicVPN.exe; the client requires both files.
+4. Portable subscriptions, settings and logs are stored in the data directory beside this README.
 
 For assisted installation, use the matching MosaicVPN-Setup-x64-v$Version.exe installer.
 "@

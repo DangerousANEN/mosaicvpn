@@ -716,11 +716,16 @@ func (s *Server) handleSetPrefs(w http.ResponseWriter, r *http.Request) {
 		oldPrefs.HTTPAddr != p.HTTPAddr
 
 	st := s.mgr.Status()
-	if tunnelChanged && (st.State == proto.StateConnected || st.State == proto.StateConnecting) {
-		if st.Server != nil {
-			go func() {
-				_ = s.mgr.HotReload(context.Background())
-			}()
+	if tunnelChanged && (st.State == proto.StateConnected || st.State == proto.StateConnecting) && st.Server != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+		err := s.mgr.HotReload(ctx)
+		cancel()
+		if err != nil {
+			// Do not leave the UI and runtime disagreeing about the active prefs.
+			_ = s.store.SetPrefs(oldPrefs)
+			s.mgr.SetTunnelPrefs(oldPrefs.TunnelMode, oldPrefs.KillSwitch)
+			writeError(w, http.StatusServiceUnavailable, fmt.Sprintf("settings were not applied: %v", err))
+			return
 		}
 	}
 
@@ -1390,6 +1395,14 @@ func (s *Server) handleToggleEgress(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.ToggleEgress(id, req.Active); err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
+	}
+	st := s.mgr.Status()
+	if st.State == proto.StateConnected || st.State == proto.StateConnecting {
+		if err := s.mgr.HotReload(r.Context()); err != nil {
+			_ = s.store.ToggleEgress(id, !req.Active)
+			writeError(w, http.StatusServiceUnavailable, fmt.Sprintf("egress was not applied: %v", err))
+			return
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

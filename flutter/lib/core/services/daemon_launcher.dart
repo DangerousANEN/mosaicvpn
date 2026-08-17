@@ -38,7 +38,9 @@ class DaemonLauncher {
   }) {
     final paths = <String>[];
     final configured = environment['MOSAIC_DAEMON_PATH'];
-    if (configured != null && configured.isNotEmpty && File(configured).isAbsolute) {
+    if (configured != null &&
+        configured.isNotEmpty &&
+        File(configured).isAbsolute) {
       paths.add(configured);
     }
 
@@ -60,6 +62,25 @@ class DaemonLauncher {
     return paths.toSet().toList(growable: false);
   }
 
+  /// Returns the portable data directory when this executable is a portable
+  /// package, or null for an installed/system client.
+  String? portableDataDirectory({
+    String? appExecutable,
+    Map<String, String>? environment,
+  }) {
+    final executable = appExecutable ?? Platform.resolvedExecutable;
+    final env = environment ?? Platform.environment;
+    final override = env['MOSAIC_DATA_DIR'];
+    if (override != null && override.isNotEmpty) return override;
+
+    final appDir = File(executable).parent;
+    final marker = File('${appDir.path}${Platform.pathSeparator}portable.mode');
+    if (marker.existsSync()) {
+      return '${appDir.path}${Platform.pathSeparator}data';
+    }
+    return null;
+  }
+
   /// Locates the `mosaicd` executable if present on disk.
   String? findDaemonExecutable() {
     for (final path in candidateExecutablePaths()) {
@@ -73,7 +94,8 @@ class DaemonLauncher {
   /// Attempts to launch `mosaicd` if it is not already running.
   ///
   /// Returns `true` if a daemon process is verified to be running after launch.
-  Future<bool> ensureDaemonRunning(Future<bool> Function() checkIsRunning) async {
+  Future<bool> ensureDaemonRunning(
+      Future<bool> Function() checkIsRunning) async {
     // 1. Check if daemon is already running
     if (await checkIsRunning()) {
       return true;
@@ -87,9 +109,12 @@ class DaemonLauncher {
 
     try {
       // 3. Start daemon process in detached mode
+      final portableData = portableDataDirectory();
       _spawnedProcess = await Process.start(
         exePath,
-        [],
+        [
+          if (portableData != null) ...['--data-dir', portableData]
+        ],
         mode: ProcessStartMode.detached,
       );
 

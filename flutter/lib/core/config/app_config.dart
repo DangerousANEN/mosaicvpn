@@ -22,7 +22,9 @@ class AppConfig {
   // ── Timeouts ──
   static const Duration connectTimeout = Duration(seconds: 5);
   static const Duration receiveTimeout = Duration(seconds: 8);
-  static const Duration healthCheckTimeout = Duration(seconds: 2);
+  // A live loopback daemon answers immediately; stale lockfiles should not
+  // block the first frame while the launcher searches fallback locations.
+  static const Duration healthCheckTimeout = Duration(milliseconds: 450);
 
   // ── Polling intervals ──
   static const Duration statusPollInterval = Duration(seconds: 2);
@@ -41,7 +43,7 @@ class AppConfig {
 
   // ── App metadata ──
   static const String appName = 'MosaicVPN';
-  static const String appVersion = '0.3.9';
+  static const String appVersion = '0.3.11';
   static const String appAuthor = 'MosaicVPN';
 
   // ── Supported protocols ──

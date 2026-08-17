@@ -9,9 +9,8 @@ import '../core/theme/atlas_theme.dart';
 import '../core/platform/app_platform.dart';
 import '../core/providers/vpn_providers.dart';
 import '../core/i18n/app_strings.dart';
-import '../core/models/models.dart';
+import '../core/services/desktop_instance_lock.dart';
 import '../core/services/tray_service.dart';
-import '../shared/widgets/atlas_widgets.dart';
 import '../shared/widgets/mosaic_tray_quick_panel.dart';
 import '../features/dashboard/connection_dashboard.dart';
 import '../features/connections/connections_screen.dart';
@@ -377,11 +376,6 @@ class _AppShellState extends ConsumerState<AppShell>
                         Expanded(
                           child: Column(
                             children: [
-                              _QuickStatusBar(
-                                currentIndex: activeIndex,
-                                onNavigate: (i) =>
-                                    setState(() => _currentIndex = i),
-                              ),
                               Expanded(
                                 child: _LazyTabStack(
                                   pages: pages,
@@ -396,10 +390,6 @@ class _AppShellState extends ConsumerState<AppShell>
                     )
                   : Column(
                       children: [
-                        _QuickStatusBar(
-                          currentIndex: activeIndex,
-                          onNavigate: (i) => setState(() => _currentIndex = i),
-                        ),
                         Expanded(
                           child: _LazyTabStack(
                             pages: pages,
@@ -551,6 +541,7 @@ class _AppShellState extends ConsumerState<AppShell>
     } finally {
       if (AppPlatform.isDesktop) {
         await TrayService.instance.dispose();
+        await DesktopInstanceLock.instance.release();
         await TrayService.instance.closeWindowWithoutIntercept();
       }
     }
@@ -735,256 +726,6 @@ class _SideIcon extends StatelessWidget {
             icon,
             size: 22,
             color: isSelected ? AtlasTheme.accent : c.textMuted,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Quick status bar at the top showing VPN status, kill switch toggle, and quick actions.
-class _QuickStatusBar extends ConsumerWidget {
-  final int currentIndex;
-  final ValueChanged<int> onNavigate;
-
-  const _QuickStatusBar({required this.currentIndex, required this.onNavigate});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final c = ThemeColors.of(context);
-    final statusAsync = ref.watch(vpnStatusProvider);
-
-    return Container(
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: c.bgCard,
-        border: Border(
-          bottom: BorderSide(color: c.border, width: 1),
-        ),
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          // On a 360px phone the status pill, kill switch, a labelled action
-          // button and the settings icon do not fit side by side -- the row
-          // overflowed by ~260px. Below this width the action button drops its
-          // text label and keeps the icon.
-          final compact = constraints.maxWidth < 480;
-
-          return Row(
-            children: [
-              // ── VPN Status indicator ──
-              Flexible(
-                child: statusAsync.when(
-                  data: (status) => _StatusPill(status: status),
-                  loading: () => const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  error: (_, __) =>
-                      Text('—', style: TextStyle(color: c.textMuted)),
-                ),
-              ),
-
-              const SizedBox(width: 16),
-
-              // ── Kill switch quick toggle (q2) ──
-              statusAsync.when(
-                data: (status) => _KillSwitchToggle(status: status),
-                loading: () => const SizedBox.shrink(),
-                error: (_, __) => const SizedBox.shrink(),
-              ),
-
-              const Spacer(),
-
-              // ── Quick disconnect/connect button ──
-              statusAsync.when(
-                data: (status) => status.state == 'connected'
-                    ? _QuickAction(
-                        icon: Icons.power_settings_new,
-                        label: 'Отключить',
-                        compact: compact,
-                        onPressed: () async {
-                          try {
-                            await ref.read(daemonApiProvider).disconnect();
-                          } catch (e) {
-                            debugPrint('disconnect failed: $e');
-                          }
-                          ref.invalidate(vpnStatusProvider);
-                        },
-                      )
-                    : status.state == 'disconnected'
-                        ? _QuickAction(
-                            icon: Icons.bolt,
-                            label: 'Подключиться',
-                            compact: compact,
-                            onPressed: () => onNavigate(0),
-                          )
-                        : const SizedBox.shrink(),
-                loading: () => const SizedBox.shrink(),
-                error: (_, __) => const SizedBox.shrink(),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-/// Quick-bar action that sheds its text label when horizontal space is tight.
-class _QuickAction extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool compact;
-  final VoidCallback onPressed;
-
-  const _QuickAction({
-    required this.icon,
-    required this.label,
-    required this.compact,
-    required this.onPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (compact) {
-      return IconButton(
-        icon: Icon(icon, size: 18),
-        tooltip: label,
-        onPressed: onPressed,
-        constraints: const BoxConstraints(),
-        padding: const EdgeInsets.all(8),
-      );
-    }
-    return TextButton.icon(
-      onPressed: onPressed,
-      icon: Icon(icon, size: 16),
-      label: Text(label),
-    );
-  }
-}
-
-/// Compact VPN status pill for the quick bar.
-class _StatusPill extends StatelessWidget {
-  final VpnStatus status;
-  const _StatusPill({required this.status});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = ThemeColors.of(context);
-    final isConnected = status.state == 'connected';
-    final isConnecting = status.state == 'connecting';
-    final color = isConnected
-        ? AtlasTheme.success
-        : isConnecting
-            ? AtlasTheme.warning
-            : c.textMuted;
-
-    final label = switch (status.state) {
-      'connected' => status.server != null
-          ? 'Подключено · ${status.server!.name}'
-          : 'Подключено',
-      'connecting' => 'Подключаемся…',
-      'disconnected' => 'Не подключено',
-      'error' => 'Ошибка',
-      _ => status.state,
-    };
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Pulsing indicator
-        StatusDot(color: color, size: isConnecting ? 8 : 7),
-        const SizedBox(width: 8),
-        Flexible(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontFamily: AtlasTheme.sansFamily,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: isConnected ? c.textPrimary : c.textMuted,
-            ),
-          ),
-        ),
-        if (isConnected && status.latencyMS > 0) ...[
-          const SizedBox(width: 6),
-          LatencyBadge(latencyMS: status.latencyMS),
-        ],
-      ],
-    );
-  }
-}
-
-/// Kill switch quick toggle for the quick bar (q2).
-class _KillSwitchToggle extends ConsumerStatefulWidget {
-  final VpnStatus status;
-  const _KillSwitchToggle({required this.status});
-
-  @override
-  ConsumerState<_KillSwitchToggle> createState() => _KillSwitchToggleState();
-}
-
-class _KillSwitchToggleState extends ConsumerState<_KillSwitchToggle> {
-  bool _loading = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = ThemeColors.of(context);
-    final ks = widget.status.killSwitch;
-    return Tooltip(
-      message: ks
-          ? 'Защита сети включена: трафик блокируется при разрыве VPN'
-          : 'Защита сети выключена: включите её, чтобы блокировать трафик при разрыве VPN',
-      child: InkWell(
-        onTap: _loading
-            ? null
-            : () async {
-                setState(() => _loading = true);
-                try {
-                  await ref
-                      .read(daemonApiProvider)
-                      .setPrefs({'kill_switch': !ks});
-                  ref.invalidate(vpnStatusProvider);
-                  ref.invalidate(prefsProvider);
-                } finally {
-                  if (mounted) setState(() => _loading = false);
-                }
-              },
-        borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: ks ? AtlasTheme.errorDim : c.bgHover,
-            borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
-            border: Border.all(
-              color: ks ? AtlasTheme.error.withValues(alpha: 0.3) : c.border,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                _loading
-                    ? Icons.hourglass_top
-                    : (ks ? Icons.shield : Icons.shield_outlined),
-                size: 14,
-                color: ks ? AtlasTheme.error : c.textMuted,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                'Защита',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  color: ks ? AtlasTheme.error : c.textMuted,
-                ),
-              ),
-            ],
           ),
         ),
       ),

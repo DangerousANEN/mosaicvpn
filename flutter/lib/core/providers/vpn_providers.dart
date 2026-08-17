@@ -27,6 +27,15 @@ List<String> _candidateLockfilePaths() {
 
   final candidates = <String>[];
 
+  // Portable packages keep all state beside the application. This candidate
+  // must come before user-level directories so two portable copies never share
+  // subscriptions or attach to each other's daemon.
+  final portableData = DaemonLauncher.instance.portableDataDirectory();
+  if (portableData != null && portableData.isNotEmpty) {
+    candidates.add('$portableData${Platform.pathSeparator}daemon.lock');
+    candidates.add('$portableData${Platform.pathSeparator}mosaicd.lock');
+  }
+
   // 1. Environment variable override (if set)
   final envDir = Platform.environment['MOSAIC_DATA_DIR'];
   if (envDir != null && envDir.isNotEmpty) {

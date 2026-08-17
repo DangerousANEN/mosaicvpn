@@ -46,13 +46,18 @@ cp -a "$BUNDLE/." "$STAGE_DIR/"
 install -m 0755 "$DAEMON_BINARY" "$STAGE_DIR/mosaicd"
 install -m 0755 "$SING_BOX_BINARY" "$STAGE_DIR/sing-box"
 if [[ -f "$CLI_BINARY" ]]; then install -m 0755 "$CLI_BINARY" "$STAGE_DIR/mosaic"; fi
+# The marker makes the Flutter shell and daemon agree that this is a portable
+# instance. All subscriptions, locks and logs then live under ./data.
+touch "$STAGE_DIR/portable.mode"
+mkdir -p "$STAGE_DIR/data"
 cat > "$STAGE_DIR/README.txt" <<EOF
 MosaicVPN $VERSION — Linux portable
 
 Start the client with: ./mosaicvpn
 
 Keep mosaicd and sing-box next to mosaicvpn. The client needs these native files
-for a complete local tunnel runtime. For system installation use the matching
+for a complete local tunnel runtime. Portable subscriptions and settings are stored
+under the data/ directory next to this README. For system installation use the matching
 MosaicVPN_${VERSION}_amd64.deb package.
 EOF
 python3 "$ROOT/scripts/make_linux_tar.py" "$STAGE_DIR" "$DIST_DIR/MosaicVPN-Portable-x86_64-v$VERSION.tar.gz"

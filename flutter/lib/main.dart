@@ -4,12 +4,21 @@ import 'package:window_manager/window_manager.dart';
 
 import 'app/app.dart';
 import 'core/platform/app_platform.dart';
+import 'core/services/desktop_instance_lock.dart';
 import 'core/services/tray_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   if (AppPlatform.isDesktop) {
+    final acquired = await DesktopInstanceLock.instance
+        .acquire(DesktopInstanceLock.defaultPath());
+    if (!acquired) {
+      // The first GUI instance remains responsible for the tray and daemon.
+      // Do not open a second window or attach a second UI process.
+      return;
+    }
+
     // Window manager setup for desktop platforms
     await windowManager.ensureInitialized();
     await windowManager.waitUntilReadyToShow(
