@@ -266,7 +266,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/anti-dpi", s.handleGetAntiDPI)
 	s.mux.HandleFunc("PUT /v1/anti-dpi", s.handleSetAntiDPI)
 
-	// Server group operations
+	// Local server and collection operations.
+	s.mux.HandleFunc("POST /v1/servers", s.handleAddLocalServer)
+	s.mux.HandleFunc("DELETE /v1/servers/{id}", s.handleDeleteLocalServer)
+	s.mux.HandleFunc("GET /v1/groups", s.handleListLocalGroups)
+	s.mux.HandleFunc("POST /v1/groups", s.handleCreateLocalGroup)
+	s.mux.HandleFunc("DELETE /v1/groups/{id}", s.handleDeleteLocalGroup)
 	s.mux.HandleFunc("POST /v1/servers/{id}/move", s.handleMoveServer)
 	s.mux.HandleFunc("POST /v1/servers/test-group", s.handleTestSpeedGroup)
 
@@ -1175,13 +1180,26 @@ func (s *Server) refresh(ctx context.Context, sub proto.Subscription) error {
 
 	manifest, finalServers := subs.ParseManifestOrSynthesize(manifestBytes, sub.ID, res.Servers)
 	// The account-owned Mosaic feed is the sole source of global smart routes.
-	// A manually imported profile may expose its own explicit groups, but must
-	// never overwrite the service manifest used by the primary dashboard.
+	// When its feed does not provide a separate manifest, build service groups
+	// from its private nodes. The client receives only group names/strategies;
+	// physical nodes remain filtered out by handleListServers.
+	if sub.ID == "mosaic-direct" && len(manifest.Groups) == 0 {
+		manifest = subs.SynthesizeManifest(sub.ID, res.Servers)
+		finalServers = append(
+			subs.BuildVirtualServersFromManifest(manifest, sub.ID),
+			res.Servers...,
+		)
+	}
 	if sub.ID == "mosaic-direct" {
+		if err := s.syncMosaicGroups(manifest); err != nil {
+			return fmt.Errorf("sync Mosaic groups: %w", err)
+		}
 		s.manifestMu.Lock()
 		s.activeManifest = &manifest
 		s.manifestMu.Unlock()
-		_ = s.store.SaveManifest(&manifest)
+		if err := s.store.SaveManifest(&manifest); err != nil {
+			return fmt.Errorf("save Mosaic manifest: %w", err)
+		}
 	}
 
 	sub.Format = res.Format
@@ -1192,6 +1210,22 @@ func (s *Server) refresh(ctx context.Context, sub proto.Subscription) error {
 		return err
 	}
 	return s.store.ReplaceServersFor(sub.ID, finalServers)
+}
+
+// syncMosaicGroups mirrors the public manifest into the resolver's local
+// group store. The node references stay daemon-side, while the UI sees the
+// manifest alone and connects using group_id rather than an endpoint.
+func (s *Server) syncMosaicGroups(manifest proto.SubscriptionManifest) error {
+	for _, manifestGroup := range manifest.Groups {
+		group := manifestGroup.ToServerGroup()
+		group.Source = proto.GroupSourcePool
+		group.Description = manifestGroup.Description
+		group.Icon = manifestGroup.Icon
+		if err := s.store.SaveGroup(group); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -1479,6 +1513,134 @@ func (s *Server) handleSetAntiDPI(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------- Server group handlers -----------------------------------------
+
+const localCollectionID = "local-default"
+
+func (s *Server) ensureLocalCollection() error {
+	for _, sub := range s.store.Snapshot().Subscriptions {
+		if sub.ID == localCollectionID {
+			return nil
+		}
+	}
+	_, err := s.store.AddOrUpdateSubscription(proto.Subscription{
+		ID:                     localCollectionID,
+		Name:                   "Локальные серверы",
+		URL:                    "local://manual",
+		Format:                 proto.FormatUnknown,
+		AutoRefresh:            false,
+		RefreshIntervalSeconds: 0,
+	})
+	return err
+}
+
+func (s *Server) handleListLocalGroups(w http.ResponseWriter, _ *http.Request) {
+	groups := make([]proto.ServerGroup, 0)
+	for _, group := range s.store.Groups() {
+		if group.Source == proto.GroupSourceUser {
+			groups = append(groups, group)
+		}
+	}
+	writeJSON(w, http.StatusOK, groups)
+}
+
+func (s *Server) handleCreateLocalGroup(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "group name required")
+		return
+	}
+	if len([]rune(name)) > 80 {
+		writeError(w, http.StatusBadRequest, "group name is too long")
+		return
+	}
+	if err := s.ensureLocalCollection(); err != nil {
+		writeError(w, http.StatusInternalServerError, "create local collection: "+err.Error())
+		return
+	}
+	group := proto.ServerGroup{
+		ID:          fmt.Sprintf("local-group-%d", time.Now().UnixNano()),
+		Title:       name,
+		Source:      proto.GroupSourceUser,
+		Strategy:    proto.GroupStrategyFallback,
+		Description: "Личный сборник серверов",
+		Icon:        "folder",
+		Nodes:       []proto.NodeRef{},
+	}
+	if err := s.store.SaveGroup(group); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, group)
+}
+
+func (s *Server) handleDeleteLocalGroup(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	group, ok := s.store.Group(id)
+	if !ok || group.Source != proto.GroupSourceUser {
+		writeError(w, http.StatusNotFound, "local group not found")
+		return
+	}
+	if err := s.store.DeleteGroup(id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAddLocalServer(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Server proto.Server `json:"server"`
+		RawURI string       `json:"raw_uri"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	server := req.Server
+	if req.RawURI != "" {
+		parsed, err := subs.Parse(server.SubscriptionID, []byte(req.RawURI))
+		if err != nil || len(parsed.Servers) == 0 {
+			writeError(w, http.StatusBadRequest, "could not parse server link")
+			return
+		}
+		server = parsed.Servers[0]
+		if req.Server.Name != "" {
+			server.Name = req.Server.Name
+		}
+		server.Tag = req.Server.Tag
+	}
+	if server.Address == "" || server.Port <= 0 || server.Protocol == "" {
+		writeError(w, http.StatusBadRequest, "server address, port and protocol are required")
+		return
+	}
+	if err := s.ensureLocalCollection(); err != nil {
+		writeError(w, http.StatusInternalServerError, "create local collection: "+err.Error())
+		return
+	}
+	server.ID = ""
+	server.SubscriptionID = localCollectionID
+	saved, err := s.store.AddLocalServer(server)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, saved)
+}
+
+func (s *Server) handleDeleteLocalServer(w http.ResponseWriter, r *http.Request) {
+	if err := s.store.DeleteServer(r.PathValue("id")); err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
 
 func (s *Server) handleMoveServer(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")

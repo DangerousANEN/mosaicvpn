@@ -332,9 +332,13 @@ func (s *Store) AddOrUpdateSubscription(sub proto.Subscription) (proto.Subscript
 			}
 		}
 		// New subscription — always append, even if URL duplicates an
-		// existing one.  The user may legitimately add the same feed twice
-		// under different names.
-		sub.ID = fmt.Sprintf("sub-%d", time.Now().UnixNano())
+		// existing one. The user may legitimately add the same feed twice.
+		// Keep a caller-provided ID for service-owned/local collections such
+		// as mosaic-direct and local-default; only anonymous additions receive
+		// a generated ID.
+		if sub.ID == "" {
+			sub.ID = fmt.Sprintf("sub-%d", time.Now().UnixNano())
+		}
 		st.Subscriptions = append(st.Subscriptions, sub)
 		saved = sub
 		return nil
@@ -482,16 +486,113 @@ func (s *Store) RecordServerProbe(id string, ms int, errMsg string) error {
 }
 
 // SetServerGroup assigns a server to a group (stored as Tag).
+// AddLocalServer saves a user-owned server in a local collection. Callers
+// may provide a GroupID through Server.Tag; all group memberships are updated
+// atomically with the server record.
+func (s *Store) AddLocalServer(server proto.Server) (proto.Server, error) {
+	var saved proto.Server
+	err := s.Update(func(st *State) error {
+		if server.ID == "" {
+			server.ID = fmt.Sprintf("local-%d", time.Now().UnixNano())
+		}
+		if server.SubscriptionID == "" {
+			server.SubscriptionID = "local-default"
+		}
+		if server.Name == "" {
+			server.Name = fmt.Sprintf("%s %s", server.Protocol, server.Address)
+		}
+		if server.Raw == nil {
+			server.Raw = map[string]any{}
+		}
+		for _, existing := range st.Servers {
+			if existing.ID == server.ID {
+				return fmt.Errorf("server %q already exists", server.ID)
+			}
+		}
+		st.Servers = append(st.Servers, server)
+		assignServerToGroup(st, server.ID, server.Tag)
+		saved = server
+		return nil
+	})
+	return saved, err
+}
+
+// DeleteServer removes one user-owned server and detaches it from any local
+// group. Provider pool nodes cannot be deleted through this local operation.
+func (s *Store) DeleteServer(id string) error {
+	return s.Update(func(st *State) error {
+		for i, server := range st.Servers {
+			if server.ID != id {
+				continue
+			}
+			if server.SubscriptionID == "mosaic-direct" {
+				return fmt.Errorf("service pool nodes cannot be removed")
+			}
+			st.Servers = append(st.Servers[:i], st.Servers[i+1:]...)
+			for gi := range st.Groups {
+				st.Groups[gi].Nodes = removeNodeRef(st.Groups[gi].Nodes, id)
+			}
+			return nil
+		}
+		return fmt.Errorf("server %q not found", id)
+	})
+}
+
 func (s *Store) SetServerGroup(id, groupID string) error {
 	return s.Update(func(st *State) error {
 		for i := range st.Servers {
 			if st.Servers[i].ID == id {
+				if st.Servers[i].SubscriptionID == "mosaic-direct" {
+					return fmt.Errorf("service pool nodes cannot be placed in local groups")
+				}
+				if groupID != "" {
+					found := false
+					for _, group := range st.Groups {
+						if group.ID == groupID && group.Source == proto.GroupSourceUser {
+							found = true
+							break
+						}
+					}
+					if !found {
+						return fmt.Errorf("local group %q not found", groupID)
+					}
+				}
 				st.Servers[i].Tag = groupID
+				assignServerToGroup(st, id, groupID)
 				return nil
 			}
 		}
 		return fmt.Errorf("server %q not found", id)
 	})
+}
+
+func assignServerToGroup(st *State, serverID, groupID string) {
+	for gi := range st.Groups {
+		st.Groups[gi].Nodes = removeNodeRef(st.Groups[gi].Nodes, serverID)
+	}
+	if groupID == "" {
+		return
+	}
+	for gi := range st.Groups {
+		if st.Groups[gi].ID == groupID {
+			st.Groups[gi].Nodes = append(st.Groups[gi].Nodes, proto.NodeRef{
+				ServerID: serverID,
+				Weight:   10,
+				Alive:    true,
+			})
+			return
+		}
+	}
+}
+
+func removeNodeRef(nodes []proto.NodeRef, serverID string) []proto.NodeRef {
+	out := nodes[:0]
+	for _, node := range nodes {
+		if node.ServerID != serverID {
+			out = append(out, node)
+		}
+	}
+	return out
 }
 
 // RecordServerGeo updates the geographic metadata of a server. Call

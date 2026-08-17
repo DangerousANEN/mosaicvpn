@@ -665,31 +665,46 @@ class DaemonApi implements DaemonApiBase {
     }
   }
 
-  // ─── Mock-only stubs (real daemon does not support these yet) ──────
+  // ─── Local servers and collections ─────────────────────────────────
 
   @override
-  Future<void> addServer(Server s) async =>
-      throw UnimplementedError('addServer not supported by real daemon');
+  Future<void> addServer(Server server) async {
+    await _dio.post('/v1/servers', data: {
+      'server': server.toJson(),
+      if (server.importUri.isNotEmpty) 'raw_uri': server.importUri,
+    });
+  }
 
   @override
-  Future<void> deleteServer(String id) async =>
-      throw UnimplementedError('deleteServer not supported by real daemon');
+  Future<void> deleteServer(String id) async {
+    await _dio.delete('/v1/servers/$id');
+  }
 
   @override
-  Future<List<ServerGroup>> listGroups() async =>
-      throw UnimplementedError('listGroups not supported by real daemon');
+  Future<List<ServerGroup>> listGroups() async {
+    final response = await _dio.get('/v1/groups');
+    return (response.data as List)
+        .map((item) => ServerGroup.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
 
   @override
-  Future<ServerGroup> createGroup(String name) async =>
-      throw UnimplementedError('createGroup not supported by real daemon');
+  Future<ServerGroup> createGroup(String name) async {
+    final response = await _dio.post('/v1/groups', data: {'name': name});
+    return ServerGroup.fromJson(response.data as Map<String, dynamic>);
+  }
 
   @override
-  Future<void> deleteGroup(String id) async =>
-      throw UnimplementedError('deleteGroup not supported by real daemon');
+  Future<void> deleteGroup(String id) async {
+    await _dio.delete('/v1/groups/$id');
+  }
 
   @override
-  Future<void> moveToGroup(String serverId, String groupId) async =>
-      throw UnimplementedError('moveToGroup not supported by real daemon');
+  Future<void> moveToGroup(String serverId, String groupId) async {
+    await _dio.post('/v1/servers/$serverId/move', data: {
+      'group_id': groupId == ServerGroup.ungroupedId ? '' : groupId,
+    });
+  }
 
   @override
   Future<SpeedTestResult> testSpeed(String serverID,

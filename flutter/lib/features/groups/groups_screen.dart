@@ -6,6 +6,7 @@ import '../../core/models/models.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/theme/atlas_theme.dart';
 import '../subscriptions/subscriptions_screen.dart';
+import '../servers/add_server_dialog.dart';
 
 /// Backward-compatible alias used by auxiliary route screens and tests. It is
 /// the Android-aware provider and never makes a daemon-only request on mobile.
@@ -66,6 +67,8 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     final subscriptions =
         ref.watch(subscriptionsProvider).valueOrNull ?? const <Subscription>[];
     final servers = ref.watch(serversProvider).valueOrNull ?? const <Server>[];
+    final localGroups = ref.watch(localServerGroupsProvider).valueOrNull ??
+        const <ServerGroup>[];
     final status = ref.watch(vpnStatusProvider).valueOrNull;
 
     if (manifestAsync.isLoading && subscriptions.isEmpty) {
@@ -85,6 +88,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       manifest: manifest,
       source: selectedSource,
       servers: servers,
+      localGroups: localGroups,
     )..sort(_compareRows);
 
     if (sources.isNotEmpty && selectedSource.id != _selectedSubscriptionId) {
@@ -220,6 +224,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     required ProviderManifest? manifest,
     required Subscription source,
     required List<Server> servers,
+    required List<ServerGroup> localGroups,
   }) {
     if (source.id == 'mosaic-direct') {
       return (manifest?.groups ?? const <ManifestGroup>[])
@@ -241,22 +246,40 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
 
     // The daemon API itself filters mosaic-direct physical nodes. This UI
     // applies the same rule as defence in depth for any future provider change.
-    return servers
-        .where((server) =>
-            server.subscriptionID == source.id &&
-            server.subscriptionID != 'mosaic-direct')
-        .map(
-          (server) => _RouteRow(
-            id: server.id,
-            type: server.protocol.displayName,
-            name: server.name.isEmpty ? 'Безымянный сервер' : server.name,
-            ping: server.hasLatency ? server.lastTestMS : null,
-            traffic: '—',
-            isGroup: false,
-            icon: Icons.dns_outlined,
+    final rows = <_RouteRow>[];
+    if (source.id == 'local-default') {
+      rows.addAll(
+        localGroups.map(
+          (group) => _RouteRow(
+            id: group.id,
+            type: 'Группа',
+            name: group.name.isEmpty ? 'Безымянный сборник' : group.name,
+            ping: null,
+            traffic: 'Авто',
+            isGroup: true,
+            icon: Icons.folder_copy_outlined,
           ),
-        )
-        .toList();
+        ),
+      );
+    }
+    rows.addAll(
+      servers
+          .where((server) =>
+              server.subscriptionID == source.id &&
+              server.subscriptionID != 'mosaic-direct')
+          .map(
+            (server) => _RouteRow(
+              id: server.id,
+              type: server.protocol.displayName,
+              name: server.name.isEmpty ? 'Безымянный сервер' : server.name,
+              ping: server.hasLatency ? server.lastTestMS : null,
+              traffic: '—',
+              isGroup: false,
+              icon: Icons.dns_outlined,
+            ),
+          ),
+    );
+    return rows;
   }
 
   int _compareRows(_RouteRow left, _RouteRow right) {
@@ -279,6 +302,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     ref.invalidate(mosaicManifestProvider);
     ref.invalidate(subscriptionsProvider);
     ref.invalidate(serversProvider);
+    ref.invalidate(localServerGroupsProvider);
     ref.invalidate(vpnStatusProvider);
     try {
       await ref.read(mosaicManifestProvider.future);
@@ -466,9 +490,174 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   }
 
   void _showAddSource() {
-    showDialog<void>(
+    showModalBottomSheet<void>(
       context: context,
-      builder: (_) => const AddSubscriptionFeedDialog(),
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.create_new_folder_outlined),
+              title: const Text('Создать локальный сборник'),
+              subtitle: const Text('Объединяйте добавленные вручную серверы'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                _createLocalGroup();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.add_to_queue_outlined),
+              title: const Text('Добавить профиль'),
+              subtitle: const Text('Вручную, из буфера обмена, QR или файла'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                _addLocalProfiles();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.link_outlined),
+              title: const Text('Добавить удалённую подписку'),
+              subtitle:
+                  const Text('Импортировать URL подписки совместимого сервиса'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                showDialog<void>(
+                  context: context,
+                  builder: (_) => const AddSubscriptionFeedDialog(),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _createLocalGroup() async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Новый локальный сборник'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 80,
+          decoration: const InputDecoration(
+            labelText: 'Название сборника',
+            hintText: 'Например, Работа или Личные серверы',
+          ),
+          onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+            child: const Text('Создать'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    final trimmed = name?.trim();
+    if (trimmed == null || trimmed.isEmpty) return;
+
+    try {
+      await ref.read(daemonApiProvider).createGroup(trimmed);
+      ref.invalidate(localServerGroupsProvider);
+      ref.invalidate(subscriptionsProvider);
+      if (mounted) {
+        _showMessage('Сборник «$trimmed» создан. Добавьте в него профиль.',
+            ThemeColors.of(context).success);
+      }
+    } catch (_) {
+      if (mounted) {
+        _showMessage('Не удалось создать локальный сборник.',
+            ThemeColors.of(context).danger);
+      }
+    }
+  }
+
+  Future<void> _addLocalProfiles() async {
+    final profiles = await showAddServerDialog(context);
+    if (profiles == null || profiles.isEmpty || !mounted) return;
+
+    final api = ref.read(daemonApiProvider);
+    List<ServerGroup> groups;
+    try {
+      groups = await api.listGroups();
+    } catch (_) {
+      groups = const <ServerGroup>[];
+    }
+    if (!mounted) return;
+    final targetGroupID = await _selectLocalGroup(groups);
+    if (!mounted || targetGroupID == null) return;
+
+    try {
+      for (final profile in profiles) {
+        await api.addServer(profile.copyWith(tag: targetGroupID));
+      }
+      ref.invalidate(subscriptionsProvider);
+      ref.invalidate(serversProvider);
+      ref.invalidate(localServerGroupsProvider);
+      if (mounted) {
+        _showMessage(
+          profiles.length == 1
+              ? 'Профиль добавлен.'
+              : 'Добавлено профилей: ${profiles.length}.',
+          ThemeColors.of(context).success,
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        _showMessage(
+            'Не удалось добавить профиль. Проверьте параметры и повторите попытку.',
+            ThemeColors.of(context).danger);
+      }
+    }
+  }
+
+  Future<String?> _selectLocalGroup(List<ServerGroup> groups) async {
+    var selected = '';
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Добавить в сборник'),
+          content: DropdownButtonFormField<String>(
+            initialValue: selected,
+            decoration: const InputDecoration(labelText: 'Сборник'),
+            items: [
+              const DropdownMenuItem(
+                value: '',
+                child: Text('Без группы — добавить как отдельный сервер'),
+              ),
+              ...groups.map(
+                (group) => DropdownMenuItem(
+                  value: group.id,
+                  child: Text(group.name),
+                ),
+              ),
+            ],
+            onChanged: (value) => setDialogState(() => selected = value ?? ''),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(selected),
+              child: const Text('Добавить'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

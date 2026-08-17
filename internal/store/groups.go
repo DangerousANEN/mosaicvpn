@@ -154,6 +154,13 @@ func (s *Store) DeleteGroup(id string) error {
 
 	for i := range s.state.Groups {
 		if s.state.Groups[i].ID == id {
+			if s.state.Groups[i].Source == proto.GroupSourceUser {
+				for si := range s.state.Servers {
+					if s.state.Servers[si].Tag == id {
+						s.state.Servers[si].Tag = ""
+					}
+				}
+			}
 			s.state.Groups = append(s.state.Groups[:i], s.state.Groups[i+1:]...)
 			return s.persistLocked()
 		}

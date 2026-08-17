@@ -258,6 +258,7 @@ class _AddServerDialogState extends State<_AddServerDialog> {
               address: parsed.address,
               port: parsed.port,
               groupId: ServerGroup.ungroupedId,
+              importUri: parsed.importUri,
             )
           ]);
         } else {

@@ -524,6 +524,14 @@ final serverGroupsProvider =
   return api.listGroups();
 });
 
+/// User-owned local collections. Official Mosaic pool groups are represented
+/// separately by the provider manifest and never expose their physical nodes.
+final localServerGroupsProvider =
+    FutureProvider.autoDispose<List<ServerGroup>>((ref) async {
+  final api = ref.watch(daemonApiProvider);
+  return api.listGroups();
+});
+
 /// Provider-owned smart groups are safe user-facing choices. Desktop obtains
 /// the manifest through its loopback daemon; Android reads the production
 /// capability manifest directly because no desktop daemon runs on the device.

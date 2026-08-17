@@ -26,6 +26,9 @@ class Server {
   final String lastTestError;
   final int? upSpeed; // bps
   final int? downSpeed; // bps
+  /// Original share URI for local imports. It lets the daemon parse and retain
+  /// credentials/transport parameters that do not fit the compact UI model.
+  final String importUri;
 
   Server({
     required this.id,
@@ -48,6 +51,7 @@ class Server {
     this.lastTestError = '',
     this.upSpeed,
     this.downSpeed,
+    this.importUri = '',
   });
 
   factory Server.fromJson(Map<String, dynamic> j) => Server(
@@ -62,7 +66,7 @@ class Server {
         lon: (j['lon'] ?? 0).toDouble(),
         tag: j['tag'] ?? '',
         subscriptionID: j['subscription_id'] ?? '',
-        groupId: j['group_id'] ?? '',
+        groupId: j['group_id'] ?? j['tag'] ?? '',
         isVirtualGroup: j['is_virtual_group'] ?? false,
         category: j['category'] ?? '',
         groupTag: j['group_tag'] ?? '',
@@ -71,6 +75,7 @@ class Server {
         lastTestError: j['last_test_error'] ?? '',
         upSpeed: j['up_speed'],
         downSpeed: j['down_speed'],
+        importUri: j['raw_uri'] ?? '',
       );
 
   /// Serialise to JSON — the inverse of [fromJson]. Used by the backup
@@ -96,6 +101,7 @@ class Server {
         'last_test_error': lastTestError,
         'up_speed': upSpeed,
         'down_speed': downSpeed,
+        if (importUri.isNotEmpty) 'raw_uri': importUri,
       };
 
   /// Copy with overrides — used for moves between groups and in-place edits.
@@ -116,6 +122,7 @@ class Server {
     String? lastTestError,
     int? upSpeed,
     int? downSpeed,
+    String? importUri,
   }) =>
       Server(
         id: id ?? this.id,
@@ -134,6 +141,7 @@ class Server {
         lastTestError: lastTestError ?? this.lastTestError,
         upSpeed: upSpeed ?? this.upSpeed,
         downSpeed: downSpeed ?? this.downSpeed,
+        importUri: importUri ?? this.importUri,
       );
 
   /// Parse a URI share-link into a [Server].
@@ -160,6 +168,7 @@ class Server {
           address: (json['add'] ?? '').toString(),
           port: int.tryParse((json['port'] ?? '0').toString()) ?? 0,
           groupId: ServerGroup.ungroupedId,
+          importUri: trimmed,
         );
       } catch (_) {
         return null;
@@ -197,6 +206,7 @@ class Server {
             port: int.tryParse(portStr) ?? 0,
             tag: ssMethod,
             groupId: ServerGroup.ungroupedId,
+            importUri: trimmed,
           );
         } catch (_) {
           return null;
@@ -223,6 +233,7 @@ class Server {
       address: host,
       port: port,
       groupId: ServerGroup.ungroupedId,
+      importUri: trimmed,
     );
   }
 

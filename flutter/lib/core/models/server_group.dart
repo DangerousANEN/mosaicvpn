@@ -25,7 +25,9 @@ class ServerGroup {
 
   factory ServerGroup.fromJson(Map<String, dynamic> j) => ServerGroup(
         id: j['id'] ?? '',
-        name: j['name'] ?? '',
+        // Go daemon groups expose the display label as `title`; retain `name`
+        // for compatibility with mock and legacy exports.
+        name: j['title'] ?? j['name'] ?? '',
         sortOrder: j['sort_order'] ?? 0,
         isDefault: j['is_default'] ?? false,
       );
