@@ -72,6 +72,13 @@ type ProxyListener interface {
 	Proxies() (socks, http string)
 }
 
+// RuntimeHealthBackend is implemented by engines that can detect a child
+// runtime exit after a successful Start. It is intentionally optional so mock
+// and embedded backends keep the existing contract.
+type RuntimeHealthBackend interface {
+	RuntimeHealth() error
+}
+
 // Manager owns the connection state and is safe for concurrent use.
 type Manager struct {
 	mu      sync.Mutex
@@ -212,7 +219,50 @@ func (m *Manager) Connect(ctx context.Context, serverID string) error {
 	if err := m.store.SetLastServer(serverID); err != nil {
 		logx.Warn("could not persist last server", "err", err)
 	}
+	m.watchRuntime(cctx, server)
 	return nil
+}
+
+// watchRuntime changes the visible session to error only when a backend that
+// opted into RuntimeHealth reports an unexpected failure. Its context is
+// cancelled by Disconnect, so an old connection can never overwrite a newer
+// connection's state.
+func (m *Manager) watchRuntime(ctx context.Context, server proto.Server) {
+	health, ok := m.backend.(RuntimeHealthBackend)
+	if !ok {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				err := health.RuntimeHealth()
+				if err == nil {
+					continue
+				}
+				m.mu.Lock()
+				if ctx.Err() == nil && m.st.State == proto.StateConnected &&
+					m.st.Server != nil && m.st.Server.ID == server.ID {
+					m.transitionLocked(proto.Status{
+						State:         proto.StateError,
+						LastError:     err.Error(),
+						Server:        &server,
+						Since:         time.Now().UTC(),
+						TunnelMode:    m.st.TunnelMode,
+						KillSwitch:    m.st.KillSwitch,
+						DaemonVersion: m.st.DaemonVersion,
+						DaemonPID:     m.st.DaemonPID,
+					})
+				}
+				m.mu.Unlock()
+				return
+			}
+		}
+	}()
 }
 
 // Disconnect stops the backend and returns to disconnected state.

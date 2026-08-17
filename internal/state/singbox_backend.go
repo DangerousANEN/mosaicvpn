@@ -47,6 +47,7 @@ type SingBoxBackend struct {
 	http        string
 	clashApi    string // loopback address of the clash-api (e.g. "127.0.0.1:9090")
 	clashSecret string
+	lastExitErr string
 	bytesIn     atomic.Uint64
 	bytesOut    atomic.Uint64
 	latencyMS   atomic.Int32
@@ -97,6 +98,32 @@ func (b *SingBoxBackend) Proxies() (string, string) {
 // Stats implements Backend.
 func (b *SingBoxBackend) Stats() (uint64, uint64, int) {
 	return b.bytesIn.Load(), b.bytesOut.Load(), int(b.latencyMS.Load())
+}
+
+// RuntimeHealth reports whether the sing-box child remains alive after Start.
+// It deliberately reports only process lifecycle; endpoint reachability stays a
+// client-side concern and is never used as a false tunnel-success signal.
+func (b *SingBoxBackend) RuntimeHealth() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.cmd == nil {
+		if b.lastExitErr != "" {
+			return errors.New(b.lastExitErr)
+		}
+		return errors.New("sing-box process is not running")
+	}
+	if b.doneCh == nil {
+		return errors.New("sing-box process lifecycle is unavailable")
+	}
+	select {
+	case <-b.doneCh:
+		if b.lastExitErr != "" {
+			return errors.New(b.lastExitErr)
+		}
+		return errors.New("sing-box process exited")
+	default:
+		return nil
+	}
 }
 
 // preferredListenerPort obtains a valid requested port from a persisted
@@ -202,6 +229,7 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, prefs s
 	b.cmd = cmd
 	b.cancel = cancel
 	b.doneCh = make(chan struct{})
+	b.lastExitErr = ""
 	b.socks = fmt.Sprintf("127.0.0.1:%d", socksPort)
 	b.http = fmt.Sprintf("127.0.0.1:%d", httpPort)
 	b.clashApi = fmt.Sprintf("127.0.0.1:%d", clashPort)
@@ -224,7 +252,21 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, prefs s
 		if errLog != nil {
 			_ = errLog.Close()
 		}
-		if err != nil && cctx.Err() == nil {
+		unexpected := err != nil && cctx.Err() == nil
+		b.mu.Lock()
+		if b.cmd == cmd {
+			if unexpected {
+				b.lastExitErr = fmt.Sprintf("sing-box exited unexpectedly: %v", err)
+			}
+			b.cmd = nil
+			b.cancel = nil
+			b.socks = ""
+			b.http = ""
+			b.clashApi = ""
+			b.clashSecret = ""
+		}
+		b.mu.Unlock()
+		if unexpected {
 			logx.Warn("sing-box exited", "err", err)
 		}
 		close(doneCh)

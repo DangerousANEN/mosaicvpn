@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -46,6 +48,29 @@ class AndroidVpnService {
       'config': singBoxConfig,
     });
     return AndroidVpnRuntimeState.fromMap(raw ?? const {});
+  }
+
+  /// Validates the config, starts the service and waits for its first terminal
+  /// runtime state. Native Android service startup is asynchronous, so callers
+  /// must not treat the initial `connecting` reply as a ready tunnel.
+  Future<AndroidVpnRuntimeState> startAndAwaitReady(
+    String singBoxConfig, {
+    Duration timeout = const Duration(seconds: 12),
+  }) async {
+    await validateConfig(singBoxConfig);
+    var state = await start(singBoxConfig);
+    final deadline = DateTime.now().add(timeout);
+    while (state.isBusy && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 180));
+      state = await status();
+    }
+    if (state.isBusy) {
+      return const AndroidVpnRuntimeState(
+        state: 'error',
+        error: 'Android VPN runtime не подтвердил запуск за отведённое время.',
+      );
+    }
+    return state;
   }
 
   Future<AndroidVpnRuntimeState> stop() async {

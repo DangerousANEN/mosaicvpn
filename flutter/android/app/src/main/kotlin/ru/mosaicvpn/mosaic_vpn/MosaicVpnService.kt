@@ -59,6 +59,8 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         )
 
         fun start(context: Context, config: String) {
+            runtimeState = "connecting"
+            runtimeError = null
             val intent = Intent(context, MosaicVpnService::class.java)
                 .setAction(ACTION_START)
                 .putExtra(EXTRA_CONFIG, config)
@@ -113,6 +115,8 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                     stopRuntime()
                 } else {
                     activeConfig = config
+                    runtimeState = "connecting"
+                    runtimeError = null
                     startForeground(NOTIFICATION_ID, makeNotification("Подключение…"))
                     Thread({ startOrReloadRuntime(config) }, "MosaicVpnRuntime").start()
                 }
@@ -152,11 +156,11 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         } catch (error: Exception) {
             Log.e(TAG, "Unable to start sing-box runtime", error)
             publishError(error.message ?: "Unable to start VPN runtime")
-            stopRuntime()
+            stopRuntime(preserveError = true)
         }
     }
 
-    private fun stopRuntime(releaseService: Boolean = true) {
+    private fun stopRuntime(releaseService: Boolean = true, preserveError: Boolean = false) {
         if (shuttingDown) return
         shuttingDown = true
         try {
@@ -171,7 +175,10 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             } catch (_: Exception) {
             }
             tunDescriptor = null
-            runtimeState = "disconnected"
+            if (!preserveError) {
+                runtimeState = "disconnected"
+                runtimeError = null
+            }
             stopForeground(STOP_FOREGROUND_REMOVE)
             if (releaseService) stopSelf()
             shuttingDown = false

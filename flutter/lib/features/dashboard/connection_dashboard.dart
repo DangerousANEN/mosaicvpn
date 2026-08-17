@@ -317,9 +317,9 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
       ref.invalidate(vpnStatusProvider);
     } catch (error) {
       if (mounted) {
+        final detail = _connectionErrorDetail(error);
         _notice(
-          '${AppStrings.of(context).t('connection_failed')} '
-          '${AppStrings.of(context).t('connection_try_other_route')}',
+          '${AppStrings.of(context).t('connection_failed')} $detail',
           error: true,
         );
       }
@@ -348,10 +348,24 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
         : AndroidMosaicAccountService.buildNativeTunConfigFromShareUri(
             selected.importUri,
           );
-    final state = await AndroidVpnService.instance.start(config);
-    if (state.state == 'error') {
+    final state = await AndroidVpnService.instance.startAndAwaitReady(config);
+    if (!state.isConnected) {
       throw StateError(state.error ?? 'Нативный VPN runtime не запустился.');
     }
+  }
+
+  String _connectionErrorDetail(Object error) {
+    if (error is StateError && error.message.isNotEmpty) {
+      return error.message;
+    }
+    final raw = error.toString();
+    if (raw.contains('permission_required') || raw.contains('разрешение VPN')) {
+      return 'Разрешите создание VPN-подключения в Android и повторите попытку.';
+    }
+    if (raw.contains('sing-box') || raw.contains('runtime')) {
+      return 'Нативный VPN runtime не подтвердил запуск. Откройте журнал подключения и повторите попытку.';
+    }
+    return AppStrings.of(context).t('connection_try_other_route');
   }
 
   Future<void> _pickGroup(BuildContext context, List<_RouteChoice> groups,

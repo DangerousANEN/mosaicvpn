@@ -9,6 +9,7 @@ import '../../core/services/smart_group_selector.dart';
 import '../../core/theme/atlas_theme.dart';
 import '../subscriptions/subscriptions_screen.dart';
 import '../servers/add_server_dialog.dart';
+import 'subscription_cabinet_screen.dart';
 
 /// Backward-compatible alias used by auxiliary route screens and tests. It is
 /// the Android-aware provider and never makes a daemon-only request on mobile.
@@ -154,6 +155,15 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                       _SourceSummary(
                         source: selectedSource,
                         isMosaic: selectedSource.isProviderSource,
+                        onOpenCabinet: selectedSource.isProviderSource &&
+                                selectedSource.providerId == 'mosaicvpn'
+                            ? () => Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => SubscriptionCabinetScreen(
+                                        subscription: selectedSource),
+                                  ),
+                                )
+                            : null,
                       ),
                       const SizedBox(height: 14),
                       if (manifestAsync.hasError &&
@@ -539,7 +549,8 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       await ref.read(daemonApiProvider).testServer(row.id);
       ref.invalidate(serversProvider);
       if (!mounted) return;
-      _showMessage('Проверка маршрута завершена.', ThemeColors.of(context).success);
+      _showMessage(
+          'Проверка маршрута завершена.', ThemeColors.of(context).success);
     } catch (_) {
       if (!mounted) return;
       _showMessage(
@@ -561,7 +572,8 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
           context: context,
           builder: (dialogContext) => AlertDialog(
             title: const Text('Удалить сервер?'),
-            content: Text('«${row.name}» будет удалён только с этого устройства.'),
+            content:
+                Text('«${row.name}» будет удалён только с этого устройства.'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -585,7 +597,8 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       _showMessage('Сервер удалён.', ThemeColors.of(context).success);
     } catch (_) {
       if (!mounted) return;
-      _showMessage('Не удалось удалить сервер.', ThemeColors.of(context).danger);
+      _showMessage(
+          'Не удалось удалить сервер.', ThemeColors.of(context).danger);
     }
   }
 
@@ -1121,10 +1134,15 @@ class _SourceTab extends StatelessWidget {
 }
 
 class _SourceSummary extends StatelessWidget {
-  const _SourceSummary({required this.source, required this.isMosaic});
+  const _SourceSummary({
+    required this.source,
+    required this.isMosaic,
+    this.onOpenCabinet,
+  });
 
   final Subscription source;
   final bool isMosaic;
+  final VoidCallback? onOpenCabinet;
 
   @override
   Widget build(BuildContext context) {
@@ -1172,6 +1190,15 @@ class _SourceSummary extends StatelessWidget {
               ],
             ),
           ),
+          if (onOpenCabinet != null) ...[
+            const SizedBox(width: 8),
+            IconButton(
+              tooltip: 'Открыть кабинет подписки',
+              onPressed: onOpenCabinet,
+              icon: const Icon(Icons.account_balance_wallet_outlined),
+              color: AtlasTheme.accent,
+            ),
+          ],
         ],
       ),
     );
@@ -1502,7 +1529,8 @@ class _MobileRouteList extends StatelessWidget {
           final connected = activeId == row.id || activeId == 'group:${row.id}';
           final connecting = connectingId == row.id;
           return ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
             enabled: !row.disabled && !connecting,
             leading: Icon(row.icon,
                 color: row.disabled ? colors.textMuted : colors.textSecondary),

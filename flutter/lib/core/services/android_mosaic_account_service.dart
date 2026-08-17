@@ -561,6 +561,35 @@ class AndroidMosaicAccountService {
           };
         }
         return outbound;
+      case 'shadowsocks':
+      case 'ss':
+        var credentials = _decodeShadowsocksCredentials(uri.userInfo);
+        var server = uri.host;
+        var port = uri.hasPort ? uri.port : 8388;
+        // Legacy subscriptions encode `method:password@host:port` as the
+        // complete URI payload. SIP002 uses the modern userinfo form above.
+        if (credentials == null || server.isEmpty) {
+          final legacy = _decodeLegacyShadowsocksUri(raw);
+          if (legacy != null) {
+            credentials = (legacy.$1, legacy.$2);
+            server = legacy.$3;
+            port = legacy.$4;
+          }
+        }
+        if (credentials == null || server.isEmpty) {
+          throw const FormatException(
+              'Shadowsocks ссылка не содержит метод, пароль или адрес.');
+        }
+        return {
+          'type': 'shadowsocks',
+          'tag': tag,
+          'server': server,
+          'server_port': port,
+          'method': credentials.$1,
+          'password': credentials.$2,
+        };
+      case 'vmess':
+        return _vmessOutbound(raw, tag);
       case 'trojan':
         if (uri.userInfo.isEmpty || uri.host.isEmpty) {
           throw const FormatException(
@@ -581,6 +610,106 @@ class AndroidMosaicAccountService {
         throw FormatException(
             'Протокол ${uri.scheme.toUpperCase()} пока не поддержан Android direct runtime.');
     }
+  }
+
+  static (String, String)? _decodeShadowsocksCredentials(String value) {
+    if (value.isEmpty) return null;
+    var decoded = value;
+    if (!decoded.contains(':')) {
+      try {
+        decoded = utf8.decode(base64Url.decode(base64Url.normalize(decoded)));
+      } on FormatException {
+        return null;
+      }
+    }
+    final separator = decoded.indexOf(':');
+    if (separator <= 0 || separator == decoded.length - 1) return null;
+    return (decoded.substring(0, separator), decoded.substring(separator + 1));
+  }
+
+  static (String, String, String, int)? _decodeLegacyShadowsocksUri(
+      String raw) {
+    final payload = raw.trim().substring('ss://'.length).split('#').first;
+    try {
+      final decoded =
+          utf8.decode(base64Url.decode(base64Url.normalize(payload)));
+      final separator = decoded.lastIndexOf('@');
+      if (separator <= 0 || separator == decoded.length - 1) return null;
+      final credentials =
+          _decodeShadowsocksCredentials(decoded.substring(0, separator));
+      final endpoint = Uri.tryParse('ss://${decoded.substring(separator + 1)}');
+      if (credentials == null || endpoint == null || endpoint.host.isEmpty) {
+        return null;
+      }
+      return (
+        credentials.$1,
+        credentials.$2,
+        endpoint.host,
+        endpoint.hasPort ? endpoint.port : 8388,
+      );
+    } on FormatException {
+      return null;
+    }
+  }
+
+  static Map<String, dynamic> _vmessOutbound(String raw, String fallbackTag) {
+    final payload = raw.trim().substring('vmess://'.length);
+    Map<String, dynamic> source;
+    try {
+      final decoded =
+          utf8.decode(base64Url.decode(base64Url.normalize(payload)));
+      final json = jsonDecode(decoded);
+      if (json is! Map) throw const FormatException('VMess JSON is invalid.');
+      source = Map<String, dynamic>.from(json);
+    } on FormatException {
+      throw const FormatException(
+          'VMess ссылка содержит некорректную конфигурацию.');
+    }
+    final server = source['add']?.toString() ?? '';
+    final uuid = source['id']?.toString() ?? '';
+    if (server.isEmpty || uuid.isEmpty) {
+      throw const FormatException('VMess ссылка не содержит адрес или UUID.');
+    }
+    final port = int.tryParse(source['port']?.toString() ?? '') ?? 443;
+    final tag = source['ps']?.toString().trim();
+    final outbound = <String, dynamic>{
+      'type': 'vmess',
+      'tag': tag == null || tag.isEmpty ? fallbackTag : tag,
+      'server': server,
+      'server_port': port,
+      'uuid': uuid,
+      if (int.tryParse(source['aid']?.toString() ?? '') case final alterId?)
+        'alter_id': alterId,
+      if ((source['scy']?.toString() ?? '').isNotEmpty)
+        'security': source['scy'].toString(),
+    };
+    final tlsEnabled = source['tls']?.toString() == 'tls';
+    if (tlsEnabled || (source['sni']?.toString() ?? '').isNotEmpty) {
+      outbound['tls'] = {
+        'enabled': true,
+        if ((source['sni']?.toString() ?? '').isNotEmpty)
+          'server_name': source['sni'].toString(),
+        if ((source['fp']?.toString() ?? '').isNotEmpty)
+          'utls': {'enabled': true, 'fingerprint': source['fp'].toString()},
+      };
+    }
+    final network = source['net']?.toString() ?? 'tcp';
+    if (network == 'ws') {
+      outbound['transport'] = {
+        'type': 'ws',
+        if ((source['path']?.toString() ?? '').isNotEmpty)
+          'path': source['path'].toString(),
+        if ((source['host']?.toString() ?? '').isNotEmpty)
+          'headers': {'Host': source['host'].toString()},
+      };
+    } else if (network == 'grpc') {
+      outbound['transport'] = {
+        'type': 'grpc',
+        if ((source['path']?.toString() ?? '').isNotEmpty)
+          'service_name': source['path'].toString(),
+      };
+    }
+    return outbound;
   }
 
   static String _buildTunConfig(List<Map<String, dynamic>> outbounds,
@@ -620,11 +749,33 @@ class AndroidMosaicAccountService {
       },
       {'type': 'direct', 'tag': 'direct'},
     ];
+    // A TUN config needs an explicit resolver and DNS hijack. Without this,
+    // Android may send domain lookups to an outbound that does not carry UDP,
+    // leaving otherwise valid server connections apparently frozen.
+    const dnsTag = 'mosaic-doh-bootstrap';
+    config['dns'] = {
+      'servers': [
+        {
+          'type': 'https',
+          'tag': dnsTag,
+          'server': '1.1.1.1',
+          'server_port': 443,
+          'path': '/dns-query',
+        },
+      ],
+      'final': dnsTag,
+    };
     final existingRoute = config['route'];
     final route = existingRoute is Map
         ? Map<String, dynamic>.from(existingRoute)
         : <String, dynamic>{};
+    final existingRules = route['rules'];
+    route['rules'] = [
+      {'protocol': 'dns', 'action': 'hijack-dns'},
+      if (existingRules is List) ...existingRules,
+    ];
     route['auto_detect_interface'] = true;
+    route['default_domain_resolver'] = dnsTag;
     route['final'] = routeTag;
     config['route'] = route;
     return jsonEncode(config);

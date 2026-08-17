@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -34,6 +35,24 @@ func newSetup(t *testing.T) (*store.Store, *state.MockBackend, *state.Manager, p
 	mb := state.NewMockBackend()
 	mgr := state.New(s, mb, "test")
 	return s, mb, mgr, srv
+}
+
+type healthBackend struct {
+	*state.MockBackend
+	mu  sync.Mutex
+	err error
+}
+
+func (b *healthBackend) RuntimeHealth() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.err
+}
+
+func (b *healthBackend) SetHealthError(err error) {
+	b.mu.Lock()
+	b.err = err
+	b.mu.Unlock()
 }
 
 func TestInitialState(t *testing.T) {
@@ -122,6 +141,30 @@ func TestSubscribeReceivesEvents(t *testing.T) {
 			}
 		case <-deadline:
 			t.Fatalf("did not see connecting+connected events; got %+v", want)
+		}
+	}
+}
+
+func TestRuntimeHealthFailureTransitionsConnectedToError(t *testing.T) {
+	s, _, _, srv := newSetup(t)
+	backend := &healthBackend{MockBackend: state.NewMockBackend()}
+	mgr := state.New(s, backend, "test")
+	if err := mgr.Connect(context.Background(), srv.ID); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	backend.SetHealthError(errors.New("sing-box exited unexpectedly"))
+	deadline := time.After(3 * time.Second)
+	for {
+		if st := mgr.Status(); st.State == proto.StateError {
+			if st.LastError == "" {
+				t.Fatal("expected health error detail")
+			}
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("expected runtime health failure to reach error, got %+v", mgr.Status())
+		case <-time.After(20 * time.Millisecond):
 		}
 	}
 }
