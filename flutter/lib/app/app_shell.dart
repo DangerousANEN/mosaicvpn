@@ -11,6 +11,7 @@ import '../core/providers/vpn_providers.dart';
 import '../core/i18n/app_strings.dart';
 import '../core/services/desktop_instance_lock.dart';
 import '../core/services/tray_service.dart';
+import '../core/services/smart_group_selector.dart';
 import '../shared/widgets/mosaic_tray_quick_panel.dart';
 import '../features/dashboard/connection_dashboard.dart';
 import '../features/connections/connections_screen.dart';
@@ -44,6 +45,7 @@ class _AppShellState extends ConsumerState<AppShell>
   bool _autoConnectTriggered = false;
   bool _quitting = false;
   bool _trayQuickPanelVisible = false;
+  final SmartGroupSelector _smartGroupSelector = SmartGroupSelector();
 
   // Only build a tab after the user opens it. This prevents hidden technical
   // screens from starting network polls or timers on first launch, while the
@@ -481,8 +483,10 @@ class _AppShellState extends ConsumerState<AppShell>
       if (status.state == 'connected' || status.state == 'connecting') return;
 
       final manifest = await api.getProviderManifest();
-      if (manifest.groups.isNotEmpty) {
-        await api.connectGroup(manifest.groups.first.id);
+      final firstEnabledGroup =
+          manifest.groups.where((group) => !group.disabled);
+      if (firstEnabledGroup.isNotEmpty) {
+        await _smartGroupSelector.connect(api, firstEnabledGroup.first);
       } else {
         final servers = await api.listServers();
         if (servers.isEmpty) {

@@ -255,10 +255,17 @@ class AndroidMosaicAccountService {
       return memberships is Set<String> && memberships.contains(groupId);
     }
 
-    var selected = candidates.where(matchesGroup).toList();
-    // A group is a preference, not a dead end: if its pool is temporarily
-    // empty, retain reachability through the full authenticated pool.
-    if (selected.isEmpty) selected = candidates;
+    final selected = candidates.where(matchesGroup).toList();
+    // A selected Smart Group is provider policy, not a best-effort client hint.
+    // Never fall back to the complete private pool: the server must include
+    // generic membership metadata for the requested group.
+    if (selected.isEmpty) {
+      if (groupId != null && groupId.isNotEmpty) {
+        throw StateError(
+            'Профиль не содержит серверных данных для выбранного маршрута. Обновите подписку.');
+      }
+      throw const FormatException('Direct configuration has no usable routes.');
+    }
     final tags = <String>[];
     final cleanOutbounds = <Map<String, dynamic>>[];
     for (final outbound in selected) {
