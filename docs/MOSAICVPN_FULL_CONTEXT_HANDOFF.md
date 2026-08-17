@@ -237,9 +237,9 @@ Exact VPS IP, SSH key path, access usernames and production credentials are inte
 
 The current Flutter source was validated with Flutter stable 3.47.0 and Dart 3.13.0. `flutter analyze` passes without issues and the Flutter test suite passes. The Go backend passes `go test ./...`.
 
-A Linux x64 release bundle was built and packaged. Android release APK and AAB were built and checksummed using a temporary local validation keystore. These Android files prove that the packaging pipeline works, but they are not signed with the production owner key and must not be presented as the final store release.
+A tag-triggered GitHub Actions release run for `v0.3.12-validation` completed successfully. Hosted CI produced Windows Setup and portable ZIP, Linux portable TAR.GZ and DEB, and an Android APK after restoring the protected signing identity from GitHub Actions secrets. The release is intentionally marked prerelease because physical device smoke tests, direct tunnel verification and final product sign-off are still required. A local Android AAB was also built with a temporary validation keystore for packaging verification only; it is not the production store artifact.
 
-Windows release build was not executed because Flutter Windows desktop builds require a Windows host with the Windows desktop toolchain. Existing GitHub assets under the historical `v0.3.11` release are older release artifacts and must not automatically be relabeled as the new Smart Group/speed-probe build.
+The GitHub prerelease is available at `https://github.com/DangerousANEN/mosaicvpn/releases/tag/v0.3.12-validation`. Existing asset filenames generated from the current Flutter version metadata may still contain `v0.3.11`; the release tag and release notes are the authoritative validation label.
 
 Release gates still required before calling the ecosystem production-ready:
 
@@ -268,21 +268,21 @@ The application should feel like a cohesive Mosaic product across Windows, Linux
 
 ## 16. Immediate backlog for the next agent
 
-1. Publish only clearly labelled validation artifacts until Windows build and production Android signing are complete.
-2. Run the Windows build on a Windows host and produce installer plus portable archive using the same version metadata.
-3. Install Android APK on a physical test device and verify VPN permission, tunnel establishment, direct routing, disconnect and recovery.
-4. Replace the temporary Android validation key with the protected production signing configuration.
-5. Update site download cards only after the matching release assets exist; remove stale version labels and dead links.
-6. Confirm the real VPS deployment path and deploy site/bot changes with backup and rollback.
-7. Run bot and backend integration tests against non-production or explicitly approved test accounts.
-8. Add automated CI for Flutter analyze, Flutter tests, Go tests, Linux build and Windows/Android builds.
-9. Keep `Free LTE` disabled until an authorized source and review exist.
-10. Preserve the direct client-to-node architecture and never route user traffic through the MosaicVPN VPS.
+1. Keep `v0.3.12-validation` marked prerelease until Windows and Android physical smoke tests are completed.
+2. Align Flutter version metadata and asset filenames before creating the final production tag.
+3. Install the CI-built Android APK on a physical Android device and verify VPN permission, tunnel establishment, direct routing, disconnect and recovery.
+4. Verify Windows Setup and portable builds on a real Windows installation, including tray, single-instance, data paths and shutdown.
+5. Deploy the updated site cards to the VPS static directory with backup and rollback, then verify every public URL.
+6. Run bot and backend integration tests against non-production or explicitly approved test accounts.
+7. Add automated CI for Flutter analyze, Flutter tests, Go tests and physical-device smoke-test reporting where available.
+8. Keep `Free LTE` disabled until an authorized source and review exist.
+9. Preserve the direct client-to-node architecture and never route user traffic through the MosaicVPN VPS.
+10. Promote to a final production tag only after signing, device tests, payment checks, site checks and rollback checks pass.
 
 ---
 
 ## 17. Safe operating rules
 
-Never commit or publish credentials. Never paste production tokens into logs, README files, issues, releases or client bundles. Never claim a validation-signed APK is a production release. Never expose pool node lists to users. Never add hidden whitelist-bypass discovery logic under the Free LTE placeholder. Always create a backup before changing VPS site files, bot code, database schemas or payment callbacks. Always test rollback and verify health after deployment.
+Never commit or publish credentials. Never paste production tokens into logs, README files, issues, releases or client bundles. Never claim a prerelease validation build is production-ready; the CI Android APK is signed by the protected release identity but remains prerelease until physical tunnel checks and owner sign-off are complete. Never expose pool node lists to users. Never add hidden whitelist-bypass discovery logic under the Free LTE placeholder. Always create a backup before changing VPS site files, bot code, database schemas or payment callbacks. Always test rollback and verify health after deployment.
 
 > The correct definition of “done” for MosaicVPN is not merely a successful compile. It is a verified, signed, platform-specific client that connects through the intended direct route, uses the shared account model, renders server-defined Smart Groups correctly, survives node failure, does not overload the VPS and has a reproducible rollback path.
