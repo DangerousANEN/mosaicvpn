@@ -44,6 +44,12 @@ _ns = {
     "LAVA_WEBHOOK_BOT_PATH": "/api/billing/lava/webhook/bot",
 }
 exec(compile(_helpers, BOT_PY, "exec"), _ns)
+# The real endpoint resolves the user's opaque feed identifier and mints a web
+# session after burning the one-time code. Keep those dependencies explicit in
+# this isolated HTTP contract test rather than silently omitting the new flow.
+_ns["get_user"] = lambda telegram_id: {"short_uuid": f"feed-{telegram_id}"}
+_ns["create_web_session"] = lambda telegram_id, username: (
+    f"web-session-{telegram_id}", "2099-01-01T00:00:00+00:00")
 exec(compile(_handler_src + "        pass\n", BOT_PY, "exec"), _ns)
 
 issue_link_code = _ns["issue_link_code"]
@@ -124,10 +130,14 @@ class BotEndpointContractTest(unittest.TestCase):
         code, _ = issue_link_code(4242, "nikita", "tok-xyz")
         status, body = self._post({"code": code})
         self.assertEqual(status, 200)
-        # BotLinkVerifier unmarshals exactly these JSON keys.
+        # Android reads an account session plus the opaque personal feed token.
+        # A response that omits either field must fail this contract test.
         self.assertEqual(body["telegram_id"], 4242)
         self.assertEqual(body["username"], "nikita")
-        self.assertEqual(body["session_token"], "tok-xyz")
+        self.assertEqual(body["session_token"], "web-session-4242")
+        self.assertEqual(body["direct_token"], "feed-4242")
+        self.assertEqual(
+            body["subscription_url"], "https://sub.zxc1x1.ru/feed-4242")
 
     def test_unknown_code_is_404(self):
         status, _ = self._post({"code": "ZZZZZZZZ"})
