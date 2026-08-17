@@ -3042,6 +3042,20 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             self._send_json(status, {"error": reason})
             return
 
+        # Android uses the same opaque direct subscription link as the desktop
+        # client. A pairing code alone only identifies the account; it is not a
+        # usable feed token. Return the user's existing short UUID and mint a
+        # web session for cabinet endpoints in one atomic link response.
+        db_user = get_user(result["telegram_id"])
+        short_uuid = (db_user or {}).get("short_uuid") or ""
+        if not short_uuid:
+            self._send_json(404, {"error": "subscription profile not found"})
+            return
+        username = result.get("username", "")
+        session_token, _ = create_web_session(result["telegram_id"], username)
+        result["session_token"] = session_token
+        result["direct_token"] = short_uuid
+        result["subscription_url"] = f"https://sub.zxc1x1.ru/{short_uuid}"
         self._send_json(200, result)
 
     def _handle_session_create(self):

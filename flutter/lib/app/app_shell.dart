@@ -390,16 +390,20 @@ class _AppShellState extends ConsumerState<AppShell>
                         ),
                       ],
                     )
-                  : Column(
-                      children: [
-                        Expanded(
-                          child: _LazyTabStack(
-                            pages: pages,
-                            currentIndex: activeIndex,
-                            visitedTabs: visitedTabs,
+                  : SafeArea(
+                      top: true,
+                      bottom: false,
+                      child: Column(
+                        children: [
+                          Expanded(
+                            child: _LazyTabStack(
+                              pages: pages,
+                              currentIndex: activeIndex,
+                              visitedTabs: visitedTabs,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
               bottomNavigationBar: isWide
                   ? null

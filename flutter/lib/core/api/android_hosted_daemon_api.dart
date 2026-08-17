@@ -18,6 +18,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   static final AndroidHostedDaemonApi instance = AndroidHostedDaemonApi._();
 
   static const _subscriptionsKey = 'mosaic.android.subscriptions.v1';
+  static const _preferencesKey = 'mosaic.android.preferences.v1';
   final _account = AndroidMosaicAccountService.instance;
 
   Future<List<Subscription>> _readLocalSubscriptions() async {
@@ -152,6 +153,70 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     final local = reordered.where((value) => value.id != 'mosaic-direct').toList();
     await _writeLocalSubscriptions(local);
     return [...direct, ...local];
+  }
+
+  @override
+  Future<List<Server>> listServers({String? subscriptionID}) async {
+    final subscriptions = await listSubscriptions();
+    final result = <Server>[];
+    for (final subscription in subscriptions) {
+      // Mosaic direct feed is rendered only as a generic automatic route. Its
+      // private physical candidates must never appear in Android server lists.
+      if (subscription.id == 'mosaic-direct') continue;
+      if (subscriptionID != null && subscription.id != subscriptionID) continue;
+      try {
+        final links = await _account.fetchSubscriptionShareUris(subscription.url);
+        for (var index = 0; index < links.length; index++) {
+          final link = links[index];
+          final uri = Uri.tryParse(link);
+          if (uri == null || uri.scheme.isEmpty) continue;
+          final label = uri.fragment.isEmpty
+              ? '${uri.scheme.toUpperCase()} ${uri.host}'
+              : Uri.decodeComponent(uri.fragment);
+          result.add(Server(
+            id: '${subscription.id}:$index',
+            name: label,
+            protocol: Protocol.fromString(uri.scheme == 'ss' ? 'shadowsocks' : uri.scheme),
+            address: uri.host,
+            port: uri.hasPort ? uri.port : 0,
+            tag: label,
+            outboundTag: label,
+            subscriptionID: subscription.id,
+            importUri: link,
+          ));
+        }
+      } catch (_) {
+        // The Subscription row remains available with its actual fetch error
+        // surfaced by manual refresh/connect rather than fabricated servers.
+      }
+    }
+    return result;
+  }
+
+  @override
+  Future<Preferences> getPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_preferencesKey);
+    if (raw == null || raw.isEmpty) return Preferences();
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return Preferences.fromJson(Map<String, dynamic>.from(decoded));
+      }
+    } catch (_) {
+      // A malformed old local value must not prevent settings from opening.
+    }
+    return Preferences();
+  }
+
+  @override
+  Future<Preferences> setPrefs(Map<String, dynamic> prefs) async {
+    final current = await getPrefs();
+    final merged = <String, dynamic>{...current.toJson(), ...prefs};
+    final updated = Preferences.fromJson(merged);
+    final storage = await SharedPreferences.getInstance();
+    await storage.setString(_preferencesKey, jsonEncode(updated.toJson()));
+    return updated;
   }
 
   @override

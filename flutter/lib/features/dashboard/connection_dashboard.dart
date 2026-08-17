@@ -66,7 +66,19 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     final isMosaicSource = selectedSubscription.id == 'mosaic-direct';
     final userServers = ref.watch(serversProvider).valueOrNull ?? <Server>[];
     final List<_RouteChoice> groups = isMosaicSource
-        ? manifestGroups.map<_RouteChoice>(_manifestAsRouteChoice).toList()
+        ? (manifestGroups.isNotEmpty
+            ? manifestGroups.map<_RouteChoice>(_manifestAsRouteChoice).toList()
+            : (AppPlatform.isAndroid
+                ? const [
+                    _RouteChoice(
+                      id: 'android-direct-auto',
+                      title: 'MosaicVPN · Automatic',
+                      subtitle: 'Smart route · local selection',
+                      icon: 'auto',
+                      isGroup: true,
+                    ),
+                  ]
+                : const <_RouteChoice>[]))
         : userServers
             .where((server) => server.subscriptionID == selectedSubscription.id)
             .map<_RouteChoice>(_serverAsRouteChoice)
@@ -334,11 +346,12 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     if (!approved) {
       throw StateError('Для подключения необходимо разрешение VPN Android.');
     }
-    if (!selected.isGroup) {
-      throw StateError('На Android доступны маршруты профиля MosaicVPN.');
-    }
-    final config = await AndroidMosaicAccountService.instance
-        .buildNativeTunConfig(groupId: selected.id);
+    final config = selected.isGroup
+        ? await AndroidMosaicAccountService.instance
+            .buildNativeTunConfig(groupId: selected.id)
+        : AndroidMosaicAccountService.buildNativeTunConfigFromShareUri(
+            selected.importUri,
+          );
     final state = await AndroidVpnService.instance.start(config);
     if (state.state == 'error') {
       throw StateError(state.error ?? 'Нативный VPN runtime не запустился.');
@@ -435,6 +448,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
 
   _RouteChoice _serverAsRouteChoice(Server server) => _RouteChoice(
         id: server.id,
+        importUri: server.importUri,
         title: server.name.isEmpty
             ? AppStrings.of(context).t('unnamed_server')
             : server.name,
@@ -461,6 +475,7 @@ class _RouteChoice {
     this.disabled = false,
     this.disabledReason = '',
     this.manifestGroup,
+    this.importUri = '',
   });
 
   final String id;
@@ -471,6 +486,7 @@ class _RouteChoice {
   final bool disabled;
   final String disabledReason;
   final ManifestGroup? manifestGroup;
+  final String importUri;
 }
 
 class _SubscriptionSelector extends StatelessWidget {

@@ -179,6 +179,31 @@ class AndroidMosaicAccountService {
     }
   }
 
+  /// Fetches a user-provided subscription and returns its share URI rows.
+  /// Parsing is deliberately local; no imported credentials are forwarded to
+  /// the Mosaic VPS. Unsupported rows are returned for UI visibility but are
+  /// rejected with a precise message at connection time.
+  Future<List<String>> fetchSubscriptionShareUris(String url) async {
+    final parsed = Uri.tryParse(url.trim());
+    if (parsed == null || !parsed.hasScheme || !parsed.isScheme('https')) {
+      throw const FormatException('Укажите корректный HTTPS URL подписки.');
+    }
+    final response = await _dio.getUri<Object>(
+      parsed,
+      options: Options(responseType: ResponseType.plain),
+    );
+    final payload = response.data?.toString().trim() ?? '';
+    if (payload.isEmpty) {
+      throw const FormatException('Подписка не содержит серверов.');
+    }
+    final decoded = _decodeSubscriptionPayload(payload);
+    return decoded
+        .split(RegExp(r'\r?\n'))
+        .map((line) => line.trim())
+        .where((line) => line.contains('://'))
+        .toList(growable: false);
+  }
+
   /// Downloads the authenticated opaque direct feed and builds an Android TUN
   /// config. The selected user-facing group controls client-side filtering and
   /// sing-box URLTest failover; traffic goes directly to the selected node.
@@ -188,8 +213,7 @@ class AndroidMosaicAccountService {
       throw StateError('Сначала войдите в MosaicVPN.');
     }
     final response = await _dio.get<Object>(
-      '/api/direct/singbox',
-      queryParameters: {'token': session.directToken},
+      'https://sub.zxc1x1.ru/${Uri.encodeComponent(session.directToken)}',
       options: Options(responseType: ResponseType.plain),
     );
     final payload = response.data?.toString().trim() ?? '';
@@ -234,13 +258,35 @@ class AndroidMosaicAccountService {
     );
   }
 
+  /// Builds a TUN config from a single user-imported share URI. This path is
+  /// used only for local/user subscriptions; Mosaic direct routes retain the
+  /// generic automatic selection and never reveal private pool members.
+  static String buildNativeTunConfigFromShareUri(String shareUri) {
+    final outbound = _outboundFromShareUri(shareUri);
+    return _buildTunConfig(<Map<String, dynamic>>[outbound]);
+  }
+
   static String _withAndroidTunInbound(String payload, {String? groupId}) {
-    final decoded = jsonDecode(payload);
-    if (decoded is! Map) {
-      throw const FormatException(
-          'Direct subscription is not a sing-box JSON configuration.');
+    final normalized = _decodeSubscriptionPayload(payload);
+    Map<String, dynamic>? config;
+    try {
+      final decoded = jsonDecode(normalized);
+      if (decoded is Map) config = Map<String, dynamic>.from(decoded);
+    } on FormatException {
+      // Standard subscription feeds are base64-encoded share URI lines.
     }
-    final config = Map<String, dynamic>.from(decoded);
+    if (config == null) {
+      final outbounds = normalized
+          .split(RegExp(r'\r?\n'))
+          .map((line) => line.trim())
+          .where((line) => line.isNotEmpty)
+          .map(_outboundFromShareUri)
+          .toList(growable: false);
+      if (outbounds.isEmpty) {
+        throw const FormatException('Подписка не содержит поддерживаемых серверов.');
+      }
+      return _buildTunConfig(outbounds);
+    }
     final rawOutbounds = config['outbounds'];
     if (rawOutbounds is! List || rawOutbounds.isEmpty) {
       throw const FormatException('Direct configuration has no outbounds.');
@@ -278,7 +324,12 @@ class AndroidMosaicAccountService {
     }
 
     bool matchesGroup(Map<String, dynamic> outbound) {
-      if (groupId == null || groupId.isEmpty) return true;
+      // The hosted fallback manifest is unavailable on older deployments. Its
+      // generic automatic route is intentionally the complete authenticated
+      // direct feed, not a named/hidden private pool category.
+      if (groupId == null || groupId.isEmpty || groupId == 'android-direct-auto') {
+        return true;
+      }
       final memberships = outbound['_mosaic_group_ids'];
       return memberships is Set<String> && memberships.contains(groupId);
     }
@@ -303,7 +354,106 @@ class AndroidMosaicAccountService {
       cleanOutbounds.add(clean);
     }
 
+    return _buildTunConfig(cleanOutbounds, existingConfig: config);
+  }
+
+  static String _decodeSubscriptionPayload(String value) {
+    final compact = value.trim();
+    if (compact.startsWith('{')) return compact;
+    final withoutWhitespace = compact.replaceAll(RegExp(r'\s+'), '');
+    try {
+      final normalized = base64.normalize(withoutWhitespace);
+      final decoded = utf8.decode(base64Decode(normalized), allowMalformed: false);
+      if (decoded.contains('://')) return decoded;
+    } on FormatException {
+      // Plain share URI feeds are accepted below.
+    }
+    return compact;
+  }
+
+  static Map<String, dynamic> _outboundFromShareUri(String raw) {
+    final uri = Uri.tryParse(raw.trim());
+    if (uri == null || uri.scheme.isEmpty) {
+      throw FormatException('Некорректная ссылка сервера: ${raw.length > 48 ? raw.substring(0, 48) : raw}');
+    }
+    final tag = uri.fragment.isEmpty
+        ? '${uri.scheme}-${uri.host}:${uri.hasPort ? uri.port : 0}'
+        : Uri.decodeComponent(uri.fragment);
+    final query = uri.queryParameters;
+    switch (uri.scheme.toLowerCase()) {
+      case 'vless':
+        final uuid = uri.userInfo;
+        if (uuid.isEmpty || uri.host.isEmpty) {
+          throw const FormatException('VLESS ссылка не содержит UUID или адрес.');
+        }
+        final outbound = <String, dynamic>{
+          'type': 'vless',
+          'tag': tag,
+          'server': uri.host,
+          'server_port': uri.hasPort ? uri.port : 443,
+          'uuid': uuid,
+          'encryption': query['encryption'] ?? 'none',
+        };
+        if ((query['flow'] ?? '').isNotEmpty) outbound['flow'] = query['flow'];
+        final security = query['security'] ?? 'none';
+        if (security != 'none') {
+          final tls = <String, dynamic>{
+            'enabled': true,
+            if ((query['sni'] ?? '').isNotEmpty) 'server_name': query['sni'],
+            if ((query['fp'] ?? '').isNotEmpty)
+              'utls': {'enabled': true, 'fingerprint': query['fp']},
+          };
+          if (security == 'reality') {
+            tls['reality'] = {
+              'enabled': true,
+              if ((query['pbk'] ?? '').isNotEmpty) 'public_key': query['pbk'],
+              if ((query['sid'] ?? '').isNotEmpty) 'short_id': query['sid'],
+            };
+          }
+          outbound['tls'] = tls;
+        }
+        final transportType = query['type'] ?? 'tcp';
+        if (transportType != 'tcp') {
+          outbound['transport'] = {
+            'type': transportType,
+            if ((query['path'] ?? '').isNotEmpty) 'path': query['path'],
+            if ((query['host'] ?? '').isNotEmpty) 'host': query['host'],
+            if ((query['mode'] ?? '').isNotEmpty) 'mode': query['mode'],
+            if ((query['serviceName'] ?? '').isNotEmpty)
+              'service_name': query['serviceName'],
+          };
+        }
+        return outbound;
+      case 'trojan':
+        if (uri.userInfo.isEmpty || uri.host.isEmpty) {
+          throw const FormatException('Trojan ссылка не содержит пароль или адрес.');
+        }
+        return {
+          'type': 'trojan',
+          'tag': tag,
+          'server': uri.host,
+          'server_port': uri.hasPort ? uri.port : 443,
+          'password': uri.userInfo,
+          'tls': {
+            'enabled': true,
+            if ((query['sni'] ?? '').isNotEmpty) 'server_name': query['sni'],
+          },
+        };
+      default:
+        throw FormatException('Протокол ${uri.scheme.toUpperCase()} пока не поддержан Android direct runtime.');
+    }
+  }
+
+  static String _buildTunConfig(List<Map<String, dynamic>> outbounds,
+      {Map<String, dynamic>? existingConfig}) {
+    if (outbounds.isEmpty) {
+      throw const FormatException('Подписка не содержит поддерживаемых серверов.');
+    }
     const routeTag = 'mosaic-selected-route';
+    final tags = outbounds.map((outbound) => outbound['tag'] as String).toList();
+    final config = existingConfig == null
+        ? <String, dynamic>{}
+        : Map<String, dynamic>.from(existingConfig);
     config['inbounds'] = [
       {
         'type': 'tun',
@@ -317,7 +467,7 @@ class AndroidMosaicAccountService {
       },
     ];
     config['outbounds'] = [
-      ...cleanOutbounds,
+      ...outbounds,
       {
         'type': 'urltest',
         'tag': routeTag,
@@ -329,7 +479,6 @@ class AndroidMosaicAccountService {
       },
       {'type': 'direct', 'tag': 'direct'},
     ];
-
     final existingRoute = config['route'];
     final route = existingRoute is Map
         ? Map<String, dynamic>.from(existingRoute)
