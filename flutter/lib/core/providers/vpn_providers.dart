@@ -227,6 +227,18 @@ class _ResolvedDaemonApi implements DaemonApiBase {
   Future<void> connectGroup(String groupID) async =>
       (await _backend()).connectGroup(groupID);
   @override
+  Future<SmartGroupCandidateShard> getCandidateShard(
+          String groupID, String installationID) async =>
+      (await _backend()).getCandidateShard(groupID, installationID);
+  @override
+  Future<SmartGroupProbeResult> probeGroupCandidate(
+          String groupID, String candidateID) async =>
+      (await _backend()).probeGroupCandidate(groupID, candidateID);
+  @override
+  Future<void> connectGroupCandidate(
+          String groupID, String candidateID) async =>
+      (await _backend()).connectGroupCandidate(groupID, candidateID);
+  @override
   Future<void> disconnect() async => (await _backend()).disconnect();
   @override
   Future<void> shutdownDaemon() async => (await _backend()).shutdownDaemon();

@@ -47,7 +47,7 @@ void main() {
 
       expect(find.text('MosaicVPN'), findsWidgets);
       expect(find.text('Минимальный пинг'), findsOneWidget);
-      expect(find.text('Группа'), findsOneWidget);
+      expect(find.text('Smart Group'), findsOneWidget);
       expect(find.text('Тип'), findsOneWidget);
       expect(find.text('Название'), findsOneWidget);
       expect(find.text('Пинг'), findsOneWidget);

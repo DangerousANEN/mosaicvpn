@@ -12,6 +12,7 @@ import (
 	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/state"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/store"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/subs"
 )
 
 func newInternalAPITestServer(t *testing.T, fetcher Fetcher) (*Server, *store.Store, *httptest.Server) {
@@ -137,5 +138,66 @@ func TestLocalCollectionGroupServerAndConnectLifecycle(t *testing.T) {
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("connect local group status = %d", response.StatusCode)
+	}
+}
+
+func TestSmartGroupCandidateShardAndBoundConnect(t *testing.T) {
+	feed := []byte("vless://00000000-0000-0000-0000-000000000001@198.51.100.42:443?security=tls#Mosaic%20private%20node\n")
+	srv, _, hs := newInternalAPITestServer(t, func(context.Context, string) ([]byte, string, error) {
+		return feed, "text/plain", nil
+	})
+	if err := srv.refresh(context.Background(), proto.Subscription{
+		ID: "mosaic-direct", Name: "MosaicVPN", URL: "https://example.test/api/sub/token",
+	}); err != nil {
+		t.Fatalf("refresh direct feed: %v", err)
+	}
+
+	response := apiRequest(t, hs, srv.Token(), http.MethodGet,
+		"/v1/groups/rg-all/candidates?installation_id=test-install", nil)
+	if response.StatusCode != http.StatusOK {
+		response.Body.Close()
+		t.Fatalf("candidate shard status = %d", response.StatusCode)
+	}
+	var shard proto.CandidateShard
+	if err := json.NewDecoder(response.Body).Decode(&shard); err != nil {
+		response.Body.Close()
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if shard.GroupID != "rg-all" || shard.Version == "" || len(shard.CandidateIDs) != 1 {
+		t.Fatalf("unexpected shard: %#v", shard)
+	}
+
+	response = apiRequest(t, hs, srv.Token(), http.MethodPost, "/v1/connect", map[string]string{
+		"group_id": "rg-all", "server_id": shard.CandidateIDs[0],
+	})
+	if response.StatusCode != http.StatusOK {
+		response.Body.Close()
+		t.Fatalf("bound candidate connect status = %d", response.StatusCode)
+	}
+	response.Body.Close()
+
+	response = apiRequest(t, hs, srv.Token(), http.MethodPost, "/v1/connect", map[string]string{
+		"group_id": "rg-all", "server_id": "not-a-member",
+	})
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("foreign candidate status = %d, want %d", response.StatusCode, http.StatusBadRequest)
+	}
+}
+
+func TestReservedLTECompatibilityGroupIsDisabled(t *testing.T) {
+	manifest := subs.SynthesizeManifest("mosaic-direct", []proto.Server{{
+		ID: "node-1", Address: "198.51.100.10", Port: 443,
+	}})
+	var reserved *proto.ManifestGroup
+	for i := range manifest.Groups {
+		if manifest.Groups[i].ID == "reserved-lte-compat" {
+			reserved = &manifest.Groups[i]
+			break
+		}
+	}
+	if reserved == nil || !reserved.Disabled || reserved.DisabledReason == "" {
+		t.Fatalf("reserved compatibility group must be disabled with a reason: %#v", reserved)
 	}
 }

@@ -10,6 +10,7 @@ package api
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -17,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -276,6 +278,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/servers/test-group", s.handleTestSpeedGroup)
 
 	// Pool / Group selection
+	s.mux.HandleFunc("GET /v1/groups/{groupID}/candidates", s.handleCandidateShard)
+	s.mux.HandleFunc("POST /v1/groups/{groupID}/probe", s.handleProbeCandidate)
 	s.mux.HandleFunc("GET /v1/groups/{groupID}/select", s.handleGroupSelect)
 	s.mux.HandleFunc("GET /v1/groups/{groupID}/health", s.handleGroupHealth)
 	s.mux.HandleFunc("GET /v1/health", s.handleAllHealth)
@@ -294,10 +298,39 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	// Walk the priority chain unless the caller pinned a node. An older client
-	// that sends only server_id keeps working: a pinned ID short-circuits the
-	// chain and behaves exactly as before.
-	res, err := state.Resolve(s.store, req.GroupID, req.ServerID)
+	// A client-side smart-group selector may pin a candidate after local probes.
+	// Validate that the pin belongs to the selected group so the opaque local
+	// candidate API cannot be abused to connect an arbitrary private pool node.
+	var res state.Resolution
+	var err error
+	if req.GroupID != "" && req.ServerID != "" {
+		group, ok := s.store.Group(req.GroupID)
+		if !ok {
+			writeError(w, http.StatusNotFound, "group not found")
+			return
+		}
+		member := false
+		for _, node := range group.Nodes {
+			if node.ServerID == req.ServerID {
+				member = true
+				break
+			}
+		}
+		if !member {
+			writeError(w, http.StatusBadRequest, "candidate does not belong to group")
+			return
+		}
+		if _, ok := s.store.FindServer(req.ServerID); !ok {
+			writeError(w, http.StatusBadRequest, "candidate is no longer available")
+			return
+		}
+		res = state.Resolution{ServerID: req.ServerID, GroupID: req.GroupID, Step: state.StepExplicit}
+	} else {
+		// Walk the priority chain unless the caller pinned a node. An older client
+		// that sends only server_id keeps working: a pinned ID short-circuits the
+		// chain and behaves exactly as before.
+		res, err = state.Resolve(s.store, req.GroupID, req.ServerID)
+	}
 	if err != nil {
 		var rerr *state.ResolveError
 		if errors.As(err, &rerr) {
@@ -1714,6 +1747,151 @@ func (s *Server) StartPool(ctx context.Context) {
 		return
 	}
 	s.pool.Start(ctx, manifest.Groups, snap.Servers)
+}
+
+// handleCandidateShard returns a bounded deterministic candidate subset to
+// the local desktop/mobile daemon. Candidate identifiers are intentionally
+// opaque to Flutter; endpoint details remain in the local daemon store and are
+// never included in the normal server-list API.
+func (s *Server) handleCandidateShard(w http.ResponseWriter, r *http.Request) {
+	groupID := r.PathValue("groupID")
+	group, ok := s.store.Group(groupID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "group not found")
+		return
+	}
+	// Disabled manifest groups remain visible as ordinary route rows, but a
+	// local client must not obtain candidates or attempt a connection from them.
+	// The same manifest policy supplies the bounded shard size.
+	policy := proto.ClientSelectionPolicy{}
+	s.manifestMu.RLock()
+	if s.activeManifest != nil {
+		for _, manifestGroup := range s.activeManifest.Groups {
+			if manifestGroup.ID != groupID {
+				continue
+			}
+			if manifestGroup.Disabled {
+				s.manifestMu.RUnlock()
+				writeError(w, http.StatusConflict, "group is disabled by provider")
+				return
+			}
+			policy = manifestGroup.ClientPolicy
+			break
+		}
+	}
+	s.manifestMu.RUnlock()
+	policy.SetDefaults()
+	installationID := strings.TrimSpace(r.URL.Query().Get("installation_id"))
+	if installationID == "" {
+		installationID = "anonymous-local-installation"
+	}
+	if len(installationID) > 128 {
+		writeError(w, http.StatusBadRequest, "installation_id is too long")
+		return
+	}
+
+	valid := make([]string, 0, len(group.Nodes))
+	for _, node := range group.Nodes {
+		if !node.Alive {
+			continue
+		}
+		// The server-side pool check is only an admission filter. A known-dead
+		// node is withheld, while unknown nodes remain eligible for real
+		// client-side probing from the user's network.
+		health := s.pool.GetHealthStatus(node.ServerID)
+		if !health.LastCheck.IsZero() && !health.Alive {
+			continue
+		}
+		if _, exists := s.store.FindServer(node.ServerID); exists {
+			valid = append(valid, node.ServerID)
+		}
+	}
+	// Per-installation deterministic shuffling distributes clients over the
+	// eligible pool without sending the full pool to every client.
+	sort.Slice(valid, func(i, j int) bool {
+		left := sha256.Sum256([]byte(groupID + "\\x00" + installationID + "\\x00" + valid[i]))
+		right := sha256.Sum256([]byte(groupID + "\\x00" + installationID + "\\x00" + valid[j]))
+		return string(left[:]) < string(right[:])
+	})
+	if len(valid) > policy.ShardSize {
+		valid = valid[:policy.ShardSize]
+	}
+	versionHash := sha256.Sum256([]byte(groupID + "\\x00" + strings.Join(valid, "\\x00")))
+	writeJSON(w, http.StatusOK, proto.CandidateShard{
+		GroupID:      groupID,
+		Version:      hex.EncodeToString(versionHash[:8]),
+		ExpiresAt:    time.Now().Add(15 * time.Minute).UTC(),
+		CandidateIDs: valid,
+	})
+}
+
+// handleProbeCandidate performs a small bounded transport probe from the
+// user's device. It is intentionally a local-daemon endpoint: no per-probe
+// traffic reaches the Mosaic VPS. A future runtime may upgrade ProbeKind to a
+// full sing-box protocol probe without changing the Flutter API contract.
+func (s *Server) handleProbeCandidate(w http.ResponseWriter, r *http.Request) {
+	groupID := r.PathValue("groupID")
+	group, ok := s.store.Group(groupID)
+	if !ok {
+		writeError(w, http.StatusNotFound, "group not found")
+		return
+	}
+	var req proto.CandidateProbeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.CandidateID == "" {
+		writeError(w, http.StatusBadRequest, "candidate_id required")
+		return
+	}
+	member := false
+	for _, node := range group.Nodes {
+		if node.ServerID == req.CandidateID && node.Alive {
+			member = true
+			break
+		}
+	}
+	if !member {
+		writeError(w, http.StatusBadRequest, "candidate is not eligible for group")
+		return
+	}
+	server, exists := s.store.FindServer(req.CandidateID)
+	if !exists {
+		writeError(w, http.StatusNotFound, "candidate not found")
+		return
+	}
+
+	const samples = 3
+	latencies := make([]int, 0, samples)
+	for i := 0; i < samples; i++ {
+		ctx, cancel := context.WithTimeout(r.Context(), 1500*time.Millisecond)
+		started := time.Now()
+		conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(server.Address, fmt.Sprintf("%d", server.Port)))
+		cancel()
+		if err != nil {
+			continue
+		}
+		_ = conn.Close()
+		elapsed := int(time.Since(started).Milliseconds())
+		if elapsed < 1 {
+			elapsed = 1
+		}
+		latencies = append(latencies, elapsed)
+	}
+	sort.Ints(latencies)
+	result := proto.CandidateProbeResult{
+		GroupID:     groupID,
+		CandidateID: req.CandidateID,
+		Samples:     samples,
+		Successes:   len(latencies),
+		LossPercent: float64(samples-len(latencies)) * 100 / samples,
+		CheckedAt:   time.Now().UTC(),
+		ProbeKind:   "transport_tcp",
+	}
+	if len(latencies) > 0 {
+		result.Successful = true
+		result.MedianLatencyMs = latencies[len(latencies)/2]
+		result.P95LatencyMs = latencies[len(latencies)-1]
+		result.JitterMs = result.P95LatencyMs - result.MedianLatencyMs
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleGroupSelect(w http.ResponseWriter, r *http.Request) {

@@ -2,8 +2,10 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/i18n/app_strings.dart';
 import '../../core/models/models.dart';
 import '../../core/providers/vpn_providers.dart';
+import '../../core/services/smart_group_selector.dart';
 import '../../core/theme/atlas_theme.dart';
 import '../subscriptions/subscriptions_screen.dart';
 import '../servers/add_server_dialog.dart';
@@ -31,6 +33,8 @@ class _RouteRow {
     required this.traffic,
     required this.isGroup,
     required this.icon,
+    this.disabled = false,
+    this.disabledReason = '',
   });
 
   final String id;
@@ -40,6 +44,8 @@ class _RouteRow {
   final String traffic;
   final bool isGroup;
   final IconData icon;
+  final bool disabled;
+  final String disabledReason;
 }
 
 /// A single route inventory. A user first chooses a subscription/source and
@@ -59,6 +65,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   _RouteSort _sort = _RouteSort.name;
   bool _ascending = true;
   List<String>? _pendingSubscriptionOrder;
+  final SmartGroupSelector _smartGroupSelector = SmartGroupSelector();
 
   @override
   Widget build(BuildContext context) {
@@ -227,18 +234,23 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     required List<ServerGroup> localGroups,
   }) {
     if (source.id == 'mosaic-direct') {
+      final strings = AppStrings.of(context);
       return (manifest?.groups ?? const <ManifestGroup>[])
-          .where((group) =>
-              group.category == 'smart' || group.category == 'whitelist')
+          // The provider decides which route categories exist. A group stays a
+          // normal route row even when disabled; private physical pool nodes
+          // never cross this manifest/UI boundary.
+          .where((group) => group.category != 'raw')
           .map(
             (group) => _RouteRow(
               id: group.id,
-              type: 'Группа',
+              type: strings.t('smart_group'),
               name: _groupTitle(group),
               ping: null,
-              traffic: 'Авто',
+              traffic: strings.t('automatic'),
               isGroup: true,
               icon: _groupIcon(group.icon),
+              disabled: group.disabled,
+              disabledReason: group.disabledReason,
             ),
           )
           .toList();
@@ -252,10 +264,10 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
         localGroups.map(
           (group) => _RouteRow(
             id: group.id,
-            type: 'Группа',
+            type: AppStrings.of(context).t('local_group'),
             name: group.name.isEmpty ? 'Безымянный сборник' : group.name,
             ping: null,
-            traffic: 'Авто',
+            traffic: AppStrings.of(context).t('automatic'),
             isGroup: true,
             icon: Icons.folder_copy_outlined,
           ),
@@ -464,10 +476,28 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   }
 
   Future<void> _connect(_RouteRow row) async {
+    if (row.disabled) {
+      _showMessage(
+        row.disabledReason.isEmpty
+            ? 'Этот маршрут пока недоступен.'
+            : row.disabledReason,
+        ThemeColors.of(context).warning,
+      );
+      return;
+    }
     setState(() => _connectingId = row.id);
     try {
       final api = ref.read(daemonApiProvider);
-      if (row.isGroup) {
+      final manifestGroup = ref
+          .read(mosaicManifestProvider)
+          .valueOrNull
+          ?.groups
+          .where((group) => group.id == row.id)
+          .cast<ManifestGroup?>()
+          .firstWhere((group) => group != null, orElse: () => null);
+      if (row.isGroup && manifestGroup != null) {
+        await _smartGroupSelector.connect(api, manifestGroup);
+      } else if (row.isGroup) {
         await api.connectGroup(row.id);
       } else {
         await api.connect(row.id);
@@ -1204,13 +1234,14 @@ class _RouteTable extends StatelessWidget {
               final isConnecting = connectingId == row.id;
               return DataRow(
                 selected: isConnected,
-                onSelectChanged: isConnecting ? null : (_) => onConnect(row),
+                onSelectChanged:
+                    isConnecting || row.disabled ? null : (_) => onConnect(row),
                 cells: [
                   DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
                     Icon(row.icon,
                         size: 18,
                         color:
-                            row.isGroup ? AtlasTheme.accent : colors.textMuted),
+                            row.disabled ? colors.textMuted : colors.textMuted),
                     const SizedBox(width: 8),
                     Text(row.type,
                         style: TextStyle(color: colors.textSecondary)),
@@ -1222,7 +1253,9 @@ class _RouteTable extends StatelessWidget {
                         child: Text(row.name,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: colors.textPrimary,
+                              color: row.disabled
+                                  ? colors.textMuted
+                                  : colors.textPrimary,
                               fontWeight: FontWeight.w600,
                             )),
                       ),
@@ -1242,10 +1275,19 @@ class _RouteTable extends StatelessWidget {
                         ),
                     ]),
                   )),
-                  DataCell(Text(row.ping == null ? 'Авто' : '${row.ping} мс',
-                      style: TextStyle(color: colors.textPrimary))),
+                  DataCell(Text(
+                      row.ping == null
+                          ? AppStrings.of(context).t('automatic')
+                          : '${row.ping} мс',
+                      style: TextStyle(
+                          color: row.disabled
+                              ? colors.textMuted
+                              : colors.textPrimary))),
                   DataCell(Text(row.traffic,
-                      style: TextStyle(color: colors.textPrimary))),
+                      style: TextStyle(
+                          color: row.disabled
+                              ? colors.textMuted
+                              : colors.textPrimary))),
                 ],
               );
             }).toList(),
@@ -1292,15 +1334,10 @@ class _RouteTable extends StatelessWidget {
       };
 }
 
-String _groupTitle(ManifestGroup group) {
-  return switch (group.id) {
-    'rg-all' => 'Минимальный пинг',
-    'auto-stable' => 'Стабильное соединение',
-    'auto-speed' => 'Максимальная скорость',
-    'auto-whitelist' || 'auto-allowlist' => 'Доступ через allowlist',
-    _ => group.title,
-  };
-}
+// Group names are supplied by the provider manifest; the client only knows
+// the generic Smart Group route type.
+String _groupTitle(ManifestGroup group) =>
+    group.title.isEmpty ? group.id : group.title;
 
 IconData _groupIcon(String icon) {
   return switch (icon) {

@@ -111,6 +111,30 @@ class DaemonApi implements DaemonApiBase {
   }
 
   @override
+  Future<SmartGroupCandidateShard> getCandidateShard(
+      String groupID, String installationID) async {
+    final response = await _dio.get('/v1/groups/$groupID/candidates',
+        queryParameters: {'installation_id': installationID});
+    return SmartGroupCandidateShard.fromJson(
+        response.data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<SmartGroupProbeResult> probeGroupCandidate(
+      String groupID, String candidateID) async {
+    final response = await _dio
+        .post('/v1/groups/$groupID/probe', data: {'candidate_id': candidateID});
+    return SmartGroupProbeResult.fromJson(
+        response.data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<void> connectGroupCandidate(String groupID, String candidateID) async {
+    await _dio.post('/v1/connect',
+        data: {'group_id': groupID, 'server_id': candidateID});
+  }
+
+  @override
   Future<void> disconnect() async {
     await _dio.post('/v1/disconnect');
   }

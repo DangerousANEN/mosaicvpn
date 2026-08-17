@@ -56,16 +56,72 @@ class ManifestNode {
       };
 }
 
-/// A node group in the manifest (region, pool, whitelist, etc).
+/// Server-defined bounded selection policy executed by the generic client.
+/// New policy modes and weights can be supplied without a client release.
+class ManifestClientPolicy {
+  final String mode;
+  final int shardSize;
+  final int maxParallelProbes;
+  final int probeTtlSeconds;
+  final int maxFailoverTries;
+  final double latencyWeight;
+  final double lossWeight;
+  final double stabilityWeight;
+  final double speedWeight;
+
+  const ManifestClientPolicy({
+    this.mode = 'latency',
+    this.shardSize = 16,
+    this.maxParallelProbes = 4,
+    this.probeTtlSeconds = 600,
+    this.maxFailoverTries = 3,
+    this.latencyWeight = .45,
+    this.lossWeight = .30,
+    this.stabilityWeight = .25,
+    this.speedWeight = 0,
+  });
+
+  factory ManifestClientPolicy.fromJson(Map<String, dynamic>? json) {
+    final value = json ?? const <String, dynamic>{};
+    int boundedInt(String key, int fallback, int min, int max) {
+      final number = (value[key] as num?)?.toInt() ?? fallback;
+      return number.clamp(min, max);
+    }
+
+    return ManifestClientPolicy(
+      mode: value['mode']?.toString() ?? 'latency',
+      shardSize: boundedInt('shard_size', 16, 1, 32),
+      maxParallelProbes: boundedInt('max_parallel_probes', 4, 1, 8),
+      probeTtlSeconds: boundedInt('probe_ttl_seconds', 600, 30, 3600),
+      maxFailoverTries: boundedInt('max_failover_tries', 3, 1, 8),
+      latencyWeight: (value['latency_weight'] as num?)?.toDouble() ?? .45,
+      lossWeight: (value['loss_weight'] as num?)?.toDouble() ?? .30,
+      stabilityWeight: (value['stability_weight'] as num?)?.toDouble() ?? .25,
+      speedWeight: (value['speed_weight'] as num?)?.toDouble() ?? 0,
+    );
+  }
+}
+
+/// A server-defined Smart Group. Its concrete name, policy and source pool
+/// come entirely from the provider manifest; the generic app knows no fixed IDs.
 class ManifestGroup {
   final String id;
   final String title;
-  final String type; // urltest, fallback, weighted_round_robin, direct_node
+
+  /// Generic provider route type, such as `smart_group`.
+  final String routeType;
+
+  /// Backend selection strategy, such as urltest or fallback.
+  final String type;
+  final String poolId;
   final String userTier;
   final String badge;
   final String category;
   final String icon;
   final String description;
+  final bool disabled;
+  final String disabledReason;
+  final ManifestClientPolicy clientPolicy;
   final List<ManifestNode> nodes;
   final int pingInterval;
   final int maxRetries;
@@ -74,12 +130,17 @@ class ManifestGroup {
   ManifestGroup({
     required this.id,
     required this.title,
+    this.routeType = 'smart_group',
     this.type = 'urltest',
+    this.poolId = '',
     this.userTier = 'free',
     this.badge = '',
     this.category = '',
     this.icon = '',
     this.description = '',
+    this.disabled = false,
+    this.disabledReason = '',
+    this.clientPolicy = const ManifestClientPolicy(),
     this.nodes = const [],
     this.pingInterval = 30,
     this.maxRetries = 3,
@@ -90,12 +151,18 @@ class ManifestGroup {
     return ManifestGroup(
       id: (j['id'] ?? '').toString(),
       title: (j['title'] ?? '').toString(),
+      routeType: (j['route_type'] ?? 'smart_group').toString(),
       type: (j['type'] ?? 'urltest').toString(),
+      poolId: (j['pool_id'] ?? '').toString(),
       userTier: (j['user_tier'] ?? 'free').toString(),
       badge: (j['badge'] ?? '').toString(),
       category: (j['category'] ?? '').toString(),
       icon: (j['icon'] ?? '').toString(),
       description: (j['description'] ?? '').toString(),
+      disabled: j['disabled'] == true,
+      disabledReason: (j['disabled_reason'] ?? '').toString(),
+      clientPolicy: ManifestClientPolicy.fromJson(
+          j['client_policy'] as Map<String, dynamic>?),
       nodes: (j['nodes'] as List?)
               ?.map((n) => ManifestNode.fromJson(n as Map<String, dynamic>))
               .toList() ??
@@ -106,20 +173,9 @@ class ManifestGroup {
     );
   }
 
-  String get strategyLabel {
-    switch (type) {
-      case 'urltest':
-        return 'Auto (lowest ping)';
-      case 'fallback':
-        return 'Fallback (priority)';
-      case 'weighted_round_robin':
-        return 'Round-robin (weighted)';
-      case 'direct_node':
-        return 'Direct';
-      default:
-        return type;
-    }
-  }
+  /// Generic transport strategy label. The display title and policy remain
+  /// provider-owned rather than inferred from a client-side group ID.
+  String get strategyLabel => type;
 }
 
 /// Health status of a single node, returned by the pool engine.
@@ -240,10 +296,9 @@ class ProviderBilling {
       pricingModel: (j['pricing_model'] ?? 'daily').toString(),
       pricePerDay: parsePrices(j['price_per_day']),
       trialDays: (j['trial_days'] ?? 0) as int,
-      paymentMethods: (j['payment_methods'] as List?)
-              ?.map((m) => m.toString())
-              .toList() ??
-          const [],
+      paymentMethods:
+          (j['payment_methods'] as List?)?.map((m) => m.toString()).toList() ??
+              const [],
       endpoints: parseEndpoints(j['endpoints']),
     );
   }
@@ -301,8 +356,8 @@ class ProviderWidget {
       type: (j['type'] ?? 'stats_card').toString(),
       title: (j['title'] ?? '').toString(),
       dataSource: (j['data_source'] ?? '').toString(),
-      fields: (j['fields'] as List?)?.map((f) => f.toString()).toList() ??
-          const [],
+      fields:
+          (j['fields'] as List?)?.map((f) => f.toString()).toList() ?? const [],
     );
   }
 }

@@ -92,15 +92,15 @@ void main() {
         reason: 'the primary desktop screen must be ConnectionDashboard');
     expect(find.textContaining('Маршруты: Минимальный пинг'), findsOneWidget);
     expect(tester.takeException(), isNull,
-        reason: 'desktop dashboard must render without an exception');
+        reason: 'English dashboard must render without an exception');
   });
 
-  testWidgets('dashboard localizes its primary connection flow in English',
+  testWidgets('dashboard localizes UI while preserving provider route name',
       (tester) async {
     await _pumpAt(tester, const Size(1440, 960), locale: const Locale('en'));
 
     expect(find.text('Not connected'), findsWidgets);
-    expect(find.textContaining('Routes: Minimum ping'), findsOneWidget);
+    expect(find.textContaining('Routes: Минимальный пинг'), findsOneWidget);
     expect(find.text('Subscriptions'), findsWidgets);
     expect(tester.takeException(), isNull,
         reason: 'English dashboard must render without a framework exception');

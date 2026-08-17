@@ -224,10 +224,13 @@ class AndroidMosaicAccountService {
       final outbound = Map<String, dynamic>.from(value);
       // `mosaic_*` values are feed-selection hints, not a sing-box schema.
       // Remove them before handing the config to libbox.
-      final hintCountry = outbound.remove('mosaic_country')?.toString();
-      final hintStable = outbound.remove('mosaic_stable') == true;
-      final hintAllowlist = outbound.remove('mosaic_allowlist') == true;
-      final hintSpeed = outbound.remove('mosaic_speed_eligible') == true;
+      // The provider sends generic group memberships as `mosaic_group_ids`.
+      // The Android client must not infer membership from hard-coded Mosaic IDs
+      // or country/special-purpose hints.
+      final rawGroupIDs = outbound.remove('mosaic_group_ids');
+      final groupIDs = rawGroupIDs is List
+          ? rawGroupIDs.map((value) => value.toString()).toSet()
+          : <String>{};
       outbound.removeWhere((key, _) => key.toString().startsWith('mosaic_'));
       final tag = outbound['tag']?.toString() ?? '';
       final type = outbound['type']?.toString() ?? '';
@@ -238,10 +241,7 @@ class AndroidMosaicAccountService {
           type == 'dns') {
         continue;
       }
-      outbound['_mosaic_country'] = hintCountry;
-      outbound['_mosaic_stable'] = hintStable;
-      outbound['_mosaic_allowlist'] = hintAllowlist;
-      outbound['_mosaic_speed'] = hintSpeed;
+      outbound['_mosaic_group_ids'] = groupIDs;
       candidates.add(outbound);
     }
     if (candidates.isEmpty) {
@@ -250,14 +250,9 @@ class AndroidMosaicAccountService {
     }
 
     bool matchesGroup(Map<String, dynamic> outbound) {
-      return switch (groupId) {
-        'auto-de' => outbound['_mosaic_country'] == 'DE',
-        'auto-ca' => outbound['_mosaic_country'] == 'CA',
-        'auto-stable' => outbound['_mosaic_stable'] == true,
-        'auto-allowlist' => outbound['_mosaic_allowlist'] == true,
-        'auto-speed' => outbound['_mosaic_speed'] == true,
-        _ => true,
-      };
+      if (groupId == null || groupId.isEmpty) return true;
+      final memberships = outbound['_mosaic_group_ids'];
+      return memberships is Set<String> && memberships.contains(groupId);
     }
 
     var selected = candidates.where(matchesGroup).toList();

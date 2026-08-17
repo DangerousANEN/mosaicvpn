@@ -189,7 +189,11 @@ func ParseManifestOrSynthesize(content []byte, subID string, rawServers []proto.
 	// Attempt JSON manifest parse
 	if len(content) > 0 && json.Unmarshal(content, &manifest) == nil && len(manifest.Groups) > 0 {
 		for i := range manifest.Groups {
+			if manifest.Groups[i].PoolID == "" {
+				manifest.Groups[i].PoolID = subID
+			}
 			manifest.Groups[i].Nodes = resolveGroupNodes(manifest.Groups[i], rawServers)
+			manifest.Groups[i].SetDefaults()
 		}
 		virtualServers := BuildVirtualServersFromManifest(manifest, subID)
 		allServers := append(virtualServers, rawServers...)
@@ -385,6 +389,36 @@ func SynthesizeManifest(subID string, rawServers []proto.Server) proto.Subscript
 			Icon:     "flag_ru",
 		})
 	}
+
+	// The server owns all concrete group metadata and client probing policy.
+	// Generic clients render these values as supplied; they do not embed a list
+	// of Mosaic group IDs or geo-specific selection rules.
+	for i := range groups {
+		groups[i].PoolID = subID
+		groups[i].SetDefaults()
+	}
+	// TODO(authorized-lte-compat): This is deliberately disabled until a
+	// separately reviewed, owner-authorized profile feed is integrated. Do not
+	// add network-evasion logic here; the generic client will render the server
+	// metadata and keep disabled groups non-selectable.
+	reservedLTE := proto.ManifestGroup{
+		ID:             "reserved-lte-compat",
+		Title:          "Свободный LTE",
+		Type:           "urltest",
+		PoolID:         "reserved-lte-compat",
+		UserTier:       proto.TierFree,
+		Badge:          "Скоро",
+		Category:       "compatibility",
+		Icon:           "cellular",
+		Description:    "Категория зарезервирована для авторизованных профилей совместимости сети.",
+		Disabled:       true,
+		DisabledReason: "Требуется подключение авторизованного источника профилей.",
+		ClientPolicy: proto.ClientSelectionPolicy{
+			Mode: "stability",
+		},
+	}
+	reservedLTE.SetDefaults()
+	groups = append(groups, reservedLTE)
 
 	return proto.SubscriptionManifest{
 		ProviderName: "Mosaic Direct Node Routing Engine",

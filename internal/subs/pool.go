@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sort"
 	"sync"
 	"time"
 
@@ -20,10 +21,22 @@ type HealthStatus struct {
 	Error     string    `json:"error,omitempty"`
 }
 
-// PoolEngine manages health checks and node selection for manifest groups.
+const (
+	// admissionProbeBudget keeps control-plane cost fixed as the pool grows.
+	// Client runtimes perform final protocol quality ranking from the user's
+	// real network; this daemon filter only suppresses known-dead candidates.
+	admissionProbeBudget = 8
+	admissionProbeEvery  = 60 * time.Second
+	admissionRecheck     = 6 * time.Hour
+	admissionTimeout     = 2 * time.Second
+)
+
+// PoolEngine provides a low-cost server-side admission filter for manifest
+// groups. It must not be used as the final user-quality selector: that work is
+// intentionally performed by the local client runtime.
 type PoolEngine struct {
-	mu      sync.RWMutex
-	health  map[string]HealthStatus
+	mu     sync.RWMutex
+	health map[string]HealthStatus
 	stopCh chan struct{}
 	wg     sync.WaitGroup
 	rrIdx  map[string]int // round-robin cursor per group ID
@@ -45,7 +58,7 @@ func (e *PoolEngine) Start(ctx context.Context, groups []proto.ManifestGroup, se
 	e.wg.Add(1)
 	go func() {
 		defer e.wg.Done()
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(admissionProbeEvery)
 		defer ticker.Stop()
 		e.checkAll(groups, servers) // immediate first check
 		for {
@@ -71,10 +84,12 @@ func (e *PoolEngine) Stop() {
 	e.wg.Wait()
 }
 
-// CheckNode performs a TCP dial to measure latency.
+// CheckNode performs a bounded admission TCP dial. It deliberately does not
+// rank nodes or attempt a full proxy handshake; those probes run locally on
+// the selected user's device.
 func (e *PoolEngine) CheckNode(nodeID, address string, port int) HealthStatus {
 	start := time.Now()
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", address, port), 5*time.Second)
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", address, port), admissionTimeout)
 	latency := int(time.Since(start).Milliseconds())
 	hs := HealthStatus{
 		NodeID:    nodeID,
@@ -212,11 +227,11 @@ func (e *PoolEngine) selectWeightedRR(groupID string, group proto.ManifestGroup,
 	}
 
 	type nodeInfo struct {
-		server proto.Server
-		weight int
-		load   float64
+		server  proto.Server
+		weight  int
+		load    float64
 		latency int
-		alive  bool
+		alive   bool
 	}
 
 	var candidates []nodeInfo
@@ -363,17 +378,49 @@ func (e *PoolEngine) GetAllHealth() map[string]HealthStatus {
 	return result
 }
 
-// checkAll runs health checks for all nodes across all groups.
+// checkAll performs a fixed-size admission batch. Earlier versions spawned a
+// TCP dial for every pool node every 30 seconds, which scales poorly and makes
+// the VPS an unnecessary measurement bottleneck. New/unprobed nodes are first;
+// known candidates are revisited only after a long, jitter-tolerant interval.
 func (e *PoolEngine) checkAll(groups []proto.ManifestGroup, servers []proto.Server) {
-	// Collect unique server IDs to check
-	checked := make(map[string]bool)
-	for _, g := range groups {
-		pool := e.resolvePool(g, servers)
-		for _, srv := range pool {
-			if !checked[srv.ID] {
-				checked[srv.ID] = true
-				go e.CheckNode(srv.ID, srv.Address, srv.Port)
-			}
+	byID := make(map[string]proto.Server)
+	for _, group := range groups {
+		if group.Disabled {
+			continue
 		}
+		for _, server := range e.resolvePool(group, servers) {
+			byID[server.ID] = server
+		}
+	}
+
+	now := time.Now()
+	e.mu.RLock()
+	statusByID := make(map[string]HealthStatus, len(e.health))
+	for id, status := range e.health {
+		statusByID[id] = status
+	}
+	e.mu.RUnlock()
+
+	targets := make([]proto.Server, 0, len(byID))
+	for id, server := range byID {
+		status, known := statusByID[id]
+		if !known || status.LastCheck.IsZero() || now.Sub(status.LastCheck) >= admissionRecheck {
+			targets = append(targets, server)
+		}
+	}
+	sort.Slice(targets, func(i, j int) bool {
+		left := statusByID[targets[i].ID].LastCheck
+		right := statusByID[targets[j].ID].LastCheck
+		if left.Equal(right) {
+			return targets[i].ID < targets[j].ID
+		}
+		return left.Before(right)
+	})
+	if len(targets) > admissionProbeBudget {
+		targets = targets[:admissionProbeBudget]
+	}
+	for _, server := range targets {
+		server := server
+		go e.CheckNode(server.ID, server.Address, server.Port)
 	}
 }

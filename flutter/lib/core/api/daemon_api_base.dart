@@ -20,6 +20,18 @@ abstract class DaemonApiBase {
   /// The client receives no physical pool node ID or endpoint details.
   Future<void> connectGroup(String groupID);
 
+  /// Returns a bounded opaque candidate subset for a smart group. Endpoint
+  /// details remain inside the local daemon; this is not a UI server list.
+  Future<SmartGroupCandidateShard> getCandidateShard(
+      String groupID, String installationID);
+
+  /// Runs a bounded probe from the user's device through the local daemon.
+  Future<SmartGroupProbeResult> probeGroupCandidate(
+      String groupID, String candidateID);
+
+  /// Connects a candidate only after the daemon verifies it belongs to groupID.
+  Future<void> connectGroupCandidate(String groupID, String candidateID);
+
   Future<void> disconnect();
 
   /// Stops the local daemon after it has disconnected the active runtime.

@@ -7,6 +7,7 @@ import '../../core/models/models.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/platform/app_platform.dart';
 import '../../core/services/android_mosaic_account_service.dart';
+import '../../core/services/smart_group_selector.dart';
 import '../../core/services/android_vpn_service.dart';
 import '../../core/i18n/app_strings.dart';
 import '../../core/theme/atlas_theme.dart';
@@ -30,6 +31,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
   String? _selectedSubscriptionId;
   String? _selectedGroupId;
   bool _busy = false;
+  final SmartGroupSelector _smartGroupSelector = SmartGroupSelector();
 
   @override
   void dispose() {
@@ -43,8 +45,9 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     final status = ref.watch(vpnStatusProvider).valueOrNull ?? VpnStatus();
     final manifest = ref.watch(mosaicManifestProvider);
     final manifestGroups = (manifest.valueOrNull?.groups ?? <ManifestGroup>[])
-        .where((group) =>
-            group.category == 'smart' || group.category == 'whitelist')
+        // Group categories are provider-defined. The generic client excludes
+        // only raw/internal entries and otherwise renders each one as a route.
+        .where((group) => group.category != 'raw')
         .toList();
     final loadedSubscriptions =
         ref.watch(subscriptionsProvider).valueOrNull ?? <Subscription>[];
@@ -84,7 +87,10 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
         !groups.any((group) => group.id == _selectedGroupId)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && groups.isNotEmpty) {
-          setState(() => _selectedGroupId = groups.first.id);
+          final firstEnabled = groups.where((group) => !group.disabled);
+          setState(() => _selectedGroupId = firstEnabled.isNotEmpty
+              ? firstEnabled.first.id
+              : groups.first.id);
         }
       });
     }
@@ -125,7 +131,6 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     List<_RouteChoice> groups,
     _RouteChoice selected,
   ) {
-    final s = AppStrings.of(context);
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
       child: Column(
@@ -152,10 +157,6 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
           const SizedBox(height: 12),
           _ProtectionRow(status: status),
           const SizedBox(height: 22),
-          _SectionTitle(s.t('quick_select')),
-          const SizedBox(height: 12),
-          _quickGroups(c, groups, selected),
-          const SizedBox(height: 18),
           _HowItWorksCard(compact: true),
         ],
       ),
@@ -236,11 +237,6 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                                   onTap: () =>
                                       _pickGroup(context, groups, selected),
                                 ),
-                                const SizedBox(height: 18),
-                                _SectionTitle(s.t('quick_select'), small: true),
-                                const SizedBox(height: 10),
-                                _quickGroups(c, groups, selected,
-                                    vertical: true),
                               ],
                             ),
                           ),
@@ -289,91 +285,22 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     return expand ? button : Align(alignment: Alignment.center, child: button);
   }
 
-  Widget _quickGroups(
-    ThemeColors c,
-    List<_RouteChoice> groups,
-    _RouteChoice selected, {
-    bool vertical = false,
-  }) {
-    final chips = groups.take(vertical ? 6 : 5).map((group) {
-      final active = group.id == selected.id;
-      return ChoiceChip(
-        label: Text(group.title, overflow: TextOverflow.ellipsis),
-        selected: active,
-        onSelected: (_) => setState(() => _selectedGroupId = group.id),
-        selectedColor: AtlasTheme.accent.withValues(alpha: .18),
-        labelStyle: TextStyle(
-          color: active ? AtlasTheme.accent : c.textSecondary,
-          fontWeight: FontWeight.w600,
-        ),
-      );
-    }).toList();
-    if (!vertical) {
-      return Wrap(spacing: 8, runSpacing: 8, children: chips);
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: groups.take(6).map((group) {
-        final active = group.id == selected.id;
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 7),
-          child: Material(
-            color: active ? AtlasTheme.accent.withValues(alpha: .13) : c.bgBase,
-            borderRadius: BorderRadius.circular(12),
-            child: InkWell(
-              onTap: () => setState(() => _selectedGroupId = group.id),
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: active
-                        ? AtlasTheme.accent.withValues(alpha: .42)
-                        : c.border,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      active
-                          ? Icons.check_circle_rounded
-                          : Icons.route_outlined,
-                      size: 17,
-                      color: active ? AtlasTheme.accent : c.textMuted,
-                    ),
-                    const SizedBox(width: 9),
-                    Expanded(
-                      child: Text(
-                        group.title,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: active ? AtlasTheme.accent : c.textPrimary,
-                          fontWeight:
-                              active ? FontWeight.w700 : FontWeight.w600,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-
   Future<void> _toggle(VpnStatus status, _RouteChoice selected) async {
     final api = ref.read(daemonApiProvider);
     try {
       setState(() => _busy = true);
-      if (AppPlatform.isAndroid) {
-        await _toggleAndroidRuntime(status, selected);
-      } else if (status.isConnected || status.isConnecting) {
+      if (status.isConnected || status.isConnecting) {
         await api.disconnect();
+      } else if (selected.disabled) {
+        _notice(
+            selected.disabledReason.isEmpty
+                ? AppStrings.of(context).t('disabled')
+                : selected.disabledReason,
+            error: true);
+      } else if (AppPlatform.isAndroid) {
+        await _toggleAndroidRuntime(status, selected);
+      } else if (selected.isGroup && selected.manifestGroup != null) {
+        await _smartGroupSelector.connect(api, selected.manifestGroup!);
       } else if (selected.isGroup) {
         await api.connectGroup(selected.id);
       } else {
@@ -488,13 +415,23 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     });
   }
 
-  _RouteChoice _manifestAsRouteChoice(ManifestGroup group) => _RouteChoice(
-        id: group.id,
-        title: _localizedGroupTitle(context, group),
-        subtitle: _localizedGroupDescription(context, group),
-        icon: group.icon,
-        isGroup: true,
-      );
+  _RouteChoice _manifestAsRouteChoice(ManifestGroup group) {
+    final strings = AppStrings.of(context);
+    final description = _localizedGroupDescription(context, group);
+    return _RouteChoice(
+      id: group.id,
+      title: _localizedGroupTitle(context, group),
+      subtitle: [
+        strings.t('smart_group'),
+        if (description.isNotEmpty) description,
+      ].join(' · '),
+      icon: group.icon,
+      isGroup: true,
+      disabled: group.disabled,
+      disabledReason: group.disabledReason,
+      manifestGroup: group,
+    );
+  }
 
   _RouteChoice _serverAsRouteChoice(Server server) => _RouteChoice(
         id: server.id,
@@ -521,6 +458,9 @@ class _RouteChoice {
     required this.subtitle,
     required this.icon,
     required this.isGroup,
+    this.disabled = false,
+    this.disabledReason = '',
+    this.manifestGroup,
   });
 
   final String id;
@@ -528,6 +468,9 @@ class _RouteChoice {
   final String subtitle;
   final String icon;
   final bool isGroup;
+  final bool disabled;
+  final String disabledReason;
+  final ManifestGroup? manifestGroup;
 }
 
 class _SubscriptionSelector extends StatelessWidget {
@@ -916,10 +859,10 @@ class _RouteSelector extends StatelessWidget {
     final c = ThemeColors.of(context);
     final s = AppStrings.of(context);
     return Material(
-        color: c.bgCard,
+        color: group.disabled ? c.bgBase : c.bgCard,
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
-          onTap: onTap,
+          onTap: group.disabled ? null : onTap,
           borderRadius: BorderRadius.circular(16),
           child: Padding(
               padding: const EdgeInsets.all(14),
@@ -932,13 +875,17 @@ class _RouteSelector extends StatelessWidget {
                         children: [
                       Text('${s.t('routes')}: ${group.title}',
                           style: TextStyle(
-                              color: c.textPrimary,
+                              color:
+                                  group.disabled ? c.textMuted : c.textPrimary,
                               fontWeight: FontWeight.w700)),
                       const SizedBox(height: 2),
                       Text(
                           group.subtitle.isEmpty
                               ? s.t('route_picker_hint')
-                              : group.subtitle,
+                              : group.disabled &&
+                                      group.disabledReason.isNotEmpty
+                                  ? group.disabledReason
+                                  : group.subtitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: c.textMuted, fontSize: 12)),
@@ -977,31 +924,13 @@ class _ProtectionRow extends StatelessWidget {
   }
 }
 
-String _localizedGroupTitle(BuildContext context, ManifestGroup group) {
-  final s = AppStrings.of(context);
-  return switch (group.id) {
-    'rg-all' => s.t('minimum_ping'),
-    'auto-stable' => s.t('stable_connection'),
-    'auto-speed' => s.t('maximum_speed'),
-    'auto-whitelist' => s.t('allowlist_access'),
-    'auto-de' => s.t('germany'),
-    'auto-ca' => s.t('canada'),
-    _ => group.title,
-  };
-}
+// Smart groups are defined by the provider manifest. The generic client
+// deliberately does not know Mosaic-specific IDs, geographies, or policies.
+String _localizedGroupTitle(BuildContext context, ManifestGroup group) =>
+    group.title.isEmpty ? group.id : group.title;
 
-String _localizedGroupDescription(BuildContext context, ManifestGroup group) {
-  final s = AppStrings.of(context);
-  return switch (group.id) {
-    'rg-all' => s.t('minimum_ping_description'),
-    'auto-stable' => s.t('stable_connection_description'),
-    'auto-speed' => s.t('maximum_speed_description'),
-    'auto-whitelist' => s.t('allowlist_access_description'),
-    'auto-de' => s.t('germany_description'),
-    'auto-ca' => s.t('canada_description'),
-    _ => group.description.isEmpty ? group.badge : group.description,
-  };
-}
+String _localizedGroupDescription(BuildContext context, ManifestGroup group) =>
+    group.description.isEmpty ? group.badge : group.description;
 
 Widget _groupIcon(String raw) {
   final icon = switch (raw) {

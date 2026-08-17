@@ -278,8 +278,50 @@ class MockDaemonApi implements DaemonApiBase {
 
   @override
   Future<void> connectGroup(String groupID) async {
-    // The UI sees only the group identity; a real daemon resolves physical
-    // candidates privately. Keep the mock aligned with that contract.
+    // Legacy group connect remains available for older screens. New clients
+    // request a bounded opaque candidate shard and select locally.
+    await connect('group:$groupID');
+  }
+
+  @override
+  Future<SmartGroupCandidateShard> getCandidateShard(
+      String groupID, String installationID) async {
+    await _delayVoid();
+    return SmartGroupCandidateShard(
+      groupId: groupID,
+      version: 'mock-$groupID',
+      expiresAt: DateTime.now().add(const Duration(minutes: 15)),
+      candidateIds: List<String>.generate(
+          8, (index) => 'candidate:$groupID:$installationID:$index'),
+    );
+  }
+
+  @override
+  Future<SmartGroupProbeResult> probeGroupCandidate(
+      String groupID, String candidateID) async {
+    await _delayVoid();
+    final seed = candidateID.codeUnits.fold<int>(0, (sum, code) => sum + code);
+    final latency = 24 + (seed % 110);
+    final loss = seed % 13 == 0 ? 33.3 : 0.0;
+    return SmartGroupProbeResult(
+      groupId: groupID,
+      candidateId: candidateID,
+      successful: loss < 100,
+      samples: 3,
+      successes: loss > 0 ? 2 : 3,
+      lossPercent: loss,
+      medianLatencyMs: latency,
+      p95LatencyMs: latency + (seed % 20),
+      jitterMs: seed % 20,
+      checkedAt: DateTime.now(),
+      probeKind: 'mock_transport',
+    );
+  }
+
+  @override
+  Future<void> connectGroupCandidate(String groupID, String candidateID) async {
+    // Candidate IDs remain opaque to the UI. The mock tracks the selected
+    // group rather than turning a physical candidate into a visible route.
     await connect('group:$groupID');
   }
 

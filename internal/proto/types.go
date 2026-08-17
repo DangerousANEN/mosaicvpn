@@ -199,20 +199,125 @@ type ManifestNode struct {
 	Priority int    `json:"priority,omitempty"` // for fallback ordering
 }
 
+// ClientSelectionPolicy is a provider-defined, bounded policy executed by the
+// local client runtime. The policy contains no endpoint data: it tells the
+// client how to probe and rank the opaque candidate shard for this group.
+type ClientSelectionPolicy struct {
+	Mode              string  `json:"mode,omitempty"` // latency, stability, speed, weighted, fallback
+	ShardSize         int     `json:"shard_size,omitempty"`
+	MaxParallelProbes int     `json:"max_parallel_probes,omitempty"`
+	ProbeTTLSeconds   int     `json:"probe_ttl_seconds,omitempty"`
+	MaxFailoverTries  int     `json:"max_failover_tries,omitempty"`
+	LatencyWeight     float64 `json:"latency_weight,omitempty"`
+	LossWeight        float64 `json:"loss_weight,omitempty"`
+	StabilityWeight   float64 `json:"stability_weight,omitempty"`
+	SpeedWeight       float64 `json:"speed_weight,omitempty"`
+}
+
+func (p *ClientSelectionPolicy) SetDefaults() {
+	if p.Mode == "" {
+		p.Mode = "latency"
+	}
+	if p.ShardSize <= 0 {
+		p.ShardSize = 16
+	}
+	if p.ShardSize > 32 {
+		p.ShardSize = 32
+	}
+	if p.MaxParallelProbes <= 0 {
+		p.MaxParallelProbes = 4
+	}
+	if p.MaxParallelProbes > 8 {
+		p.MaxParallelProbes = 8
+	}
+	if p.ProbeTTLSeconds <= 0 {
+		p.ProbeTTLSeconds = 600
+	}
+	if p.MaxFailoverTries <= 0 {
+		p.MaxFailoverTries = 3
+	}
+	if p.LatencyWeight == 0 && p.LossWeight == 0 && p.StabilityWeight == 0 && p.SpeedWeight == 0 {
+		p.LatencyWeight = 0.45
+		p.LossWeight = 0.30
+		p.StabilityWeight = 0.25
+	}
+}
+
 // ManifestGroup defines an admin-managed route/group in the subscription manifest.
 type ManifestGroup struct {
-	ID            string         `json:"id"`
-	Title         string         `json:"title"`
-	Type          string         `json:"type"` // "urltest", "fallback", "weighted_round_robin", "direct_node"
-	Nodes         []ManifestNode `json:"nodes"`
-	UserTier      UserTier       `json:"user_tier,omitempty"` // required tier: "free", "pro", "vip"
-	Badge         string         `json:"badge,omitempty"`     // e.g. "Оптимально", "Низкий пинг", "VIP", "4G ТСПУ"
-	Category      string         `json:"category,omitempty"`  // "smart", "whitelist", "raw"
-	Icon          string         `json:"icon,omitempty"`      // e.g. "shield", "lightning", "flag_de"
-	Description   string         `json:"description,omitempty"`
-	PingInterval  int            `json:"ping_interval,omitempty"`  // seconds between health checks, default 30
-	MaxRetries    int            `json:"max_retries,omitempty"`    // before marking node dead, default 3
-	FailoverDelay int            `json:"failover_delay,omitempty"` // seconds before switching to next node
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	// RouteType is the generic UI/API type (normally "smart_group"). Strategy
+	// remains a separate implementation detail so the client never presents
+	// urltest/fallback as a user-visible protocol.
+	RouteType      string                `json:"route_type,omitempty"`
+	Type           string                `json:"type"` // runtime strategy: urltest, fallback, weighted_round_robin, direct_node
+	PoolID         string                `json:"pool_id,omitempty"`
+	Nodes          []ManifestNode        `json:"nodes"`
+	UserTier       UserTier              `json:"user_tier,omitempty"`
+	Badge          string                `json:"badge,omitempty"`
+	Category       string                `json:"category,omitempty"`
+	Icon           string                `json:"icon,omitempty"`
+	Description    string                `json:"description,omitempty"`
+	Disabled       bool                  `json:"disabled,omitempty"`
+	DisabledReason string                `json:"disabled_reason,omitempty"`
+	ClientPolicy   ClientSelectionPolicy `json:"client_policy,omitempty"`
+	PingInterval   int                   `json:"ping_interval,omitempty"`
+	MaxRetries     int                   `json:"max_retries,omitempty"`
+	FailoverDelay  int                   `json:"failover_delay,omitempty"`
+}
+
+// SetDefaults bounds policy settings coming from any provider manifest so an
+// arbitrary remote feed cannot turn the client into an unbounded prober.
+func (m *ManifestGroup) SetDefaults() {
+	if m.RouteType == "" {
+		m.RouteType = "smart_group"
+	}
+	m.ClientPolicy.SetDefaults()
+	if m.PingInterval <= 0 {
+		m.PingInterval = 30
+	}
+	if m.MaxRetries <= 0 {
+		m.MaxRetries = 3
+	}
+	if m.FailoverDelay <= 0 {
+		m.FailoverDelay = 2
+	}
+}
+
+// SubscriptionManifest is the provider-controlled routing & load-balancing manifest.
+// CandidateShard is a bounded, deterministic subset of a smart group's
+// eligible candidates. It is served only by the user's local daemon: Flutter
+// receives opaque IDs and never needs pool endpoint details to rank them.
+type CandidateShard struct {
+	GroupID      string    `json:"group_id"`
+	Version      string    `json:"version"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	CandidateIDs []string  `json:"candidate_ids"`
+}
+
+// CandidateProbeRequest asks the local daemon to make a small transport-level
+// probe from the user's real network. It deliberately accepts an opaque ID,
+// so pool profiles do not enter the UI state tree.
+type CandidateProbeRequest struct {
+	CandidateID string `json:"candidate_id"`
+}
+
+// CandidateProbeResult is local quality evidence used by the desktop/mobile
+// client to rank one candidate. Protocol-level probes may extend this model in
+// a later runtime version; the initial implementation is transport liveness.
+type CandidateProbeResult struct {
+	GroupID         string    `json:"group_id"`
+	CandidateID     string    `json:"candidate_id"`
+	Successful      bool      `json:"successful"`
+	Samples         int       `json:"samples"`
+	Successes       int       `json:"successes"`
+	LossPercent     float64   `json:"loss_percent"`
+	MedianLatencyMs int       `json:"median_latency_ms"`
+	P95LatencyMs    int       `json:"p95_latency_ms"`
+	JitterMs        int       `json:"jitter_ms"`
+	CheckedAt       time.Time `json:"checked_at"`
+	ProbeKind       string    `json:"probe_kind"`
 }
 
 // SubscriptionManifest is the provider-controlled routing & load-balancing manifest.
