@@ -1,0 +1,93 @@
+flowchart TB
+  classDef client fill:#FDF4EE,stroke:#B95E3A,color:#2B211D,stroke-width:1.6px
+  classDef local fill:#F8EFE4,stroke:#936C47,color:#2B211D,stroke-width:1.6px
+  classDef hosted fill:#FAE2D1,stroke:#A54428,color:#2B211D,stroke-width:1.8px
+  classDef protected fill:#F2DDD8,stroke:#7B2D1B,color:#2B211D,stroke-width:1.8px
+  classDef future fill:#E9EEE5,stroke:#536D48,color:#21301D,stroke-dasharray: 5 4
+  classDef decision fill:#FFF8F2,stroke:#936C47,color:#2B211D,stroke-width:1.6px
+
+  subgraph UserDevice[User device: Flutter client]
+    direction TB
+    Start([Open MosaicVPN]):::client
+    SelectAuth{Account already linked?}:::decision
+    AccountSwitcher[Account / provider switcher<br/>target multi-provider]:::future
+    LoginBtn[Sign in on website<br/>target primary flow]:::future
+    LegacyLink[Telegram /link code<br/>secondary recovery/linking flow]:::client
+    Session[Secure provider session<br/>Keystore / secure storage]:::client
+    Sync[Sync provider account + subscriptions + manifest]:::client
+    SourcePicker[Select provider subscription<br/>or local collection]:::client
+    RouteList[Routes list<br/>Smart Group / ordinary server]:::client
+    GroupSelect{Selected route type?}:::decision
+    GroupPolicy[SmartGroupSelector<br/>local latency/loss/speed probes]:::client
+    ImportedNode[Imported / provider-published<br/>single server]:::client
+    NativeConfig[Build native sing-box config]:::client
+    VPNPermission{Android VPN permission?}:::decision
+    VpnRuntime[Android VpnService / desktop mosaicd<br/>sing-box / libbox]:::local
+    Connected([Direct encrypted connection]):::client
+    AccountProfile[Profile<br/>balance, access, devices, history]:::client
+    Checkout[Open hosted checkout URL<br/>top up on website]:::client
+    Diagnostics[In-app safe diagnostics<br/>logs, parser status, export]:::client
+  end
+
+  subgraph Hosted[Hosted provider authority]
+    direction TB
+    WebAuth[Website registration / login<br/>Telegram binding / recovery]:::hosted
+    OAuth[OAuth 2.1 Authorization Code + PKCE<br/>target]:::future
+    AccountAPI[Account API<br/>profile, subscriptions, devices,<br/>freeze, rotation, billing]:::hosted
+    DirectFeed[Opaque personal subscription feed<br/>base64 VLESS / Trojan / etc.]:::hosted
+    Manifest[Provider subscription manifest<br/>route metadata + client policy]:::hosted
+    CheckoutPage[Lava / website checkout]:::hosted
+    Bot[Telegram bot<br/>issue/redeem link codes]:::hosted
+  end
+
+  subgraph Protected[Provider private infrastructure]
+    direction TB
+    CandidateAPI[Candidate shard service<br/>opaque IDs only]:::protected
+    Pool[Private node pool<br/>admission filter and health pruning]:::protected
+    Node[Selected physical node]:::protected
+  end
+
+  Start --> SelectAuth
+  SelectAuth -- No --> LoginBtn
+  LoginBtn --> WebAuth
+  WebAuth --> OAuth
+  OAuth --> Session
+  SelectAuth -- Existing session --> Session
+  LegacyLink --> Bot
+  Bot --> Session
+  Session --> AccountSwitcher
+  AccountSwitcher --> Sync
+  Sync --> AccountAPI
+  Sync --> Manifest
+  Sync --> SourcePicker
+  SourcePicker --> RouteList
+
+  RouteList --> GroupSelect
+  GroupSelect -- Smart Group --> GroupPolicy
+  GroupPolicy --> CandidateAPI
+  CandidateAPI --> Pool
+  Pool --> CandidateAPI
+  CandidateAPI --> GroupPolicy
+  GroupPolicy --> NativeConfig
+  GroupSelect -- Ordinary server --> ImportedNode
+  ImportedNode --> NativeConfig
+
+  NativeConfig --> VPNPermission
+  VPNPermission -- Allow --> VpnRuntime
+  VPNPermission -- Deny --> Diagnostics
+  VpnRuntime --> Node
+  Node --> Connected
+
+  AccountProfile --> AccountAPI
+  AccountProfile --> Checkout
+  Checkout --> CheckoutPage
+  CheckoutPage --> AccountAPI
+  AccountAPI --> AccountProfile
+  Diagnostics --> AccountAPI
+  DirectFeed --> Sync
+  Manifest --> Sync
+
+  class Start,SelectAuth,AccountSwitcher,LoginBtn,LegacyLink,Session,Sync,SourcePicker,RouteList,GroupSelect,GroupPolicy,ImportedNode,NativeConfig,VPNPermission,VpnRuntime,Connected,AccountProfile,Checkout,Diagnostics client
+  class WebAuth,AccountAPI,DirectFeed,Manifest,CheckoutPage,Bot hosted
+  class CandidateAPI,Pool,Node protected
+  class OAuth,AccountSwitcher future

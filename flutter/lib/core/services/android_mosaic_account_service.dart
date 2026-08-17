@@ -1,11 +1,15 @@
 import 'dart:convert';
 
+import 'dart:math';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../models/billing_profile.dart';
 import '../models/payment_entry.dart';
 import '../models/provider_profile.dart';
+import '../models/unified_account.dart';
+import 'android_vpn_service.dart';
 
 /// Device-local account material required by Android's native direct runtime.
 class AndroidMosaicSession {
@@ -33,6 +37,7 @@ class AndroidMosaicAccountService {
   static const _directTokenKey = 'mosaic_android_direct_token';
   static const _sessionTokenKey = 'mosaic_android_session_token';
   static const _usernameKey = 'mosaic_android_username';
+  static const _appAuthStateKey = 'mosaic_android_app_auth_state';
   static const _pairingAlphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
   final Dio _dio = Dio(BaseOptions(
@@ -82,6 +87,132 @@ class AndroidMosaicAccountService {
     await _secureStorage.delete(key: _directTokenKey);
     await _secureStorage.delete(key: _sessionTokenKey);
     await _secureStorage.delete(key: _usernameKey);
+    await _secureStorage.delete(key: _appAuthStateKey);
+  }
+
+  /// Creates the website URL for primary sign-in. Existing cabinet sessions
+  /// complete immediately; otherwise the website asks the user to authenticate
+  /// there, then returns a code to the app through the registered deep link.
+  Future<Uri> beginWebsiteLogin() async {
+    final state = _randomState();
+    await _secureStorage.write(key: _appAuthStateKey, value: state);
+    return Uri.parse('$_baseUrl/cabinet.html').replace(queryParameters: {
+      'return_to': 'mosaicvpn://auth/callback',
+      'state': state,
+    });
+  }
+
+  /// Consumes a one-time browser callback and stores fresh account material.
+  /// State is verified locally and server-side before the code is exchanged.
+  Future<AndroidMosaicSession?> completeWebsiteLoginIfPresent() async {
+    final callback = await AndroidVpnService.instance.consumeAuthCallback();
+    if (callback == null) return null;
+    final code = callback.queryParameters['code'] ?? '';
+    final state = callback.queryParameters['state'] ?? '';
+    final expected = await _secureStorage.read(key: _appAuthStateKey) ?? '';
+    await _secureStorage.delete(key: _appAuthStateKey);
+    if (code.isEmpty ||
+        state.isEmpty ||
+        expected.isEmpty ||
+        state != expected) {
+      throw const FormatException(
+          'Не удалось подтвердить вход через сайт. Повторите попытку.');
+    }
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/api/app-auth/exchange',
+      data: {'code': code, 'state': state},
+    );
+    return _savePayload(
+      Map<String, dynamic>.from(response.data ?? const {}),
+      directKey: 'direct_token',
+    );
+  }
+
+  String _randomState() {
+    final random = Random.secure();
+    const alphabet =
+        'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    return List<String>.generate(
+      48,
+      (_) => alphabet[random.nextInt(alphabet.length)],
+      growable: false,
+    ).join();
+  }
+
+  Future<String> _sessionToken() async {
+    final session = await restoreSession();
+    final token = session?.sessionToken;
+    if (token == null || token.isEmpty) {
+      throw StateError('Сначала войдите через сайт или Telegram.');
+    }
+    return token;
+  }
+
+  Future<Map<String, dynamic>> _getAccountJson(String path) async {
+    final token = await _sessionToken();
+    final response = await _dio.get<Map<String, dynamic>>(
+      path,
+      queryParameters: {'token': token},
+    );
+    return Map<String, dynamic>.from(response.data ?? const {});
+  }
+
+  Future<Map<String, dynamic>> _postAccountJson(
+    String path, {
+    Map<String, dynamic>? data,
+  }) async {
+    final token = await _sessionToken();
+    final response = await _dio.post<Map<String, dynamic>>(
+      path,
+      data: <String, dynamic>{'token': token, ...?data},
+    );
+    return Map<String, dynamic>.from(response.data ?? const {});
+  }
+
+  Future<UnifiedAccount?> getUnifiedAccount() async {
+    final session = await restoreSession();
+    if (session == null) return null;
+    final payload = await _getAccountJson('/api/billing/profile');
+    if (payload['linked'] == false) return null;
+    return UnifiedAccount.fromJson(payload['account'] is Map
+        ? Map<String, dynamic>.from(payload['account'] as Map)
+        : payload);
+  }
+
+  Future<UnifiedAccount> setFrozen(bool frozen) async {
+    final payload = await _postAccountJson(
+      frozen ? '/api/account/freeze' : '/api/account/unfreeze',
+    );
+    return UnifiedAccount.fromJson(payload['account'] is Map
+        ? Map<String, dynamic>.from(payload['account'] as Map)
+        : payload);
+  }
+
+  Future<List<CheckoutProviderOption>> getCheckoutOptions() async {
+    final payload = await _getAccountJson('/api/checkout/options');
+    final raw = payload['providers'];
+    if (raw is! List) return const <CheckoutProviderOption>[];
+    return raw
+        .whereType<Map>()
+        .map((value) =>
+            CheckoutProviderOption.fromJson(Map<String, dynamic>.from(value)))
+        .toList(growable: false);
+  }
+
+  Future<CheckoutSession> createCheckout({
+    required int amountRub,
+    required String provider,
+  }) async {
+    final payload = await _postAccountJson('/api/checkout/create', data: {
+      'amount_rub': amountRub,
+      'provider': provider,
+    });
+    return CheckoutSession.fromJson(payload);
+  }
+
+  Future<RotatedSubscriptionLink> rotateSubscriptionLink() async {
+    final payload = await _postAccountJson('/api/subscription/link/rotate');
+    return RotatedSubscriptionLink.fromJson(payload);
   }
 
   /// Downloads the per-device direct subscription and returns a full native
@@ -171,8 +302,8 @@ class AndroidMosaicAccountService {
               : const <dynamic>[];
       return list
           .whereType<Map>()
-          .map((value) => PaymentEntry.fromJson(
-              Map<String, dynamic>.from(value)))
+          .map((value) =>
+              PaymentEntry.fromJson(Map<String, dynamic>.from(value)))
           .toList(growable: false);
     } on DioException {
       return const <PaymentEntry>[];
@@ -283,7 +414,8 @@ class AndroidMosaicAccountService {
           .map(_outboundFromShareUri)
           .toList(growable: false);
       if (outbounds.isEmpty) {
-        throw const FormatException('Подписка не содержит поддерживаемых серверов.');
+        throw const FormatException(
+            'Подписка не содержит поддерживаемых серверов.');
       }
       return _buildTunConfig(outbounds);
     }
@@ -327,7 +459,9 @@ class AndroidMosaicAccountService {
       // The hosted fallback manifest is unavailable on older deployments. Its
       // generic automatic route is intentionally the complete authenticated
       // direct feed, not a named/hidden private pool category.
-      if (groupId == null || groupId.isEmpty || groupId == 'android-direct-auto') {
+      if (groupId == null ||
+          groupId.isEmpty ||
+          groupId == 'android-direct-auto') {
         return true;
       }
       final memberships = outbound['_mosaic_group_ids'];
@@ -363,7 +497,8 @@ class AndroidMosaicAccountService {
     final withoutWhitespace = compact.replaceAll(RegExp(r'\s+'), '');
     try {
       final normalized = base64.normalize(withoutWhitespace);
-      final decoded = utf8.decode(base64Decode(normalized), allowMalformed: false);
+      final decoded =
+          utf8.decode(base64Decode(normalized), allowMalformed: false);
       if (decoded.contains('://')) return decoded;
     } on FormatException {
       // Plain share URI feeds are accepted below.
@@ -374,7 +509,8 @@ class AndroidMosaicAccountService {
   static Map<String, dynamic> _outboundFromShareUri(String raw) {
     final uri = Uri.tryParse(raw.trim());
     if (uri == null || uri.scheme.isEmpty) {
-      throw FormatException('Некорректная ссылка сервера: ${raw.length > 48 ? raw.substring(0, 48) : raw}');
+      throw FormatException(
+          'Некорректная ссылка сервера: ${raw.length > 48 ? raw.substring(0, 48) : raw}');
     }
     final tag = uri.fragment.isEmpty
         ? '${uri.scheme}-${uri.host}:${uri.hasPort ? uri.port : 0}'
@@ -384,7 +520,8 @@ class AndroidMosaicAccountService {
       case 'vless':
         final uuid = uri.userInfo;
         if (uuid.isEmpty || uri.host.isEmpty) {
-          throw const FormatException('VLESS ссылка не содержит UUID или адрес.');
+          throw const FormatException(
+              'VLESS ссылка не содержит UUID или адрес.');
         }
         final outbound = <String, dynamic>{
           'type': 'vless',
@@ -426,7 +563,8 @@ class AndroidMosaicAccountService {
         return outbound;
       case 'trojan':
         if (uri.userInfo.isEmpty || uri.host.isEmpty) {
-          throw const FormatException('Trojan ссылка не содержит пароль или адрес.');
+          throw const FormatException(
+              'Trojan ссылка не содержит пароль или адрес.');
         }
         return {
           'type': 'trojan',
@@ -440,17 +578,20 @@ class AndroidMosaicAccountService {
           },
         };
       default:
-        throw FormatException('Протокол ${uri.scheme.toUpperCase()} пока не поддержан Android direct runtime.');
+        throw FormatException(
+            'Протокол ${uri.scheme.toUpperCase()} пока не поддержан Android direct runtime.');
     }
   }
 
   static String _buildTunConfig(List<Map<String, dynamic>> outbounds,
       {Map<String, dynamic>? existingConfig}) {
     if (outbounds.isEmpty) {
-      throw const FormatException('Подписка не содержит поддерживаемых серверов.');
+      throw const FormatException(
+          'Подписка не содержит поддерживаемых серверов.');
     }
     const routeTag = 'mosaic-selected-route';
-    final tags = outbounds.map((outbound) => outbound['tag'] as String).toList();
+    final tags =
+        outbounds.map((outbound) => outbound['tag'] as String).toList();
     final config = existingConfig == null
         ? <String, dynamic>{}
         : Map<String, dynamic>.from(existingConfig);

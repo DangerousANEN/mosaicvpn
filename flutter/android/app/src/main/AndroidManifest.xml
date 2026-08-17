@@ -33,6 +33,14 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Website-first authorization returns only a one-time code.
+                 Long-lived account credentials never appear in this URI. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="mosaicvpn" android:host="auth" android:path="/callback" />
+            </intent-filter>
         </activity>
         <service
             android:name=".MosaicVpnService"

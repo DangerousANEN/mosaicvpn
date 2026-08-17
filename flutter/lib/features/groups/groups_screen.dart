@@ -35,6 +35,8 @@ class _RouteRow {
     required this.icon,
     this.disabled = false,
     this.disabledReason = '',
+    this.canTest = false,
+    this.canDelete = false,
   });
 
   final String id;
@@ -46,6 +48,8 @@ class _RouteRow {
   final IconData icon;
   final bool disabled;
   final String disabledReason;
+  final bool canTest;
+  final bool canDelete;
 }
 
 /// A single route inventory. A user first chooses a subscription/source and
@@ -149,11 +153,11 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                       ],
                       _SourceSummary(
                         source: selectedSource,
-                        isMosaic: selectedSource.id == 'mosaic-direct',
+                        isMosaic: selectedSource.isProviderSource,
                       ),
                       const SizedBox(height: 14),
                       if (manifestAsync.hasError &&
-                          selectedSource.id == 'mosaic-direct')
+                          selectedSource.isProviderSource)
                         _InlineNotice(
                           icon: Icons.sync_problem_outlined,
                           text:
@@ -176,6 +180,8 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                           onSort: _applySort,
                           onSortMenu: _showSortMenu,
                           onConnect: _connect,
+                          onTest: _testRoute,
+                          onDelete: _deleteRoute,
                         ),
                     ],
                   ),
@@ -192,17 +198,25 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     ProviderManifest? manifest,
     List<Subscription> subscriptions,
   ) {
-    final direct = subscriptions
-        .where((source) => source.id == 'mosaic-direct')
-        .cast<Subscription?>()
-        .firstWhere(
-          (source) => source != null,
-          orElse: () => (manifest?.groups.isNotEmpty ?? false)
-              ? Subscription(id: 'mosaic-direct', name: 'MosaicVPN')
-              : null,
-        );
+    final providers = subscriptions
+        .where((source) => source.isProviderSource)
+        .toList(growable: true);
+    // Android and an older daemon can receive a manifest before the provider
+    // source list refreshes. Present a normal MosaicVPN provider subscription,
+    // never a synthetic `MosaicVPN · Direct` pseudo-profile.
+    if (providers.isEmpty && (manifest?.groups.isNotEmpty ?? false)) {
+      providers.add(Subscription(
+        id: 'provider-mosaicvpn-primary',
+        name: manifest?.providerName.isNotEmpty == true
+            ? manifest!.providerName
+            : 'MosaicVPN',
+        source: 'provider',
+        providerId: 'mosaicvpn',
+        hidePhysicalNodes: true,
+      ));
+    }
     final regular = subscriptions
-        .where((source) => source.id != 'mosaic-direct')
+        .where((source) => !source.isProviderSource)
         .toList(growable: true);
 
     final pendingOrder = _pendingSubscriptionOrder;
@@ -213,18 +227,13 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
         final source = byID.remove(id);
         if (source != null) ordered.add(source);
       }
-      // Preserve feeds that appeared after drag began (for example after a
-      // background import) instead of silently hiding them.
       ordered.addAll(byID.values);
       regular
         ..clear()
         ..addAll(ordered);
     }
 
-    return <Subscription>[
-      if (direct != null) direct,
-      ...regular,
-    ];
+    return <Subscription>[...providers, ...regular];
   }
 
   List<_RouteRow> _rowsFor({
@@ -233,9 +242,10 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     required List<Server> servers,
     required List<ServerGroup> localGroups,
   }) {
-    if (source.id == 'mosaic-direct') {
+    final rows = <_RouteRow>[];
+    if (source.isProviderSource) {
       final strings = AppStrings.of(context);
-      return (manifest?.groups ?? const <ManifestGroup>[])
+      rows.addAll((manifest?.groups ?? const <ManifestGroup>[])
           // The provider decides which route categories exist. A group stays a
           // normal route row even when disabled; private physical pool nodes
           // never cross this manifest/UI boundary.
@@ -252,13 +262,8 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
               disabled: group.disabled,
               disabledReason: group.disabledReason,
             ),
-          )
-          .toList();
+          ));
     }
-
-    // The daemon API itself filters mosaic-direct physical nodes. This UI
-    // applies the same rule as defence in depth for any future provider change.
-    final rows = <_RouteRow>[];
     if (source.id == 'local-default') {
       rows.addAll(
         localGroups.map(
@@ -278,7 +283,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       servers
           .where((server) =>
               server.subscriptionID == source.id &&
-              server.subscriptionID != 'mosaic-direct')
+              !(source.isProviderSource && source.hidePhysicalNodes))
           .map(
             (server) => _RouteRow(
               id: server.id,
@@ -288,6 +293,8 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
               traffic: '—',
               isGroup: false,
               icon: Icons.dns_outlined,
+              canTest: true,
+              canDelete: source.id == 'local-default',
             ),
           ),
     );
@@ -332,11 +339,12 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     setState(() => _pendingSubscriptionOrder = orderedIDs);
     final stored =
         ref.read(subscriptionsProvider).valueOrNull ?? const <Subscription>[];
-    // MosaicVPN's official source is visually pinned and cannot be dragged,
-    // but it can still be a persisted subscription after account linking. The
-    // backend requires every stored ID in an atomic reorder request.
+    // Provider-owned subscriptions are visually pinned. The backend still
+    // receives all IDs so it can preserve one atomic source ordering.
     final backendOrder = [
-      if (stored.any((source) => source.id == 'mosaic-direct')) 'mosaic-direct',
+      ...stored
+          .where((source) => source.isProviderSource)
+          .map((source) => source.id),
       ...orderedIDs,
     ];
     try {
@@ -516,6 +524,68 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       }
     } finally {
       if (mounted) setState(() => _connectingId = null);
+    }
+  }
+
+  Future<void> _testRoute(_RouteRow row) async {
+    if (!row.canTest || row.isGroup) {
+      _showMessage(
+        'Smart Group оценивается локально при подключении; физические ноды не показываются.',
+        ThemeColors.of(context).textSecondary,
+      );
+      return;
+    }
+    try {
+      await ref.read(daemonApiProvider).testServer(row.id);
+      ref.invalidate(serversProvider);
+      if (!mounted) return;
+      _showMessage('Проверка маршрута завершена.', ThemeColors.of(context).success);
+    } catch (_) {
+      if (!mounted) return;
+      _showMessage(
+        'Не удалось проверить маршрут. Повторите после обновления источника.',
+        ThemeColors.of(context).danger,
+      );
+    }
+  }
+
+  Future<void> _deleteRoute(_RouteRow row) async {
+    if (!row.canDelete) {
+      _showMessage(
+        'Удалять можно только серверы, добавленные вручную в локальный сборник.',
+        ThemeColors.of(context).warning,
+      );
+      return;
+    }
+    final approved = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Удалить сервер?'),
+            content: Text('«${row.name}» будет удалён только с этого устройства.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Отмена'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                    backgroundColor: ThemeColors.of(context).danger),
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Удалить'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!approved) return;
+    try {
+      await ref.read(daemonApiProvider).deleteServer(row.id);
+      ref.invalidate(serversProvider);
+      if (!mounted) return;
+      _showMessage('Сервер удалён.', ThemeColors.of(context).success);
+    } catch (_) {
+      if (!mounted) return;
+      _showMessage('Не удалось удалить сервер.', ThemeColors.of(context).danger);
     }
   }
 
@@ -798,6 +868,7 @@ class _SourceTabsState extends State<_SourceTabs> {
     Subscription source,
     Offset globalPosition,
   ) async {
+    if (source.isProviderSource) return;
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
     final action = await showMenu<_SourceTabAction>(
       context: context,
@@ -836,12 +907,11 @@ class _SourceTabsState extends State<_SourceTabs> {
   @override
   Widget build(BuildContext context) {
     final colors = ThemeColors.of(context);
-    final direct = widget.sources
-        .where((source) => source.id == 'mosaic-direct')
-        .cast<Subscription?>()
-        .firstWhere((source) => source != null, orElse: () => null);
+    final providers = widget.sources
+        .where((source) => source.isProviderSource)
+        .toList(growable: false);
     final regular = widget.sources
-        .where((source) => source.id != 'mosaic-direct')
+        .where((source) => !source.isProviderSource)
         .toList(growable: false);
 
     return SizedBox(
@@ -854,12 +924,12 @@ class _SourceTabsState extends State<_SourceTabs> {
             enabled: regular.isNotEmpty,
             onPressed: () => _scrollTabs(-260),
           ),
-          if (direct != null) ...[
+          for (final provider in providers) ...[
             const SizedBox(width: 4),
             _SourceTab(
-              source: direct,
-              selected: direct.id == widget.selectedId,
-              onSelected: () => widget.onSelected(direct.id),
+              source: provider,
+              selected: provider.id == widget.selectedId,
+              onSelected: () => widget.onSelected(provider.id),
               immutable: true,
             ),
             const SizedBox(width: 8),
@@ -1192,6 +1262,8 @@ class _RouteTable extends StatelessWidget {
     required this.onSort,
     required this.onSortMenu,
     required this.onConnect,
+    required this.onTest,
+    required this.onDelete,
   });
 
   final List<_RouteRow> rows;
@@ -1202,9 +1274,21 @@ class _RouteTable extends StatelessWidget {
   final ValueChanged<_RouteSort> onSort;
   final Future<void> Function(Offset) onSortMenu;
   final ValueChanged<_RouteRow> onConnect;
+  final Future<void> Function(_RouteRow) onTest;
+  final Future<void> Function(_RouteRow) onDelete;
 
   @override
   Widget build(BuildContext context) {
+    if (MediaQuery.sizeOf(context).width < 640) {
+      return _MobileRouteList(
+        rows: rows,
+        activeId: activeId,
+        connectingId: connectingId,
+        onConnect: onConnect,
+        onTest: onTest,
+        onDelete: onDelete,
+      );
+    }
     final colors = ThemeColors.of(context);
     return Container(
       decoration: BoxDecoration(
@@ -1332,6 +1416,132 @@ class _RouteTable extends StatelessWidget {
         _RouteSort.ping => 2,
         _RouteSort.traffic => 3,
       };
+}
+
+class _MobileRouteList extends StatelessWidget {
+  const _MobileRouteList({
+    required this.rows,
+    required this.activeId,
+    required this.connectingId,
+    required this.onConnect,
+    required this.onTest,
+    required this.onDelete,
+  });
+
+  final List<_RouteRow> rows;
+  final String? activeId;
+  final String? connectingId;
+  final ValueChanged<_RouteRow> onConnect;
+  final Future<void> Function(_RouteRow) onTest;
+  final Future<void> Function(_RouteRow) onDelete;
+
+  Future<void> _actions(BuildContext context, _RouteRow row) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.play_circle_outline_rounded),
+              title: const Text('Подключиться'),
+              enabled: !row.disabled,
+              onTap: row.disabled
+                  ? null
+                  : () {
+                      Navigator.of(sheetContext).pop();
+                      onConnect(row);
+                    },
+            ),
+            if (row.canTest)
+              ListTile(
+                leading: const Icon(Icons.network_ping_rounded),
+                title: const Text('Проверить маршрут'),
+                subtitle: Text(row.isGroup
+                    ? 'Оценить Smart Group без показа нод пула'
+                    : 'Измерить доступность выбранного сервера'),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  await onTest(row);
+                },
+              ),
+            if (row.canDelete)
+              ListTile(
+                leading: Icon(Icons.delete_outline,
+                    color: ThemeColors.of(context).danger),
+                title: Text('Удалить с устройства',
+                    style: TextStyle(color: ThemeColors.of(context).danger)),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  await onDelete(row);
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = ThemeColors.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.bgCard,
+        border: Border.all(color: colors.border),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: ListView.separated(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: rows.length,
+        separatorBuilder: (_, __) => Divider(height: 1, color: colors.border),
+        itemBuilder: (context, index) {
+          final row = rows[index];
+          final connected = activeId == row.id || activeId == 'group:${row.id}';
+          final connecting = connectingId == row.id;
+          return ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+            enabled: !row.disabled && !connecting,
+            leading: Icon(row.icon,
+                color: row.disabled ? colors.textMuted : colors.textSecondary),
+            title: Text(row.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: row.disabled ? colors.textMuted : colors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                )),
+            subtitle: Text(
+              '${row.type} · ${row.ping == null ? 'Не проверен' : '${row.ping} мс'}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: colors.textSecondary),
+            ),
+            trailing: connecting
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Row(mainAxisSize: MainAxisSize.min, children: [
+                    if (connected)
+                      const Icon(Icons.check_circle_rounded,
+                          color: AtlasTheme.success, size: 20),
+                    IconButton(
+                      tooltip: 'Действия маршрута',
+                      icon: const Icon(Icons.more_vert_rounded),
+                      onPressed: () => _actions(context, row),
+                    ),
+                  ]),
+            onTap: row.disabled || connecting ? null : () => onConnect(row),
+            onLongPress: () => _actions(context, row),
+          );
+        },
+      ),
+    );
+  }
 }
 
 // Group names are supplied by the provider manifest; the client only knows

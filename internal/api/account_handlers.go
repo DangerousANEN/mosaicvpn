@@ -76,6 +76,25 @@ type emailLoginRequest struct {
 	Password string `json:"password"`
 }
 
+const mosaicProviderSubscriptionID = "provider-mosaicvpn-primary"
+
+// mosaicProviderSubscription represents the service-owned route catalog. It
+// is deliberately a normal provider source named MosaicVPN; `mosaic-direct`
+// remains only as a migration alias for legacy local state.
+func mosaicProviderSubscription(feedURL string) proto.Subscription {
+	return proto.Subscription{
+		ID:                     mosaicProviderSubscriptionID,
+		Name:                   "MosaicVPN",
+		URL:                    feedURL,
+		AutoRefresh:            true,
+		RefreshIntervalSeconds: 3600,
+		Source:                 proto.SubscriptionSourceProvider,
+		ProviderID:             "mosaicvpn",
+		ProviderAccountID:      "mosaicvpn-default",
+		HidePhysicalNodes:      true,
+	}
+}
+
 // handleEmailLogin authorizes a password account at the provider and creates
 // a personal direct feed subscription. The password never reaches disk.
 func (s *Server) handleEmailLogin(w http.ResponseWriter, r *http.Request) {
@@ -102,7 +121,7 @@ func (s *Server) handleEmailLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "store: "+err.Error())
 		return
 	}
-	directSub := proto.Subscription{ID: "mosaic-direct", Name: "MosaicVPN · Direct", URL: res.DirectFeedURL, AutoRefresh: true, RefreshIntervalSeconds: 3600}
+	directSub := mosaicProviderSubscription(res.DirectFeedURL)
 	if _, err := s.store.AddOrUpdateSubscription(directSub); err != nil {
 		writeError(w, http.StatusInternalServerError, "store direct subscription: "+err.Error())
 		return
@@ -148,7 +167,7 @@ func (s *Server) handleLinkCodeRedeem(w http.ResponseWriter, r *http.Request) {
 			// The direct subscription is only created after a successful pairing.
 			// Existing manually added subscriptions are left untouched.
 			if res.DirectFeedURL != "" {
-				directSub := proto.Subscription{ID: "mosaic-direct", Name: "MosaicVPN · Direct", URL: res.DirectFeedURL, AutoRefresh: true, RefreshIntervalSeconds: 3600}
+				directSub := mosaicProviderSubscription(res.DirectFeedURL)
 				if _, serr := s.store.AddOrUpdateSubscription(directSub); serr != nil {
 					writeError(w, http.StatusInternalServerError, "store direct subscription: "+serr.Error())
 					return

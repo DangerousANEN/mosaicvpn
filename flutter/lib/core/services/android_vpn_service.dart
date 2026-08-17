@@ -66,6 +66,21 @@ class AndroidVpnService {
         .invokeMethod<bool>('validateConfig', {'config': singBoxConfig});
   }
 
+  /// Returns and clears the browser callback URI for website-first login. The
+  /// URI carries only a short-lived code and state, never account credentials.
+  Future<Uri?> consumeAuthCallback() async {
+    _ensureSupported();
+    try {
+      final raw = await _channel.invokeMethod<String>('consumeAuthCallback');
+      return raw == null ? null : Uri.tryParse(raw);
+    } on MissingPluginException {
+      // Widget tests and non-native hosts do not install the Android bridge.
+      // Treat that environment as having no browser callback; real Android
+      // builds register this method in MainActivity.
+      return null;
+    }
+  }
+
   void _ensureSupported() {
     if (!isSupported) {
       throw UnsupportedError(

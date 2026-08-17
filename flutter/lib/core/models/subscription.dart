@@ -10,6 +10,10 @@ class Subscription {
   final DateTime lastFetched;
   final bool hasError;
   final String lastError;
+  final String source;
+  final String providerId;
+  final String providerAccountId;
+  final bool hidePhysicalNodes;
 
   Subscription({
     this.id = '',
@@ -21,7 +25,14 @@ class Subscription {
     DateTime? lastFetched,
     this.hasError = false,
     this.lastError = '',
+    this.source = 'local',
+    this.providerId = '',
+    this.providerAccountId = '',
+    this.hidePhysicalNodes = false,
   }) : lastFetched = lastFetched ?? DateTime.fromMillisecondsSinceEpoch(0);
+
+  bool get isProviderSource => source == 'provider' || providerId.isNotEmpty;
+
 
   factory Subscription.fromJson(Map<String, dynamic> j) => Subscription(
         id: j['id'] ?? '',
@@ -35,6 +46,10 @@ class Subscription {
             : null,
         hasError: j['has_error'] ?? false,
         lastError: j['last_error'] ?? '',
+        source: j['source'] ?? 'local',
+        providerId: j['provider_id'] ?? '',
+        providerAccountId: j['provider_account_id'] ?? '',
+        hidePhysicalNodes: j['hide_physical_nodes'] ?? false,
       );
 
   /// Serialise to JSON — the inverse of [fromJson]. Used by the backup
@@ -49,5 +64,9 @@ class Subscription {
         'last_fetched': lastFetched.toIso8601String(),
         'has_error': hasError,
         'last_error': lastError,
+        'source': source,
+        'provider_id': providerId,
+        'provider_account_id': providerAccountId,
+        'hide_physical_nodes': hidePhysicalNodes,
       };
 }

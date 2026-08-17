@@ -504,6 +504,19 @@ def init_db():
         expires_at TEXT NOT NULL
     )
     """)
+    # Browser-to-app callbacks contain only this single-use five-minute code.
+    # They never contain an account session token or personal feed URL.
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS app_auth_codes (
+        code TEXT PRIMARY KEY,
+        telegram_id INTEGER NOT NULL,
+        username TEXT,
+        state TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT
+    )
+    """)
     # Administrative balance credits are an auditable, idempotent ledger.
     # A request remains `processing` until the remote subscription is updated,
     # so retrying after a network error never applies the same credit twice.
@@ -681,6 +694,79 @@ def get_web_session(token):
     except (TypeError, ValueError):
         return None
     return {"telegram_id": telegram_id, "username": username or ""}
+
+
+APP_AUTH_CODE_TTL_SECONDS = 300
+
+
+def issue_app_auth_code(session_token, state):
+    """Create a short-lived code for a validated web session and app state."""
+    session = get_web_session(session_token)
+    if not session or not state or len(state) < 16 or len(state) > 128:
+        return None
+    import secrets as _secrets
+    code = _secrets.token_urlsafe(32)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    expires = now + datetime.timedelta(seconds=APP_AUTH_CODE_TTL_SECONDS)
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            "INSERT INTO app_auth_codes (code, telegram_id, username, state, created_at, expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (code, session["telegram_id"], session["username"], state,
+             now.isoformat(), expires.isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return code
+
+
+def redeem_app_auth_code(code, state):
+    """Atomically burn a callback code and return the authenticated account."""
+    if not code or not state or len(code) > 128 or len(state) > 128:
+        return None, "invalid"
+    now = datetime.datetime.now(datetime.timezone.utc)
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT telegram_id, username, state, expires_at, used_at FROM app_auth_codes WHERE code = ?",
+            (code,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            conn.rollback()
+            return None, "not_found"
+        telegram_id, username, expected_state, expires_at, used_at = row
+        if used_at:
+            conn.rollback()
+            return None, "used"
+        if expected_state != state:
+            conn.rollback()
+            return None, "state_mismatch"
+        try:
+            expiry = datetime.datetime.fromisoformat(expires_at)
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=datetime.timezone.utc)
+        except (TypeError, ValueError):
+            conn.rollback()
+            return None, "expired"
+        if expiry <= now:
+            conn.rollback()
+            return None, "expired"
+        cursor.execute(
+            "UPDATE app_auth_codes SET used_at = ? WHERE code = ? AND used_at IS NULL",
+            (now.isoformat(), code),
+        )
+        if cursor.rowcount != 1:
+            conn.rollback()
+            return None, "used"
+        conn.commit()
+    finally:
+        conn.close()
+    return {"telegram_id": telegram_id, "username": username or ""}, None
 
 
 def get_payments_history(telegram_id):
@@ -1034,6 +1120,44 @@ def api_extend_user(username, days):
     except Exception as e:
         logger.error(f"Error extending user: {e}")
     return None
+
+
+def api_user_action(username, action):
+    """Execute a documented Remnawave user action by immutable user ID."""
+    if action not in {"disable", "enable", "revoke"}:
+        raise ValueError("unsupported user action")
+    user = api_get_user(username)
+    if not user:
+        return None
+    user_id = user.get("uuid") or user.get("id")
+    if not user_id:
+        logger.error("Remnawave user %s has no user ID", username)
+        return None
+    url = f"{BASE_URL}/api/users/{user_id}/actions/{action}"
+    try:
+        res = requests.post(url, headers=api_get_headers(), json={}, timeout=15)
+        if res.status_code in (200, 201, 204):
+            if res.content:
+                return res.json().get("response") or user
+            return user
+        logger.error("User %s action failed for %s: %s - %s", action, username,
+                     res.status_code, res.text)
+    except Exception as exc:
+        logger.error("User %s action error for %s: %s", action, username, exc)
+    return None
+
+
+def api_disable_user(username):
+    return api_user_action(username, "disable")
+
+
+def api_enable_user(username):
+    return api_user_action(username, "enable")
+
+
+def api_revoke_user_subscription(username):
+    """Rotate the provider-issued public subscription link for a user."""
+    return api_user_action(username, "revoke")
 
 # Lava Business API integration
 LAVA_STORE_CONFIG = {
@@ -2807,11 +2931,21 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
-        path = self.path.rstrip("/")
+        # Protected POST payloads carry their token in JSON, not in a query
+        # string; strip a stray query only for robust route matching.
+        path = self.path.split("?", 1)[0].rstrip("/")
         if path in (LAVA_WEBHOOK_SITE_PATH, LAVA_WEBHOOK_BOT_PATH):
             return self._handle_lava_webhook("site" if path == LAVA_WEBHOOK_SITE_PATH else "bot")
         if path == "/api/billing/lava/create":
             return self._handle_lava_create()
+        if path == "/api/checkout/create":
+            return self._handle_lava_create(mobile_checkout=True)
+        if path == "/api/account/freeze":
+            return self._handle_account_freeze_change(True)
+        if path == "/api/account/unfreeze":
+            return self._handle_account_freeze_change(False)
+        if path == "/api/subscription/link/rotate":
+            return self._handle_subscription_link_rotate()
         if path == "/api/admin/balance-credit":
             return self._handle_admin_balance_credit()
         # T-19: the daemon runs behind NAT on the user's machine, so it is the
@@ -2821,18 +2955,20 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         # Web cabinet: exchange pairing code for a long-lived web session token
         if path == "/api/session":
             return self._handle_session_create()
+        # Website-first app login. Browser and app exchange only a short-lived,
+        # state-bound code; the web session is never embedded in a deep link.
+        if path == "/api/app-auth/issue":
+            return self._handle_app_auth_issue()
+        if path == "/api/app-auth/exchange":
+            return self._handle_app_auth_exchange()
 
         self.send_response(404)
         self._cors_headers()
         self.end_headers()
 
-    def _handle_lava_create(self):
-        try:
-            length = int(self.headers.get("Content-Length") or 0)
-            if length <= 0 or length > 4096:
-                raise ValueError("invalid body")
-            payload = json.loads(self.rfile.read(length).decode("utf-8"))
-        except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+    def _handle_lava_create(self, mobile_checkout=False):
+        payload = self._read_json_body()
+        if not payload:
             self._send_json(400, {"error": "invalid body"})
             return
         token = str(payload.get("token") or "")
@@ -2840,8 +2976,12 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         if not session:
             self._send_json(401, {"error": "invalid or expired session"})
             return
+        provider = str(payload.get("provider") or "lava").lower()
+        if provider != "lava":
+            self._send_json(400, {"error": "unsupported payment provider"})
+            return
         try:
-            amount = float(payload.get("amount"))
+            amount = float(payload.get("amount_rub") if mobile_checkout else payload.get("amount"))
         except (TypeError, ValueError):
             self._send_json(400, {"error": "amount must be an integer number of RUB"})
             return
@@ -2856,7 +2996,15 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             logger.error("Lava site invoice creation failed: %s", exc)
             self._send_json(502, {"error": "payment provider unavailable"})
             return
-        self._send_json(200, {"payment_id": invoice["provider_id"], "order_id": invoice["order_id"], "amount": amount, "days": days, "status": "pending", "payment_url": invoice["payment_url"]})
+        response = {"payment_id": invoice["provider_id"], "order_id": invoice["order_id"], "amount": amount, "days": days, "status": "pending", "payment_url": invoice["payment_url"]}
+        if mobile_checkout:
+            response.update({
+                "provider": "lava",
+                "amount_rub": int(amount),
+                "checkout_url": invoice["payment_url"],
+                "message": "Оплата откроется в браузере. Доступ обновится после подтверждения платежа.",
+            })
+        self._send_json(200, response)
 
     def _handle_lava_webhook(self, store):
         try:
@@ -3005,6 +3153,99 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             "amount": amount_rub, "days": amount_rub,
         })
 
+    def _account_payload(self, session, forced_status=None):
+        """Build a single account representation for web and native cabinet clients."""
+        telegram_id = session["telegram_id"]
+        db_user = get_user(telegram_id)
+        if not db_user:
+            return None
+        username = db_user.get("username") or session.get("username") or f"tg_{telegram_id}"
+        remote = api_get_user(username)
+        remote_status = str((remote or {}).get("status") or "ACTIVE").upper()
+        status_map = {"DISABLED": "frozen", "EXPIRED": "insufficient_funds", "ACTIVE": "active"}
+        status = forced_status or status_map.get(remote_status, "active")
+        short_uuid = db_user.get("short_uuid") or (remote or {}).get("shortUuid") or ""
+        expires_at = (remote or {}).get("expireAt")
+        days_left = 0
+        if expires_at:
+            try:
+                expiry = dateutil.parser.isoparse(expires_at)
+                days_left = max(0, (expiry - datetime.datetime.now(datetime.timezone.utc)).days)
+            except Exception:
+                pass
+        return {
+            "account_id": str(telegram_id),
+            "telegram_id": telegram_id,
+            "username": username,
+            "short_uuid": short_uuid,
+            "sub_url": f"https://sub.zxc1x1.ru/{short_uuid}" if short_uuid else None,
+            "subscription_url": f"https://sub.zxc1x1.ru/{short_uuid}" if short_uuid else None,
+            "status": status,
+            "tier": "trial" if not db_user.get("trial_used") else "standard",
+            "balance": days_left,
+            "balance_kopecks": days_left * 100,
+            "currency": "RUB",
+            "trial_ends_at": expires_at,
+            "expires_at": expires_at,
+            "days_left": days_left,
+            "billing": {"price_per_day_rub": 1, "timezone": "Europe/Moscow", "checkout_discount_percent": 0},
+            "devices": [],
+            "is_admin": is_admin(telegram_id),
+        }
+
+    def _authenticated_account_post(self):
+        payload = self._read_json_body()
+        if payload is None:
+            self._send_json(400, {"error": "invalid body"})
+            return None, None
+        session = get_web_session(str(payload.get("token") or ""))
+        if not session:
+            self._send_json(401, {"error": "invalid or expired session"})
+            return None, None
+        return session, payload
+
+    def _handle_account_freeze_change(self, frozen):
+        session, _ = self._authenticated_account_post()
+        if not session:
+            return
+        db_user = get_user(session["telegram_id"])
+        username = (db_user or {}).get("username") or session["username"] or f"tg_{session['telegram_id']}"
+        result = api_disable_user(username) if frozen else api_enable_user(username)
+        if not result:
+            self._send_json(502, {"error": "provider could not update account access"})
+            return
+        logger.info("Account %s was %s by its authenticated owner", session["telegram_id"], "frozen" if frozen else "unfrozen")
+        account = self._account_payload(session, "frozen" if frozen else "active")
+        self._send_json(200, {"account": account})
+
+    def _handle_subscription_link_rotate(self):
+        session, _ = self._authenticated_account_post()
+        if not session:
+            return
+        db_user = get_user(session["telegram_id"])
+        if not db_user:
+            self._send_json(404, {"error": "user not found"})
+            return
+        username = db_user.get("username") or session["username"] or f"tg_{session['telegram_id']}"
+        previous = db_user.get("short_uuid") or ""
+        if not api_revoke_user_subscription(username):
+            self._send_json(502, {"error": "provider could not rotate subscription link"})
+            return
+        refreshed = api_get_user(username) or {}
+        short_uuid = str(refreshed.get("shortUuid") or "")
+        if not short_uuid or short_uuid == previous:
+            logger.error("Provider revoke did not return a new short UUID for user %s", session["telegram_id"])
+            self._send_json(502, {"error": "provider did not confirm a new subscription link"})
+            return
+        save_user(session["telegram_id"], username, short_uuid,
+                  db_user.get("language") or "ru", db_user.get("trial_used") or 0,
+                  db_user.get("referrer_id"))
+        logger.info("Subscription link rotated by authenticated owner for account %s", session["telegram_id"])
+        self._send_json(200, {
+            "short_uuid": short_uuid,
+            "subscription_url": f"https://sub.zxc1x1.ru/{short_uuid}",
+        })
+
     def _handle_link_redeem(self):
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -3057,6 +3298,60 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         result["direct_token"] = short_uuid
         result["subscription_url"] = f"https://sub.zxc1x1.ru/{short_uuid}"
         self._send_json(200, result)
+
+    def _read_json_body(self, max_bytes=4096):
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length <= 0 or length > max_bytes:
+                raise ValueError("invalid body")
+            return json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+            return None
+
+    def _handle_app_auth_issue(self):
+        payload = self._read_json_body()
+        if not payload:
+            self._send_json(400, {"error": "invalid body"})
+            return
+        token = str(payload.get("token") or "")
+        state = str(payload.get("state") or "")
+        code = issue_app_auth_code(token, state)
+        if not code:
+            self._send_json(401, {"error": "invalid session or state"})
+            return
+        self._send_json(200, {
+            "code": code,
+            "expires_in": APP_AUTH_CODE_TTL_SECONDS,
+        })
+
+    def _handle_app_auth_exchange(self):
+        payload = self._read_json_body()
+        if not payload:
+            self._send_json(400, {"error": "invalid body"})
+            return
+        result, reason = redeem_app_auth_code(
+            str(payload.get("code") or ""),
+            str(payload.get("state") or ""),
+        )
+        if not result:
+            status = {"not_found": 404, "expired": 410, "used": 409,
+                      "state_mismatch": 400}.get(reason, 400)
+            self._send_json(status, {"error": reason})
+            return
+        db_user = get_user(result["telegram_id"])
+        short_uuid = (db_user or {}).get("short_uuid") or ""
+        if not short_uuid:
+            self._send_json(404, {"error": "subscription profile not found"})
+            return
+        session_token, _ = create_web_session(result["telegram_id"], result["username"])
+        self._send_json(200, {
+            "ok": True,
+            "telegram_id": result["telegram_id"],
+            "username": result["username"],
+            "session_token": session_token,
+            "direct_token": short_uuid,
+            "subscription_url": f"https://sub.zxc1x1.ru/{short_uuid}",
+        })
 
     def _handle_session_create(self):
         try:
@@ -3132,6 +3427,8 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         # Web cabinet: payments history
         if path == "/api/billing/payments":
             return self._handle_billing_payments(query)
+        if path == "/api/checkout/options":
+            return self._handle_checkout_options(query)
         # Administrative journal, authorization is performed inside the handler.
         if path == "/api/admin/balance-credits":
             return self._handle_admin_balance_credit_history(query)
@@ -3145,6 +3442,13 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         session = get_web_session(token)
         if not session:
             self._send_json(401, {"error": "invalid or expired session"})
+            return
+
+        # The normalized fields below remain backward compatible with the
+        # original profile while also satisfying the native unified cabinet.
+        normalized = self._account_payload(session)
+        if normalized:
+            self._send_json(200, normalized)
             return
 
         telegram_id = session["telegram_id"]
@@ -3187,6 +3491,16 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             profile["traffic_limit"] = traffic_limit
 
         self._send_json(200, profile)
+
+    def _handle_checkout_options(self, query):
+        session = get_web_session(query.get("token", [""])[0])
+        if not session:
+            self._send_json(401, {"error": "invalid or expired session"})
+            return
+        self._send_json(200, {"providers": [{
+            "id": "lava", "title": "СБП и банковские карты", "currency": "RUB",
+            "available": True, "min_amount_rub": 10, "max_amount_rub": 100000,
+        }]})
 
     def _handle_admin_balance_credit_history(self, query):
         session = self._get_admin_session(query.get("token", [""])[0])

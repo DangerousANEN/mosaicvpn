@@ -26,20 +26,24 @@ import (
 // It is the single source of truth for everything that survives a daemon
 // restart.
 type State struct {
-	Subscriptions   []proto.Subscription        `json:"subscriptions"`
-	Servers         []proto.Server              `json:"servers"`
-	Rules           []proto.Rule                `json:"rules"`
-	Prefs           Prefs                       `json:"prefs"`
-	LastServerID    string                      `json:"last_server_id,omitempty"`
-	Profiles        []proto.Profile             `json:"profiles"`
-	RouteProfiles   []proto.RouteProfile        `json:"route_profiles"`
-	WARP            proto.WARPConfig            `json:"warp"`
-	ActiveProfileID string                      `json:"active_profile_id,omitempty"`
-	Egresses        []proto.Egress              `json:"egresses,omitempty"`
-	AntiDPI         proto.AntiDPIConfig         `json:"anti_dpi,omitempty"`
-	ActiveManifest  *proto.SubscriptionManifest `json:"active_manifest,omitempty"`
-	Version         int                         `json:"version"`
-	Account         Account                     `json:"account,omitempty"`
+	Subscriptions   []proto.Subscription `json:"subscriptions"`
+	Servers         []proto.Server       `json:"servers"`
+	Rules           []proto.Rule         `json:"rules"`
+	Prefs           Prefs                `json:"prefs"`
+	LastServerID    string               `json:"last_server_id,omitempty"`
+	Profiles        []proto.Profile      `json:"profiles"`
+	RouteProfiles   []proto.RouteProfile `json:"route_profiles"`
+	WARP            proto.WARPConfig     `json:"warp"`
+	ActiveProfileID string               `json:"active_profile_id,omitempty"`
+	Egresses        []proto.Egress       `json:"egresses,omitempty"`
+	AntiDPI         proto.AntiDPIConfig  `json:"anti_dpi,omitempty"`
+	// ActiveManifest is retained as a legacy compatibility view. New code must
+	// resolve manifests by provider subscription ID through ProviderManifests.
+	ActiveManifest    *proto.SubscriptionManifest            `json:"active_manifest,omitempty"`
+	ProviderAccounts  []proto.ProviderAccount                `json:"provider_accounts,omitempty"`
+	ProviderManifests map[string]*proto.SubscriptionManifest `json:"provider_manifests,omitempty"`
+	Version           int                                    `json:"version"`
+	Account           Account                                `json:"account,omitempty"`
 
 	// Billing credentials persisted so the daemon can rebuild the
 	// billing.Client across restarts without requiring the user to
@@ -187,9 +191,10 @@ func DefaultPrefs() Prefs {
 // Default returns a State with sensible defaults.
 func Default() State {
 	return State{
-		Prefs:   DefaultPrefs(),
-		WARP:    proto.WARPConfig{},
-		Version: 2,
+		Prefs:             DefaultPrefs(),
+		WARP:              proto.WARPConfig{},
+		Version:           3,
+		ProviderManifests: map[string]*proto.SubscriptionManifest{},
 	}
 }
 
@@ -238,6 +243,34 @@ func Open(path string) (*Store, error) {
 	if s.state.Profiles == nil {
 		s.state.Profiles = []proto.Profile{}
 	}
+	if s.state.ProviderManifests == nil {
+		s.state.ProviderManifests = map[string]*proto.SubscriptionManifest{}
+		needsPersist = true
+	}
+	// Version 3 removes the user-visible semantic of the legacy
+	// `mosaic-direct` source. Existing data is preserved, but it receives
+	// explicit provider metadata so API/UI code can stop branching on an ID.
+	if s.state.Version < 3 {
+		for i := range s.state.Subscriptions {
+			sub := &s.state.Subscriptions[i]
+			if sub.ID == "mosaic-direct" {
+				sub.Source = proto.SubscriptionSourceProvider
+				sub.ProviderID = "mosaicvpn"
+				sub.ProviderAccountID = "mosaicvpn-default"
+				sub.HidePhysicalNodes = true
+				if sub.Name == "" || sub.Name == "MosaicVPN · Direct" {
+					sub.Name = "MosaicVPN"
+				}
+				if s.state.ActiveManifest != nil {
+					s.state.ProviderManifests[sub.ID] = s.state.ActiveManifest
+				}
+				needsPersist = true
+			}
+		}
+		s.state.Version = 3
+		needsPersist = true
+	}
+
 	// Existing installs predate groups, so seed them here too rather than
 	// only on a fresh file. Persist only when something was actually added.
 	if seedDefaultGroups(&s.state) {
@@ -263,6 +296,19 @@ func (s *Store) Snapshot() State {
 	cp.Rules = append([]proto.Rule(nil), s.state.Rules...)
 	cp.Profiles = append([]proto.Profile(nil), s.state.Profiles...)
 	cp.RouteProfiles = append([]proto.RouteProfile(nil), s.state.RouteProfiles...)
+	cp.ProviderAccounts = append([]proto.ProviderAccount(nil), s.state.ProviderAccounts...)
+	if s.state.ProviderManifests != nil {
+		cp.ProviderManifests = make(map[string]*proto.SubscriptionManifest, len(s.state.ProviderManifests))
+		for id, manifest := range s.state.ProviderManifests {
+			if manifest == nil {
+				continue
+			}
+			copy := *manifest
+			copy.Groups = append([]proto.ManifestGroup(nil), manifest.Groups...)
+			copy.Rules = append([]proto.Rule(nil), manifest.Rules...)
+			cp.ProviderManifests[id] = &copy
+		}
+	}
 	return cp
 }
 
@@ -691,12 +737,48 @@ func (s *Store) DeleteRule(id string) error {
 	})
 }
 
-// DeleteSubscription removes a subscription and all its servers.
+// SaveManifest retains the legacy global manifest view. New callers should
+// use SaveManifestForSubscription so multiple provider accounts stay isolated.
 func (s *Store) SaveManifest(m *proto.SubscriptionManifest) error {
 	return s.Update(func(st *State) error {
 		st.ActiveManifest = m
 		return nil
 	})
+}
+
+// SaveManifestForSubscription persists a provider manifest under the exact
+// subscription that supplied it. The optional legacy view is kept in sync for
+// older clients that still call GET /v1/manifest without a subscription ID.
+func (s *Store) SaveManifestForSubscription(subscriptionID string, m *proto.SubscriptionManifest) error {
+	if subscriptionID == "" || m == nil {
+		return fmt.Errorf("subscription id and manifest required")
+	}
+	return s.Update(func(st *State) error {
+		if st.ProviderManifests == nil {
+			st.ProviderManifests = map[string]*proto.SubscriptionManifest{}
+		}
+		copy := *m
+		copy.Groups = append([]proto.ManifestGroup(nil), m.Groups...)
+		copy.Rules = append([]proto.Rule(nil), m.Rules...)
+		st.ProviderManifests[subscriptionID] = &copy
+		st.ActiveManifest = &copy
+		return nil
+	})
+}
+
+// ManifestForSubscription returns the provider manifest associated with one
+// source. It intentionally does not fall back to an unrelated provider.
+func (s *Store) ManifestForSubscription(subscriptionID string) *proto.SubscriptionManifest {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	manifest := s.state.ProviderManifests[subscriptionID]
+	if manifest == nil {
+		return nil
+	}
+	copy := *manifest
+	copy.Groups = append([]proto.ManifestGroup(nil), manifest.Groups...)
+	copy.Rules = append([]proto.Rule(nil), manifest.Rules...)
+	return &copy
 }
 
 // DeleteSubscription removes a subscription and all its servers.
@@ -709,7 +791,7 @@ func (s *Store) DeleteSubscription(subID string) error {
 			}
 		}
 		st.Subscriptions = subs
-
+		delete(st.ProviderManifests, subID)
 		servers := make([]proto.Server, 0, len(st.Servers))
 		for _, sv := range st.Servers {
 			if sv.SubscriptionID != subID {

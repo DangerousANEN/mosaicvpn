@@ -377,6 +377,30 @@ type SubscriptionManifest struct {
 	Profile      *ProviderProfile `json:"profile,omitempty"`
 }
 
+// SubscriptionSource distinguishes provider-owned route catalogs from an
+// ordinary user-imported source. The distinction controls visibility and
+// account capabilities; it must never be inferred from a display name.
+type SubscriptionSource string
+
+const (
+	SubscriptionSourceLocal    SubscriptionSource = "local"
+	SubscriptionSourceProvider SubscriptionSource = "provider"
+)
+
+// ProviderAccount is a non-secret account descriptor. Credentials are kept by
+// each platform's secure storage; this record only connects an account to its
+// provider-owned subscriptions and capability manifest.
+type ProviderAccount struct {
+	ID           string          `json:"id"`
+	ProviderID   string          `json:"provider_id"`
+	DisplayName  string          `json:"display_name"`
+	IssuerURL    string          `json:"issuer_url,omitempty"`
+	Username     string          `json:"username,omitempty"`
+	Capabilities map[string]bool `json:"capabilities,omitempty"`
+	LastSync     time.Time       `json:"last_sync,omitempty"`
+	LastError    string          `json:"last_error,omitempty"`
+}
+
 // ProviderProfile is the provider-defined UI/branding/billing/services manifest section.
 type ProviderProfile struct {
 	Branding ProviderBranding  `json:"branding"`
@@ -433,15 +457,22 @@ const (
 // Subscription is a remote source of Servers, periodically fetched and
 // re-parsed.
 type Subscription struct {
-	ID                     string    `json:"id"`
-	Name                   string    `json:"name"`
-	URL                    string    `json:"url"`
-	Format                 Format    `json:"format"`
-	LastFetched            time.Time `json:"last_fetched,omitempty"`
-	LastError              string    `json:"last_error,omitempty"`
-	AutoRefresh            bool      `json:"auto_refresh"`
-	RefreshIntervalSeconds int       `json:"refresh_interval_seconds"`
-	ServerCount            int       `json:"server_count"`
+	ID                     string             `json:"id"`
+	Name                   string             `json:"name"`
+	URL                    string             `json:"url"`
+	Format                 Format             `json:"format"`
+	LastFetched            time.Time          `json:"last_fetched,omitempty"`
+	LastError              string             `json:"last_error,omitempty"`
+	AutoRefresh            bool               `json:"auto_refresh"`
+	RefreshIntervalSeconds int                `json:"refresh_interval_seconds"`
+	ServerCount            int                `json:"server_count"`
+	Source                 SubscriptionSource `json:"source,omitempty"`
+	ProviderID             string             `json:"provider_id,omitempty"`
+	ProviderAccountID      string             `json:"provider_account_id,omitempty"`
+	// HidePhysicalNodes prevents a provider's protected pool from being
+	// rendered as ordinary user-selectable rows. Manifest Smart Groups remain
+	// visible because they are virtual route entries with explicit policy.
+	HidePhysicalNodes bool `json:"hide_physical_nodes,omitempty"`
 }
 
 // Action is the verdict a routing rule produces when it matches a flow.

@@ -19,6 +19,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
 
   static const _subscriptionsKey = 'mosaic.android.subscriptions.v1';
   static const _preferencesKey = 'mosaic.android.preferences.v1';
+  static const _mosaicProviderSubscriptionID = 'provider-mosaicvpn-primary';
   final _account = AndroidMosaicAccountService.instance;
 
   Future<List<Subscription>> _readLocalSubscriptions() async {
@@ -50,11 +51,15 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     final session = await _account.restoreSession();
     if (session == null) return null;
     return Subscription(
-      id: 'mosaic-direct',
-      name: 'MosaicVPN · Direct',
+      id: _mosaicProviderSubscriptionID,
+      name: 'MosaicVPN',
       url: 'https://sub.zxc1x1.ru/api/direct/singbox?token=${Uri.encodeQueryComponent(session.directToken)}',
       autoRefresh: true,
       refreshIntervalSeconds: 3600,
+      source: 'provider',
+      providerId: 'mosaicvpn',
+      providerAccountId: 'mosaicvpn-default',
+      hidePhysicalNodes: true,
     );
   }
 
@@ -62,7 +67,9 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   Future<List<Subscription>> listSubscriptions() async {
     final direct = await _directSubscription();
     final local = await _readLocalSubscriptions();
-    final filtered = local.where((value) => value.id != 'mosaic-direct').toList();
+    final filtered = local
+        .where((value) => value.id != _mosaicProviderSubscriptionID)
+        .toList();
     return [if (direct != null) direct, ...filtered];
   }
 
@@ -104,13 +111,13 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       (value) => value.id == id,
       orElse: () => throw StateError('Подписка не найдена.'),
     );
-    if (id == 'mosaic-direct') return current;
+    if (id == _mosaicProviderSubscriptionID) return current;
     return current;
   }
 
   @override
   Future<void> renameSubscription(String id, String name) async {
-    if (id == 'mosaic-direct') return;
+    if (id == _mosaicProviderSubscriptionID) return;
     final values = await _readLocalSubscriptions();
     final index = values.indexWhere((value) => value.id == id);
     if (index < 0) throw StateError('Подписка не найдена.');
@@ -124,14 +131,18 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       lastFetched: values[index].lastFetched,
       hasError: values[index].hasError,
       lastError: values[index].lastError,
+      source: values[index].source,
+      providerId: values[index].providerId,
+      providerAccountId: values[index].providerAccountId,
+      hidePhysicalNodes: values[index].hidePhysicalNodes,
     );
     await _writeLocalSubscriptions(values);
   }
 
   @override
   Future<void> deleteSubscription(String id) async {
-    if (id == 'mosaic-direct') {
-      throw StateError('Основной MosaicVPN direct-профиль нельзя удалить.');
+    if (id == _mosaicProviderSubscriptionID) {
+      throw StateError('Основную подписку MosaicVPN нельзя удалить.');
     }
     final values = await _readLocalSubscriptions();
     values.removeWhere((value) => value.id == id);
@@ -149,8 +160,11 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       if (value != null) reordered.add(value);
     }
     reordered.addAll(byID.values);
-    final direct = reordered.where((value) => value.id == 'mosaic-direct');
-    final local = reordered.where((value) => value.id != 'mosaic-direct').toList();
+    final direct = reordered
+        .where((value) => value.id == _mosaicProviderSubscriptionID);
+    final local = reordered
+        .where((value) => value.id != _mosaicProviderSubscriptionID)
+        .toList();
     await _writeLocalSubscriptions(local);
     return [...direct, ...local];
   }
@@ -160,9 +174,11 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     final subscriptions = await listSubscriptions();
     final result = <Server>[];
     for (final subscription in subscriptions) {
-      // Mosaic direct feed is rendered only as a generic automatic route. Its
-      // private physical candidates must never appear in Android server lists.
-      if (subscription.id == 'mosaic-direct') continue;
+      // Protected provider feeds expose their manifest Smart Groups, not pool
+      // candidates. User-owned and provider-published ordinary rows are parsed.
+      if (subscription.isProviderSource && subscription.hidePhysicalNodes) {
+        continue;
+      }
       if (subscriptionID != null && subscription.id != subscriptionID) continue;
       try {
         final links = await _account.fetchSubscriptionShareUris(subscription.url);
@@ -218,6 +234,29 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     await storage.setString(_preferencesKey, jsonEncode(updated.toJson()));
     return updated;
   }
+
+  @override
+  Future<UnifiedAccount?> getUnifiedAccount() => _account.getUnifiedAccount();
+
+  @override
+  Future<UnifiedAccount> freezeAccount() => _account.setFrozen(true);
+
+  @override
+  Future<UnifiedAccount> unfreezeAccount() => _account.setFrozen(false);
+
+  @override
+  Future<List<CheckoutProviderOption>> getCheckoutOptions() =>
+      _account.getCheckoutOptions();
+
+  @override
+  Future<CheckoutSession> createCheckout({
+    required int amountRub,
+    required String provider,
+  }) => _account.createCheckout(amountRub: amountRub, provider: provider);
+
+  @override
+  Future<RotatedSubscriptionLink> rotateSubscriptionLink() =>
+      _account.rotateSubscriptionLink();
 
   @override
   Future<BillingProfile> getBillingProfile() => _account.getBillingProfile();

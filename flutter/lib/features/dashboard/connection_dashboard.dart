@@ -51,11 +51,19 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
         .toList();
     final loadedSubscriptions =
         ref.watch(subscriptionsProvider).valueOrNull ?? <Subscription>[];
-    final hasMosaicSource = loadedSubscriptions
-        .any((subscription) => subscription.id == 'mosaic-direct');
+    final hasProviderSource = loadedSubscriptions
+        .any((subscription) => subscription.isProviderSource);
     final subscriptions = <Subscription>[
-      if (!hasMosaicSource && manifestGroups.isNotEmpty)
-        Subscription(id: 'mosaic-direct', name: 'MosaicVPN'),
+      if (!hasProviderSource && manifestGroups.isNotEmpty)
+        Subscription(
+          id: 'provider-mosaicvpn-primary',
+          name: manifest.valueOrNull?.providerName.isNotEmpty == true
+              ? manifest.valueOrNull!.providerName
+              : 'MosaicVPN',
+          source: 'provider',
+          providerId: 'mosaicvpn',
+          hidePhysicalNodes: true,
+        ),
       ...loadedSubscriptions,
     ];
     final selectedSubscription = subscriptions.firstWhere(
@@ -63,22 +71,10 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
       orElse: () =>
           subscriptions.isNotEmpty ? subscriptions.first : Subscription(),
     );
-    final isMosaicSource = selectedSubscription.id == 'mosaic-direct';
+    final isProviderSource = selectedSubscription.isProviderSource;
     final userServers = ref.watch(serversProvider).valueOrNull ?? <Server>[];
-    final List<_RouteChoice> groups = isMosaicSource
-        ? (manifestGroups.isNotEmpty
-            ? manifestGroups.map<_RouteChoice>(_manifestAsRouteChoice).toList()
-            : (AppPlatform.isAndroid
-                ? const [
-                    _RouteChoice(
-                      id: 'android-direct-auto',
-                      title: 'MosaicVPN · Automatic',
-                      subtitle: 'Smart route · local selection',
-                      icon: 'auto',
-                      isGroup: true,
-                    ),
-                  ]
-                : const <_RouteChoice>[]))
+    final List<_RouteChoice> groups = isProviderSource
+        ? manifestGroups.map<_RouteChoice>(_manifestAsRouteChoice).toList()
         : userServers
             .where((server) => server.subscriptionID == selectedSubscription.id)
             .map<_RouteChoice>(_serverAsRouteChoice)

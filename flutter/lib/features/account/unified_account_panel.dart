@@ -4,15 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/models/models.dart';
-import '../../core/platform/app_platform.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/theme/atlas_theme.dart';
 
 final unifiedAccountProvider =
     FutureProvider.autoDispose<UnifiedAccount?>((ref) async {
-  // Android reads account state through its hosted, Keystore-backed session.
-  // It never has a desktop loopback daemon to query.
-  if (AppPlatform.isAndroid) return null;
+  // Android resolves this through its hosted, Keystore-backed account facade;
+  // desktop resolves through mosaicd. The screen intentionally stays shared.
   return ref.watch(daemonApiProvider).getUnifiedAccount();
 });
 

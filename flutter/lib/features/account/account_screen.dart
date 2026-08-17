@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/models/models.dart';
 import '../../core/providers/billing_provider.dart';
@@ -27,7 +28,8 @@ class AccountScreen extends ConsumerStatefulWidget {
   ConsumerState<AccountScreen> createState() => _AccountScreenState();
 }
 
-class _AccountScreenState extends ConsumerState<AccountScreen> {
+class _AccountScreenState extends ConsumerState<AccountScreen>
+    with WidgetsBindingObserver {
   final _codeController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -35,7 +37,25 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   String? _linkError;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    if (AppPlatform.isAndroid) {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _finishWebsiteLogin());
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && AppPlatform.isAndroid) {
+      _finishWebsiteLogin();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _codeController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
@@ -53,6 +73,50 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
       if (alphabet.contains(symbol)) normalized.write(symbol);
     }
     return normalized.toString();
+  }
+
+  Future<void> _startWebsiteLogin() async {
+    if (!AppPlatform.isAndroid || _linking) return;
+    setState(() {
+      _linking = true;
+      _linkError = null;
+    });
+    try {
+      final uri =
+          await AndroidMosaicAccountService.instance.beginWebsiteLogin();
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened) {
+        throw StateError('Не удалось открыть сайт.');
+      }
+      if (mounted) setState(() => _linking = false);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _linking = false;
+        _linkError =
+            'Не удалось открыть вход через сайт. Проверьте интернет и попробуйте снова.';
+      });
+    }
+  }
+
+  Future<void> _finishWebsiteLogin() async {
+    if (!AppPlatform.isAndroid || _linking) return;
+    try {
+      final session = await AndroidMosaicAccountService.instance
+          .completeWebsiteLoginIfPresent();
+      if (session == null || !mounted) return;
+      ref.invalidate(androidMosaicSessionProvider);
+      ref.invalidate(billingProfileProvider);
+      ref.invalidate(paymentHistoryProvider);
+      setState(() => _linkError = null);
+    } on DioException catch (_) {
+      if (!mounted) return;
+      setState(
+          () => _linkError = 'Вход через сайт не завершён. Повторите попытку.');
+    } on FormatException catch (e) {
+      if (!mounted) return;
+      setState(() => _linkError = e.message);
+    }
   }
 
   Future<void> _submitCode() async {
@@ -185,6 +249,8 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
                                     error: _linkError,
                                     onSubmit: _submitCode,
                                     onEmailSubmit: _submitEmail,
+                                    onWebsiteSignIn: _startWebsiteLogin,
+                                    websiteFirst: AppPlatform.isAndroid,
                                   ),
                           ),
                         ],
@@ -252,6 +318,8 @@ class _LinkForm extends StatelessWidget {
   final String? error;
   final VoidCallback onSubmit;
   final VoidCallback onEmailSubmit;
+  final VoidCallback onWebsiteSignIn;
+  final bool websiteFirst;
 
   const _LinkForm({
     required this.controller,
@@ -261,6 +329,8 @@ class _LinkForm extends StatelessWidget {
     required this.error,
     required this.onSubmit,
     required this.onEmailSubmit,
+    required this.onWebsiteSignIn,
+    required this.websiteFirst,
   });
 
   @override
@@ -275,6 +345,40 @@ class _LinkForm extends StatelessWidget {
                   color: c.textPrimary,
                   fontSize: 16,
                   fontWeight: FontWeight.w600)),
+          if (websiteFirst) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Sign in securely in your MosaicVPN cabinet. You will return here automatically.',
+              style:
+                  TextStyle(color: c.textSecondary, fontSize: 12, height: 1.4),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              height: 46,
+              child: FilledButton.icon(
+                onPressed: busy ? null : onWebsiteSignIn,
+                icon: const Icon(Icons.open_in_browser_rounded),
+                label: busy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Sign in on website'),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Row(children: [
+              Expanded(child: Divider(color: c.border)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Text('or use another method',
+                    style: TextStyle(color: c.textSecondary, fontSize: 11)),
+              ),
+              Expanded(child: Divider(color: c.border)),
+            ]),
+            const SizedBox(height: 18),
+          ],
           const SizedBox(height: 6),
           Text(
             'Send /link to the Telegram bot and type the 8-character code it '

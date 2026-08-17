@@ -566,15 +566,19 @@ func (s *Server) handleRenameSub(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
 	snap := s.store.Snapshot()
 	subID := r.URL.Query().Get("subscription_id")
+	hidePhysical := make(map[string]bool, len(snap.Subscriptions))
+	for _, sub := range snap.Subscriptions {
+		hidePhysical[sub.ID] = sub.HidePhysicalNodes
+	}
 	out := make([]proto.Server, 0, len(snap.Servers))
 	for _, sv := range snap.Servers {
 		if subID != "" && sv.SubscriptionID != subID {
 			continue
 		}
-		// Mosaic direct nodes are service infrastructure, not a user-selectable
-		// resource. Users select a named smart group; only the daemon resolves
-		// physical candidates, addresses and IDs inside the protected pool.
-		if sv.SubscriptionID == "mosaic-direct" && !sv.IsVirtualGroup {
+		// A provider can publish virtual Smart Group routes while retaining its
+		// physical pool as protected infrastructure. Local imports and explicit
+		// provider-published server routes remain visible by policy.
+		if hidePhysical[sv.SubscriptionID] && !sv.IsVirtualGroup {
 			continue
 		}
 		out = append(out, sv)
@@ -1173,25 +1177,30 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 // ---------- helpers -------------------------------------------------------
 
-func (s *Server) handleGetManifest(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleGetManifest(w http.ResponseWriter, r *http.Request) {
+	// New callers ask for the manifest belonging to their selected provider
+	// subscription. This prevents one provider's routes from appearing under
+	// another provider or a local collection.
+	if subID := r.URL.Query().Get("subscription_id"); subID != "" {
+		if manifest := s.store.ManifestForSubscription(subID); manifest != nil {
+			writeJSON(w, http.StatusOK, manifest)
+			return
+		}
+		writeJSON(w, http.StatusOK, proto.SubscriptionManifest{Groups: []proto.ManifestGroup{}})
+		return
+	}
+
+	// Compatibility view for pre-provider-aware clients. It is never used to
+	// merge Smart Groups into unrelated subscriptions.
 	s.manifestMu.RLock()
 	m := s.activeManifest
 	s.manifestMu.RUnlock()
-
 	if m == nil {
 		snap := s.store.Snapshot()
-		if snap.ActiveManifest != nil && len(snap.ActiveManifest.Groups) > 0 {
+		if snap.ActiveManifest != nil {
 			m = snap.ActiveManifest
 		} else {
-			// Do not synthesize Mosaic routes from manually imported nodes. Until
-			// an authenticated Mosaic account loads its direct feed, the dashboard
-			// intentionally has no Mosaic smart groups to offer.
-			empty := proto.SubscriptionManifest{
-				ProviderName: "MosaicVPN",
-				UserTier:     proto.TierFree,
-				Groups:       []proto.ManifestGroup{},
-			}
-			m = &empty
+			m = &proto.SubscriptionManifest{Groups: []proto.ManifestGroup{}}
 		}
 	}
 	writeJSON(w, http.StatusOK, m)
@@ -1220,26 +1229,41 @@ func (s *Server) refresh(ctx context.Context, sub proto.Subscription) error {
 	}
 
 	manifest, finalServers := subs.ParseManifestOrSynthesize(manifestBytes, sub.ID, res.Servers)
-	// The account-owned Mosaic feed is the sole source of global smart routes.
-	// When its feed does not provide a separate manifest, build service groups
-	// from its private nodes. The client receives only group names/strategies;
-	// physical nodes remain filtered out by handleListServers.
-	if sub.ID == "mosaic-direct" && len(manifest.Groups) == 0 {
-		manifest = subs.SynthesizeManifest(sub.ID, res.Servers)
-		finalServers = append(
-			subs.BuildVirtualServersFromManifest(manifest, sub.ID),
-			res.Servers...,
-		)
-	}
-	if sub.ID == "mosaic-direct" {
-		if err := s.syncMosaicGroups(manifest); err != nil {
-			return fmt.Errorf("sync Mosaic groups: %w", err)
+	isProviderSource := sub.Source == proto.SubscriptionSourceProvider || sub.ProviderID != "" || sub.ID == "mosaic-direct"
+	if isProviderSource {
+		// A provider manifest defines the complete user-visible route catalog.
+		// If an older Mosaic feed has no manifest yet, synthesize only its virtual
+		// group rows; protected physical nodes stay hidden by subscription policy.
+		if len(manifest.Groups) == 0 && (sub.ProviderID == "mosaicvpn" || sub.ID == "mosaic-direct") {
+			manifest = subs.SynthesizeManifest(sub.ID, res.Servers)
+		}
+		if len(manifest.Groups) > 0 {
+			hasVirtualGroups := false
+			for _, server := range finalServers {
+				if server.IsVirtualGroup {
+					hasVirtualGroups = true
+					break
+				}
+			}
+			// ParseManifestOrSynthesize already creates virtual rows for an
+			// explicit manifest. Synthesis fallback returns raw nodes only.
+			if !hasVirtualGroups {
+				finalServers = append(
+					subs.BuildVirtualServersFromManifest(manifest, sub.ID),
+					res.Servers...,
+				)
+			}
+		}
+		if sub.ProviderID == "mosaicvpn" || sub.ID == "mosaic-direct" {
+			if err := s.syncMosaicGroups(manifest); err != nil {
+				return fmt.Errorf("sync Mosaic groups: %w", err)
+			}
 		}
 		s.manifestMu.Lock()
 		s.activeManifest = &manifest
 		s.manifestMu.Unlock()
-		if err := s.store.SaveManifest(&manifest); err != nil {
-			return fmt.Errorf("save Mosaic manifest: %w", err)
+		if err := s.store.SaveManifestForSubscription(sub.ID, &manifest); err != nil {
+			return fmt.Errorf("save provider manifest: %w", err)
 		}
 	}
 

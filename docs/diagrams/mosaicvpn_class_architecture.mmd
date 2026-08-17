@@ -1,0 +1,245 @@
+classDiagram
+  direction TB
+
+  namespace FlutterShared {
+    class AppShell {
+      +navigation
+      +lifecycle
+      +theme
+    }
+    class VpnProviders {
+      +daemonApiProvider
+      +billingProfileProvider
+      +smartGroupSelectorProvider
+    }
+    class DaemonApiBase {
+      <<interface>>
+      +listSubscriptions()
+      +listServers()
+      +connect()
+      +setPrefs()
+      +getProviderManifest()
+    }
+    class DaemonApi {
+      <<desktop/linux/windows>>
+      +recoverEndpoint()
+      +Bearer auth
+    }
+    class AndroidHostedDaemonApi {
+      <<android>>
+      +local subscriptions
+      +local preferences
+      +hosted account API
+    }
+    class SmartGroupSelector {
+      +selectAndConnect(group)
+      +probeCandidates()
+      +scoreQuality()
+      +failover()
+    }
+    class SmartGroupQualityCache {
+      +latency
+      +loss
+      +downloadMbps
+      +uploadMbps
+    }
+    class Subscription {
+      +id
+      +name
+      +url
+      +serverCount
+      +lastError
+    }
+    class Server {
+      +id
+      +protocol
+      +subscriptionID
+      +importUri
+      +isVirtualGroup
+    }
+    class ProviderManifest {
+      +providerName
+      +groups
+      +speedProbePolicy
+    }
+    class ManifestGroup {
+      +id
+      +routeType
+      +title
+      +clientPolicy
+    }
+    class Preferences {
+      +tunnelMode
+      +mtu
+      +killSwitch
+      +allowLAN
+    }
+  }
+
+  namespace AndroidRuntime {
+    class AndroidMosaicAccountService {
+      +redeemTelegramCode()
+      +loginWithEmail()
+      +fetchSubscriptionShareUris()
+      +buildNativeTunConfig()
+    }
+    class FlutterSecureStorage {
+      <<Android Keystore-backed>>
+      +directToken
+      +sessionToken
+    }
+    class SharedPreferences {
+      <<device-local>>
+      +subscriptions
+      +preferences
+    }
+    class AndroidVpnService {
+      +connect()
+      +disconnect()
+      +status()
+    }
+    class MosaicVpnService {
+      <<Kotlin VpnService>>
+      +create TUN
+      +start libbox
+      +apply config
+    }
+    class LibboxSingBox {
+      <<native libbox.so>>
+      +TUN inbound
+      +outbounds
+      +route rules
+    }
+  }
+
+  namespace DesktopRuntime {
+    class LockfileDiscovery {
+      +endpoint
+      +bearerToken
+    }
+    class LocalDaemonAPI {
+      <<Go HTTP 127.0.0.1>>
+      +subscriptions
+      +servers
+      +prefs
+      +manifest
+      +connect
+    }
+    class GoServer {
+      +refresh(subscription)
+      +candidate shard
+      +speed test
+    }
+    class StateStore {
+      +accounts
+      +subscriptions
+      +servers
+      +manifest
+    }
+    class SingBoxBackend {
+      +connect()
+      +speedTestWithPolicy()
+      +disconnect()
+    }
+    class SubscriptionParser {
+      +fetch()
+      +parse()
+      +ParseManifestOrSynthesize()
+    }
+  }
+
+  namespace HostedMosaic {
+    class WebsiteCabinet {
+      +web login
+      +billing
+      +freeze
+      +devices
+      +subscription link
+    }
+    class BotBackend {
+      +issueLinkCode()
+      +redeemLinkCode()
+      +direct feed
+      +billing endpoints
+    }
+    class ProviderFeed {
+      <<opaque personal URL>>
+      +base64 share URIs
+      +provider manifest
+    }
+    class PrivatePool {
+      <<never rendered>>
+      +candidate shards
+      +admission filter
+    }
+  }
+
+  namespace TargetMultiProvider {
+    class ProviderAccount {
+      <<target>>
+      +providerID
+      +accountID
+      +secureSessionRef
+      +capabilities
+    }
+    class ProviderSubscription {
+      <<target>>
+      +providerAccountID
+      +manifest
+      +routeItems
+    }
+    class RouteItem {
+      <<target>>
+      +routeType
+      +title
+      +visibility
+      +policy
+    }
+    class OAuthPKCEFlow {
+      <<target>>
+      +authorize()
+      +app callback
+      +exchangeCode()
+    }
+  }
+
+  AppShell --> VpnProviders
+  VpnProviders --> DaemonApiBase
+  DaemonApiBase <|.. DaemonApi
+  DaemonApiBase <|.. AndroidHostedDaemonApi
+  VpnProviders --> SmartGroupSelector
+  SmartGroupSelector --> SmartGroupQualityCache
+  SmartGroupSelector --> ManifestGroup
+  Subscription --> Server
+  ProviderManifest --> ManifestGroup
+  VpnProviders --> Subscription
+  VpnProviders --> Server
+  VpnProviders --> Preferences
+
+  AndroidHostedDaemonApi --> AndroidMosaicAccountService
+  AndroidHostedDaemonApi --> SharedPreferences
+  AndroidMosaicAccountService --> FlutterSecureStorage
+  AndroidMosaicAccountService --> ProviderFeed
+  AndroidMosaicAccountService --> WebsiteCabinet
+  AndroidVpnService --> MosaicVpnService
+  MosaicVpnService --> LibboxSingBox
+  AndroidMosaicAccountService ..> AndroidVpnService : native config
+
+  DaemonApi --> LockfileDiscovery
+  DaemonApi --> LocalDaemonAPI
+  LocalDaemonAPI --> GoServer
+  GoServer --> StateStore
+  GoServer --> SubscriptionParser
+  GoServer --> SingBoxBackend
+  SubscriptionParser --> ProviderFeed
+  GoServer --> PrivatePool
+
+  WebsiteCabinet --> BotBackend
+  BotBackend --> ProviderFeed
+  PrivatePool ..> ProviderFeed : private candidates
+
+  ProviderAccount --> ProviderSubscription
+  ProviderSubscription --> RouteItem
+  ProviderAccount --> OAuthPKCEFlow
+  RouteItem ..> ManifestGroup : Smart Group variant
+  ProviderSubscription ..> Subscription : migration replaces visible mosaic-direct
