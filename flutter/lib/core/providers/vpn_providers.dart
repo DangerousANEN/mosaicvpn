@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/android_hosted_daemon_api.dart';
 import '../api/daemon_api.dart';
 import '../api/daemon_api_base.dart';
 import '../api/unavailable_daemon_api.dart';
@@ -164,7 +165,7 @@ final daemonApiProvider = Provider<DaemonApiBase>((ref) {
 
 /// Async provider that resolves the real-or-mock daemon API.
 final resolvedDaemonApiProvider = FutureProvider<DaemonApiBase>((ref) async {
-  if (AppPlatform.isAndroid) return const UnavailableDaemonApi();
+  if (AppPlatform.isAndroid) return AndroidHostedDaemonApi.instance;
   final found = await _resolveLiveDaemonEndpoint();
   if (found != null) {
     return DaemonApi(
@@ -190,7 +191,7 @@ class _ResolvedDaemonApi implements DaemonApiBase {
     // during the first request, and a later Retry must be able to recover.
     if (cached != null && cached is! UnavailableDaemonApi) return cached;
     if (AppPlatform.isAndroid) {
-      return _impl = const UnavailableDaemonApi();
+      return _impl = AndroidHostedDaemonApi.instance;
     }
 
     final inFlight = _resolution;

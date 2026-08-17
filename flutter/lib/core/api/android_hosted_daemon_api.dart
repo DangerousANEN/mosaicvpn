@@ -1,0 +1,178 @@
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../models/models.dart';
+import '../services/android_mosaic_account_service.dart';
+import 'unavailable_daemon_api.dart';
+
+/// Android-side API facade.
+///
+/// Android intentionally has no desktop loopback mosaicd. Account, manifest and
+/// subscription metadata therefore use the hosted authority, while tunnel
+/// operations continue through [AndroidVpnService]. Only desktop-only daemon
+/// operations remain unavailable; they must not make the whole account UI fail.
+class AndroidHostedDaemonApi extends UnavailableDaemonApi {
+  AndroidHostedDaemonApi._();
+
+  static final AndroidHostedDaemonApi instance = AndroidHostedDaemonApi._();
+
+  static const _subscriptionsKey = 'mosaic.android.subscriptions.v1';
+  final _account = AndroidMosaicAccountService.instance;
+
+  Future<List<Subscription>> _readLocalSubscriptions() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_subscriptionsKey);
+    if (raw == null || raw.isEmpty) return <Subscription>[];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return <Subscription>[];
+      return decoded
+          .whereType<Map>()
+          .map((value) => Subscription.fromJson(
+              Map<String, dynamic>.from(value)))
+          .toList(growable: true);
+    } catch (_) {
+      return <Subscription>[];
+    }
+  }
+
+  Future<void> _writeLocalSubscriptions(List<Subscription> values) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _subscriptionsKey,
+      jsonEncode(values.map((value) => value.toJson()).toList()),
+    );
+  }
+
+  Future<Subscription?> _directSubscription() async {
+    final session = await _account.restoreSession();
+    if (session == null) return null;
+    return Subscription(
+      id: 'mosaic-direct',
+      name: 'MosaicVPN · Direct',
+      url: 'https://sub.zxc1x1.ru/api/direct/singbox?token=${Uri.encodeQueryComponent(session.directToken)}',
+      autoRefresh: true,
+      refreshIntervalSeconds: 3600,
+    );
+  }
+
+  @override
+  Future<List<Subscription>> listSubscriptions() async {
+    final direct = await _directSubscription();
+    final local = await _readLocalSubscriptions();
+    final filtered = local.where((value) => value.id != 'mosaic-direct').toList();
+    return [if (direct != null) direct, ...filtered];
+  }
+
+  @override
+  Future<Subscription> addSubscription(
+    String name,
+    String url, {
+    bool autoRefresh = false,
+    int refreshInterval = 3600,
+  }) async {
+    final normalized = url.trim();
+    if (normalized.isEmpty) {
+      throw const FormatException('Введите URL подписки.');
+    }
+    final existing = await _directSubscription();
+    if (existing != null && normalized == existing.url) return existing;
+
+    // Android keeps user-imported links locally. The Mosaic direct profile is
+    // the only profile consumed by the native TUN builder; arbitrary imports
+    // remain visible and are intentionally marked until a provider-compatible
+    // direct feed is selected instead of being silently treated as a tunnel.
+    final values = await _readLocalSubscriptions();
+    final subscription = Subscription(
+      id: 'android-local-${DateTime.now().microsecondsSinceEpoch}',
+      name: name.trim().isEmpty ? 'Локальная подписка' : name.trim(),
+      url: normalized,
+      autoRefresh: autoRefresh,
+      refreshIntervalSeconds: refreshInterval,
+    );
+    values.add(subscription);
+    await _writeLocalSubscriptions(values);
+    return subscription;
+  }
+
+  @override
+  Future<Subscription> refreshSubscription(String id) async {
+    final values = await listSubscriptions();
+    final current = values.firstWhere(
+      (value) => value.id == id,
+      orElse: () => throw StateError('Подписка не найдена.'),
+    );
+    if (id == 'mosaic-direct') return current;
+    return current;
+  }
+
+  @override
+  Future<void> renameSubscription(String id, String name) async {
+    if (id == 'mosaic-direct') return;
+    final values = await _readLocalSubscriptions();
+    final index = values.indexWhere((value) => value.id == id);
+    if (index < 0) throw StateError('Подписка не найдена.');
+    values[index] = Subscription(
+      id: values[index].id,
+      name: name.trim().isEmpty ? values[index].name : name.trim(),
+      url: values[index].url,
+      autoRefresh: values[index].autoRefresh,
+      refreshIntervalSeconds: values[index].refreshIntervalSeconds,
+      serverCount: values[index].serverCount,
+      lastFetched: values[index].lastFetched,
+      hasError: values[index].hasError,
+      lastError: values[index].lastError,
+    );
+    await _writeLocalSubscriptions(values);
+  }
+
+  @override
+  Future<void> deleteSubscription(String id) async {
+    if (id == 'mosaic-direct') {
+      throw StateError('Основной MosaicVPN direct-профиль нельзя удалить.');
+    }
+    final values = await _readLocalSubscriptions();
+    values.removeWhere((value) => value.id == id);
+    await _writeLocalSubscriptions(values);
+  }
+
+  @override
+  Future<List<Subscription>> reorderSubscriptions(
+      List<String> subscriptionIDs) async {
+    final all = await listSubscriptions();
+    final byID = {for (final value in all) value.id: value};
+    final reordered = <Subscription>[];
+    for (final id in subscriptionIDs) {
+      final value = byID.remove(id);
+      if (value != null) reordered.add(value);
+    }
+    reordered.addAll(byID.values);
+    final direct = reordered.where((value) => value.id == 'mosaic-direct');
+    final local = reordered.where((value) => value.id != 'mosaic-direct').toList();
+    await _writeLocalSubscriptions(local);
+    return [...direct, ...local];
+  }
+
+  @override
+  Future<BillingProfile> getBillingProfile() => _account.getBillingProfile();
+
+  @override
+  Future<List<PaymentEntry>> getPaymentHistory() =>
+      _account.getPaymentHistory();
+
+  @override
+  Future<ProviderManifest> getProviderManifest() =>
+      _account.getProviderManifest();
+
+  @override
+  Future<LinkResult> redeemLinkCode(String code) async {
+    final session = await _account.redeemTelegramCode(code);
+    return LinkResult(ok: true, username: session.username ?? '');
+  }
+
+  @override
+  Future<void> loginWithEmail(String email, String password) async {
+    await _account.loginWithEmail(email, password);
+  }
+}

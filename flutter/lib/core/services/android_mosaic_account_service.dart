@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../models/billing_profile.dart';
+import '../models/payment_entry.dart';
 import '../models/provider_profile.dart';
 
 /// Device-local account material required by Android's native direct runtime.
@@ -148,6 +149,33 @@ class AndroidMosaicAccountService {
       // A server-side billing refresh is not a reason to block VPN access or
       // turn the cabinet into an opaque Dio error. The next refresh retries.
       return local;
+    }
+  }
+
+  /// Returns hosted payment history for the linked account. Billing outages
+  /// must not turn the entire Android cabinet into a VPN-runtime error.
+  Future<List<PaymentEntry>> getPaymentHistory() async {
+    final session = await restoreSession();
+    final token = session?.sessionToken;
+    if (token == null || token.isEmpty) return const <PaymentEntry>[];
+    try {
+      final response = await _dio.get<Object>(
+        '/api/billing/payments',
+        queryParameters: {'token': token},
+      );
+      final raw = response.data;
+      final list = raw is List
+          ? raw
+          : raw is Map && raw['payments'] is List
+              ? raw['payments'] as List
+              : const <dynamic>[];
+      return list
+          .whereType<Map>()
+          .map((value) => PaymentEntry.fromJson(
+              Map<String, dynamic>.from(value)))
+          .toList(growable: false);
+    } on DioException {
+      return const <PaymentEntry>[];
     }
   }
 
