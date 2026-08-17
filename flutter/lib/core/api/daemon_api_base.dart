@@ -35,6 +35,9 @@ abstract class DaemonApiBase {
   Future<void> renameSubscription(String id, String name);
   Future<void> deleteSubscription(String id);
 
+  /// Persists a complete subscription order after desktop drag-and-drop.
+  Future<List<Subscription>> reorderSubscriptions(List<String> subscriptionIDs);
+
   // ─── Servers ───────────────────────────────────────────────────────
 
   Future<List<Server>> listServers({String? subscriptionID});

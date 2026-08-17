@@ -146,6 +146,15 @@ func (c *Client) DeleteSubscription(ctx context.Context, id string) error {
 	return c.do(ctx, http.MethodDelete, "/v1/subscriptions/"+id, nil, nil)
 }
 
+// ReorderSubscriptions persists the complete user-defined subscription order.
+func (c *Client) ReorderSubscriptions(ctx context.Context, subscriptionIDs []string) ([]proto.Subscription, error) {
+	var out []proto.Subscription
+	err := c.do(ctx, http.MethodPost, "/v1/subscriptions:reorder", map[string][]string{
+		"subscription_ids": subscriptionIDs,
+	}, &out)
+	return out, err
+}
+
 // Servers lists servers, optionally filtered by subscription id.
 func (c *Client) Servers(ctx context.Context, subscriptionID string) ([]proto.Server, error) {
 	path := "/v1/servers"

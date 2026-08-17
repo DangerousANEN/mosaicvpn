@@ -752,6 +752,31 @@ class MockDaemonApi implements DaemonApiBase {
     _servers.removeWhere((s) => s.subscriptionID == id);
   }
 
+  @override
+  Future<List<Subscription>> reorderSubscriptions(
+      List<String> subscriptionIDs) async {
+    await _delayVoid();
+    if (subscriptionIDs.length != _subscriptions.length ||
+        subscriptionIDs.toSet().length != subscriptionIDs.length) {
+      throw ArgumentError('The complete subscription order is required');
+    }
+    final byID = {
+      for (final subscription in _subscriptions) subscription.id: subscription
+    };
+    final reordered = <Subscription>[];
+    for (final id in subscriptionIDs) {
+      final subscription = byID[id];
+      if (subscription == null) {
+        throw ArgumentError('Unknown subscription: $id');
+      }
+      reordered.add(subscription);
+    }
+    _subscriptions
+      ..clear()
+      ..addAll(reordered);
+    return List.unmodifiable(_subscriptions);
+  }
+
   // ─── Servers ──────────────────────────────────────────────────────
 
   @override

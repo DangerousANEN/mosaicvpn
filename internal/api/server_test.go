@@ -288,3 +288,55 @@ func TestPrefsRoundTrip(t *testing.T) {
 		t.Fatalf("prefs not updated: %+v", out)
 	}
 }
+
+func TestSubscriptionReorderLifecycle(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "store.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := s.AddOrUpdateSubscription(proto.Subscription{ID: "sub-one", Name: "One"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.AddOrUpdateSubscription(proto.Subscription{ID: "sub-two", Name: "Two"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	third, err := s.AddOrUpdateSubscription(proto.Subscription{ID: "sub-three", Name: "Three"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mgr := state.New(s, state.NewMockBackend(), "test")
+	srv := api.NewServer(s, mgr, nil)
+	hs := httptest.NewServer(srv.Handler())
+	t.Cleanup(hs.Close)
+	host, portStr, _ := strings.Cut(strings.TrimPrefix(hs.URL, "http://"), ":")
+	port, _ := strconv.Atoi(portStr)
+	client := apiclient.New(host, port, srv.Token())
+
+	out, err := client.ReorderSubscriptions(context.Background(),
+		[]string{third.ID, first.ID, second.ID})
+	if err != nil {
+		t.Fatalf("reorder subscriptions: %v", err)
+	}
+	if got, want := []string{out[0].ID, out[1].ID, out[2].ID},
+		[]string{third.ID, first.ID, second.ID}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("response order = %v, want %v", got, want)
+	}
+
+	persisted := s.Snapshot().Subscriptions
+	if got, want := []string{persisted[0].ID, persisted[1].ID, persisted[2].ID},
+		[]string{third.ID, first.ID, second.ID}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("persisted order = %v, want %v", got, want)
+	}
+
+	if _, err := client.ReorderSubscriptions(context.Background(), []string{first.ID}); err == nil {
+		t.Fatal("expected incomplete subscription order to fail")
+	}
+	stillPersisted := s.Snapshot().Subscriptions
+	if got, want := []string{stillPersisted[0].ID, stillPersisted[1].ID, stillPersisted[2].ID},
+		[]string{third.ID, first.ID, second.ID}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("failed reorder changed persisted order: %v", got)
+	}
+}

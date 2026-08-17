@@ -151,6 +151,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/subscriptions", s.handleListSubs)
 	s.mux.HandleFunc("POST /v1/subscriptions", s.handleAddSub)
 	s.mux.HandleFunc("POST /v1/subscriptions/refresh-all", s.handleRefreshAllSubs)
+	s.mux.HandleFunc("POST /v1/subscriptions:reorder", s.handleReorderSubs)
 	s.mux.HandleFunc("POST /v1/subscriptions/{id}/refresh", s.handleRefreshSub)
 	s.mux.HandleFunc("PATCH /v1/subscriptions/{id}", s.handleRenameSub)
 	s.mux.HandleFunc("DELETE /v1/subscriptions/{id}", s.handleDeleteSub)
@@ -435,6 +436,21 @@ func (s *Server) handleRefreshAllSubs(w http.ResponseWriter, r *http.Request) {
 		s.refreshAllSubscriptions(ctx)
 	}()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "Background sync started"})
+}
+
+func (s *Server) handleReorderSubs(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SubscriptionIDs []string `json:"subscription_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if err := s.store.ReorderSubscriptions(req.SubscriptionIDs); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, s.store.Snapshot().Subscriptions)
 }
 
 func (s *Server) StartAutoUpdate(ctx context.Context) {

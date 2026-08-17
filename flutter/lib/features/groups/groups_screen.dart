@@ -57,6 +57,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   String? _connectingId;
   _RouteSort _sort = _RouteSort.name;
   bool _ascending = true;
+  List<String>? _pendingSubscriptionOrder;
 
   @override
   Widget build(BuildContext context) {
@@ -129,6 +130,9 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                           sources: sources,
                           selectedId: selectedSource.id,
                           onSelected: _selectSource,
+                          onReorder: _reorderSubscriptions,
+                          onEdit: _editSubscription,
+                          onDelete: _deleteSubscription,
                         ),
                         const SizedBox(height: 18),
                       ],
@@ -177,12 +181,38 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     ProviderManifest? manifest,
     List<Subscription> subscriptions,
   ) {
-    final hasMosaic =
-        subscriptions.any((source) => source.id == 'mosaic-direct');
+    final direct = subscriptions
+        .where((source) => source.id == 'mosaic-direct')
+        .cast<Subscription?>()
+        .firstWhere(
+          (source) => source != null,
+          orElse: () => (manifest?.groups.isNotEmpty ?? false)
+              ? Subscription(id: 'mosaic-direct', name: 'MosaicVPN')
+              : null,
+        );
+    final regular = subscriptions
+        .where((source) => source.id != 'mosaic-direct')
+        .toList(growable: true);
+
+    final pendingOrder = _pendingSubscriptionOrder;
+    if (pendingOrder != null) {
+      final byID = {for (final source in regular) source.id: source};
+      final ordered = <Subscription>[];
+      for (final id in pendingOrder) {
+        final source = byID.remove(id);
+        if (source != null) ordered.add(source);
+      }
+      // Preserve feeds that appeared after drag began (for example after a
+      // background import) instead of silently hiding them.
+      ordered.addAll(byID.values);
+      regular
+        ..clear()
+        ..addAll(ordered);
+    }
+
     return <Subscription>[
-      if (!hasMosaic && (manifest?.groups.isNotEmpty ?? false))
-        Subscription(id: 'mosaic-direct', name: 'MosaicVPN'),
-      ...subscriptions,
+      if (direct != null) direct,
+      ...regular,
     ];
   }
 
@@ -260,6 +290,120 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   void _selectSource(String sourceId) {
     if (sourceId == _selectedSubscriptionId) return;
     setState(() => _selectedSubscriptionId = sourceId);
+  }
+
+  Future<void> _reorderSubscriptions(List<String> orderedIDs) async {
+    setState(() => _pendingSubscriptionOrder = orderedIDs);
+    final stored =
+        ref.read(subscriptionsProvider).valueOrNull ?? const <Subscription>[];
+    // MosaicVPN's official source is visually pinned and cannot be dragged,
+    // but it can still be a persisted subscription after account linking. The
+    // backend requires every stored ID in an atomic reorder request.
+    final backendOrder = [
+      if (stored.any((source) => source.id == 'mosaic-direct')) 'mosaic-direct',
+      ...orderedIDs,
+    ];
+    try {
+      await ref.read(daemonApiProvider).reorderSubscriptions(backendOrder);
+      ref.invalidate(subscriptionsProvider);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _pendingSubscriptionOrder = null);
+        _showMessage(
+          'Не удалось сохранить порядок подписок. Повторите попытку.',
+          ThemeColors.of(context).danger,
+        );
+      }
+    }
+  }
+
+  Future<void> _editSubscription(Subscription source) async {
+    final controller = TextEditingController(text: source.name);
+    final updatedName = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Переименовать подписку'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 80,
+          decoration: const InputDecoration(
+            labelText: 'Название',
+            hintText: 'Например, Личный сервер',
+          ),
+          onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    final name = updatedName?.trim();
+    if (name == null || name.isEmpty || name == source.name) return;
+
+    try {
+      await ref.read(daemonApiProvider).renameSubscription(source.id, name);
+      ref.invalidate(subscriptionsProvider);
+    } catch (_) {
+      if (mounted) {
+        _showMessage('Не удалось переименовать подписку.',
+            ThemeColors.of(context).danger);
+      }
+    }
+  }
+
+  Future<void> _deleteSubscription(Subscription source) async {
+    final approved = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Удалить подписку?'),
+            content: Text(
+              '«${source.name.isEmpty ? 'Безымянный источник' : source.name}» и все маршруты из неё будут удалены с этого устройства. Это действие нельзя отменить.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Отмена'),
+              ),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                    backgroundColor: ThemeColors.of(context).danger),
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('Удалить'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!approved) return;
+
+    try {
+      await ref.read(daemonApiProvider).deleteSubscription(source.id);
+      if (!mounted) return;
+      setState(() {
+        if (_selectedSubscriptionId == source.id) {
+          _selectedSubscriptionId = null;
+        }
+        _pendingSubscriptionOrder = null;
+      });
+      ref.invalidate(subscriptionsProvider);
+      ref.invalidate(serversProvider);
+      _showMessage('Подписка удалена.', ThemeColors.of(context).success);
+    } catch (_) {
+      if (mounted) {
+        _showMessage('Не удалось удалить подписку. Повторите попытку.',
+            ThemeColors.of(context).danger);
+      }
+    }
   }
 
   void _applySort(_RouteSort sort) {
@@ -386,53 +530,302 @@ class _Header extends StatelessWidget {
   }
 }
 
-class _SourceTabs extends StatelessWidget {
+enum _SourceTabAction { edit, delete }
+
+class _SourceTabs extends StatefulWidget {
   const _SourceTabs({
     required this.sources,
     required this.selectedId,
     required this.onSelected,
+    required this.onReorder,
+    required this.onEdit,
+    required this.onDelete,
   });
 
   final List<Subscription> sources;
   final String selectedId;
   final ValueChanged<String> onSelected;
+  final Future<void> Function(List<String> orderedIDs) onReorder;
+  final Future<void> Function(Subscription source) onEdit;
+  final Future<void> Function(Subscription source) onDelete;
+
+  @override
+  State<_SourceTabs> createState() => _SourceTabsState();
+}
+
+class _SourceTabsState extends State<_SourceTabs> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollTabs(double delta) {
+    if (!_scrollController.hasClients) return;
+    final target = (_scrollController.offset + delta).clamp(
+      0.0,
+      _scrollController.position.maxScrollExtent,
+    );
+    _scrollController.animateTo(
+      target.toDouble(),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Future<void> _showContextMenu(
+    Subscription source,
+    Offset globalPosition,
+  ) async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final action = await showMenu<_SourceTabAction>(
+      context: context,
+      position: RelativeRect.fromRect(
+        globalPosition & const Size(1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: const [
+        PopupMenuItem(
+          value: _SourceTabAction.edit,
+          child: ListTile(
+            leading: Icon(Icons.edit_outlined),
+            title: Text('Переименовать'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        PopupMenuItem(
+          value: _SourceTabAction.delete,
+          child: ListTile(
+            leading: Icon(Icons.delete_outline, color: Colors.redAccent),
+            title: Text('Удалить'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      ],
+    );
+    if (!mounted || action == null) return;
+    switch (action) {
+      case _SourceTabAction.edit:
+        await widget.onEdit(source);
+      case _SourceTabAction.delete:
+        await widget.onDelete(source);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = ThemeColors.of(context);
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
+    final direct = widget.sources
+        .where((source) => source.id == 'mosaic-direct')
+        .cast<Subscription?>()
+        .firstWhere((source) => source != null, orElse: () => null);
+    final regular = widget.sources
+        .where((source) => source.id != 'mosaic-direct')
+        .toList(growable: false);
+
+    return SizedBox(
+      height: 46,
       child: Row(
-        children: sources
-            .map(
-              (source) => Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: ChoiceChip(
-                  avatar: Icon(
-                    source.id == 'mosaic-direct'
-                        ? Icons.verified_user_outlined
-                        : Icons.rss_feed_outlined,
-                    size: 17,
-                    color: source.id == selectedId
-                        ? AtlasTheme.accent
-                        : colors.textMuted,
+        children: [
+          _TabArrow(
+            icon: Icons.chevron_left_rounded,
+            tooltip: 'Показать предыдущие подписки',
+            enabled: regular.isNotEmpty,
+            onPressed: () => _scrollTabs(-260),
+          ),
+          if (direct != null) ...[
+            const SizedBox(width: 4),
+            _SourceTab(
+              source: direct,
+              selected: direct.id == widget.selectedId,
+              onSelected: () => widget.onSelected(direct.id),
+              immutable: true,
+            ),
+            const SizedBox(width: 8),
+          ],
+          Expanded(
+            child: regular.isEmpty
+                ? const SizedBox.shrink()
+                : ReorderableListView.builder(
+                    key: const PageStorageKey('subscription-tabs'),
+                    scrollDirection: Axis.horizontal,
+                    scrollController: _scrollController,
+                    buildDefaultDragHandles: false,
+                    padding: const EdgeInsets.only(right: 4),
+                    itemCount: regular.length,
+                    onReorderItem: (oldIndex, newIndex) async {
+                      if (newIndex == oldIndex) return;
+                      final reordered = [...regular];
+                      final moved = reordered.removeAt(oldIndex);
+                      reordered.insert(newIndex, moved);
+                      await widget.onReorder(
+                        reordered.map((source) => source.id).toList(),
+                      );
+                    },
+                    itemBuilder: (context, index) {
+                      final source = regular[index];
+                      return Padding(
+                        key: ValueKey('subscription-tab-${source.id}'),
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Listener(
+                          onPointerDown: (event) {
+                            if (event.buttons == kSecondaryMouseButton) {
+                              _showContextMenu(source, event.position);
+                            }
+                          },
+                          child: _SourceTab(
+                            source: source,
+                            selected: source.id == widget.selectedId,
+                            onSelected: () => widget.onSelected(source.id),
+                            dragHandle: ReorderableDragStartListener(
+                              index: index,
+                              child: Icon(
+                                Icons.drag_indicator_rounded,
+                                size: 18,
+                                color: colors.textMuted,
+                              ),
+                            ),
+                            onMenu: (position) =>
+                                _showContextMenu(source, position),
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                  label: Text(source.name.isEmpty
-                      ? 'Безымянный источник'
-                      : source.name),
-                  selected: source.id == selectedId,
-                  onSelected: (_) => onSelected(source.id),
-                  selectedColor: AtlasTheme.accent.withValues(alpha: .16),
-                  labelStyle: TextStyle(
-                    color: source.id == selectedId
-                        ? AtlasTheme.accent
-                        : colors.textPrimary,
-                    fontWeight: FontWeight.w600,
+          ),
+          _TabArrow(
+            icon: Icons.chevron_right_rounded,
+            tooltip: 'Показать следующие подписки',
+            enabled: regular.isNotEmpty,
+            onPressed: () => _scrollTabs(260),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TabArrow extends StatelessWidget {
+  const _TabArrow({
+    required this.icon,
+    required this.tooltip,
+    required this.enabled,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final bool enabled;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = ThemeColors.of(context);
+    return Tooltip(
+      message: tooltip,
+      child: IconButton(
+        onPressed: enabled ? onPressed : null,
+        icon: Icon(icon),
+        color: colors.textPrimary,
+        disabledColor: colors.textMuted.withValues(alpha: .35),
+        splashRadius: 18,
+      ),
+    );
+  }
+}
+
+class _SourceTab extends StatelessWidget {
+  const _SourceTab({
+    required this.source,
+    required this.selected,
+    required this.onSelected,
+    this.immutable = false,
+    this.dragHandle,
+    this.onMenu,
+  });
+
+  final Subscription source;
+  final bool selected;
+  final VoidCallback onSelected;
+  final bool immutable;
+  final Widget? dragHandle;
+  final ValueChanged<Offset>? onMenu;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = ThemeColors.of(context);
+    final title = source.name.isEmpty ? 'Безымянный источник' : source.name;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onSelected,
+        borderRadius: BorderRadius.circular(12),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 132, maxWidth: 250),
+          child: Ink(
+            height: 42,
+            padding: EdgeInsets.only(
+              left: dragHandle == null ? 12 : 7,
+              right: 6,
+            ),
+            decoration: BoxDecoration(
+              color: selected
+                  ? AtlasTheme.accent.withValues(alpha: .16)
+                  : colors.bgCard,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: selected
+                    ? AtlasTheme.accent.withValues(alpha: .55)
+                    : colors.border,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (dragHandle != null) ...[
+                  dragHandle!,
+                  const SizedBox(width: 3),
+                ],
+                Icon(
+                  immutable
+                      ? Icons.verified_user_outlined
+                      : Icons.rss_feed_outlined,
+                  size: 17,
+                  color: selected ? AtlasTheme.accent : colors.textMuted,
+                ),
+                const SizedBox(width: 7),
+                Flexible(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: selected ? AtlasTheme.accent : colors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-              ),
-            )
-            .toList(),
+                if (onMenu != null)
+                  IconButton(
+                    tooltip: 'Управление подпиской',
+                    constraints:
+                        const BoxConstraints.tightFor(width: 30, height: 30),
+                    padding: EdgeInsets.zero,
+                    splashRadius: 16,
+                    icon: Icon(Icons.more_horiz_rounded,
+                        size: 18, color: colors.textMuted),
+                    onPressed: () {
+                      final renderBox = context.findRenderObject() as RenderBox;
+                      onMenu!(renderBox
+                          .localToGlobal(renderBox.size.center(Offset.zero)));
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

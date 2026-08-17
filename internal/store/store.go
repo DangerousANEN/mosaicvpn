@@ -161,26 +161,26 @@ type Prefs struct {
 // DefaultPrefs returns the prefs Mosaic ships with on a fresh install.
 func DefaultPrefs() Prefs {
 	return Prefs{
-		TunnelMode:    "tun",
-		SocksAddr:     "127.0.0.1:1080",
-		HTTPAddr:      "127.0.0.1:1081",
-		MTU:           1420,
-		KillSwitch:    true,
-		AllowLAN:      true,
-		BlockIPv6:     false,
-		DNSMode:       "fake-ip",
-		DNSProxied:    "https://1.1.1.1/dns-query",
-		DNSDirect:     "udp://77.88.8.8",
-		ShareLAN:      false,
-		ShareAddr:     "0.0.0.0:1080",
-		AutoStart:     "service",
-		AutoConnect:   true,
-		ShowOnLaunch:    true,
-		MinimizeToTray:  true,
-		MCPEnabled:      true,
-		MCPAddr:       "127.0.0.1:8731",
-		MCPPermission: "connect",
-		MCPConfirm:    true,
+		TunnelMode:     "tun",
+		SocksAddr:      "127.0.0.1:1080",
+		HTTPAddr:       "127.0.0.1:1081",
+		MTU:            1420,
+		KillSwitch:     true,
+		AllowLAN:       true,
+		BlockIPv6:      false,
+		DNSMode:        "fake-ip",
+		DNSProxied:     "https://1.1.1.1/dns-query",
+		DNSDirect:      "udp://77.88.8.8",
+		ShareLAN:       false,
+		ShareAddr:      "0.0.0.0:1080",
+		AutoStart:      "service",
+		AutoConnect:    true,
+		ShowOnLaunch:   true,
+		MinimizeToTray: true,
+		MCPEnabled:     true,
+		MCPAddr:        "127.0.0.1:8731",
+		MCPPermission:  "connect",
+		MCPConfirm:     true,
 	}
 }
 
@@ -356,6 +356,39 @@ func (s *Store) RenameSubscription(subID, name string) (proto.Subscription, erro
 		return fmt.Errorf("subscription %q not found", subID)
 	})
 	return saved, err
+}
+
+// ReorderSubscriptions persists a complete user-defined subscription order.
+// The operation is deliberately all-or-nothing: clients must submit every
+// current subscription exactly once, so a stale drag operation cannot silently
+// drop a feed that was added in another window.
+func (s *Store) ReorderSubscriptions(orderedIDs []string) error {
+	return s.Update(func(st *State) error {
+		if len(orderedIDs) != len(st.Subscriptions) {
+			return fmt.Errorf("expected %d subscription IDs, got %d", len(st.Subscriptions), len(orderedIDs))
+		}
+
+		byID := make(map[string]proto.Subscription, len(st.Subscriptions))
+		for _, sub := range st.Subscriptions {
+			byID[sub.ID] = sub
+		}
+
+		reordered := make([]proto.Subscription, 0, len(orderedIDs))
+		seen := make(map[string]struct{}, len(orderedIDs))
+		for _, id := range orderedIDs {
+			if _, duplicate := seen[id]; duplicate {
+				return fmt.Errorf("duplicate subscription ID %q", id)
+			}
+			sub, ok := byID[id]
+			if !ok {
+				return fmt.Errorf("subscription %q not found", id)
+			}
+			seen[id] = struct{}{}
+			reordered = append(reordered, sub)
+		}
+		st.Subscriptions = reordered
+		return nil
+	})
 }
 
 // ReplaceServersFor replaces all stored servers belonging to subID with the

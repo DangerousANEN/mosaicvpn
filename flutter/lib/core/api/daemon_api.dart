@@ -156,6 +156,15 @@ class DaemonApi implements DaemonApiBase {
     await _dio.delete('/v1/subscriptions/$id');
   }
 
+  @override
+  Future<List<Subscription>> reorderSubscriptions(
+      List<String> subscriptionIDs) async {
+    final r = await _dio.post('/v1/subscriptions:reorder', data: {
+      'subscription_ids': subscriptionIDs,
+    });
+    return (r.data as List).map((j) => Subscription.fromJson(j)).toList();
+  }
+
   // ─── Servers ───────────────────────────────────────────────────────
 
   @override

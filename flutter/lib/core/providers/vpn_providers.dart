@@ -248,6 +248,10 @@ class _ResolvedDaemonApi implements DaemonApiBase {
   Future<void> deleteSubscription(String id) async =>
       (await _backend()).deleteSubscription(id);
   @override
+  Future<List<Subscription>> reorderSubscriptions(
+          List<String> subscriptionIDs) async =>
+      (await _backend()).reorderSubscriptions(subscriptionIDs);
+  @override
   Future<List<Server>> listServers({String? subscriptionID}) async =>
       (await _backend()).listServers(subscriptionID: subscriptionID);
   @override
