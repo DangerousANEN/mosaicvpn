@@ -6,6 +6,14 @@ import 'package:dio/dio.dart';
 import '../models/models.dart';
 import 'daemon_api_base.dart';
 
+/// Resolves the current local daemon endpoint from its lockfile.
+///
+/// mosaicd binds an ephemeral loopback port at every launch, so a desktop
+/// client must be able to recover when a previous daemon instance exits and a
+/// new instance writes a different port/token pair.
+typedef DaemonEndpointResolver = Future<({String baseUrl, String token})?>
+    Function();
+
 /// DaemonApi is the HTTP client for the MosaicVPN Go daemon.
 ///
 /// The daemon listens on 127.0.0.1:`<random_port>` and requires a bearer
@@ -14,15 +22,75 @@ import 'daemon_api_base.dart';
 class DaemonApi implements DaemonApiBase {
   final Dio _dio;
   final String baseUrl;
+  final DaemonEndpointResolver? _endpointResolver;
+  Future<({String baseUrl, String token})?>? _endpointRefresh;
 
-  DaemonApi({required this.baseUrl, required String token})
-      : _dio = Dio(BaseOptions(
+  DaemonApi({
+    required this.baseUrl,
+    required String token,
+    DaemonEndpointResolver? endpointResolver,
+  })  : _endpointResolver = endpointResolver,
+        _dio = Dio(BaseOptions(
           baseUrl: baseUrl,
           headers: {'Authorization': 'Bearer $token'},
           connectTimeout: const Duration(seconds: 5),
           receiveTimeout: const Duration(seconds: 30),
           sendTimeout: const Duration(seconds: 10),
-        ));
+        )) {
+    // A connection-refused error is safe to retry: no HTTP request reached the
+    // daemon. This specifically heals the stale random-port case after
+    // mosaicd is restarted, without replaying requests that may have reached
+    // the backend and merely timed out waiting for a response.
+    if (_endpointResolver != null) {
+      _dio.interceptors
+          .add(InterceptorsWrapper(onError: (error, handler) async {
+        if (!_canRecoverFrom(error)) {
+          handler.next(error);
+          return;
+        }
+
+        try {
+          final endpoint = await _refreshEndpoint();
+          if (endpoint == null) {
+            handler.next(error);
+            return;
+          }
+          final headers =
+              Map<String, dynamic>.from(error.requestOptions.headers)
+                ..['Authorization'] = 'Bearer ${endpoint.token}';
+          final request = error.requestOptions.copyWith(
+            baseUrl: endpoint.baseUrl,
+            headers: headers,
+            extra: <String, dynamic>{
+              ...error.requestOptions.extra,
+              '_mosaic_endpoint_retried': true,
+            },
+          );
+          final response = await _dio.fetch<dynamic>(request);
+          handler.resolve(response);
+        } on DioException catch (retryError) {
+          handler.next(retryError);
+        } catch (_) {
+          // Keep the original transport error: it tells the UI that the local
+          // runtime is unavailable, not that a business operation failed.
+          handler.next(error);
+        }
+      }));
+    }
+  }
+
+  bool _canRecoverFrom(DioException error) {
+    return error.type == DioExceptionType.connectionError &&
+        error.requestOptions.extra['_mosaic_endpoint_retried'] != true;
+  }
+
+  Future<({String baseUrl, String token})?> _refreshEndpoint() {
+    final current = _endpointRefresh;
+    if (current != null) return current;
+    final resolving = _endpointResolver!();
+    _endpointRefresh = resolving;
+    return resolving.whenComplete(() => _endpointRefresh = null);
+  }
 
   // ─── Status & Connection ──────────────────────────────────────────
 

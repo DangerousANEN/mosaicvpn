@@ -6,6 +6,7 @@ import '../../core/theme/atlas_theme.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/models/models.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/daemon_error_message.dart';
 import '../../shared/widgets/atlas_widgets.dart';
 import '../../shared/widgets/skeleton_loader.dart';
 import '../groups/groups_screen.dart' show groupsManifestProvider;
@@ -83,7 +84,10 @@ class EgressesScreen extends ConsumerWidget {
                   itemCount: 4,
                   itemBuilder: (_, __) =>
                       const Card(child: SkeletonServerRow())),
-              error: (e, _) => Center(child: Text('Error: $e')),
+              error: (e, _) => _EgressRuntimeError(
+                message: daemonErrorMessage(context, e),
+                onRetry: () => ref.invalidate(egressesProvider),
+              ),
               data: (egresses) {
                 if (egresses.isEmpty) {
                   return Center(
@@ -110,6 +114,49 @@ class EgressesScreen extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _EgressRuntimeError extends StatelessWidget {
+  const _EgressRuntimeError({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeColors.of(context);
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: c.bgCard,
+            borderRadius: BorderRadius.circular(AtlasTheme.radiusMd),
+            border: Border.all(color: c.border),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.dns_outlined, size: 34, color: c.textMuted),
+              const SizedBox(height: 12),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: c.textSecondary, height: 1.4),
+              ),
+              const SizedBox(height: 14),
+              OutlinedButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh, size: 17),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -220,8 +267,8 @@ void _showEgressDialog(
                           enabled: false,
                           value: '__groups_header__',
                           child: Text('Provider Groups',
-                              style:
-                                  TextStyle(fontWeight: FontWeight.w700, fontSize: 11)),
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w700, fontSize: 11)),
                         ),
                         ...manifestGroups.map((g) => DropdownMenuItem(
                               value: 'group:${g.id}',
@@ -232,8 +279,8 @@ void _showEgressDialog(
                         enabled: false,
                         value: '__servers_header__',
                         child: Text('Individual Servers',
-                            style:
-                                TextStyle(fontWeight: FontWeight.w700, fontSize: 11)),
+                            style: TextStyle(
+                                fontWeight: FontWeight.w700, fontSize: 11)),
                       ),
                       ...servers.map((s) => DropdownMenuItem(
                             value: 'server:${s.id}',
@@ -295,60 +342,61 @@ void _showEgressDialog(
               FilledButton(
                 onPressed: () async {
                   try {
-                  final api = ref.read(daemonApiProvider);
-                  final server =
-                      servers.where((s) => s.id == serverID).firstOrNull;
-                  final group = manifestGroups
-                      .where((g) => g.id == groupID)
-                      .firstOrNull;
-                  final parsedPort = int.tryParse(portCtrl.text) ?? 2080;
-                  final port = parsedPort.clamp(1, 65535);
-                  // Check for duplicate port
-                  final egresses = ref.read(egressesProvider).valueOrNull ?? [];
-                  final dupPort = egresses
-                      .any((e) => e.port == port && e.id != existing?.id);
-                  if (dupPort && ctx.mounted) {
-                    await showDialog(
-                      context: ctx,
-                      builder: (d) => AlertDialog(
-                        backgroundColor: c.bgElevated,
-                        title: const Text('Port Conflict',
-                            style: TextStyle(fontSize: 16)),
-                        content: Text(
-                            'Port $port is already used by another egress.',
-                            style: TextStyle(
-                                fontSize: 13, color: c.textSecondary)),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(d),
-                            child: const Text('OK'),
-                          ),
-                        ],
-                      ),
-                    );
-                    return;
-                  }
-                  final payload = {
-                    'name': nameCtrl.text.isNotEmpty
-                        ? nameCtrl.text
-                        : 'Egress $port',
-                    'type': type,
-                    'listen': allowLAN ? '0.0.0.0' : '127.0.0.1',
-                    'port': port,
-                    'server_id': serverID,
-                    'server_name': server?.name,
-                    'group_id': groupID,
-                    'group_name': group?.title,
-                    'active': existing?.active ?? false,
-                    'auto_connect': autoConnect,
-                  };
-                  if (existing != null) {
-                    await api.updateEgress(existing.id, payload);
-                  } else {
-                    await api.addEgress(payload);
-                  }
-                  ref.invalidate(egressesProvider);
-                  if (ctx.mounted) Navigator.pop(ctx);
+                    final api = ref.read(daemonApiProvider);
+                    final server =
+                        servers.where((s) => s.id == serverID).firstOrNull;
+                    final group = manifestGroups
+                        .where((g) => g.id == groupID)
+                        .firstOrNull;
+                    final parsedPort = int.tryParse(portCtrl.text) ?? 2080;
+                    final port = parsedPort.clamp(1, 65535);
+                    // Check for duplicate port
+                    final egresses =
+                        ref.read(egressesProvider).valueOrNull ?? [];
+                    final dupPort = egresses
+                        .any((e) => e.port == port && e.id != existing?.id);
+                    if (dupPort && ctx.mounted) {
+                      await showDialog(
+                        context: ctx,
+                        builder: (d) => AlertDialog(
+                          backgroundColor: c.bgElevated,
+                          title: const Text('Port Conflict',
+                              style: TextStyle(fontSize: 16)),
+                          content: Text(
+                              'Port $port is already used by another egress.',
+                              style: TextStyle(
+                                  fontSize: 13, color: c.textSecondary)),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(d),
+                              child: const Text('OK'),
+                            ),
+                          ],
+                        ),
+                      );
+                      return;
+                    }
+                    final payload = {
+                      'name': nameCtrl.text.isNotEmpty
+                          ? nameCtrl.text
+                          : 'Egress $port',
+                      'type': type,
+                      'listen': allowLAN ? '0.0.0.0' : '127.0.0.1',
+                      'port': port,
+                      'server_id': serverID,
+                      'server_name': server?.name,
+                      'group_id': groupID,
+                      'group_name': group?.title,
+                      'active': existing?.active ?? false,
+                      'auto_connect': autoConnect,
+                    };
+                    if (existing != null) {
+                      await api.updateEgress(existing.id, payload);
+                    } else {
+                      await api.addEgress(payload);
+                    }
+                    ref.invalidate(egressesProvider);
+                    if (ctx.mounted) Navigator.pop(ctx);
                   } catch (e) {
                     debugPrint('egress save failed: $e');
                     if (ctx.mounted) {
@@ -358,8 +406,8 @@ void _showEgressDialog(
                               style: const TextStyle(fontFamily: 'monospace')),
                           action: SnackBarAction(
                             label: 'Copy',
-                            onPressed: () =>
-                                Clipboard.setData(ClipboardData(text: e.toString())),
+                            onPressed: () => Clipboard.setData(
+                                ClipboardData(text: e.toString())),
                           ),
                         ),
                       );
@@ -437,7 +485,8 @@ class _EgressTile extends ConsumerWidget {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.hub, size: 10, color: AtlasTheme.accent),
+                              Icon(Icons.hub,
+                                  size: 10, color: AtlasTheme.accent),
                               const SizedBox(width: 3),
                               Text(
                                 egress.groupName!,
@@ -448,9 +497,9 @@ class _EgressTile extends ConsumerWidget {
                                 ),
                               ),
                             ],
+                          ),
                         ),
-                      ),
-                    )
+                      )
                     else
                       Text(
                         egress.serverName ?? 'Default',
@@ -563,8 +612,8 @@ class _EgressTile extends ConsumerWidget {
                           style: const TextStyle(fontFamily: 'monospace')),
                       action: SnackBarAction(
                         label: 'Copy',
-                        onPressed: () =>
-                            Clipboard.setData(ClipboardData(text: e.toString())),
+                        onPressed: () => Clipboard.setData(
+                            ClipboardData(text: e.toString())),
                       ),
                     ),
                   );

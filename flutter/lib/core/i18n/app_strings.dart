@@ -179,6 +179,10 @@ class AppStrings {
     'sign_out_confirm':
         'The VPN will be disconnected and account tokens on this device will be removed. Manually added profiles will stay available.',
     'settings_not_applied': 'The setting was not applied',
+    'daemon_recovering':
+        'The local VPN service is restarting. Please retry in a few seconds.',
+    'daemon_request_failed':
+        'The local VPN service could not complete the request.',
     'export_config': 'Export configuration',
     'import_config': 'Import configuration',
     'export_cancelled': 'Export cancelled',
@@ -367,6 +371,9 @@ class AppStrings {
     'sign_out_confirm':
         'VPN будет отключён, а токены аккаунта на этом устройстве удалены. Добавленные вручную профили останутся доступными.',
     'settings_not_applied': 'Настройка не была применена',
+    'daemon_recovering':
+        'Локальный VPN-сервис перезапускается. Повторите действие через несколько секунд.',
+    'daemon_request_failed': 'Локальный VPN-сервис не смог выполнить запрос.',
     'export_config': 'Экспортировать конфигурацию',
     'import_config': 'Импортировать конфигурацию',
     'export_cancelled': 'Экспорт отменён',

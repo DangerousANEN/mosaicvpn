@@ -15,6 +15,7 @@ import '../../core/services/android_vpn_service.dart';
 import '../../core/services/tray_service.dart';
 import '../../core/services/autostart_service.dart';
 import '../../core/config/app_config.dart';
+import '../../core/utils/daemon_error_message.dart';
 import '../../shared/widgets/atlas_widgets.dart';
 import '../../shared/widgets/skeleton_loader.dart';
 
@@ -1488,8 +1489,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     } catch (e) {
       // A setting that the runtime rejected must not remain visually enabled.
       // Revert to the last confirmed daemon preferences and explain the cause.
-      if (mounted) setState(() => _localPrefs = prefs);
-      _showSnack('${s.t('settings_not_applied')}: $e');
+      if (!mounted) return;
+      setState(() => _localPrefs = prefs);
+      debugPrint('settings update failed: $e');
+      _showSnack(
+          '${s.t('settings_not_applied')}: ${daemonErrorMessage(context, e)}');
     }
 
     // ── Wire desktop services ──

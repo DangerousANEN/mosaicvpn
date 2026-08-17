@@ -133,6 +133,21 @@ Future<({String baseUrl, String token})?> _tryRealDaemon() async {
   return null;
 }
 
+/// Resolves a live daemon endpoint and starts a fresh local daemon if the
+/// previous endpoint is stale. Kept outside the provider so [DaemonApi] can
+/// use the same recovery path after a connection-refused error.
+Future<({String baseUrl, String token})?> _resolveLiveDaemonEndpoint() async {
+  if (kIsWeb || AppPlatform.isAndroid) return null;
+  var real = await _tryRealDaemon();
+  if (real != null) return real;
+
+  await DaemonLauncher.instance.ensureDaemonRunning(() async {
+    real = await _tryRealDaemon();
+    return real != null;
+  });
+  return real;
+}
+
 // ─── Daemon API Provider ────────────────────────────────────────────
 
 /// Provides the API client for the MosaicVPN daemon.
@@ -150,16 +165,13 @@ final daemonApiProvider = Provider<DaemonApiBase>((ref) {
 /// Async provider that resolves the real-or-mock daemon API.
 final resolvedDaemonApiProvider = FutureProvider<DaemonApiBase>((ref) async {
   if (AppPlatform.isAndroid) return const UnavailableDaemonApi();
-  var real = await _tryRealDaemon();
-  if (real == null) {
-    await DaemonLauncher.instance.ensureDaemonRunning(() async {
-      real = await _tryRealDaemon();
-      return real != null;
-    });
-  }
-  final found = real;
+  final found = await _resolveLiveDaemonEndpoint();
   if (found != null) {
-    return DaemonApi(baseUrl: found.baseUrl, token: found.token);
+    return DaemonApi(
+      baseUrl: found.baseUrl,
+      token: found.token,
+      endpointResolver: _resolveLiveDaemonEndpoint,
+    );
   }
   return const UnavailableDaemonApi();
 });
@@ -171,26 +183,39 @@ class _ResolvedDaemonApi implements DaemonApiBase {
   Future<DaemonApiBase>? _resolution;
 
   Future<DaemonApiBase> _backend() async {
-    if (_impl != null) return _impl!;
+    final cached = _impl;
+    // A real client remains valid until its transport-level recovery notices a
+    // stale endpoint. Do not permanently cache an unavailable placeholder:
+    // mosaicd may have been extracting, restarting or waiting on a stale lock
+    // during the first request, and a later Retry must be able to recover.
+    if (cached != null && cached is! UnavailableDaemonApi) return cached;
     if (AppPlatform.isAndroid) {
       return _impl = const UnavailableDaemonApi();
     }
-    _resolution ??= () async {
-      var real = await _tryRealDaemon();
-      if (real == null) {
-        await DaemonLauncher.instance.ensureDaemonRunning(() async {
-          real = await _tryRealDaemon();
-          return real != null;
-        });
-      }
-      final found = real;
+
+    final inFlight = _resolution;
+    if (inFlight != null) return inFlight;
+
+    final resolution = () async {
+      final found = await _resolveLiveDaemonEndpoint();
       final impl = (found != null)
-          ? DaemonApi(baseUrl: found.baseUrl, token: found.token)
+          ? DaemonApi(
+              baseUrl: found.baseUrl,
+              token: found.token,
+              endpointResolver: _resolveLiveDaemonEndpoint,
+            )
           : const UnavailableDaemonApi();
       _impl = impl;
       return impl;
     }();
-    return _resolution!;
+    _resolution = resolution;
+    try {
+      return await resolution;
+    } finally {
+      // Keep the successful real client in [_impl], but permit another launch
+      // attempt after an unavailable result.
+      _resolution = null;
+    }
   }
 
   @override
