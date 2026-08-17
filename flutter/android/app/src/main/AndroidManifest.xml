@@ -41,6 +41,15 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="mosaicvpn" android:host="auth" android:path="/callback" />
             </intent-filter>
+            <!-- Explicit website enrollment callback. It carries the same
+                 short-lived code/state pair as sign-in but is consumed through
+                 a separate native slot, so callbacks cannot overwrite each other. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="mosaicvpn" android:host="enroll" android:path="/callback" />
+            </intent-filter>
         </activity>
         <service
             android:name=".MosaicVpnService"

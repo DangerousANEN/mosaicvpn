@@ -17,11 +17,19 @@ class AndroidMosaicSession {
     required this.directToken,
     this.sessionToken,
     this.username,
+    this.subscriptionUrl,
+    this.providerId,
+    this.providerAccountId,
+    this.subscriptionName,
   });
 
   final String directToken;
   final String? sessionToken;
   final String? username;
+  final String? subscriptionUrl;
+  final String? providerId;
+  final String? providerAccountId;
+  final String? subscriptionName;
 }
 
 /// Account authority for Android, where a desktop loopback daemon does not
@@ -126,6 +134,31 @@ class AndroidMosaicAccountService {
       Map<String, dynamic>.from(response.data ?? const {}),
       directKey: 'direct_token',
     );
+  }
+
+  /// Exchanges a browser-issued Add-to-app callback. The website owns this
+  /// explicit enrollment gesture; the server still validates code/state,
+  /// expiry, single-use and purpose before issuing any account material.
+  Future<AndroidMosaicSession?> completeEnrollmentIfPresent() async {
+    final callback =
+        await AndroidVpnService.instance.consumeEnrollmentCallback();
+    if (callback == null) return null;
+    final code = callback.queryParameters['code'] ?? '';
+    final state = callback.queryParameters['state'] ?? '';
+    if (code.isEmpty || state.isEmpty) {
+      throw const FormatException(
+          'Не удалось подтвердить добавление подписки в приложение.');
+    }
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/api/app-auth/exchange',
+      data: {'code': code, 'state': state},
+    );
+    final payload = Map<String, dynamic>.from(response.data ?? const {});
+    if (payload['purpose']?.toString() != 'enroll') {
+      throw const FormatException(
+          'Сервис вернул неподходящий код добавления. Повторите действие на сайте.');
+    }
+    return _savePayload(payload, directKey: 'direct_token');
   }
 
   String _randomState() {
@@ -386,6 +419,10 @@ class AndroidMosaicAccountService {
       directToken: directToken,
       sessionToken: sessionToken,
       username: username,
+      subscriptionUrl: payload['subscription_url']?.toString(),
+      providerId: payload['provider_id']?.toString(),
+      providerAccountId: payload['provider_account_id']?.toString(),
+      subscriptionName: payload['subscription_name']?.toString(),
     );
   }
 

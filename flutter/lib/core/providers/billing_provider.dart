@@ -9,14 +9,13 @@ import 'vpn_providers.dart';
 /// Restores the Android device-scoped hosted account session. This contains
 /// only a direct-feed credential stored in Android Keystore, never mock data.
 final androidMosaicSessionProvider =
-    FutureProvider.autoDispose<AndroidMosaicSession?>((ref) async {
+    FutureProvider<AndroidMosaicSession?>((ref) async {
   if (!AppPlatform.isAndroid) return null;
   return AndroidMosaicAccountService.instance.restoreSession();
 });
 
 /// Provider fetching the current user's [BillingProfile].
-final billingProfileProvider =
-    FutureProvider.autoDispose<BillingProfile>((ref) async {
+final billingProfileProvider = FutureProvider<BillingProfile>((ref) async {
   if (AppPlatform.isAndroid) {
     // Android has no loopback daemon. The hosted account service uses the
     // session stored in Android Keystore and degrades to a linked-device card

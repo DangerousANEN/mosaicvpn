@@ -7,6 +7,7 @@ import 'package:window_manager/window_manager.dart';
 
 import '../core/theme/atlas_theme.dart';
 import '../core/platform/app_platform.dart';
+import '../core/api/android_hosted_daemon_api.dart';
 import '../core/providers/vpn_providers.dart';
 import '../core/i18n/app_strings.dart';
 import '../core/services/desktop_instance_lock.dart';
@@ -22,10 +23,10 @@ import '../features/speedtest/speedtest_screen.dart';
 import '../features/cores/cores_screen.dart';
 import '../features/settings/settings_screen.dart';
 import '../features/logs/logs_screen.dart';
-import '../features/billing/billing_screen.dart';
-import '../features/account/account_screen.dart';
+import '../features/account/accounts_screen.dart';
+import '../features/account/unified_account_panel.dart'
+    show unifiedAccountProvider;
 import '../features/groups/groups_screen.dart';
-import '../features/provider_profile/provider_profile_screen.dart';
 import '../features/more/more_screen.dart';
 
 /// Root shell with bottom navigation (and sidebar on desktop/wide screens) and tab caching via IndexedStack.
@@ -66,9 +67,9 @@ class _AppShellState extends ConsumerState<AppShell>
           activeIcon: Icons.public,
           label: s.t('routes')),
       _NavDestination(
-          icon: Icons.person_outline,
-          activeIcon: Icons.person,
-          label: s.t('account')),
+          icon: Icons.people_outline,
+          activeIcon: Icons.people,
+          label: s.t('accounts')),
       _NavDestination(
           icon: Icons.more_horiz_outlined,
           activeIcon: Icons.more_horiz,
@@ -89,17 +90,9 @@ class _AppShellState extends ConsumerState<AppShell>
           activeIcon: Icons.public,
           label: s.t('routes')),
       _NavDestination(
-          icon: Icons.account_balance_wallet_outlined,
-          activeIcon: Icons.account_balance_wallet,
-          label: s.t('balance')),
-      _NavDestination(
-          icon: Icons.person_outline,
-          activeIcon: Icons.person,
-          label: s.t('account')),
-      _NavDestination(
-          icon: Icons.verified_outlined,
-          activeIcon: Icons.verified,
-          label: s.t('provider')),
+          icon: Icons.people_outline,
+          activeIcon: Icons.people,
+          label: s.t('accounts')),
       _NavDestination(
           icon: Icons.hub_outlined,
           activeIcon: Icons.hub,
@@ -150,6 +143,9 @@ class _AppShellState extends ConsumerState<AppShell>
         onQuit: _quitApplication,
       );
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _completeWebsiteEnrollment();
+    });
   }
 
   @override
@@ -173,17 +169,50 @@ class _AppShellState extends ConsumerState<AppShell>
     }
   }
 
-  /// Called when the app window is minimized.
+  /// Completes an explicit browser-to-app enrollment when Android returns via
+  /// `mosaicvpn://enroll/callback`. The method is safe on normal launches: no
+  /// pending callback simply returns without changing the selected screen.
+  Future<void> _completeWebsiteEnrollment() async {
+    if (!AppPlatform.isAndroid) return;
+    final api = ref.read(daemonApiProvider);
+    if (api is! AndroidHostedDaemonApi) return;
+    try {
+      final subscription = await api.completeWebsiteEnrollmentIfPresent();
+      if (subscription == null || !mounted) return;
+      ref.invalidate(subscriptionsProvider);
+      ref.invalidate(mosaicManifestProvider);
+      ref.invalidate(unifiedAccountProvider);
+      setState(() => _currentIndex = 1);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(
+                'Подписка «${subscription.name}» добавлена в приложение.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error.toString().replaceFirst('Bad state: ', ''),
+          ),
+        ),
+      );
+    }
+  }
+
+  /// Called when the app returns from a browser deep link.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Lifecycle hooks for tray/minimize handled in main.dart
+    if (state == AppLifecycleState.resumed) {
+      _completeWebsiteEnrollment();
+    }
   }
 
   /// Primary pages are deliberately limited to the common everyday tasks.
   List<Widget> get _mainPages => [
         const _KeepAlive(child: ConnectionDashboard()),
         const _KeepAlive(child: GroupsScreen()),
-        const _KeepAlive(child: AccountScreen()),
+        const _KeepAlive(child: AccountsScreen()),
         const _KeepAlive(child: MoreScreen()),
       ];
 
@@ -191,9 +220,7 @@ class _AppShellState extends ConsumerState<AppShell>
   List<Widget> get _allPages => [
         const _KeepAlive(child: ConnectionDashboard()),
         const _KeepAlive(child: GroupsScreen()),
-        const _KeepAlive(child: BillingScreen()),
-        const _KeepAlive(child: AccountScreen()),
-        const _KeepAlive(child: ProviderProfileScreen()),
+        const _KeepAlive(child: AccountsScreen()),
         const _KeepAlive(child: RoutingScreen()),
         const _KeepAlive(child: EgressesScreen()),
         const _KeepAlive(child: ConnectionsScreen()),
@@ -348,7 +375,7 @@ class _AppShellState extends ConsumerState<AppShell>
                                     final visibleIndices = isAdvanced
                                         ? List.generate(
                                             destinations.length, (i) => i)
-                                        : const [0, 1, 3, 5, 6, 11, 12];
+                                        : const [0, 1, 2, 5, 6, 10];
 
                                     return ListView.builder(
                                       itemCount: visibleIndices.length,

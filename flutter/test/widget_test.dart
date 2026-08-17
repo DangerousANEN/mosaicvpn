@@ -67,7 +67,7 @@ void main() {
     );
     expect(bar.items.length, 4);
 
-    for (final label in ['Подключение', 'Маршруты', 'Аккаунт', 'Ещё']) {
+    for (final label in ['Подключение', 'Маршруты', 'Аккаунты', 'Ещё']) {
       expect(find.text(label), findsWidgets, reason: 'missing tab: $label');
     }
     expect(tester.takeException(), isNull,

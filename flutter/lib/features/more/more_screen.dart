@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/atlas_theme.dart';
 import '../../core/i18n/app_strings.dart';
-import '../account/account_screen.dart';
+import '../account/accounts_screen.dart';
 import '../profiles/profiles_screen.dart';
 import '../routing/routing_screen.dart';
 import '../connections/connections_screen.dart';
@@ -22,10 +22,10 @@ class MoreScreen extends StatelessWidget {
 
     final items = <_MoreItem>[
       _MoreItem(
-        title: s.t('account'),
-        subtitle: 'Subscription, traffic and payments',
-        icon: Icons.person_outline,
-        builder: (_) => const AccountScreen(),
+        title: s.t('accounts'),
+        subtitle: 'Subscription-scoped profiles, traffic and payments',
+        icon: Icons.people_outline,
+        builder: (_) => const AccountsScreen(),
       ),
       _MoreItem(
         title: s.t('routes'),

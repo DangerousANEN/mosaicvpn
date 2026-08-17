@@ -1,9 +1,13 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/i18n/app_strings.dart';
 import '../../core/models/models.dart';
+import '../../core/platform/app_platform.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/services/smart_group_selector.dart';
 import '../../core/theme/atlas_theme.dart';
@@ -147,6 +151,8 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                           selectedId: selectedSource.id,
                           onSelected: _selectSource,
                           onReorder: _reorderSubscriptions,
+                          onRefreshSource: _refreshSubscription,
+                          onOpenCabinet: _openSubscriptionCabinet,
                           onEdit: _editSubscription,
                           onDelete: _deleteSubscription,
                         ),
@@ -155,15 +161,9 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                       _SourceSummary(
                         source: selectedSource,
                         isMosaic: selectedSource.isProviderSource,
-                        onOpenCabinet: selectedSource.isProviderSource &&
-                                selectedSource.providerId == 'mosaicvpn'
-                            ? () => Navigator.of(context).push(
-                                  MaterialPageRoute<void>(
-                                    builder: (_) => SubscriptionCabinetScreen(
-                                        subscription: selectedSource),
-                                  ),
-                                )
-                            : null,
+                        onOpenCabinet: selectedSource.id.isEmpty
+                            ? null
+                            : () => _openSubscriptionCabinet(selectedSource),
                       ),
                       const SizedBox(height: 14),
                       if (manifestAsync.hasError &&
@@ -371,6 +371,33 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     }
   }
 
+  Future<void> _refreshSubscription(Subscription source) async {
+    try {
+      await ref.read(daemonApiProvider).refreshSubscription(source.id);
+      ref.invalidate(mosaicManifestProvider);
+      ref.invalidate(subscriptionsProvider);
+      ref.invalidate(serversProvider);
+      if (mounted) {
+        _showMessage('Подписка обновлена.', ThemeColors.of(context).success);
+      }
+    } catch (error) {
+      if (mounted) {
+        _showMessage(
+          error.toString().replaceFirst('Bad state: ', ''),
+          ThemeColors.of(context).danger,
+        );
+      }
+    }
+  }
+
+  void _openSubscriptionCabinet(Subscription source) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SubscriptionCabinetScreen(subscription: source),
+      ),
+    );
+  }
+
   Future<void> _editSubscription(Subscription source) async {
     final controller = TextEditingController(text: source.name);
     final updatedName = await showDialog<String>(
@@ -513,7 +540,10 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
           .where((group) => group.id == row.id)
           .cast<ManifestGroup?>()
           .firstWhere((group) => group != null, orElse: () => null);
-      if (row.isGroup && manifestGroup != null) {
+      // Desktop ranks opaque Smart Group candidates through its local daemon.
+      // Android has no mosaicd: its facade builds a signed group-scoped native
+      // TUN config and waits for the real VpnService terminal state instead.
+      if (row.isGroup && manifestGroup != null && !AppPlatform.isAndroid) {
         await _smartGroupSelector.connect(api, manifestGroup);
       } else if (row.isGroup) {
         await api.connectGroup(row.id);
@@ -525,10 +555,13 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
         _showMessage(
             'Подключение установлено.', ThemeColors.of(context).success);
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
+        final detail = error.toString().replaceFirst('Bad state: ', '');
         _showMessage(
-          'Не удалось подключиться. Обновите маршрут и повторите попытку.',
+          detail.isEmpty
+              ? 'Не удалось подключиться. Обновите маршрут и повторите попытку.'
+              : detail,
           ThemeColors.of(context).danger,
         );
       }
@@ -832,7 +865,15 @@ class _Header extends StatelessWidget {
   }
 }
 
-enum _SourceTabAction { edit, delete }
+enum _SourceTabAction {
+  refresh,
+  copyLink,
+  openInBrowser,
+  edit,
+  delete,
+  share,
+  openCabinet,
+}
 
 class _SourceTabs extends StatefulWidget {
   const _SourceTabs({
@@ -840,6 +881,8 @@ class _SourceTabs extends StatefulWidget {
     required this.selectedId,
     required this.onSelected,
     required this.onReorder,
+    required this.onRefreshSource,
+    required this.onOpenCabinet,
     required this.onEdit,
     required this.onDelete,
   });
@@ -848,6 +891,8 @@ class _SourceTabs extends StatefulWidget {
   final String selectedId;
   final ValueChanged<String> onSelected;
   final Future<void> Function(List<String> orderedIDs) onReorder;
+  final Future<void> Function(Subscription source) onRefreshSource;
+  final ValueChanged<Subscription> onOpenCabinet;
   final Future<void> Function(Subscription source) onEdit;
   final Future<void> Function(Subscription source) onDelete;
 
@@ -877,43 +922,113 @@ class _SourceTabsState extends State<_SourceTabs> {
     );
   }
 
+  void _showNotice(String message) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _copyLink(Subscription source) async {
+    if (source.url.trim().isEmpty) {
+      _showNotice('У этой подписки нет экспортируемой ссылки.');
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: source.url));
+    if (mounted) _showNotice('Ссылка подписки скопирована.');
+  }
+
+  Future<void> _openInBrowser(Subscription source) async {
+    final uri = Uri.tryParse(source.url.trim());
+    if (uri == null || !(uri.isScheme('https') || uri.isScheme('http'))) {
+      _showNotice(
+          'У этой подписки нет ссылки, которую можно открыть в браузере.');
+      return;
+    }
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
+        mounted) {
+      _showNotice('Не удалось открыть ссылку в браузере.');
+    }
+  }
+
+  Future<void> _share(Subscription source) async {
+    if (source.url.trim().isEmpty) {
+      _showNotice('У этой подписки нет экспортируемой ссылки.');
+      return;
+    }
+    await Share.share(
+      source.url,
+      subject: source.name.isEmpty ? 'Подписка MosaicVPN' : source.name,
+    );
+  }
+
+  PopupMenuItem<_SourceTabAction> _menuItem(
+    _SourceTabAction value,
+    IconData icon,
+    String title, {
+    bool enabled = true,
+    bool destructive = false,
+  }) {
+    return PopupMenuItem<_SourceTabAction>(
+      value: value,
+      enabled: enabled,
+      child: ListTile(
+        leading: Icon(icon, color: destructive ? Colors.redAccent : null),
+        title: Text(title),
+        contentPadding: EdgeInsets.zero,
+      ),
+    );
+  }
+
   Future<void> _showContextMenu(
     Subscription source,
     Offset globalPosition,
   ) async {
-    if (source.isProviderSource) return;
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final hasUrl = source.url.trim().isNotEmpty;
+    final isMutable = !source.isProviderSource;
     final action = await showMenu<_SourceTabAction>(
       context: context,
       position: RelativeRect.fromRect(
         globalPosition & const Size(1, 1),
         Offset.zero & overlay.size,
       ),
-      items: const [
-        PopupMenuItem(
-          value: _SourceTabAction.edit,
-          child: ListTile(
-            leading: Icon(Icons.edit_outlined),
-            title: Text('Переименовать'),
-            contentPadding: EdgeInsets.zero,
-          ),
-        ),
-        PopupMenuItem(
-          value: _SourceTabAction.delete,
-          child: ListTile(
-            leading: Icon(Icons.delete_outline, color: Colors.redAccent),
-            title: Text('Удалить'),
-            contentPadding: EdgeInsets.zero,
-          ),
-        ),
+      items: [
+        _menuItem(_SourceTabAction.refresh, Icons.refresh_rounded, 'Обновить'),
+        _menuItem(
+            _SourceTabAction.copyLink, Icons.link_rounded, 'Копировать ссылку',
+            enabled: hasUrl),
+        _menuItem(_SourceTabAction.openInBrowser, Icons.open_in_browser_rounded,
+            'Открыть в браузере',
+            enabled: hasUrl),
+        _menuItem(_SourceTabAction.share, Icons.ios_share_rounded, 'Поделиться',
+            enabled: hasUrl),
+        const PopupMenuDivider(),
+        _menuItem(_SourceTabAction.openCabinet,
+            Icons.account_balance_wallet_outlined, 'Открыть профиль подписки'),
+        if (isMutable) ...[
+          const PopupMenuDivider(),
+          _menuItem(
+              _SourceTabAction.edit, Icons.edit_outlined, 'Переименовать'),
+          _menuItem(_SourceTabAction.delete, Icons.delete_outline, 'Удалить',
+              destructive: true),
+        ],
       ],
     );
     if (!mounted || action == null) return;
     switch (action) {
+      case _SourceTabAction.refresh:
+        await widget.onRefreshSource(source);
+      case _SourceTabAction.copyLink:
+        await _copyLink(source);
+      case _SourceTabAction.openInBrowser:
+        await _openInBrowser(source);
       case _SourceTabAction.edit:
         await widget.onEdit(source);
       case _SourceTabAction.delete:
         await widget.onDelete(source);
+      case _SourceTabAction.share:
+        await _share(source);
+      case _SourceTabAction.openCabinet:
+        widget.onOpenCabinet(source);
     }
   }
 
@@ -939,11 +1054,19 @@ class _SourceTabsState extends State<_SourceTabs> {
           ),
           for (final provider in providers) ...[
             const SizedBox(width: 4),
-            _SourceTab(
-              source: provider,
-              selected: provider.id == widget.selectedId,
-              onSelected: () => widget.onSelected(provider.id),
-              immutable: true,
+            Listener(
+              onPointerDown: (event) {
+                if (event.buttons == kSecondaryMouseButton) {
+                  _showContextMenu(provider, event.position);
+                }
+              },
+              child: _SourceTab(
+                source: provider,
+                selected: provider.id == widget.selectedId,
+                onSelected: () => widget.onSelected(provider.id),
+                immutable: true,
+                onMenu: (position) => _showContextMenu(provider, position),
+              ),
             ),
             const SizedBox(width: 8),
           ],

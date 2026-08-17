@@ -513,11 +513,18 @@ def init_db():
         telegram_id INTEGER NOT NULL,
         username TEXT,
         state TEXT NOT NULL,
+        purpose TEXT NOT NULL DEFAULT 'login',
         created_at TEXT NOT NULL,
         expires_at TEXT NOT NULL,
         used_at TEXT
     )
     """)
+    # Existing installations created app_auth_codes before `purpose` existed.
+    # Keep the migration additive so older callback rows retain login semantics.
+    app_auth_columns = {row[1] for row in cursor.execute("PRAGMA table_info(app_auth_codes)")}
+    if "purpose" not in app_auth_columns:
+        cursor.execute("ALTER TABLE app_auth_codes ADD COLUMN purpose TEXT NOT NULL DEFAULT 'login'")
+
     # Administrative balance credits are an auditable, idempotent ledger.
     # A request remains `processing` until the remote subscription is updated,
     # so retrying after a network error never applies the same credit twice.
@@ -700,9 +707,11 @@ def get_web_session(token):
 APP_AUTH_CODE_TTL_SECONDS = 300
 
 
-def issue_app_auth_code(session_token, state):
-    """Create a short-lived code for a validated web session and app state."""
+def issue_app_auth_code(session_token, state, purpose="login"):
+    """Create a short-lived, state-bound callback code for login or enrollment."""
     session = get_web_session(session_token)
+    if purpose not in ("login", "enroll"):
+        return None
     if not session or not state or len(state) < 16 or len(state) > 128:
         return None
     import secrets as _secrets
@@ -712,9 +721,9 @@ def issue_app_auth_code(session_token, state):
     conn = sqlite3.connect(DB_PATH)
     try:
         conn.execute(
-            "INSERT INTO app_auth_codes (code, telegram_id, username, state, created_at, expires_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (code, session["telegram_id"], session["username"], state,
+            "INSERT INTO app_auth_codes (code, telegram_id, username, state, purpose, created_at, expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (code, session["telegram_id"], session["username"], state, purpose,
              now.isoformat(), expires.isoformat()),
         )
         conn.commit()
@@ -733,14 +742,14 @@ def redeem_app_auth_code(code, state):
         conn.execute("BEGIN IMMEDIATE")
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT telegram_id, username, state, expires_at, used_at FROM app_auth_codes WHERE code = ?",
+            "SELECT telegram_id, username, state, purpose, expires_at, used_at FROM app_auth_codes WHERE code = ?",
             (code,),
         )
         row = cursor.fetchone()
         if not row:
             conn.rollback()
             return None, "not_found"
-        telegram_id, username, expected_state, expires_at, used_at = row
+        telegram_id, username, expected_state, purpose, expires_at, used_at = row
         if used_at:
             conn.rollback()
             return None, "used"
@@ -767,7 +776,7 @@ def redeem_app_auth_code(code, state):
         conn.commit()
     finally:
         conn.close()
-    return {"telegram_id": telegram_id, "username": username or ""}, None
+    return {"telegram_id": telegram_id, "username": username or "", "purpose": purpose or "login"}, None
 
 
 def get_payments_history(telegram_id):
@@ -3385,12 +3394,14 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             return
         token = str(payload.get("token") or "")
         state = str(payload.get("state") or "")
-        code = issue_app_auth_code(token, state)
+        purpose = str(payload.get("purpose") or "login")
+        code = issue_app_auth_code(token, state, purpose)
         if not code:
             self._send_json(401, {"error": "invalid session or state"})
             return
         self._send_json(200, {
             "code": code,
+            "purpose": purpose,
             "expires_in": APP_AUTH_CODE_TTL_SECONDS,
         })
 
@@ -3416,11 +3427,15 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         session_token, _ = create_web_session(result["telegram_id"], result["username"])
         self._send_json(200, {
             "ok": True,
+            "purpose": result.get("purpose", "login"),
             "telegram_id": result["telegram_id"],
             "username": result["username"],
             "session_token": session_token,
             "direct_token": short_uuid,
             "subscription_url": f"https://sub.zxc1x1.ru/{short_uuid}",
+            "provider_id": "mosaicvpn",
+            "provider_account_id": f"telegram:{result['telegram_id']}",
+            "subscription_name": "MosaicVPN",
         })
 
     def _handle_session_create(self):

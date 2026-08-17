@@ -106,6 +106,38 @@ void main() {
       expect(find.text('Минимальный пинг'), findsOneWidget);
     });
 
+    testWidgets('opens the full context menu for a provider subscription',
+        (tester) async {
+      await tester.pumpWidget(_harness(
+        manifest: ProviderManifest(
+          providerName: 'MosaicVPN',
+          groups: [_group('rg-all', 'Минимальный пинг')],
+        ),
+        subscriptions: [
+          Subscription(
+            id: 'provider-mosaicvpn-primary',
+            name: 'MosaicVPN',
+            url: 'https://sub.zxc1x1.ru/subscription',
+            source: 'provider',
+            providerId: 'mosaicvpn',
+            hidePhysicalNodes: true,
+          ),
+        ],
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Управление подпиской').first);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Обновить'), findsWidgets);
+      expect(find.text('Копировать ссылку'), findsOneWidget);
+      expect(find.text('Открыть в браузере'), findsOneWidget);
+      expect(find.text('Поделиться'), findsOneWidget);
+      expect(find.text('Открыть профиль подписки'), findsOneWidget);
+      expect(find.text('Переименовать'), findsNothing);
+      expect(find.text('Удалить'), findsNothing);
+    });
+
     testWidgets('shows a useful empty state without raw daemon errors',
         (tester) async {
       await tester.pumpWidget(_harness(

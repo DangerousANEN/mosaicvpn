@@ -1,7 +1,7 @@
 name: mosaic_vpn
 description: MosaicVPN — lightweight cross-platform VPN client
 publish_to: 'none'
-version: 0.3.17+17
+version: 0.3.18+18
 
 environment:
   sdk: ^3.5.0
@@ -32,6 +32,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   url_launcher: ^6.3.1
+  share_plus: ^10.1.4
   collection: ^1.18.0
   flutter_svg: ^2.0.10+1
   path_provider: ^2.1.4

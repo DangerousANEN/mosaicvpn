@@ -16,6 +16,7 @@ class MainActivity : FlutterActivity() {
 
     private var pendingPermissionResult: MethodChannel.Result? = null
     private var pendingAuthCallback: String? = null
+    private var pendingEnrollmentCallback: String? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -23,21 +24,13 @@ class MainActivity : FlutterActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             CHANNEL,
         ).setMethodCallHandler { call, result -> handleVpnCall(call, result) }
-        intent?.dataString?.let { callback ->
-            if (callback.startsWith("mosaicvpn://auth/callback")) {
-                pendingAuthCallback = callback
-            }
-        }
+        intent?.dataString?.let { callback -> storeAppCallback(callback) }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        intent.dataString?.let { callback ->
-            if (callback.startsWith("mosaicvpn://auth/callback")) {
-                pendingAuthCallback = callback
-            }
-        }
+        intent.dataString?.let { callback -> storeAppCallback(callback) }
     }
 
     private fun handleVpnCall(call: MethodCall, result: MethodChannel.Result) {
@@ -70,6 +63,11 @@ class MainActivity : FlutterActivity() {
                 pendingAuthCallback = null
                 result.success(callback)
             }
+            "consumeEnrollmentCallback" -> {
+                val callback = pendingEnrollmentCallback
+                pendingEnrollmentCallback = null
+                result.success(callback)
+            }
             "validateConfig" -> {
                 val config = call.argument<String>("config")
                 if (config.isNullOrBlank()) {
@@ -84,6 +82,13 @@ class MainActivity : FlutterActivity() {
                 }
             }
             else -> result.notImplemented()
+        }
+    }
+
+    private fun storeAppCallback(callback: String) {
+        when {
+            callback.startsWith("mosaicvpn://auth/callback") -> pendingAuthCallback = callback
+            callback.startsWith("mosaicvpn://enroll/callback") -> pendingEnrollmentCallback = callback
         }
     }
 

@@ -7,8 +7,7 @@ import '../../core/models/models.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/theme/atlas_theme.dart';
 
-final unifiedAccountProvider =
-    FutureProvider.autoDispose<UnifiedAccount?>((ref) async {
+final unifiedAccountProvider = FutureProvider<UnifiedAccount?>((ref) async {
   // Android resolves this through its hosted, Keystore-backed account facade;
   // desktop resolves through mosaicd. The screen intentionally stays shared.
   return ref.watch(daemonApiProvider).getUnifiedAccount();

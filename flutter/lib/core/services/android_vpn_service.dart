@@ -93,10 +93,18 @@ class AndroidVpnService {
 
   /// Returns and clears the browser callback URI for website-first login. The
   /// URI carries only a short-lived code and state, never account credentials.
-  Future<Uri?> consumeAuthCallback() async {
+  Future<Uri?> consumeAuthCallback() => _consumeCallback('consumeAuthCallback');
+
+  /// Returns and clears the dedicated browser enrollment callback. A separate
+  /// native slot ensures an Add-to-app return can never overwrite a pending
+  /// website sign-in callback.
+  Future<Uri?> consumeEnrollmentCallback() =>
+      _consumeCallback('consumeEnrollmentCallback');
+
+  Future<Uri?> _consumeCallback(String method) async {
     _ensureSupported();
     try {
-      final raw = await _channel.invokeMethod<String>('consumeAuthCallback');
+      final raw = await _channel.invokeMethod<String>(method);
       return raw == null ? null : Uri.tryParse(raw);
     } on MissingPluginException {
       // Widget tests and non-native hosts do not install the Android bridge.
