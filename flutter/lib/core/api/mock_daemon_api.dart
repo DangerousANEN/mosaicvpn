@@ -1407,7 +1407,10 @@ class MockDaemonApi implements DaemonApiBase {
   }
 
   @override
-  Future<SpeedTestResult> speedTest({String? serverID}) async {
+  Future<SpeedTestResult> speedTest({
+    String? serverID,
+    SpeedProbePolicy? policy,
+  }) async {
     await _delayVoid();
     return SpeedTestResult(
       target: serverID ?? 'current',

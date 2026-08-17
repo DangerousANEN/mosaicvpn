@@ -72,7 +72,10 @@ abstract class DaemonApiBase {
   Future<List<SpeedTestResult>> testSpeedGroup(String groupLabel,
       {Duration? testFor});
   Future<SpeedTestResult> testSpeed(String serverID, {Duration? testFor});
-  Future<SpeedTestResult> speedTest({String? serverID});
+  Future<SpeedTestResult> speedTest({
+    String? serverID,
+    SpeedProbePolicy? policy,
+  });
 
   // ─── Backup / Restore ───────────────────────────────────────────────
 

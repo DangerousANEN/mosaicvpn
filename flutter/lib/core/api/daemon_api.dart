@@ -401,9 +401,14 @@ class DaemonApi implements DaemonApiBase {
   }
 
   @override
-  Future<SpeedTestResult> speedTest({String? serverID}) async {
-    final r = await _dio.post('/v1/test/speed',
-        data: serverID != null ? {'server_id': serverID} : null);
+  Future<SpeedTestResult> speedTest({
+    String? serverID,
+    SpeedProbePolicy? policy,
+  }) async {
+    final data = <String, dynamic>{};
+    if (serverID != null) data['server_id'] = serverID;
+    if (policy != null) data['policy'] = policy.toJson();
+    final r = await _dio.post('/v1/test/speed', data: data.isEmpty ? null : data);
     return SpeedTestResult.fromJson(r.data);
   }
 

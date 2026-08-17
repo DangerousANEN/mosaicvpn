@@ -56,6 +56,59 @@ class ManifestNode {
       };
 }
 
+/// Provider-configurable, bounded HTTPS throughput probe settings.
+class SpeedProbePolicy {
+  final bool enabled;
+  final List<String> downloadUrls;
+  final String uploadUrl;
+  final int sampleBytes;
+  final int timeoutSeconds;
+  final int maxCandidates;
+  final double targetMbps;
+
+  const SpeedProbePolicy({
+    this.enabled = false,
+    this.downloadUrls = const [],
+    this.uploadUrl = '',
+    this.sampleBytes = 2 * 1024 * 1024,
+    this.timeoutSeconds = 12,
+    this.maxCandidates = 2,
+    this.targetMbps = 50,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'enabled': enabled,
+        'download_urls': downloadUrls,
+        'upload_url': uploadUrl,
+        'sample_bytes': sampleBytes,
+        'timeout_seconds': timeoutSeconds,
+        'max_candidates': maxCandidates,
+        'target_mbps': targetMbps,
+      };
+
+  factory SpeedProbePolicy.fromJson(Map<String, dynamic>? json) {
+    final value = json ?? const <String, dynamic>{};
+    int boundedInt(String key, int fallback, int min, int max) =>
+        (((value[key] as num?)?.toInt() ?? fallback).clamp(min, max)).toInt();
+    final urls = (value['download_urls'] as List?)
+            ?.map((e) => e.toString())
+            .where((e) => e.startsWith('https://'))
+            .take(3)
+            .toList(growable: false) ??
+        const <String>[];
+    final target = (value['target_mbps'] as num?)?.toDouble() ?? 50;
+    return SpeedProbePolicy(
+      enabled: value['enabled'] == true,
+      downloadUrls: urls,
+      uploadUrl: value['upload_url']?.toString() ?? '',
+      sampleBytes: boundedInt('sample_bytes', 2 * 1024 * 1024, 256 * 1024, 8 * 1024 * 1024),
+      timeoutSeconds: boundedInt('timeout_seconds', 12, 3, 30),
+      maxCandidates: boundedInt('max_candidates', 2, 1, 3),
+      targetMbps: target.clamp(1, 1000).toDouble(),
+    );
+  }
+}
+
 /// Server-defined bounded selection policy executed by the generic client.
 /// New policy modes and weights can be supplied without a client release.
 class ManifestClientPolicy {
@@ -68,6 +121,7 @@ class ManifestClientPolicy {
   final double lossWeight;
   final double stabilityWeight;
   final double speedWeight;
+  final SpeedProbePolicy speedProbe;
 
   const ManifestClientPolicy({
     this.mode = 'latency',
@@ -79,6 +133,7 @@ class ManifestClientPolicy {
     this.lossWeight = .30,
     this.stabilityWeight = .25,
     this.speedWeight = 0,
+    this.speedProbe = const SpeedProbePolicy(),
   });
 
   factory ManifestClientPolicy.fromJson(Map<String, dynamic>? json) {
@@ -98,6 +153,8 @@ class ManifestClientPolicy {
       lossWeight: (value['loss_weight'] as num?)?.toDouble() ?? .30,
       stabilityWeight: (value['stability_weight'] as num?)?.toDouble() ?? .25,
       speedWeight: (value['speed_weight'] as num?)?.toDouble() ?? 0,
+      speedProbe: SpeedProbePolicy.fromJson(
+          value['speed_probe'] as Map<String, dynamic>?),
     );
   }
 }

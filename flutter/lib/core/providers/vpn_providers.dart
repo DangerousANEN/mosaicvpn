@@ -298,8 +298,11 @@ class _ResolvedDaemonApi implements DaemonApiBase {
           {Duration? testFor}) async =>
       (await _backend()).testSpeed(serverID, testFor: testFor);
   @override
-  Future<SpeedTestResult> speedTest({String? serverID}) async =>
-      (await _backend()).speedTest(serverID: serverID);
+  Future<SpeedTestResult> speedTest({
+    String? serverID,
+    SpeedProbePolicy? policy,
+  }) async =>
+      (await _backend()).speedTest(serverID: serverID, policy: policy);
   @override
   Future<String> exportConfig({bool includeSubscriptions = true}) async =>
       (await _backend())

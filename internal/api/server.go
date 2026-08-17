@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"sort"
@@ -1020,7 +1021,14 @@ func (s *Server) handleTestIP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSpeedTest(w http.ResponseWriter, r *http.Request) {
-	result, err := s.mgr.SpeedTest(r.Context())
+	var req proto.SpeedTestRequest
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+			writeError(w, http.StatusBadRequest, "invalid speed test request")
+			return
+		}
+	}
+	result, err := s.mgr.SpeedTestWithPolicy(r.Context(), req.Policy)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

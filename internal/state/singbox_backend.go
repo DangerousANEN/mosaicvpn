@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -1590,49 +1591,103 @@ func (b *SingBoxBackend) TestIP(ctx context.Context) (proto.IPInfo, error) {
 	return ipInfo, nil
 }
 
-// SpeedTest runs a basic download speed test through the active tunnel.
+// SpeedTest runs a bounded HTTPS throughput probe through the active tunnel.
+// It deliberately avoids Ookla and accepts provider-supplied HTTPS endpoints.
 func (b *SingBoxBackend) SpeedTest(ctx context.Context) (proto.SpeedTestResult, error) {
+	return b.SpeedTestWithPolicy(ctx, nil)
+}
+
+func (b *SingBoxBackend) SpeedTestWithPolicy(ctx context.Context, policy *proto.SpeedProbePolicy) (proto.SpeedTestResult, error) {
 	b.mu.Lock()
 	socks := b.socks
 	b.mu.Unlock()
 	if socks == "" {
 		return proto.SpeedTestResult{}, errors.New("sing-box is not running")
 	}
+	cfg := proto.SpeedProbePolicy{}
+	if policy != nil {
+		cfg = *policy
+	}
+	cfg.SetDefaults()
+	if len(cfg.DownloadURLs) == 0 {
+		cfg.DownloadURLs = []string{"https://speed.cloudflare.com/__down"}
+	}
+	if cfg.UploadURL == "" {
+		cfg.UploadURL = "https://speed.cloudflare.com/__up"
+	}
 
 	dialer, err := proxy.SOCKS5("tcp", socks, nil, &net.Dialer{})
 	if err != nil {
 		return proto.SpeedTestResult{}, fmt.Errorf("socks5 dial: %w", err)
 	}
-
 	transport := &http.Transport{
 		DialContext: func(_ context.Context, network, addr string) (net.Conn, error) {
 			return dialer.Dial(network, addr)
 		},
 	}
-	client := &http.Client{Transport: transport, Timeout: 30 * time.Second}
-
+	client := &http.Client{Transport: transport, Timeout: time.Duration(cfg.TimeoutSeconds) * time.Second}
 	testStart := time.Now()
+	result := proto.SpeedTestResult{TestedAt: testStart}
 
-	// Download test: fetch a 10 MB file from speed-test servers via tunnel.
-	req, _ := http.NewRequestWithContext(ctx, "GET", "https://speed.cloudflare.com/__down?bytes=10000000", nil)
-	resp, err := client.Do(req)
-	if err != nil {
-		return proto.SpeedTestResult{TestedAt: testStart, Error: err.Error()}, nil
+	for _, base := range cfg.DownloadURLs {
+		if !strings.HasPrefix(base, "https://") {
+			continue
+		}
+		u, parseErr := url.Parse(base)
+		if parseErr != nil || u.Scheme != "https" {
+			continue
+		}
+		q := u.Query()
+		q.Set("bytes", strconv.FormatInt(cfg.SampleBytes, 10))
+		u.RawQuery = q.Encode()
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+		if reqErr != nil {
+			continue
+		}
+		resp, doErr := client.Do(req)
+		if doErr != nil {
+			result.Error = doErr.Error()
+			continue
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			result.Error = fmt.Sprintf("download endpoint returned %s", resp.Status)
+			resp.Body.Close()
+			continue
+		}
+		start := time.Now()
+		n, copyErr := io.CopyN(io.Discard, resp.Body, cfg.SampleBytes)
+		resp.Body.Close()
+		if copyErr != nil && !errors.Is(copyErr, io.EOF) && !errors.Is(copyErr, io.ErrUnexpectedEOF) {
+			result.Error = copyErr.Error()
+		}
+		elapsed := time.Since(start).Seconds()
+		if elapsed > 0 && n > 0 {
+			result.DownloadBps = uint64(float64(n) / elapsed)
+			result.DownloadMbps = float64(result.DownloadBps) * 8 / 1_000_000
+			result.Error = ""
+			break
+		}
 	}
-	defer resp.Body.Close()
 
-	dlStart := time.Now()
-	n, _ := io.Copy(io.Discard, resp.Body)
-	dlDuration := time.Since(dlStart)
-
-	var dlBps float64
-	if dlDuration > 0 {
-		dlBps = float64(n) / dlDuration.Seconds() * 8
+	if strings.HasPrefix(cfg.UploadURL, "https://") {
+		payload := bytes.NewReader(make([]byte, int(cfg.SampleBytes)))
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, cfg.UploadURL, payload)
+		if reqErr == nil {
+			req.Header.Set("Content-Type", "application/octet-stream")
+			start := time.Now()
+			resp, doErr := client.Do(req)
+			if doErr == nil {
+				_, _ = io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
+				if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+					elapsed := time.Since(start).Seconds()
+					if elapsed > 0 {
+						result.UploadBps = uint64(float64(cfg.SampleBytes) / elapsed)
+						result.UploadMbps = float64(result.UploadBps) * 8 / 1_000_000
+					}
+				}
+			}
+		}
 	}
-
-	return proto.SpeedTestResult{
-		DownloadBps:  uint64(dlBps),
-		DownloadMbps: dlBps / 1_000_000,
-		TestedAt:     testStart,
-	}, nil
+	return result, nil
 }

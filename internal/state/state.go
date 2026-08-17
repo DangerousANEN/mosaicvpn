@@ -59,6 +59,11 @@ type TestBackend interface {
 	SpeedTest(ctx context.Context) (proto.SpeedTestResult, error)
 }
 
+// ConfigurableSpeedBackend optionally accepts provider-defined bounded probe settings.
+type ConfigurableSpeedBackend interface {
+	SpeedTestWithPolicy(ctx context.Context, policy *proto.SpeedProbePolicy) (proto.SpeedTestResult, error)
+}
+
 // ProxyListener-aware backends expose loopback proxy endpoints (SOCKS
 // and HTTP) once Start has succeeded. Backends that do not actually
 // open ports (e.g. MockBackend) simply do not implement this and Status
@@ -324,6 +329,13 @@ func (m *Manager) TestIP(ctx context.Context) (proto.IPInfo, error) {
 
 // SpeedTest runs a download/upload speed test through the active tunnel.
 func (m *Manager) SpeedTest(ctx context.Context) (proto.SpeedTestResult, error) {
+	return m.SpeedTestWithPolicy(ctx, nil)
+}
+
+func (m *Manager) SpeedTestWithPolicy(ctx context.Context, policy *proto.SpeedProbePolicy) (proto.SpeedTestResult, error) {
+	if cb, ok := m.backend.(ConfigurableSpeedBackend); ok {
+		return cb.SpeedTestWithPolicy(ctx, policy)
+	}
 	if tb, ok := m.backend.(TestBackend); ok {
 		return tb.SpeedTest(ctx)
 	}

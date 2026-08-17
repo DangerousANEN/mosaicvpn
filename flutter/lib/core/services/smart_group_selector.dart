@@ -92,9 +92,12 @@ class SmartGroupSelector {
         ? 0.0
         : 1 / (1 + result.medianLatencyMs / 150);
     final stability = 1 / (1 + result.jitterMs / 100);
-    // Transport probe does not currently measure throughput. Preserve a stable
-    // fallback for a speed-policy group until the local sing-box probe adds it.
-    final speed = latency;
+    final target = policy.speedProbe.targetMbps <= 0
+        ? 50.0
+        : policy.speedProbe.targetMbps;
+    final measuredMbps = max(result.downloadMbps,
+        result.uploadMbps * 0.5);
+    final speed = (measuredMbps / target).clamp(0.0, 1.0);
     return reliability * policy.lossWeight +
         latency * policy.latencyWeight +
         stability * policy.stabilityWeight +
@@ -139,13 +142,59 @@ class SmartGroupSelector {
     return results;
   }
 
-  /// Fetches the server-issued shard and ranks candidates in the device's own
-  /// network. It returns ordered selections; callers connect the first and
-  /// retry later entries when a real tunnel connection fails.
-  Future<List<SmartGroupSelection>> rank(
+  Future<List<SmartGroupSelection>> _measureSpeed(
     DaemonApiBase api,
     ManifestGroup group,
+    List<SmartGroupSelection> ranked,
   ) async {
+    final policy = group.clientPolicy;
+    final speedPolicy = policy.speedProbe;
+    if (!speedPolicy.enabled || policy.speedWeight <= 0 || ranked.isEmpty) {
+      return ranked;
+    }
+    final limit = min(speedPolicy.maxCandidates, ranked.length);
+    final measured = <SmartGroupSelection>[];
+    for (final selection in ranked.take(limit)) {
+      try {
+        // This is deliberately sequential and bounded: only one active tunnel
+        // is changed at a time, and no probe is sent through MosaicVPN VPS.
+        await api.connectGroupCandidate(group.id, selection.candidateId);
+        final result = await api.speedTest(policy: speedPolicy);
+        if (result.error.isEmpty && result.downloadBps > 0) {
+          final probe = selection.probe.copyWith(
+            downloadMbps: result.downloadBps / 125000,
+            uploadMbps: result.uploadBps / 125000,
+            checkedAt: DateTime.now(),
+            probeKind: 'transport+https_speed',
+          );
+          measured.add(SmartGroupSelection(
+            groupId: selection.groupId,
+            candidateId: selection.candidateId,
+            probe: probe,
+            fromCache: false,
+          ));
+        } else {
+          measured.add(selection);
+        }
+      } catch (_) {
+        measured.add(selection);
+      }
+    }
+    final untouched = ranked.skip(limit);
+    final combined = <SmartGroupSelection>[...measured, ...untouched];
+    combined.sort((left, right) => _score(right.probe, policy)
+        .compareTo(_score(left.probe, policy)));
+    return combined;
+  }
+
+  /// Fetches the server-issued shard and ranks candidates in the device's own
+  /// network. Speed-enabled policies optionally perform a bounded HTTPS test
+  /// for the top candidates through each direct local tunnel.
+  Future<List<SmartGroupSelection>> rank(
+    DaemonApiBase api,
+    ManifestGroup group, {
+    bool measureSpeed = false,
+  }) async {
     if (group.disabled) {
       throw StateError(group.disabledReason.isEmpty
           ? 'Smart Group is disabled by the provider.'
@@ -194,7 +243,10 @@ class SmartGroupSelector {
     }
     ranked.sort((left, right) => _score(right.probe, group.clientPolicy)
         .compareTo(_score(left.probe, group.clientPolicy)));
-    return ranked.where((selection) => selection.probe.successful).toList();
+    final ordered = measureSpeed
+        ? await _measureSpeed(api, group, ranked)
+        : ranked;
+    return ordered.where((selection) => selection.probe.successful).toList();
   }
 
   /// Connects candidates in local quality order. The local daemon verifies the
@@ -203,7 +255,7 @@ class SmartGroupSelector {
     DaemonApiBase api,
     ManifestGroup group,
   ) async {
-    final ranked = await rank(api, group);
+    final ranked = await rank(api, group, measureSpeed: true);
     if (ranked.isEmpty) {
       throw StateError('No reachable candidates are available for this route.');
     }

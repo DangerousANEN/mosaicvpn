@@ -199,19 +199,65 @@ type ManifestNode struct {
 	Priority int    `json:"priority,omitempty"` // for fallback ordering
 }
 
+// SpeedProbePolicy defines bounded HTTPS throughput probes. Endpoints are
+// provider-configurable, but all values are clamped before use by the daemon.
+type SpeedProbePolicy struct {
+	Enabled        bool     `json:"enabled,omitempty"`
+	DownloadURLs   []string `json:"download_urls,omitempty"`
+	UploadURL      string   `json:"upload_url,omitempty"`
+	SampleBytes    int64    `json:"sample_bytes,omitempty"`
+	TimeoutSeconds int      `json:"timeout_seconds,omitempty"`
+	MaxCandidates  int      `json:"max_candidates,omitempty"`
+	TargetMbps     float64  `json:"target_mbps,omitempty"`
+}
+
+func (p *SpeedProbePolicy) SetDefaults() {
+	if p.SampleBytes <= 0 {
+		p.SampleBytes = 2 * 1024 * 1024
+	}
+	if p.SampleBytes > 8*1024*1024 {
+		p.SampleBytes = 8 * 1024 * 1024
+	}
+	if p.TimeoutSeconds <= 0 {
+		p.TimeoutSeconds = 12
+	}
+	if p.TimeoutSeconds > 30 {
+		p.TimeoutSeconds = 30
+	}
+	if p.MaxCandidates <= 0 {
+		p.MaxCandidates = 2
+	}
+	if p.MaxCandidates > 3 {
+		p.MaxCandidates = 3
+	}
+	if p.TargetMbps <= 0 {
+		p.TargetMbps = 50
+	}
+	if p.TargetMbps > 1000 {
+		p.TargetMbps = 1000
+	}
+}
+
+// SpeedTestRequest is accepted by POST /v1/test/speed. Empty fields use
+// daemon defaults, allowing older clients to keep using the endpoint.
+type SpeedTestRequest struct {
+	Policy *SpeedProbePolicy `json:"policy,omitempty"`
+}
+
 // ClientSelectionPolicy is a provider-defined, bounded policy executed by the
 // local client runtime. The policy contains no endpoint data: it tells the
 // client how to probe and rank the opaque candidate shard for this group.
 type ClientSelectionPolicy struct {
-	Mode              string  `json:"mode,omitempty"` // latency, stability, speed, weighted, fallback
-	ShardSize         int     `json:"shard_size,omitempty"`
-	MaxParallelProbes int     `json:"max_parallel_probes,omitempty"`
-	ProbeTTLSeconds   int     `json:"probe_ttl_seconds,omitempty"`
-	MaxFailoverTries  int     `json:"max_failover_tries,omitempty"`
-	LatencyWeight     float64 `json:"latency_weight,omitempty"`
-	LossWeight        float64 `json:"loss_weight,omitempty"`
-	StabilityWeight   float64 `json:"stability_weight,omitempty"`
-	SpeedWeight       float64 `json:"speed_weight,omitempty"`
+	Mode              string           `json:"mode,omitempty"` // latency, stability, speed, weighted, fallback
+	ShardSize         int              `json:"shard_size,omitempty"`
+	MaxParallelProbes int              `json:"max_parallel_probes,omitempty"`
+	ProbeTTLSeconds   int              `json:"probe_ttl_seconds,omitempty"`
+	MaxFailoverTries  int              `json:"max_failover_tries,omitempty"`
+	LatencyWeight     float64          `json:"latency_weight,omitempty"`
+	LossWeight        float64          `json:"loss_weight,omitempty"`
+	StabilityWeight   float64          `json:"stability_weight,omitempty"`
+	SpeedWeight       float64          `json:"speed_weight,omitempty"`
+	SpeedProbe        SpeedProbePolicy `json:"speed_probe,omitempty"`
 }
 
 func (p *ClientSelectionPolicy) SetDefaults() {
@@ -241,6 +287,7 @@ func (p *ClientSelectionPolicy) SetDefaults() {
 		p.LossWeight = 0.30
 		p.StabilityWeight = 0.25
 	}
+	p.SpeedProbe.SetDefaults()
 }
 
 // ManifestGroup defines an admin-managed route/group in the subscription manifest.

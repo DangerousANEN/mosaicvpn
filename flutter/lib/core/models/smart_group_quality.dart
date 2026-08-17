@@ -37,6 +37,8 @@ class SmartGroupProbeResult {
   final int jitterMs;
   final DateTime checkedAt;
   final String probeKind;
+  final double downloadMbps;
+  final double uploadMbps;
 
   const SmartGroupProbeResult({
     required this.groupId,
@@ -50,7 +52,30 @@ class SmartGroupProbeResult {
     required this.jitterMs,
     required this.checkedAt,
     required this.probeKind,
+    this.downloadMbps = 0,
+    this.uploadMbps = 0,
   });
+
+  SmartGroupProbeResult copyWith({
+    double? downloadMbps,
+    double? uploadMbps,
+    DateTime? checkedAt,
+    String? probeKind,
+  }) => SmartGroupProbeResult(
+        groupId: groupId,
+        candidateId: candidateId,
+        successful: successful,
+        samples: samples,
+        successes: successes,
+        lossPercent: lossPercent,
+        medianLatencyMs: medianLatencyMs,
+        p95LatencyMs: p95LatencyMs,
+        jitterMs: jitterMs,
+        checkedAt: checkedAt ?? this.checkedAt,
+        probeKind: probeKind ?? this.probeKind,
+        downloadMbps: downloadMbps ?? this.downloadMbps,
+        uploadMbps: uploadMbps ?? this.uploadMbps,
+      );
 
   factory SmartGroupProbeResult.fromJson(Map<String, dynamic> json) {
     return SmartGroupProbeResult(
@@ -66,6 +91,8 @@ class SmartGroupProbeResult {
       checkedAt: DateTime.tryParse(json['checked_at']?.toString() ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
       probeKind: json['probe_kind']?.toString() ?? '',
+      downloadMbps: (json['download_mbps'] as num?)?.toDouble() ?? 0,
+      uploadMbps: (json['upload_mbps'] as num?)?.toDouble() ?? 0,
     );
   }
 
@@ -81,6 +108,8 @@ class SmartGroupProbeResult {
         'jitter_ms': jitterMs,
         'checked_at': checkedAt.toIso8601String(),
         'probe_kind': probeKind,
+        'download_mbps': downloadMbps,
+        'upload_mbps': uploadMbps,
       };
 
   /// Higher is better. Failed probes are always ranked behind successful ones.
