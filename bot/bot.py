@@ -7,6 +7,7 @@ import time
 import os
 import datetime
 from datetime import timezone
+from zoneinfo import ZoneInfo
 import dateutil.parser
 import logging
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -1158,6 +1159,51 @@ def api_enable_user(username):
 def api_revoke_user_subscription(username):
     """Rotate the provider-issued public subscription link for a user."""
     return api_user_action(username, "revoke")
+
+
+def api_get_user_devices(username, user=None):
+    """Return real HWID device rows when the provider exposes them.
+
+    The endpoint is optional from the client cabinet's perspective: a provider
+    outage must result in an empty device list, never fabricated devices.
+    """
+    user = user or api_get_user(username)
+    if not user:
+        return []
+    user_id = user.get("id") or user.get("userId")
+    if user_id is None:
+        return []
+    try:
+        res = requests.get(
+            f"{BASE_URL}/api/hwid/devices/{user_id}",
+            headers=api_get_headers(), timeout=12)
+        if res.status_code != 200:
+            logger.warning("HWID devices request failed for %s: HTTP %s", username, res.status_code)
+            return []
+        body = res.json().get("response", [])
+        return body if isinstance(body, list) else []
+    except Exception as exc:
+        logger.warning("HWID devices request error for %s: %s", username, exc)
+        return []
+
+
+def _cabinet_device_rows(rows):
+    """Project provider device data into a privacy-preserving cabinet view."""
+    devices = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        # Provider schemas vary; retain only display-safe labels and timestamps.
+        label = str(row.get("deviceName") or row.get("name") or row.get("userAgent") or "Устройство")
+        platform = str(row.get("platform") or row.get("os") or "")
+        last_seen = row.get("updatedAt") or row.get("lastSeenAt") or row.get("createdAt")
+        devices.append({
+            "id": str(row.get("id") or row.get("uuid") or ""),
+            "label": label[:120],
+            "platform": platform[:80],
+            "last_seen_at": last_seen,
+        })
+    return devices
 
 # Lava Business API integration
 LAVA_STORE_CONFIG = {
@@ -3173,6 +3219,19 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                 days_left = max(0, (expiry - datetime.datetime.now(datetime.timezone.utc)).days)
             except Exception:
                 pass
+        # Daily billing has an explicit Moscow-time estimate. It is labelled as
+        # an estimate because provider-side billing may be paused or adjusted.
+        next_charge_estimate_at = None
+        if status == "active" and days_left > 0:
+            now_moscow = datetime.datetime.now(ZoneInfo("Europe/Moscow"))
+            next_charge_estimate_at = (now_moscow + datetime.timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0).isoformat()
+        raw_devices = api_get_user_devices(username, remote) if remote else []
+        devices = _cabinet_device_rows(raw_devices)
+        traffic_used = int((remote or {}).get("usedTrafficBytes") or 0)
+        traffic_limit = int((remote or {}).get("trafficLimitBytes") or 0)
+        lifetime_traffic = int((remote or {}).get("lifetimeUsedTrafficBytes") or 0)
+        device_limit = int((remote or {}).get("hwidDeviceLimit") or (remote or {}).get("hwidDevicesLimit") or 5)
         return {
             "account_id": str(telegram_id),
             "telegram_id": telegram_id,
@@ -3188,8 +3247,19 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             "trial_ends_at": expires_at,
             "expires_at": expires_at,
             "days_left": days_left,
+            "next_charge_estimate_at": next_charge_estimate_at,
+            "traffic_used_bytes": traffic_used,
+            "traffic_limit_bytes": traffic_limit,
+            "lifetime_traffic_bytes": lifetime_traffic,
+            "device_limit": max(0, device_limit),
+            "devices": devices,
+            "statistics": {
+                "routes_available": 0,
+                "devices_seen": len(devices),
+                "provider_status": remote_status,
+                "last_sync_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            },
             "billing": {"price_per_day_rub": 1, "timezone": "Europe/Moscow", "checkout_discount_percent": 0},
-            "devices": [],
             "is_admin": is_admin(telegram_id),
         }
 

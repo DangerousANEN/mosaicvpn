@@ -145,5 +145,29 @@ class AppAuthAndCabinetTest(unittest.TestCase):
         self.assertEqual(bot_module.get_user(self.telegram_id)["short_uuid"], "new_sub_uuid")
 
 
+    @patch.object(bot_module.dateutil.parser, "isoparse", return_value=datetime.datetime(2099, 1, 1, tzinfo=datetime.timezone.utc))
+    @patch.object(bot_module, "api_get_user_devices", return_value=[{
+        "id": "device_1", "deviceName": "MosaicVPN Android", "platform": "Android",
+        "updatedAt": "2026-08-17T10:00:00+00:00",
+    }])
+    @patch.object(bot_module, "api_get_user", return_value={
+        "id": 42, "status": "ACTIVE", "shortUuid": "sub_payload",
+        "expireAt": "2099-01-01T00:00:00+00:00",
+        "usedTrafficBytes": 1024, "trafficLimitBytes": 4096,
+        "lifetimeUsedTrafficBytes": 8192, "hwidDeviceLimit": 5,
+    })
+    def test_profile_exposes_real_cabinet_statistics(self, remote, devices, parse_expiry):
+        status, body = self._get(f"/api/billing/profile?token={self.session_token}")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["traffic_used_bytes"], 1024)
+        self.assertEqual(body["traffic_limit_bytes"], 4096)
+        self.assertEqual(body["lifetime_traffic_bytes"], 8192)
+        self.assertEqual(body["device_limit"], 5)
+        self.assertEqual(body["devices"][0]["label"], "MosaicVPN Android")
+        self.assertTrue(body["next_charge_estimate_at"])
+        self.assertEqual(body["statistics"]["devices_seen"], 1)
+        devices.assert_called_once_with(self.username, remote.return_value)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

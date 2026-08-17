@@ -70,10 +70,21 @@ class UnifiedAccountPanel extends ConsumerWidget {
           Text(
               'Списание: ${account.pricePerDayRub.toStringAsFixed(account.pricePerDayRub % 1 == 0 ? 0 : 2)} ₽ в сутки · ${account.timezone == 'Europe/Moscow' ? 'по Москве' : account.timezone}',
               style: TextStyle(color: c.textSecondary, fontSize: 12)),
-          if (account.trialEndsAt != null) ...[
+          if (account.expiresAt != null) ...[
+            const SizedBox(height: 8),
+            Text(
+                'Доступ до ${_dateTime(account.expiresAt!)} · осталось ${account.daysLeft} дн.',
+                style: TextStyle(color: c.textSecondary, fontSize: 12)),
+          ] else if (account.trialEndsAt != null) ...[
             const SizedBox(height: 8),
             Text('Пробный период до ${_date(account.trialEndsAt!)}',
                 style: TextStyle(color: c.textSecondary, fontSize: 12)),
+          ],
+          if (account.nextChargeEstimateAt != null) ...[
+            const SizedBox(height: 4),
+            Text(
+                'Ориентировочное списание: ${_dateTime(account.nextChargeEstimateAt!)}',
+                style: TextStyle(color: c.textMuted, fontSize: 11)),
           ],
           const SizedBox(height: 16),
           Row(children: [
@@ -98,6 +109,8 @@ class UnifiedAccountPanel extends ConsumerWidget {
             icon: const Icon(Icons.key_outlined, size: 18),
             label: const Text('Подписочная ссылка и безопасность'),
           ),
+          const SizedBox(height: 6),
+          _SubscriptionOverview(account: account),
         ],
       ),
     );
@@ -105,6 +118,9 @@ class UnifiedAccountPanel extends ConsumerWidget {
 
   static String _date(DateTime value) =>
       '${value.day.toString().padLeft(2, '0')}.${value.month.toString().padLeft(2, '0')}.${value.year}';
+
+  static String _dateTime(DateTime value) =>
+      '${_date(value)} ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 
   Future<void> _toggleAccess(BuildContext context, WidgetRef ref) async {
     final frozen = account.isFrozen;
@@ -246,6 +262,126 @@ class UnifiedAccountPanel extends ConsumerWidget {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(message),
         backgroundColor: error ? ThemeColors.of(context).danger : null));
+  }
+}
+
+class _SubscriptionOverview extends StatelessWidget {
+  final UnifiedAccount account;
+  const _SubscriptionOverview({required this.account});
+
+  static String _bytes(int value) {
+    if (value <= 0) return '0 Б';
+    const units = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'];
+    var size = value.toDouble();
+    var unit = 0;
+    while (size >= 1024 && unit < units.length - 1) {
+      size /= 1024;
+      unit++;
+    }
+    return '${size.toStringAsFixed(size >= 100 || unit == 0 ? 0 : 1)} ${units[unit]}';
+  }
+
+  static String _date(DateTime value) =>
+      '${value.day.toString().padLeft(2, '0')}.${value.month.toString().padLeft(2, '0')}.${value.year}';
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeColors.of(context);
+    final trafficRatio = account.hasTrafficLimit
+        ? (account.trafficUsedBytes / account.trafficLimitBytes).clamp(0.0, 1.0)
+        : 0.0;
+    return Container(
+      padding: const EdgeInsets.only(top: 16),
+      decoration:
+          BoxDecoration(border: Border(top: BorderSide(color: c.border))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Статистика подписки',
+            style:
+                TextStyle(color: c.textPrimary, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 12),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          _MetricChip(
+              label: 'Использовано', value: _bytes(account.trafficUsedBytes)),
+          _MetricChip(
+              label: 'За всё время',
+              value: _bytes(account.lifetimeTrafficBytes)),
+          _MetricChip(
+              label: 'Устройства',
+              value: account.deviceLimit > 0
+                  ? '${account.devices.length}/${account.deviceLimit}'
+                  : '${account.devices.length}'),
+          if (account.statistics.lastSyncAt != null)
+            _MetricChip(
+                label: 'Синхронизация',
+                value: _date(account.statistics.lastSyncAt!)),
+        ]),
+        if (account.hasTrafficLimit) ...[
+          const SizedBox(height: 12),
+          ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                  value: trafficRatio,
+                  minHeight: 7,
+                  color: c.accent,
+                  backgroundColor: c.bgChild)),
+          const SizedBox(height: 5),
+          Text(
+              '${_bytes(account.trafficUsedBytes)} из ${_bytes(account.trafficLimitBytes)}',
+              style: TextStyle(color: c.textMuted, fontSize: 11)),
+        ],
+        const SizedBox(height: 16),
+        Text('Устройства',
+            style:
+                TextStyle(color: c.textPrimary, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 8),
+        if (account.devices.isEmpty)
+          Text(
+              'Провайдер пока не передал список устройств. Лимит: ${account.deviceLimit > 0 ? account.deviceLimit : 'не указан'}.',
+              style: TextStyle(color: c.textSecondary, fontSize: 12))
+        else
+          ...account.devices.map((device) => Padding(
+              padding: const EdgeInsets.only(bottom: 7),
+              child: Row(children: [
+                Icon(Icons.devices_other_outlined,
+                    size: 17, color: c.textSecondary),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: Text(device.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: c.textPrimary, fontSize: 12))),
+                if (device.platform.isNotEmpty)
+                  Text(device.platform,
+                      style: TextStyle(color: c.textMuted, fontSize: 11)),
+              ]))),
+      ]),
+    );
+  }
+}
+
+class _MetricChip extends StatelessWidget {
+  final String label;
+  final String value;
+  const _MetricChip({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeColors.of(context);
+    return Container(
+      constraints: const BoxConstraints(minWidth: 112),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+          color: c.bgChild, borderRadius: BorderRadius.circular(10)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label, style: TextStyle(color: c.textMuted, fontSize: 10)),
+        const SizedBox(height: 2),
+        Text(value,
+            style: TextStyle(
+                color: c.textPrimary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600)),
+      ]),
+    );
   }
 }
 
