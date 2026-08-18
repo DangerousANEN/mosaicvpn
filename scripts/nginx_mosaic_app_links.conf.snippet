@@ -1,0 +1,20 @@
+
+    # Android Digital Asset Links must bypass the subscription backend.
+    location = /.well-known/assetlinks.json {
+        root /etc/letsencrypt/landing;
+        default_type application/json;
+        try_files /.well-known/assetlinks.json =404;
+        add_header Cache-Control "public, max-age=300";
+    }
+
+    # HTTPS App Link fallback for browsers/devices that cannot yet route the
+    # verified domain to MosaicVPN. The page exposes an explicit user-click
+    # custom-scheme fallback and never contains long-lived credentials.
+    location = /enroll/callback {
+        return 302 /enroll/callback/$is_args$args;
+    }
+    location ^~ /enroll/callback/ {
+        root /etc/letsencrypt/landing;
+        try_files $uri $uri/ =404;
+        add_header Cache-Control "no-store";
+    }
