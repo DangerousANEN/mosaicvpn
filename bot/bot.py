@@ -2890,36 +2890,38 @@ def setup_bot_branding():
         bot.set_my_commands(commands)
         
         # Set description (locale RU)
+        # Telegram bot descriptions are plain text: Bot API does not render
+        # Markdown here, so never use **, code blocks or other markup symbols.
         bot.set_my_description(
-            "🛡 **MosaicVPN** — безопасное сетевое соединение и защита трафика.\n\n"
-            "🎁 **3 дня бесплатного тест-драйва** каждому новому пользователю!\n"
-            "• Стоимость: **1 рубль в день**.\n"
-            "• HWID лимит: до **5 устройств** на профиле.\n"
-            "• Автоматический выбор стабильного маршрута.\n\n"
-            "💬 Поддержка: @mosaicsup\n\n"
-            "Нажмите /start, чтобы получить доступ!",
+            "🛡 MosaicVPN — защита сетевого соединения и приватность трафика.\n\n"
+            "Тестовый доступ: 3 дня.\n"
+            "Стоимость: 1 ₽ в день.\n"
+            "До 5 устройств на одном профиле.\n"
+            "Автоматический выбор стабильного маршрута.\n\n"
+            "Поддержка: @mosaicsup\n"
+            "Нажмите /start, чтобы начать.",
             language_code="ru"
         )
         # Set description (locale EN)
         bot.set_my_description(
-            "🛡 **MosaicVPN** — secure network connection and traffic protection.\n\n"
-            "🎁 **3-day FREE trial** for every new user!\n"
-            "• Price: **1 ruble per day**.\n"
-            "• HWID limit: up to **5 devices** per profile.\n"
-            "• Automatic selection of a stable route.\n\n"
-            "💬 Support: @mosaicsup\n\n"
-            "Type /start to begin!",
+            "🛡 MosaicVPN — secure network connection and traffic privacy.\n\n"
+            "Trial access: 3 days.\n"
+            "Price: 1 RUB per day.\n"
+            "Up to 5 devices on one profile.\n"
+            "Automatic selection of a stable route.\n\n"
+            "Support: @mosaicsup\n"
+            "Type /start to begin.",
             language_code="en"
         )
         
         # Set short description (locale RU)
         bot.set_my_short_description(
-            "🛡 Безопасный интернет за 1 рубль/день. 🎁 3 дня бесплатного теста на старте! Поддержка: @mosaicsup",
+            "🛡 Защита сетевого соединения. Тестовый доступ 3 дня. Поддержка: @mosaicsup",
             language_code="ru"
         )
         # Set short description (locale EN)
         bot.set_my_short_description(
-            "🛡 Secure internet for 1 ruble/day. 🎁 3-day free trial on start! Support: @mosaicsup",
+            "🛡 Network connection protection. 3-day trial access. Support: @mosaicsup",
             language_code="en"
         )
         logger.info("Bot commands and descriptions updated successfully.")
