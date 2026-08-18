@@ -125,6 +125,38 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     _activeRoute = null;
   }
 
+  bool _isMosaicSubscriptionUrl(String value) {
+    final uri = Uri.tryParse(value.trim());
+    return uri != null &&
+        uri.isScheme('https') &&
+        uri.host.toLowerCase() == 'sub.zxc1x1.ru' &&
+        uri.pathSegments.isNotEmpty;
+  }
+
+  Subscription _asMosaicProviderSource(Subscription value) {
+    final opaqueLinkID = value.url.trim().split('/').last;
+    return Subscription(
+      id: value.id.isEmpty ? _mosaicProviderSubscriptionID : value.id,
+      name: value.name.trim().isEmpty ? 'MosaicVPN' : value.name,
+      url: value.url,
+      autoRefresh: value.autoRefresh,
+      refreshIntervalSeconds: value.refreshIntervalSeconds,
+      serverCount: value.serverCount,
+      lastFetched: value.lastFetched,
+      hasError: value.hasError,
+      lastError: value.lastError,
+      source: 'provider',
+      providerId: 'mosaicvpn',
+      // A manually imported link has not authenticated its billing identity.
+      // Keep a device-local opaque link key until website enrollment attaches
+      // the authenticated provider account without exposing the raw node pool.
+      providerAccountId: value.providerAccountId.isNotEmpty
+          ? value.providerAccountId
+          : 'unlinked:$opaqueLinkID',
+      hidePhysicalNodes: true,
+    );
+  }
+
   Future<List<Subscription>> _readLocalSubscriptions() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_subscriptionsKey);
@@ -260,9 +292,18 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   Future<List<Subscription>> listSubscriptions() async {
     final localSource = await _localSubscription();
     final stored = await _readLocalSubscriptions();
+    var migrated = false;
+    final normalized = stored.map((value) {
+      if (!value.isProviderSource && _isMosaicSubscriptionUrl(value.url)) {
+        migrated = true;
+        return _asMosaicProviderSource(value);
+      }
+      return value;
+    }).toList(growable: true);
+    if (migrated) await _writeLocalSubscriptions(normalized);
     return [
       if (localSource != null) localSource,
-      ...stored.where((value) => value.id != _localSubscriptionID),
+      ...normalized.where((value) => value.id != _localSubscriptionID),
     ];
   }
 
@@ -283,13 +324,16 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
 
     // Android keeps user-imported links locally. Every compatible imported
     // profile can build a direct native TUN route when the user selects one.
-    final subscription = Subscription(
+    final imported = Subscription(
       id: 'android-local-${DateTime.now().microsecondsSinceEpoch}',
       name: name.trim().isEmpty ? 'Локальная подписка' : name.trim(),
       url: normalized,
       autoRefresh: autoRefresh,
       refreshIntervalSeconds: refreshInterval,
     );
+    final subscription = _isMosaicSubscriptionUrl(normalized)
+        ? _asMosaicProviderSource(imported)
+        : imported;
     values.add(subscription);
     await _writeLocalSubscriptions(values);
     return subscription;

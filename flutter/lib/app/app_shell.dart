@@ -10,6 +10,7 @@ import '../core/platform/app_platform.dart';
 import '../core/api/android_hosted_daemon_api.dart';
 import '../core/providers/vpn_providers.dart';
 import '../core/i18n/app_strings.dart';
+import '../core/services/android_vpn_service.dart';
 import '../core/services/desktop_instance_lock.dart';
 import '../core/services/tray_service.dart';
 import '../core/services/smart_group_selector.dart';
@@ -46,6 +47,8 @@ class _AppShellState extends ConsumerState<AppShell>
   bool _autoConnectTriggered = false;
   bool _quitting = false;
   bool _trayQuickPanelVisible = false;
+  bool _enrollmentCompleting = false;
+  StreamSubscription<Uri>? _enrollmentCallbackSubscription;
   final SmartGroupSelector _smartGroupSelector = SmartGroupSelector();
 
   // Only build a tab after the user opens it. This prevents hidden technical
@@ -143,6 +146,12 @@ class _AppShellState extends ConsumerState<AppShell>
         onQuit: _quitApplication,
       );
     }
+    if (AppPlatform.isAndroid) {
+      _enrollmentCallbackSubscription =
+          AndroidVpnService.instance.enrollmentCallbacks.listen((_) {
+        _completeWebsiteEnrollment();
+      });
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _completeWebsiteEnrollment();
     });
@@ -150,6 +159,7 @@ class _AppShellState extends ConsumerState<AppShell>
 
   @override
   void dispose() {
+    _enrollmentCallbackSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     if (AppPlatform.isDesktop) {
       windowManager.removeListener(this);
@@ -173,10 +183,11 @@ class _AppShellState extends ConsumerState<AppShell>
   /// `mosaicvpn://enroll/callback`. The method is safe on normal launches: no
   /// pending callback simply returns without changing the selected screen.
   Future<void> _completeWebsiteEnrollment() async {
-    if (!AppPlatform.isAndroid) return;
+    if (!AppPlatform.isAndroid || _enrollmentCompleting) return;
     final api = ref.read(daemonApiProvider);
     if (api is! AndroidHostedDaemonApi) return;
     try {
+      _enrollmentCompleting = true;
       final subscription = await api.completeWebsiteEnrollmentIfPresent();
       if (subscription == null || !mounted) return;
       ref.invalidate(subscriptionsProvider);
@@ -197,6 +208,8 @@ class _AppShellState extends ConsumerState<AppShell>
           ),
         ),
       );
+    } finally {
+      _enrollmentCompleting = false;
     }
   }
 

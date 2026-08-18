@@ -505,10 +505,23 @@ class AndroidMosaicAccountService {
       return memberships is Set<String> && memberships.contains(groupId);
     }
 
-    final selected = candidates.where(matchesGroup).toList();
-    // A selected Smart Group is provider policy, not a best-effort client hint.
-    // Never fall back to the complete private pool: the server must include
-    // generic membership metadata for the requested group.
+    final hasMembershipMetadata = candidates.any((outbound) {
+      final memberships = outbound['_mosaic_group_ids'];
+      return memberships is Set<String> && memberships.isNotEmpty;
+    });
+    var selected = candidates.where(matchesGroup).toList();
+    // Older Remnawave feeds contain only standard share URI rows. Their
+    // provider manifest still declares legitimate selection policies, but the
+    // feed cannot carry custom `mosaic_group_ids`. In that compatibility mode,
+    // apply the requested Smart Group policy to the authenticated opaque set
+    // instead of failing every route. When membership metadata exists, it
+    // remains authoritative and we never broaden the selected candidate set.
+    if (selected.isEmpty &&
+        !hasMembershipMetadata &&
+        groupId != null &&
+        groupId.isNotEmpty) {
+      selected = List<Map<String, dynamic>>.from(candidates);
+    }
     if (selected.isEmpty) {
       if (groupId != null && groupId.isNotEmpty) {
         throw StateError(
@@ -566,8 +579,11 @@ class AndroidMosaicAccountService {
           'server': uri.host,
           'server_port': uri.hasPort ? uri.port : 443,
           'uuid': uuid,
-          'encryption': query['encryption'] ?? 'none',
         };
+        // `encryption=none` is a VLESS URI compatibility parameter, not a
+        // sing-box 1.13 outbound property. Passing it through makes libbox
+        // reject the complete config with `unknown field "encryption"`.
+        // It is therefore intentionally consumed and not serialized.
         if ((query['flow'] ?? '').isNotEmpty) outbound['flow'] = query['flow'];
         final security = query['security'] ?? 'none';
         if (security != 'none') {

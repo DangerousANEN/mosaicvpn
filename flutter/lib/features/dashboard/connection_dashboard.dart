@@ -6,9 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/models.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/platform/app_platform.dart';
-import '../../core/services/android_mosaic_account_service.dart';
 import '../../core/services/smart_group_selector.dart';
-import '../../core/services/android_vpn_service.dart';
 import '../../core/i18n/app_strings.dart';
 import '../../core/theme/atlas_theme.dart';
 
@@ -330,27 +328,16 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
 
   Future<void> _toggleAndroidRuntime(
       VpnStatus status, _RouteChoice selected) async {
+    // Android must share the exact same connection authority as the Routes
+    // screen. Keeping a dashboard-only config builder caused the two entry
+    // points to diverge in validation, group lookup and actionable errors.
+    final api = ref.read(daemonApiProvider);
     if (status.isConnected || status.isConnecting) {
-      await AndroidVpnService.instance.stop();
-      return;
-    }
-    final session = await AndroidMosaicAccountService.instance.restoreSession();
-    if (session == null) {
-      throw StateError('Войдите в аккаунт через Telegram-код или email.');
-    }
-    final approved = await AndroidVpnService.instance.requestPermission();
-    if (!approved) {
-      throw StateError('Для подключения необходимо разрешение VPN Android.');
-    }
-    final config = selected.isGroup
-        ? await AndroidMosaicAccountService.instance
-            .buildNativeTunConfig(groupId: selected.id)
-        : AndroidMosaicAccountService.buildNativeTunConfigFromShareUri(
-            selected.importUri,
-          );
-    final state = await AndroidVpnService.instance.startAndAwaitReady(config);
-    if (!state.isConnected) {
-      throw StateError(state.error ?? 'Нативный VPN runtime не запустился.');
+      await api.disconnect();
+    } else if (selected.isGroup) {
+      await api.connectGroup(selected.id);
+    } else {
+      await api.connect(selected.id);
     }
   }
 

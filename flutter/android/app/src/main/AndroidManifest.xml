@@ -65,6 +65,12 @@
         </service>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <!-- MainActivity owns the security-sensitive browser callback slots via
+             MethodChannel; disable Flutter's default router interception so it
+             cannot consume `mosaicvpn://auth|enroll/callback` first. -->
+        <meta-data
+            android:name="flutter_deeplinking_enabled"
+            android:value="false" />
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

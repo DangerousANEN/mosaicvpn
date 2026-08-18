@@ -29,13 +29,42 @@ class AndroidVpnRuntimeState {
 /// synthesizes a connection: `start` hands a validated sing-box JSON document
 /// to the native runtime, which owns Android's VpnService TUN file descriptor.
 class AndroidVpnService {
-  AndroidVpnService._();
+  AndroidVpnService._() {
+    _channel.setMethodCallHandler(_handleNativeCallback);
+  }
 
   static final AndroidVpnService instance = AndroidVpnService._();
   static const MethodChannel _channel =
       MethodChannel('ru.mosaicvpn.mosaic_vpn/android_vpn');
 
+  final _enrollmentCallbacks = StreamController<Uri>.broadcast();
+  final _authCallbacks = StreamController<Uri>.broadcast();
+
+  /// Emits a browser enrollment callback as soon as Android delivers it to an
+  /// already-running activity. The URI remains available to the single-use
+  /// consume method, which performs the security-critical code exchange.
+  Stream<Uri> get enrollmentCallbacks => _enrollmentCallbacks.stream;
+
+  /// Equivalent immediate signal for website-first account sign-in callbacks.
+  Stream<Uri> get authCallbacks => _authCallbacks.stream;
+
   bool get isSupported => !kIsWeb && AppPlatform.isAndroid;
+
+  Future<Object?> _handleNativeCallback(MethodCall call) async {
+    final raw = call.arguments?.toString();
+    final callback = raw == null ? null : Uri.tryParse(raw);
+    if (callback == null) return false;
+    switch (call.method) {
+      case 'enrollmentCallbackReceived':
+        _enrollmentCallbacks.add(callback);
+        return true;
+      case 'authCallbackReceived':
+        _authCallbacks.add(callback);
+        return true;
+      default:
+        return false;
+    }
+  }
 
   Future<bool> requestPermission() async {
     _ensureSupported();

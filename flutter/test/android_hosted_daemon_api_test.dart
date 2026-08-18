@@ -51,6 +51,22 @@ void main() {
     expect(servers.single.importUri, contains('vless://'));
   });
 
+  test('classifies a MosaicVPN subscription URL as a protected provider source',
+      () async {
+    final api = AndroidHostedDaemonApi.instance;
+    final subscription = await api.addSubscription(
+      'Моя MosaicVPN подписка',
+      'https://sub.zxc1x1.ru/reftcT_frzSCwhav',
+    );
+
+    final stored = await api.listSubscriptions();
+    final mosaic = stored.singleWhere((value) => value.id == subscription.id);
+    expect(mosaic.isProviderSource, isTrue);
+    expect(mosaic.providerId, 'mosaicvpn');
+    expect(mosaic.hidePhysicalNodes, isTrue);
+    expect(mosaic.providerAccountId, startsWith('unlinked:'));
+  });
+
   test('deleting an Android-local group keeps its servers but ungroups them',
       () async {
     final api = AndroidHostedDaemonApi.instance;

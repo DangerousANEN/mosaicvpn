@@ -17,13 +17,16 @@ class MainActivity : FlutterActivity() {
     private var pendingPermissionResult: MethodChannel.Result? = null
     private var pendingAuthCallback: String? = null
     private var pendingEnrollmentCallback: String? = null
+    private var bridgeChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(
+        bridgeChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             CHANNEL,
-        ).setMethodCallHandler { call, result -> handleVpnCall(call, result) }
+        ).also { channel ->
+            channel.setMethodCallHandler { call, result -> handleVpnCall(call, result) }
+        }
         intent?.dataString?.let { callback -> storeAppCallback(callback) }
     }
 
@@ -87,8 +90,16 @@ class MainActivity : FlutterActivity() {
 
     private fun storeAppCallback(callback: String) {
         when {
-            callback.startsWith("mosaicvpn://auth/callback") -> pendingAuthCallback = callback
-            callback.startsWith("mosaicvpn://enroll/callback") -> pendingEnrollmentCallback = callback
+            callback.startsWith("mosaicvpn://auth/callback") -> {
+                pendingAuthCallback = callback
+                bridgeChannel?.invokeMethod("authCallbackReceived", callback)
+            }
+            callback.startsWith("mosaicvpn://enroll/callback") -> {
+                pendingEnrollmentCallback = callback
+                // Do not depend solely on `resumed`: Android can deliver a
+                // new VIEW intent to an already resumed Flutter activity.
+                bridgeChannel?.invokeMethod("enrollmentCallbackReceived", callback)
+            }
         }
     }
 

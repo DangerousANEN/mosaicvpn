@@ -3325,6 +3325,75 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             "subscription_url": f"https://sub.zxc1x1.ru/{short_uuid}",
         })
 
+    def _handle_provider_manifest(self, query):
+        # Smart Groups are provider-owned route rows. Their concrete labels and
+        # policies travel from the hosted authority; the app does not hard-code
+        # a catalog or expose pool members. `subscription_id` is accepted as
+        # context for future multi-account manifests but no secret is required
+        # to read public route capability metadata.
+        _ = (query.get("subscription_id") or [""])[0]
+        policy = {
+            "shard_size": 16,
+            "max_parallel_probes": 4,
+            "probe_ttl_seconds": 600,
+            "max_failover_tries": 3,
+            "latency_weight": 0.45,
+            "loss_weight": 0.30,
+            "stability_weight": 0.25,
+            "speed_weight": 0.0,
+            "speed_probe": {"enabled": False},
+        }
+        groups = [
+            {
+                "id": "rg-all", "title": "Минимальный пинг", "route_type": "smart_group",
+                "type": "urltest", "pool_id": "mosaicvpn", "category": "smart",
+                "icon": "lightning", "badge": "Авто", "description": "Выбор маршрута с минимальной задержкой на этом устройстве.",
+                "client_policy": {**policy, "mode": "latency"},
+            },
+            {
+                "id": "auto-stable", "title": "Оптимальный", "route_type": "smart_group",
+                "type": "urltest", "pool_id": "mosaicvpn", "category": "smart",
+                "icon": "shield", "badge": "Рекомендуется", "description": "Баланс стабильности и задержки с локальным failover.",
+                "client_policy": {**policy, "mode": "stability", "stability_weight": 0.45, "latency_weight": 0.30},
+            },
+            {
+                "id": "auto-speed", "title": "Максимальная скорость", "route_type": "smart_group",
+                "type": "urltest", "pool_id": "mosaicvpn", "category": "smart",
+                "icon": "speed", "badge": "Авто", "description": "Маршрут с клиентской проверкой производительности.",
+                "client_policy": {**policy, "mode": "speed", "speed_weight": 0.45, "latency_weight": 0.25},
+            },
+            {
+                "id": "auto-ru", "title": "Локальные сервисы (RU)", "route_type": "smart_group",
+                "type": "urltest", "pool_id": "mosaicvpn", "category": "smart",
+                "icon": "flag_ru", "badge": "Локальный", "description": "Автоматический маршрут для локального доступа.",
+                "client_policy": {**policy, "mode": "latency"},
+            },
+            {
+                "id": "auto-ca", "title": "Канада", "route_type": "smart_group",
+                "type": "urltest", "pool_id": "mosaicvpn", "category": "smart",
+                "icon": "flag_ca", "badge": "Авто", "description": "Канадский маршрут, если поддерживается вашим профилем.",
+                "client_policy": {**policy, "mode": "latency"},
+            },
+            {
+                "id": "auto-de", "title": "Германия", "route_type": "smart_group",
+                "type": "urltest", "pool_id": "mosaicvpn", "category": "smart",
+                "icon": "flag_de", "badge": "Авто", "description": "Немецкий маршрут, если поддерживается вашим профилем.",
+                "client_policy": {**policy, "mode": "latency"},
+            },
+            {
+                "id": "reserved-lte-compat", "title": "Свободный LTE", "route_type": "smart_group",
+                "type": "urltest", "pool_id": "reserved-lte-compat", "category": "compatibility",
+                "icon": "cellular", "badge": "Скоро", "description": "Категория зарезервирована до подключения авторизованного источника профилей.",
+                "disabled": True, "disabled_reason": "Требуется подключение авторизованного источника профилей.",
+                "client_policy": {**policy, "mode": "stability"},
+            },
+        ]
+        self._send_json(200, {
+            "provider_name": "MosaicVPN",
+            "user_tier": "standard",
+            "groups": groups,
+        })
+
     def _handle_link_redeem(self):
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -3504,6 +3573,12 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
             return
+
+        # Provider route metadata for generic MosaicVPN clients. This endpoint
+        # intentionally contains no share URIs or physical node pool; clients
+        # receive the selected route's opaque feed separately.
+        if path == "/api/manifest.json":
+            return self._handle_provider_manifest(query)
 
         # Web cabinet: billing profile
         if path == "/api/billing/profile":
