@@ -14,3 +14,9 @@ The existing Android website-enrollment flow registers custom-scheme callbacks a
 [2]: https://developer.android.com/training/app-links/create-deeplinks "Android Developers: Create deep links"
 [3]: https://docs.flutter.dev/ui/navigation/deep-linking "Flutter documentation: Deep linking"
 
+
+## Public subscription profile audit (2026-08-18)
+
+The user-provided subscription response includes standard headers (`profile-title`, `profile-update-interval`, `subscription-userinfo`) but its current `subscription-userinfo` value is `upload=0; download=0; total=0; expire=0`; it therefore cannot supply a useful base cabinet by itself. The deployed legacy `GET /stats-api/stats/<opaque-link>` response did return high-level account-like values, but also returned VLESS UUIDs and host objects with addresses, SNI and transport metadata. That response must **not** be consumed by the client cabinet or treated as a safe public profile API, because it breaks the private-pool boundary.
+
+The required remediation is a distinct minimal endpoint keyed by the opaque subscription capability that returns an allow-listed base profile only: provider subscription status, expiry/days left, used/limit/lifetime traffic, device limit, and a non-sensitive profile label. It must exclude server rows, UUIDs, share URLs, session/direct tokens, payment data, balance operations, device identifiers and all account-control actions. Expanded profile actions remain behind authenticated `/api/billing/*` and checkout routes.

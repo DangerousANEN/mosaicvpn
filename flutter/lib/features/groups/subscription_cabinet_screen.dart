@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/models.dart';
 import '../../core/providers/vpn_providers.dart';
+import '../../core/services/android_mosaic_account_service.dart';
 import '../../core/theme/atlas_theme.dart';
 import '../account/unified_account_panel.dart';
 
@@ -10,6 +11,14 @@ final subscriptionCabinetPaymentsProvider =
     FutureProvider<List<PaymentEntry>>((ref) async {
   return ref.watch(daemonApiProvider).getPaymentHistory();
 });
+
+/// Safe base metadata exists independently of an account session and is keyed
+/// by the already-stored MosaicVPN subscription capability URL.
+final mosaicBaseProfileProvider =
+    FutureProvider.family<SubscriptionBaseProfile, Subscription>(
+  (ref, subscription) => AndroidMosaicAccountService.instance
+      .getSubscriptionBaseProfile(subscription.url),
+);
 
 /// Cabinet attached to one provider subscription rather than to a global
 /// application profile. A subscription can expose a cabinet only when its
@@ -25,6 +34,9 @@ class SubscriptionCabinetScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = ThemeColors.of(context);
+    final baseProfile = _isMosaicCabinet
+        ? ref.watch(mosaicBaseProfileProvider(subscription))
+        : null;
     final account = _isMosaicCabinet ? ref.watch(unifiedAccountProvider) : null;
     final payments = _isMosaicCabinet
         ? ref.watch(subscriptionCabinetPaymentsProvider)
@@ -38,9 +50,10 @@ class SubscriptionCabinetScreen extends ConsumerWidget {
       body: RefreshIndicator(
         onRefresh: () async {
           if (_isMosaicCabinet) {
+            ref.invalidate(mosaicBaseProfileProvider(subscription));
             ref.invalidate(unifiedAccountProvider);
             ref.invalidate(subscriptionCabinetPaymentsProvider);
-            await ref.read(unifiedAccountProvider.future);
+            await ref.read(mosaicBaseProfileProvider(subscription).future);
           }
         },
         child: ListView(
@@ -50,6 +63,12 @@ class SubscriptionCabinetScreen extends ConsumerWidget {
             _CabinetHeader(subscription: subscription),
             const SizedBox(height: 14),
             if (_isMosaicCabinet) ...[
+              baseProfile!.when(
+                loading: () => const _PanelLoading(),
+                error: (_, __) => const _BaseProfileUnavailable(),
+                data: (profile) => _BaseSubscriptionProfile(profile: profile),
+              ),
+              const SizedBox(height: 14),
               account!.when(
                 loading: () => const _PanelLoading(),
                 error: (_, __) => const _CabinetUnavailable(),
@@ -57,12 +76,14 @@ class SubscriptionCabinetScreen extends ConsumerWidget {
                     ? const _CabinetUnavailable()
                     : UnifiedAccountPanel(account: value),
               ),
-              const SizedBox(height: 14),
-              payments!.when(
-                loading: () => const _PanelLoading(),
-                error: (_, __) => const _PaymentHistoryUnavailable(),
-                data: (rows) => _PaymentHistory(rows: rows),
-              ),
+              if (account.valueOrNull != null) ...[
+                const SizedBox(height: 14),
+                payments!.when(
+                  loading: () => const _PanelLoading(),
+                  error: (_, __) => const _PaymentHistoryUnavailable(),
+                  data: (rows) => _PaymentHistory(rows: rows),
+                ),
+              ],
             ] else
               _GenericSubscriptionProfile(subscription: subscription),
           ],
@@ -125,6 +146,90 @@ class _PanelLoading extends StatelessWidget {
       );
 }
 
+class _BaseSubscriptionProfile extends StatelessWidget {
+  const _BaseSubscriptionProfile({required this.profile});
+
+  final SubscriptionBaseProfile profile;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeColors.of(context);
+    final expires = profile.expiresAt == null
+        ? 'не указано'
+        : '${profile.expiresAt!.toLocal()}'.split('.').first;
+    final traffic = profile.hasTrafficLimit
+        ? '${_formatBytes(profile.trafficUsedBytes)} / ${_formatBytes(profile.trafficLimitBytes)}'
+        : '${_formatBytes(profile.trafficUsedBytes)} / без лимита';
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: c.bgCard,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AtlasTheme.accent.withValues(alpha: .38)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.info_outline, color: AtlasTheme.accent),
+          const SizedBox(width: 8),
+          Text('Информация о подписке',
+              style:
+                  TextStyle(color: c.textPrimary, fontWeight: FontWeight.w700)),
+        ]),
+        const SizedBox(height: 12),
+        _ProfileFact(
+            label: 'Статус',
+            value: profile.status,
+            valueColor: profile.status == 'active' ? c.success : c.warning),
+        _ProfileFact(label: 'Осталось дней', value: '${profile.daysLeft}'),
+        _ProfileFact(label: 'Действует до', value: expires),
+        _ProfileFact(label: 'Трафик', value: traffic),
+        _ProfileFact(
+            label: 'Всего использовано',
+            value: _formatBytes(profile.lifetimeTrafficBytes)),
+        _ProfileFact(
+            label: 'Лимит устройств',
+            value: profile.deviceLimit > 0
+                ? '${profile.deviceLimit}'
+                : 'не указан'),
+        const SizedBox(height: 4),
+        Text(
+            'Эти сведения доступны по вашей ссылке подписки. Они не раскрывают серверы, устройства, платежи или данные кабинета.',
+            style:
+                TextStyle(color: c.textSecondary, fontSize: 12, height: 1.35)),
+      ]),
+    );
+  }
+}
+
+class _BaseProfileUnavailable extends StatelessWidget {
+  const _BaseProfileUnavailable();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeColors.of(context);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: c.bgCard,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: c.border),
+      ),
+      child: Text(
+          'Не удалось обновить базовые сведения подписки. Проверьте ссылку и повторите обновление.',
+          style: TextStyle(color: c.textSecondary, fontSize: 12)),
+    );
+  }
+}
+
+String _formatBytes(int value) {
+  if (value < 1024) return '$value Б';
+  if (value < 1024 * 1024) return '${(value / 1024).toStringAsFixed(1)} КБ';
+  if (value < 1024 * 1024 * 1024) {
+    return '${(value / (1024 * 1024)).toStringAsFixed(1)} МБ';
+  }
+  return '${(value / (1024 * 1024 * 1024)).toStringAsFixed(2)} ГБ';
+}
+
 class _CabinetUnavailable extends StatelessWidget {
   const _CabinetUnavailable();
   @override
@@ -145,7 +250,7 @@ class _CabinetUnavailable extends StatelessWidget {
                 TextStyle(color: c.textPrimary, fontWeight: FontWeight.w700)),
         const SizedBox(height: 5),
         Text(
-            'Войдите в MosaicVPN через сайт или Telegram-код на экране доступа. Затем вернитесь к этой подписке.',
+            'Базовые срок, статус и трафик уже показаны выше. Войдите через сайт или Telegram-код, чтобы открыть баланс, пополнение, устройства, платежи, заморозку и ротацию ссылки.',
             style: TextStyle(color: c.textSecondary, fontSize: 12)),
       ]),
     );

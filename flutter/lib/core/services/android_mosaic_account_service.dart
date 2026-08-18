@@ -202,6 +202,33 @@ class AndroidMosaicAccountService {
     return Map<String, dynamic>.from(response.data ?? const {});
   }
 
+  /// Reads safe subscription metadata without requiring a browser session.
+  /// This is limited to the holder of an existing MosaicVPN subscription URL;
+  /// it never grants balance, payment, device or account-control access.
+  Future<SubscriptionBaseProfile> getSubscriptionBaseProfile(
+    String subscriptionUrl,
+  ) async {
+    final uri = Uri.tryParse(subscriptionUrl.trim());
+    if (uri == null ||
+        !uri.isScheme('https') ||
+        uri.host.toLowerCase() != Uri.parse(_baseUrl).host ||
+        uri.pathSegments.isEmpty) {
+      throw const FormatException('Не удалось определить ссылку MosaicVPN.');
+    }
+    final opaqueID = uri.pathSegments.last;
+    final response = await _dio.get<Map<String, dynamic>>(
+      '/api/subscription/profile/${Uri.encodeComponent(opaqueID)}',
+    );
+    final payload = Map<String, dynamic>.from(response.data ?? const {});
+    final raw = payload['profile'];
+    if (raw is! Map) {
+      throw StateError('Сервис не вернул базовый профиль подписки.');
+    }
+    return SubscriptionBaseProfile.fromJson(
+      Map<String, dynamic>.from(raw),
+    );
+  }
+
   Future<UnifiedAccount?> getUnifiedAccount() async {
     final session = await restoreSession();
     if (session == null) return null;

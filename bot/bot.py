@@ -3325,6 +3325,16 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             "subscription_url": f"https://sub.zxc1x1.ru/{short_uuid}",
         })
 
+    def _handle_subscription_base_profile(self, opaque_id):
+        if not opaque_id or len(opaque_id) > 256:
+            self._send_json(404, {"error": "subscription not found"})
+            return
+        profile = self.get_subscription_base_profile(opaque_id)
+        if profile is None:
+            self._send_json(404, {"error": "subscription not found"})
+            return
+        self._send_json(200, {"profile": profile})
+
     def _handle_provider_manifest(self, query):
         # Smart Groups are provider-owned route rows. Their concrete labels and
         # policies travel from the hosted authority; the app does not hard-code
@@ -3574,6 +3584,13 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
+        # Capability-scoped base profile. The opaque subscription link is the
+        # only lookup key, and the response is deliberately allow-listed: no
+        # UUID, server address, direct token, payment data or control action.
+        if path.startswith("/api/subscription/profile/"):
+            opaque_id = urllib.parse.unquote(path.rsplit("/", 1)[-1])
+            return self._handle_subscription_base_profile(opaque_id)
+
         # Provider route metadata for generic MosaicVPN clients. This endpoint
         # intentionally contains no share URIs or physical node pool; clients
         # receive the selected route's opaque feed separately.
@@ -3681,6 +3698,62 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
 
         payments = get_payments_history(session["telegram_id"])
         self._send_json(200, {"payments": payments})
+
+    def get_subscription_base_profile(self, short_uuid):
+        """Return only metadata safe for the holder of a subscription URL.
+
+        The subscription link is a bearer capability for receiving a feed, so
+        this profile intentionally limits itself to access state and resource
+        counters. Account identity, node inventory, UUIDs, payment history,
+        devices and management operations remain session-authenticated.
+        """
+        try:
+            pg_conn = psycopg2.connect(
+                host="127.0.0.1", port=6767, user="postgres",
+                password="postgres", database="postgres"
+            )
+            cursor = pg_conn.cursor()
+            cursor.execute(
+                "SELECT username, status, expire_at FROM users WHERE short_uuid = %s",
+                (short_uuid,)
+            )
+            row = cursor.fetchone()
+            if not row:
+                cursor.close()
+                pg_conn.close()
+                return None
+            username, raw_status, expire_at = row
+            remote = api_get_user(username) or {}
+            remote_status = str(remote.get("status") or raw_status or "ACTIVE").upper()
+            status_map = {
+                "ACTIVE": "active", "DISABLED": "frozen", "EXPIRED": "insufficient_funds"
+            }
+            if expire_at and expire_at.tzinfo is None:
+                expire_at = expire_at.replace(tzinfo=datetime.timezone.utc)
+            now = datetime.datetime.now(datetime.timezone.utc)
+            expires_at = (remote.get("expireAt") or
+                          (expire_at.isoformat() if expire_at else None))
+            expiry = dateutil.parser.isoparse(expires_at) if expires_at else expire_at
+            if expiry and expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=datetime.timezone.utc)
+            days_left = max(0, (expiry - now).days) if expiry else 0
+            cursor.close()
+            pg_conn.close()
+            return {
+                "provider_name": "MosaicVPN",
+                "status": status_map.get(remote_status, "unknown"),
+                "tier": "standard",
+                "expires_at": expires_at,
+                "days_left": days_left,
+                "traffic_used_bytes": int(remote.get("usedTrafficBytes") or 0),
+                "traffic_limit_bytes": int(remote.get("trafficLimitBytes") or 0),
+                "lifetime_traffic_bytes": int(remote.get("lifetimeUsedTrafficBytes") or 0),
+                "device_limit": max(0, int(remote.get("hwidDeviceLimit") or remote.get("hwidDevicesLimit") or 0)),
+                "last_sync_at": now.isoformat(),
+            }
+        except Exception as exc:
+            logger.error("Base subscription profile lookup failed: %s", exc)
+            return None
 
     def get_user_statistics(self, short_uuid):
         # Connect to Remnawave Postgres database
@@ -3797,9 +3870,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                 "favorite_server": fav_server,
                 "clients": clients[:3],
                 "avg_speed": avg_speed,
-                "avg_ping": avg_ping,
-                "vless_uuid": vless_uuid,
-                "hosts": hosts
+                "avg_ping": avg_ping
             }
             
         except Exception as e:

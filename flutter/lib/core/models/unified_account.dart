@@ -94,6 +94,52 @@ class UnifiedAccount {
   bool get hasTrafficLimit => trafficLimitBytes > 0;
 }
 
+/// Safe metadata visible to whoever holds a subscription capability URL. This
+/// intentionally excludes balance, payment history, device identifiers,
+/// subscription credentials and all account-control fields.
+class SubscriptionBaseProfile {
+  const SubscriptionBaseProfile({
+    required this.providerName,
+    required this.status,
+    required this.tier,
+    required this.expiresAt,
+    required this.daysLeft,
+    required this.trafficUsedBytes,
+    required this.trafficLimitBytes,
+    required this.lifetimeTrafficBytes,
+    required this.deviceLimit,
+    required this.lastSyncAt,
+  });
+
+  final String providerName;
+  final String status;
+  final String tier;
+  final DateTime? expiresAt;
+  final int daysLeft;
+  final int trafficUsedBytes;
+  final int trafficLimitBytes;
+  final int lifetimeTrafficBytes;
+  final int deviceLimit;
+  final DateTime? lastSyncAt;
+
+  factory SubscriptionBaseProfile.fromJson(Map<String, dynamic> json) =>
+      SubscriptionBaseProfile(
+        providerName: json['provider_name']?.toString() ?? 'MosaicVPN',
+        status: json['status']?.toString() ?? 'unknown',
+        tier: json['tier']?.toString() ?? '',
+        expiresAt: DateTime.tryParse(json['expires_at']?.toString() ?? ''),
+        daysLeft: (json['days_left'] as num?)?.toInt() ?? 0,
+        trafficUsedBytes: (json['traffic_used_bytes'] as num?)?.toInt() ?? 0,
+        trafficLimitBytes: (json['traffic_limit_bytes'] as num?)?.toInt() ?? 0,
+        lifetimeTrafficBytes:
+            (json['lifetime_traffic_bytes'] as num?)?.toInt() ?? 0,
+        deviceLimit: (json['device_limit'] as num?)?.toInt() ?? 0,
+        lastSyncAt: DateTime.tryParse(json['last_sync_at']?.toString() ?? ''),
+      );
+
+  bool get hasTrafficLimit => trafficLimitBytes > 0;
+}
+
 class SubscriptionDevice {
   final String id;
   final String label;
