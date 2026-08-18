@@ -20,6 +20,9 @@ import base64
 import secrets
 import hashlib
 import hmac
+import re
+import smtplib
+from email.message import EmailMessage
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -471,6 +474,34 @@ def init_db():
         expires_at TEXT NOT NULL
     )
     """)
+    # Password credentials are separate from the Telegram-first user profile.
+    # account_id references users.telegram_id, including website-only identities.
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS web_credentials (
+        account_id INTEGER PRIMARY KEY,
+        email_normalized TEXT NOT NULL UNIQUE,
+        password_salt BLOB NOT NULL,
+        password_hash BLOB NOT NULL,
+        password_version INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        verified_at TEXT
+    )
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        token_hash TEXT PRIMARY KEY,
+        account_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0
+    )
+    """)
+    cursor.execute("""
+    CREATE INDEX IF NOT EXISTS idx_password_reset_account
+    ON password_reset_tokens(account_id, created_at DESC)
+    """)
     # Browser-to-app callbacks contain only this single-use five-minute code.
     # They never contain an account session token or personal feed URL.
     cursor.execute("""
@@ -511,6 +542,30 @@ def init_db():
     cursor.execute("""
     CREATE INDEX IF NOT EXISTS idx_admin_balance_credits_created
     ON admin_balance_credits(created_at DESC)
+    """)
+    # Website broadcast records are durable audit entries. Delivery is a
+    # background task only after a previewed message receives explicit confirm.
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS admin_broadcasts (
+        request_id TEXT PRIMARY KEY,
+        admin_telegram_id INTEGER NOT NULL,
+        message TEXT NOT NULL,
+        recipient_count INTEGER NOT NULL,
+        delivered_count INTEGER NOT NULL DEFAULT 0,
+        failed_count INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        completed_at TEXT,
+        error TEXT
+    )
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS service_settings (
+        setting_key TEXT PRIMARY KEY,
+        setting_value TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        updated_by INTEGER NOT NULL
+    )
     """)
     conn.commit()
     conn.close()
@@ -619,6 +674,199 @@ def redeem_link_code(raw_code):
         "username": username or "",
         "session_token": session_token or "",
     }, None
+
+
+# --- Website password accounts and recovery ---------------------------------
+
+PASSWORD_SCRYPT_N = 1 << 14
+PASSWORD_SCRYPT_R = 8
+PASSWORD_SCRYPT_P = 1
+PASSWORD_RESET_TTL_MINUTES = 15
+_EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,255}$")
+
+
+def _normalize_email(value):
+    return str(value or "").strip().casefold()
+
+
+def _validate_password(value):
+    password = str(value or "")
+    if len(password) < 10 or len(password) > 128:
+        return None
+    return password
+
+
+def _password_digest(password, salt):
+    return hashlib.scrypt(
+        password.encode("utf-8"), salt=salt, n=PASSWORD_SCRYPT_N,
+        r=PASSWORD_SCRYPT_R, p=PASSWORD_SCRYPT_P, dklen=32)
+
+
+def _allocate_website_account_id(cursor):
+    # Telegram IDs are positive. Negative IDs make website-only accounts
+    # deterministic and collision-free without leaking an email into provider
+    # usernames. This remains an internal account ID, not a public email.
+    row = cursor.execute("SELECT MIN(telegram_id) FROM users WHERE telegram_id < 0").fetchone()
+    current = row[0] if row and row[0] is not None else 0
+    return int(current) - 1 if int(current) <= -1 else -1
+
+
+def create_website_account(email, raw_password):
+    normalized = _normalize_email(email)
+    password = _validate_password(raw_password)
+    if not _EMAIL_RE.fullmatch(normalized) or password is None:
+        return None, "invalid"
+    now = datetime.datetime.now(datetime.timezone.utc)
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        cursor = conn.cursor()
+        if cursor.execute(
+                "SELECT 1 FROM web_credentials WHERE email_normalized = ?", (normalized,)).fetchone():
+            conn.rollback()
+            return None, "exists"
+        account_id = _allocate_website_account_id(cursor)
+        username = f"web_{abs(account_id)}"
+        # Provision an expired/zero-day remote account now. It receives the
+        # same opaque subscription identity and becomes active after checkout.
+        remote = api_create_user(username, 0, account_id)
+        short_uuid = (remote or {}).get("shortUuid") or ""
+        if not short_uuid:
+            conn.rollback()
+            return None, "provider"
+        cursor.execute(
+            "INSERT INTO users (telegram_id, username, short_uuid, language, trial_used, created_at) "
+            "VALUES (?, ?, ?, 'ru', 1, ?)",
+            (account_id, username, short_uuid, now.isoformat()))
+        salt = secrets.token_bytes(16)
+        cursor.execute(
+            "INSERT INTO web_credentials (account_id, email_normalized, password_salt, password_hash, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (account_id, normalized, salt, _password_digest(password, salt),
+             now.isoformat(), now.isoformat()))
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        logger.error("website account registration failed: %s", exc)
+        return None, "provider"
+    finally:
+        conn.close()
+    return {"account_id": account_id, "username": username, "short_uuid": short_uuid}, None
+
+
+def authenticate_website_account(email, raw_password):
+    normalized = _normalize_email(email)
+    password = _validate_password(raw_password)
+    if not _EMAIL_RE.fullmatch(normalized) or password is None:
+        return None
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        row = conn.execute(
+            "SELECT account_id, password_salt, password_hash FROM web_credentials WHERE email_normalized = ?",
+            (normalized,)).fetchone()
+        if not row:
+            return None
+        account_id, salt, stored_hash = row
+        candidate = _password_digest(password, bytes(salt))
+        if not hmac.compare_digest(candidate, bytes(stored_hash)):
+            return None
+        user = get_user(account_id)
+        if not user:
+            return None
+        return {"account_id": account_id, **user, "email": normalized}
+    finally:
+        conn.close()
+
+
+def _send_password_recovery_email(address, reset_code):
+    host = os.environ.get("MOSAIC_SMTP_HOST", "").strip()
+    sender = os.environ.get("MOSAIC_SMTP_FROM", "").strip()
+    if not host or not sender:
+        logger.warning("password reset requested but SMTP delivery is not configured")
+        return False
+    message = EmailMessage()
+    message["Subject"] = "MosaicVPN — восстановление пароля"
+    message["From"] = sender
+    message["To"] = address
+    message.set_content(
+        "Код для восстановления пароля MosaicVPN: " + reset_code + "\n\n"
+        "Код действует 15 минут и используется один раз. Если запрос сделали не вы, просто проигнорируйте это письмо.")
+    port = int(os.environ.get("MOSAIC_SMTP_PORT", "587"))
+    username = os.environ.get("MOSAIC_SMTP_USERNAME", "")
+    secret = os.environ.get("MOSAIC_SMTP_PASSWORD", "")
+    try:
+        with smtplib.SMTP(host, port, timeout=15) as smtp:
+            smtp.starttls()
+            if username:
+                smtp.login(username, secret)
+            smtp.send_message(message)
+        return True
+    except Exception as exc:
+        logger.error("password recovery mail failed: %s", exc)
+        return False
+
+
+def issue_password_reset(email):
+    normalized = _normalize_email(email)
+    if not _EMAIL_RE.fullmatch(normalized):
+        return False
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        row = conn.execute(
+            "SELECT account_id FROM web_credentials WHERE email_normalized = ?", (normalized,)).fetchone()
+        if not row:
+            return False
+        account_id = int(row[0])
+        now = datetime.datetime.now(datetime.timezone.utc)
+        raw_code = "".join(secrets.choice(LINK_CODE_ALPHABET) for _ in range(10))
+        digest = hashlib.sha256(raw_code.encode("utf-8")).hexdigest()
+        expires = now + datetime.timedelta(minutes=PASSWORD_RESET_TTL_MINUTES)
+        conn.execute("DELETE FROM password_reset_tokens WHERE account_id = ? AND used_at IS NULL", (account_id,))
+        conn.execute(
+            "INSERT INTO password_reset_tokens (token_hash, account_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+            (digest, account_id, now.isoformat(), expires.isoformat()))
+        conn.commit()
+    finally:
+        conn.close()
+    return _send_password_recovery_email(normalized, raw_code)
+
+
+def reset_website_password(raw_code, raw_password):
+    password = _validate_password(raw_password)
+    if not password:
+        return False
+    digest = hashlib.sha256(str(raw_code or "").strip().upper().encode("utf-8")).hexdigest()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT account_id, expires_at, used_at FROM password_reset_tokens WHERE token_hash = ?", (digest,)).fetchone()
+        if not row or row[2]:
+            conn.rollback()
+            return False
+        expiry = datetime.datetime.fromisoformat(row[1])
+        if expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=datetime.timezone.utc)
+        if expiry <= now:
+            conn.rollback()
+            return False
+        account_id = int(row[0])
+        salt = secrets.token_bytes(16)
+        conn.execute(
+            "UPDATE web_credentials SET password_salt = ?, password_hash = ?, password_version = password_version + 1, updated_at = ? WHERE account_id = ?",
+            (salt, _password_digest(password, salt), now.isoformat(), account_id))
+        conn.execute("UPDATE password_reset_tokens SET used_at = ? WHERE token_hash = ? AND used_at IS NULL", (now.isoformat(), digest))
+        conn.execute("DELETE FROM web_sessions WHERE telegram_id = ?", (account_id,))
+        conn.execute("DELETE FROM app_auth_codes WHERE telegram_id = ? AND used_at IS NULL", (account_id,))
+        conn.commit()
+        return True
+    except Exception as exc:
+        conn.rollback()
+        logger.error("password reset failed: %s", exc)
+        return False
+    finally:
+        conn.close()
 
 
 # --- Web cabinet sessions (30-day tokens for sub.zxc1x1.ru/cabinet) ----------
@@ -938,7 +1186,8 @@ def process_lava_paid_invoice(invoice):
         return False
     telegram_id = invoice["telegram_id"]
     days = int(invoice["days"])
-    username = f"tg_{telegram_id}"
+    db_user = get_user(telegram_id)
+    username = (db_user or {}).get("username") or f"tg_{telegram_id}"
     user = api_get_user(username)
     lava_updater = api_extend_user if user else api_create_user
     lava_updated = lava_updater(username, days) if user else lava_updater(username, days, telegram_id)
@@ -946,10 +1195,13 @@ def process_lava_paid_invoice(invoice):
         logger.error("Lava payment %s claimed but subscription update failed", invoice["invoice_id"])
         return False
     lava_short_uuid = lava_updated.get("shortUuid")
-    db_user = get_user(telegram_id)
-    lang = db_user["language"] if db_user else "ru"
-    save_user(telegram_id, username, lava_short_uuid, lang, 1, db_user.get("referrer_id") if db_user else None)
-    send_payment_success_notification(telegram_id, days, lava_short_uuid, lava_updated.get("expireAt"), lang)
+    lang = (db_user or {}).get("language") or "ru"
+    save_user(telegram_id, username, lava_short_uuid, lang, 1, (db_user or {}).get("referrer_id"))
+    # Website-only account IDs are negative and do not represent a Telegram
+    # chat. Their receipt remains visible in the web cabinet; never call the
+    # Bot API with such an internal account ID.
+    if int(telegram_id) > 0:
+        send_payment_success_notification(telegram_id, days, lava_short_uuid, lava_updated.get("expireAt"), lang)
     logger.info("Lava invoice %s paid by %s for %s days", invoice["invoice_id"], telegram_id, days)
     return True
 
@@ -994,10 +1246,60 @@ def update_invoice_status(invoice_id, status, expect="pending"):
 def get_all_tg_users():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT telegram_id FROM users")
+    cursor.execute("SELECT telegram_id FROM users WHERE telegram_id > 0")
     rows = cursor.fetchall()
     conn.close()
     return [r[0] for r in rows]
+
+def get_daily_price_rub():
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        row = conn.execute("SELECT setting_value FROM service_settings WHERE setting_key = 'price_per_day_rub'").fetchone()
+        return int(row[0]) if row and str(row[0]).isdigit() and int(row[0]) > 0 else 1
+    finally:
+        conn.close()
+
+
+def set_daily_price_rub(price, admin_telegram_id):
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            "INSERT INTO service_settings (setting_key, setting_value, updated_at, updated_by) VALUES ('price_per_day_rub', ?, ?, ?) "
+            "ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value, updated_at=excluded.updated_at, updated_by=excluded.updated_by",
+            (str(price), now, int(admin_telegram_id)))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def run_admin_broadcast(request_id):
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        row = conn.execute("SELECT message FROM admin_broadcasts WHERE request_id = ? AND status = 'queued'", (request_id,)).fetchone()
+        if not row:
+            return
+        message = row[0]
+        conn.execute("UPDATE admin_broadcasts SET status = 'processing' WHERE request_id = ? AND status = 'queued'", (request_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    delivered = failed = 0
+    for uid in get_all_tg_users():
+        try:
+            bot.send_message(uid, message, parse_mode='Markdown')
+            delivered += 1
+        except Exception as exc:
+            logger.warning("admin broadcast %s failed for %s: %s", request_id, uid, exc)
+            failed += 1
+        time.sleep(0.05)
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute("UPDATE admin_broadcasts SET status = 'completed', delivered_count = ?, failed_count = ?, completed_at = ? WHERE request_id = ?", (delivered, failed, datetime.datetime.now(datetime.timezone.utc).isoformat(), request_id))
+        conn.commit()
+    finally:
+        conn.close()
+
 
 # Admin verification
 def is_admin(telegram_id):
@@ -2967,6 +3269,10 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             return self._handle_subscription_link_rotate()
         if path == "/api/admin/balance-credit":
             return self._handle_admin_balance_credit()
+        if path == "/api/admin/broadcast":
+            return self._handle_admin_broadcast()
+        if path == "/api/admin/pricing":
+            return self._handle_admin_pricing()
         # T-19: the daemon runs behind NAT on the user's machine, so it is the
         # side that reaches out. The bot issues codes; this endpoint burns them.
         if path == "/api/link/redeem":
@@ -2976,6 +3282,16 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         # be attached in the client without exposing browser session material.
         if path == "/api/link/issue":
             return self._handle_link_issue()
+        # Website password account routes intentionally return generic errors
+        # for login/recovery to avoid revealing whether an email is registered.
+        if path == "/api/auth/register":
+            return self._handle_password_register()
+        if path == "/api/auth/login":
+            return self._handle_password_login()
+        if path == "/api/auth/recovery/start":
+            return self._handle_password_recovery_start()
+        if path == "/api/auth/recovery/complete":
+            return self._handle_password_recovery_complete()
         # Web cabinet: exchange pairing code for a long-lived web session token
         if path == "/api/session":
             return self._handle_session_create()
@@ -3012,7 +3328,11 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         if amount < 1 or amount > 100000 or amount != int(amount):
             self._send_json(400, {"error": "amount must be an integer from 1 to 100000 RUB"})
             return
-        days = int(amount)
+        daily_price = get_daily_price_rub()
+        if int(amount) < daily_price or int(amount) % daily_price != 0:
+            self._send_json(400, {"error": f"amount must be a whole number of days at {daily_price} RUB per day"})
+            return
+        days = int(amount) // daily_price
         try:
             invoice = create_lava_invoice("site", session["telegram_id"], amount, days, "MosaicVPN: пополнение веб-кабинета")
             save_lava_invoice(invoice["internal_id"], invoice["provider_id"], invoice["order_id"], session["telegram_id"], amount, days, "site")
@@ -3101,8 +3421,8 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         target_raw = str(payload.get("target_id") or "").strip()
         amount_raw = str(payload.get("amount") or "").strip()
         reason = str(payload.get("reason") or "").strip()
-        if not target_raw.isdigit() or len(target_raw) > 19 or int(target_raw) <= 0:
-            self._send_json(400, {"error": "target account ID must be a positive integer"})
+        if not re.fullmatch(r"-?\d{1,19}", target_raw) or int(target_raw) == 0:
+            self._send_json(400, {"error": "target account ID is invalid"})
             return
         if not amount_raw.isdigit() or int(amount_raw) < 1 or int(amount_raw) > ADMIN_CREDIT_MAX_RUB:
             self._send_json(400, {"error": f"amount must be an integer from 1 to {ADMIN_CREDIT_MAX_RUB} RUB"})
@@ -3145,7 +3465,8 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             })
             return
 
-        api_username = f"tg_{target_telegram_id}"
+        target_record = get_user(target_telegram_id)
+        api_username = (target_record or {}).get("username") or f"tg_{target_telegram_id}"
         try:
             target_user = api_get_user(api_username)
             if not target_user:
@@ -3176,6 +3497,59 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             "request_id": request_id, "target_id": target_telegram_id,
             "amount": amount_rub, "days": amount_rub,
         })
+
+    def _handle_admin_broadcast(self):
+        payload = self._read_json_body(max_bytes=8192)
+        if not payload:
+            self._send_json(400, {"error": "invalid body"})
+            return
+        session = self._get_admin_session(str(payload.get("token") or ""))
+        if not session:
+            return
+        message = str(payload.get("message") or "").strip()
+        request_id = str(payload.get("request_id") or "").strip()
+        if not 1 <= len(message) <= 3000:
+            self._send_json(400, {"error": "message must contain 1 to 3000 characters"})
+            return
+        if not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", request_id):
+            self._send_json(400, {"error": "invalid request id"})
+            return
+        if payload.get("confirmed") is not True or str(payload.get("confirmation") or "") != "BROADCAST":
+            self._send_json(400, {"error": "explicit BROADCAST confirmation required"})
+            return
+        recipients = len(get_all_tg_users())
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            conn.execute("INSERT INTO admin_broadcasts (request_id, admin_telegram_id, message, recipient_count, status, created_at) VALUES (?, ?, ?, ?, 'queued', ?)", (request_id, session["telegram_id"], message, recipients, now))
+            conn.commit()
+        except sqlite3.IntegrityError:
+            self._send_json(409, {"error": "request id already used"})
+            return
+        finally:
+            conn.close()
+        threading.Thread(target=run_admin_broadcast, args=(request_id,), daemon=True).start()
+        self._send_json(202, {"status": "queued", "request_id": request_id, "recipient_count": recipients})
+
+    def _handle_admin_pricing(self):
+        payload = self._read_json_body()
+        if not payload:
+            self._send_json(400, {"error": "invalid body"})
+            return
+        session = self._get_admin_session(str(payload.get("token") or ""))
+        if not session:
+            return
+        raw_price = str(payload.get("price_per_day_rub") or "").strip()
+        if not raw_price.isdigit() or not 1 <= int(raw_price) <= 100000:
+            self._send_json(400, {"error": "price must be an integer from 1 to 100000 RUB"})
+            return
+        if payload.get("confirmed") is not True or str(payload.get("confirmation") or "") != "SET_PRICE":
+            self._send_json(400, {"error": "explicit SET_PRICE confirmation required"})
+            return
+        price = int(raw_price)
+        set_daily_price_rub(price, session["telegram_id"])
+        logger.info("Admin %s changed daily price to %s RUB", session["telegram_id"], price)
+        self._send_json(200, {"price_per_day_rub": price})
 
     def _account_payload(self, session, forced_status=None):
         """Build a single account representation for web and native cabinet clients."""
@@ -3210,6 +3584,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         traffic_limit = int((remote or {}).get("trafficLimitBytes") or 0)
         lifetime_traffic = int((remote or {}).get("lifetimeUsedTrafficBytes") or 0)
         device_limit = int((remote or {}).get("hwidDeviceLimit") or (remote or {}).get("hwidDevicesLimit") or 5)
+        daily_price_rub = get_daily_price_rub()
         return {
             "account_id": str(telegram_id),
             "telegram_id": telegram_id,
@@ -3237,7 +3612,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                 "provider_status": remote_status,
                 "last_sync_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
-            "billing": {"price_per_day_rub": 1, "timezone": "Europe/Moscow", "checkout_discount_percent": 0},
+            "billing": {"price_per_day_rub": daily_price_rub, "timezone": "Europe/Moscow", "checkout_discount_percent": 0},
             "is_admin": is_admin(telegram_id),
         }
 
@@ -3513,6 +3888,65 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             "provider_account_id": f"telegram:{result['telegram_id']}",
             "subscription_name": "MosaicVPN",
         })
+
+    def _password_session_payload(self, account):
+        token, expires_at = create_web_session(account["account_id"], account["username"])
+        return {
+            "token": token,
+            "telegram_id": account["account_id"],
+            "username": account["username"],
+            "expires_at": expires_at,
+            "subscription_url": f"https://sub.zxc1x1.ru/{account['short_uuid']}",
+        }
+
+    def _handle_password_register(self):
+        payload = self._read_json_body()
+        if not payload:
+            self._send_json(400, {"error": "invalid request"})
+            return
+        account, reason = create_website_account(payload.get("email"), payload.get("password"))
+        if reason == "invalid":
+            self._send_json(400, {"error": "use a valid email and a password of 10 to 128 characters"})
+            return
+        if reason == "exists":
+            self._send_json(409, {"error": "account already exists; sign in or recover the password"})
+            return
+        if not account:
+            self._send_json(502, {"error": "could not create account, try again shortly"})
+            return
+        self._send_json(201, self._password_session_payload(account))
+
+    def _handle_password_login(self):
+        payload = self._read_json_body()
+        if not payload:
+            self._send_json(400, {"error": "invalid request"})
+            return
+        account = authenticate_website_account(payload.get("email"), payload.get("password"))
+        # Do not distinguish unknown email from wrong password.
+        if not account:
+            self._send_json(401, {"error": "invalid email or password"})
+            return
+        self._send_json(200, self._password_session_payload(account))
+
+    def _handle_password_recovery_start(self):
+        payload = self._read_json_body()
+        if not payload:
+            self._send_json(400, {"error": "invalid request"})
+            return
+        # The response is deliberately identical for an unknown email and an
+        # existing account. SMTP delivery is observable only in server logs.
+        issue_password_reset(payload.get("email"))
+        self._send_json(202, {"ok": True, "message": "If this email has a MosaicVPN account, recovery instructions will be sent shortly."})
+
+    def _handle_password_recovery_complete(self):
+        payload = self._read_json_body()
+        if not payload:
+            self._send_json(400, {"error": "invalid request"})
+            return
+        if not reset_website_password(payload.get("code"), payload.get("password")):
+            self._send_json(400, {"error": "invalid or expired recovery code"})
+            return
+        self._send_json(200, {"ok": True, "message": "Password updated. Sign in with the new password."})
 
     def _handle_session_create(self):
         try:

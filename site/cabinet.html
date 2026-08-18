@@ -142,6 +142,18 @@
         <button type="submit" class="btn btn-primary btn-block">Войти в кабинет</button>
       </form>
       <p class="gate-note">Код действует 10 минут и используется один раз. Нужен бот? <a href="https://t.me/mosaicvpnbot" target="_blank" rel="noopener">Открыть @mosaicvpnbot</a></p>
+      <div style="height:1px;background:var(--border);margin:22px 0"></div>
+      <h2 style="font-size:22px">Вход по e-mail и паролю</h2>
+      <p>Создайте самостоятельный аккаунт или войдите в уже зарегистрированный. Пароль должен содержать не менее 10 символов.</p>
+      <form id="password-auth-form" class="code-form" novalidate>
+        <label class="sr-only" for="email-input">E-mail</label>
+        <input id="email-input" class="field" type="email" autocomplete="email" maxlength="320" placeholder="name@example.com" />
+        <label class="sr-only" for="password-input">Пароль</label>
+        <input id="password-input" class="field" type="password" autocomplete="current-password" maxlength="128" placeholder="Пароль" />
+        <div id="password-error" class="form-error" role="alert"></div>
+        <div class="btn-row"><button id="password-login-button" type="submit" class="btn btn-primary">Войти</button><button id="password-register-button" type="button" class="btn btn-secondary">Зарегистрироваться</button></div>
+      </form>
+      <details style="margin-top:16px"><summary style="cursor:pointer;color:var(--text-2);font-size:13px">Не помните пароль?</summary><div style="margin-top:12px"><p style="font-size:13px">Введите e-mail. Если для него есть аккаунт и настроена доставка восстановления, мы отправим одноразовый код.</p><div class="btn-row"><button id="recovery-start-button" type="button" class="btn btn-secondary">Отправить код восстановления</button></div><div id="recovery-message" class="message" role="status"></div><div id="recovery-complete" class="hidden" style="margin-top:12px"><label class="sr-only" for="recovery-code-input">Код восстановления</label><input id="recovery-code-input" class="field" type="text" maxlength="10" autocomplete="one-time-code" placeholder="Код из письма" /><label class="sr-only" for="recovery-password-input">Новый пароль</label><input id="recovery-password-input" class="field" type="password" maxlength="128" autocomplete="new-password" placeholder="Новый пароль" style="margin-top:8px" /><button id="recovery-complete-button" type="button" class="btn btn-secondary" style="margin-top:8px">Сохранить новый пароль</button></div></div></details>
     </div>
   </section>
 
@@ -224,6 +236,10 @@
 (function () {
   'use strict';
   var API_SESSION = '/api/session';
+  var API_PASSWORD_REGISTER = '/api/auth/register';
+  var API_PASSWORD_LOGIN = '/api/auth/login';
+  var API_PASSWORD_RECOVERY_START = '/api/auth/recovery/start';
+  var API_PASSWORD_RECOVERY_COMPLETE = '/api/auth/recovery/complete';
   var API_PROFILE = '/api/billing/profile';
   var API_PAYMENTS = '/api/billing/payments';
   var API_LAVA_CREATE = '/api/billing/lava/create';
@@ -243,6 +259,10 @@
   var codeForm = document.getElementById('code-form');
   var codeInput = document.getElementById('code-input');
   var codeError = document.getElementById('code-error');
+  var passwordForm = document.getElementById('password-auth-form');
+  var emailInput = document.getElementById('email-input');
+  var passwordInput = document.getElementById('password-input');
+  var passwordError = document.getElementById('password-error');
   var profileState = null;
   // Keep the one-time callback ready before the user clicks. The primary
   // transport is a verified HTTPS Android App Link; browser fallback handling
@@ -336,6 +356,51 @@
       localStorage.setItem(TOKEN_KEY, result.body.token); savedToken = result.body.token;
       if (!completeAppReturn()) loadProfile(savedToken);
     }).catch(function () { codeError.textContent = 'Не удалось подключиться к сервису.'; });
+  }
+
+  function acceptPasswordSession(result) {
+    if (!result || !result.body || !result.body.token) { passwordError.textContent = (result && result.body && result.body.error) || 'Не удалось войти.'; return; }
+    localStorage.setItem(TOKEN_KEY, result.body.token); savedToken = result.body.token;
+    passwordInput.value = '';
+    passwordError.textContent = '';
+    if (!completeAppReturn()) loadProfile(savedToken);
+  }
+
+  function submitPasswordAuth(register) {
+    var email = (emailInput.value || '').trim();
+    var password = passwordInput.value || '';
+    passwordError.textContent = '';
+    if (!/^\S+@\S+\.\S+$/.test(email) || password.length < 10) { passwordError.textContent = 'Введите корректный e-mail и пароль от 10 символов.'; return; }
+    var button = register ? document.getElementById('password-register-button') : document.getElementById('password-login-button');
+    button.disabled = true;
+    requestJSON(register ? API_PASSWORD_REGISTER : API_PASSWORD_LOGIN, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email,password:password})}).then(function (result) {
+      if (result.status !== 200 && result.status !== 201) { passwordError.textContent = result.body.error || 'Не удалось выполнить запрос.'; return; }
+      acceptPasswordSession(result);
+    }).catch(function () { passwordError.textContent = 'Не удалось подключиться к сервису.'; }).finally(function () { button.disabled = false; });
+  }
+
+  function startPasswordRecovery() {
+    var email = (emailInput.value || '').trim();
+    var message = document.getElementById('recovery-message');
+    if (!/^\S+@\S+\.\S+$/.test(email)) { message.textContent = 'Сначала укажите e-mail от аккаунта.'; message.style.color = 'var(--err)'; return; }
+    var button = document.getElementById('recovery-start-button'); button.disabled = true;
+    requestJSON(API_PASSWORD_RECOVERY_START, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email})}).then(function () {
+      message.textContent = 'Если для этого e-mail есть аккаунт, инструкции по восстановлению будут отправлены. Проверьте почту.'; message.style.color = 'var(--text-2)';
+      document.getElementById('recovery-complete').classList.remove('hidden');
+    }).catch(function () { message.textContent = 'Не удалось начать восстановление. Попробуйте позже.'; message.style.color = 'var(--err)'; }).finally(function () { button.disabled = false; });
+  }
+
+  function completePasswordRecovery() {
+    var code = (document.getElementById('recovery-code-input').value || '').trim().toUpperCase();
+    var password = document.getElementById('recovery-password-input').value || '';
+    var message = document.getElementById('recovery-message');
+    if (!code || password.length < 10) { message.textContent = 'Введите код из письма и новый пароль от 10 символов.'; message.style.color = 'var(--err)'; return; }
+    var button = document.getElementById('recovery-complete-button'); button.disabled = true;
+    requestJSON(API_PASSWORD_RECOVERY_COMPLETE, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code,password:password})}).then(function (result) {
+      if (result.status !== 200) { message.textContent = result.body.error || 'Не удалось изменить пароль.'; message.style.color = 'var(--err)'; return; }
+      message.textContent = 'Пароль изменён. Теперь войдите с новым паролем.'; message.style.color = 'var(--ok)';
+      passwordInput.value = password; document.getElementById('recovery-password-input').value = ''; document.getElementById('recovery-code-input').value = '';
+    }).catch(function () { message.textContent = 'Не удалось подключиться к сервису.'; message.style.color = 'var(--err)'; }).finally(function () { button.disabled = false; });
   }
 
   function newAppState() {
@@ -442,6 +507,10 @@
   }
 
   codeForm.addEventListener('submit', function (event) { event.preventDefault(); submitCode((codeInput.value || '').trim().toUpperCase()); });
+  passwordForm.addEventListener('submit', function (event) { event.preventDefault(); submitPasswordAuth(false); });
+  document.getElementById('password-register-button').addEventListener('click', function () { submitPasswordAuth(true); });
+  document.getElementById('recovery-start-button').addEventListener('click', startPasswordRecovery);
+  document.getElementById('recovery-complete-button').addEventListener('click', completePasswordRecovery);
   codeInput.addEventListener('input', function () { this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8); });
   document.getElementById('add-to-app-button').addEventListener('click', startAppEnrollment);
   document.getElementById('issue-app-code-button').addEventListener('click', issueAppCode);
