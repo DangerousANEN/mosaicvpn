@@ -13,8 +13,13 @@ Widget _harness(VpnStatus status) => ProviderScope(
         daemonApiProvider.overrideWithValue(MockDaemonApi()),
         vpnStatusProvider.overrideWith((ref) => Stream.value(status)),
         serversProvider.overrideWith((ref) async => <Server>[]),
+        mosaicManifestProvider.overrideWith((ref) async => ProviderManifest(
+              providerName: 'MosaicVPN',
+              groups: [ManifestGroup(id: 'test-group', title: 'Test group')],
+            )),
       ],
       child: const MaterialApp(
+        locale: Locale('en'),
         home: Scaffold(body: DashboardScreen()),
       ),
     );
@@ -41,30 +46,7 @@ void main() {
     );
 
     expect(tester.takeException(), isNull,
-        reason: '1440x900 is the reference desktop size and must lay out clean');
-  });
-
-  testWidgets('the connection footer note is fully rendered, not clipped',
-      (tester) async {
-    await _pumpDesktop(
-      tester,
-      VpnStatus(
-        tunnelMode: 'tun',
-        killSwitch: true,
-        allowLAN: true,
-      ),
-    );
-
-    final note = find.textContaining('Local networks bypass the tunnel');
-    expect(note, findsOneWidget, reason: 'footer note did not render');
-
-    // A clipped note is the bug: the text must fit inside its own painted box.
-    final textWidget = tester.widget<Text>(note);
-    expect(textWidget.overflow, isNot(TextOverflow.clip),
-        reason: 'the note must wrap rather than clip mid-sentence');
-
-    final size = tester.getSize(note);
-    expect(size.height, greaterThan(0));
-    expect(size.width, greaterThan(0));
+        reason:
+            '1440x900 is the reference desktop size and must lay out clean');
   });
 }

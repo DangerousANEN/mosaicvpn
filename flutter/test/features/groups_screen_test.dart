@@ -16,6 +16,8 @@ Widget _harness({
     overrides: [
       daemonApiProvider.overrideWithValue(MockDaemonApi()),
       groupsManifestProvider.overrideWith((ref) async => manifest),
+      providerManifestForSubscriptionProvider
+          .overrideWith((ref, subscriptionId) async => manifest),
       subscriptionsProvider.overrideWith((ref) async => subscriptions),
       serversProvider.overrideWith((ref) async => servers),
       groupNodeHealthProvider.overrideWith((ref, groupId) async => {}),
@@ -42,6 +44,15 @@ void main() {
           providerName: 'MosaicVPN',
           groups: [_group('rg-all', 'Минимальный пинг')],
         ),
+        subscriptions: [
+          Subscription(
+            id: 'mosaic-url',
+            name: 'MosaicVPN',
+            url: 'https://sub.zxc1x1.ru/example',
+            source: 'url',
+            hidePhysicalNodes: true,
+          ),
+        ],
       ));
       await tester.pumpAndSettle();
 
@@ -50,19 +61,26 @@ void main() {
       expect(find.text('Smart Group'), findsOneWidget);
       expect(find.text('Тип'), findsOneWidget);
       expect(find.text('Название'), findsOneWidget);
-      expect(find.text('Пинг'), findsOneWidget);
+      expect(find.text('Задержка'), findsOneWidget);
       expect(find.text('Трафик'), findsOneWidget);
     });
 
     testWidgets('shows a third-party node only after its source is selected',
         (tester) async {
       final external = Subscription(id: 'external', name: 'Example service');
+      final mosaic = Subscription(
+        id: 'mosaic-url',
+        name: 'MosaicVPN',
+        url: 'https://sub.zxc1x1.ru/example',
+        source: 'url',
+        hidePhysicalNodes: true,
+      );
       await tester.pumpWidget(_harness(
         manifest: ProviderManifest(
           providerName: 'MosaicVPN',
           groups: [_group('rg-all', 'Минимальный пинг')],
         ),
-        subscriptions: [external],
+        subscriptions: [mosaic, external],
         servers: [
           Server(
             id: 'external-node',

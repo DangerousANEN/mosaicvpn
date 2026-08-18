@@ -138,7 +138,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       (source) => source.id == _selectedSubscriptionId,
       orElse: () => sources.isNotEmpty ? sources.first : Subscription(),
     );
-    final selectedManifestAsync = selectedSource.isProviderSource &&
+    final selectedManifestAsync = _isMosaicSubscription(selectedSource) &&
             selectedSource.id.isNotEmpty
         ? ref.watch(providerManifestForSubscriptionProvider(selectedSource.id))
         : null;
@@ -202,14 +202,14 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                       ],
                       _SourceSummary(
                         source: selectedSource,
-                        isMosaic: selectedSource.isProviderSource,
+                        isMosaic: _isMosaicSubscription(selectedSource),
                         onOpenCabinet: selectedSource.id.isEmpty
                             ? null
                             : () => _openSubscriptionCabinet(selectedSource),
                       ),
                       const SizedBox(height: 14),
                       if (selectedManifestAsync?.hasError == true &&
-                          selectedSource.isProviderSource)
+                          _isMosaicSubscription(selectedSource))
                         _InlineNotice(
                           icon: Icons.sync_problem_outlined,
                           text:
@@ -256,46 +256,41 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     );
   }
 
+  bool _isMosaicSubscription(Subscription source) {
+    // Keep the legacy ID hidden while v0.3.23 migration rewrites it into an
+    // ordinary URL source. New sources are identified solely by their URL.
+    if (source.id == 'mosaic-direct') return true;
+    final uri = Uri.tryParse(source.url.trim());
+    return uri != null &&
+        uri.isScheme('https') &&
+        uri.host.toLowerCase() == 'sub.zxc1x1.ru' &&
+        uri.pathSegments.isNotEmpty;
+  }
+
   List<Subscription> _sourcesFor(
     ProviderManifest? manifest,
     List<Subscription> subscriptions,
   ) {
+    // MosaicVPN itself is a normal URL source. Generic third-party provider
+    // sources keep their existing immutable/pinned behavior, but no synthetic
+    // Mosaic row is created from a manifest.
     final providers = subscriptions
         .where((source) => source.isProviderSource)
-        .toList(growable: true);
-    // Android and an older daemon can receive a manifest before the provider
-    // source list refreshes. Present a normal MosaicVPN provider subscription,
-    // never a synthetic `MosaicVPN · Direct` pseudo-profile.
-    if (providers.isEmpty && (manifest?.groups.isNotEmpty ?? false)) {
-      providers.add(Subscription(
-        id: 'provider-mosaicvpn-primary',
-        name: manifest?.providerName.isNotEmpty == true
-            ? manifest!.providerName
-            : 'MosaicVPN',
-        source: 'provider',
-        providerId: 'mosaicvpn',
-        hidePhysicalNodes: true,
-      ));
-    }
-    final regular = subscriptions
+        .toList(growable: false);
+    final orderedSources = subscriptions
         .where((source) => !source.isProviderSource)
         .toList(growable: true);
-
     final pendingOrder = _pendingSubscriptionOrder;
-    if (pendingOrder != null) {
-      final byID = {for (final source in regular) source.id: source};
-      final ordered = <Subscription>[];
-      for (final id in pendingOrder) {
-        final source = byID.remove(id);
-        if (source != null) ordered.add(source);
-      }
-      ordered.addAll(byID.values);
-      regular
-        ..clear()
-        ..addAll(ordered);
-    }
+    if (pendingOrder == null) return [...providers, ...orderedSources];
 
-    return <Subscription>[...providers, ...regular];
+    final byID = {for (final source in orderedSources) source.id: source};
+    final reordered = <Subscription>[];
+    for (final id in pendingOrder) {
+      final source = byID.remove(id);
+      if (source != null) reordered.add(source);
+    }
+    reordered.addAll(byID.values);
+    return [...providers, ...reordered];
   }
 
   List<_RouteRow> _rowsFor({
@@ -305,7 +300,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     required List<ServerGroup> localGroups,
   }) {
     final rows = <_RouteRow>[];
-    if (source.isProviderSource) {
+    if (_isMosaicSubscription(source) || source.isProviderSource) {
       final strings = AppStrings.of(context);
       rows.addAll((manifest?.groups ?? const <ManifestGroup>[])
           // The provider decides which route categories exist. A group stays a
@@ -356,7 +351,8 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       servers
           .where((server) =>
               server.subscriptionID == source.id &&
-              !(source.isProviderSource && source.hidePhysicalNodes))
+              !_isMosaicSubscription(source) &&
+              !source.hidePhysicalNodes)
           .map(
             (server) => _RouteRow(
               id: server.id,
@@ -424,8 +420,8 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     setState(() => _pendingSubscriptionOrder = orderedIDs);
     final stored =
         ref.read(subscriptionsProvider).valueOrNull ?? const <Subscription>[];
-    // Provider-owned subscriptions are visually pinned. The backend still
-    // receives all IDs so it can preserve one atomic source ordering.
+    // Every URL subscription, including MosaicVPN, is user-owned and may be
+    // moved. Generic provider sources remain pinned for compatibility.
     final backendOrder = [
       ...stored
           .where((source) => source.isProviderSource)
@@ -1240,7 +1236,7 @@ class _SourceTabsState extends State<_SourceTabs> {
   ) async {
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
     final hasUrl = source.url.trim().isNotEmpty;
-    final isMutable = !source.isProviderSource;
+    final isMutable = source.id != 'local-default' && !source.isProviderSource;
     final action = await showMenu<_SourceTabAction>(
       context: context,
       position: RelativeRect.fromRect(
@@ -1320,7 +1316,6 @@ class _SourceTabsState extends State<_SourceTabs> {
                 source: provider,
                 selected: provider.id == widget.selectedId,
                 onSelected: () => widget.onSelected(provider.id),
-                immutable: true,
                 onMenu: (position) => _showContextMenu(provider, position),
               ),
             ),
@@ -1422,7 +1417,6 @@ class _SourceTab extends StatelessWidget {
     required this.source,
     required this.selected,
     required this.onSelected,
-    this.immutable = false,
     this.dragHandle,
     this.onMenu,
   });
@@ -1430,7 +1424,6 @@ class _SourceTab extends StatelessWidget {
   final Subscription source;
   final bool selected;
   final VoidCallback onSelected;
-  final bool immutable;
   final Widget? dragHandle;
   final ValueChanged<Offset>? onMenu;
 
@@ -1470,9 +1463,7 @@ class _SourceTab extends StatelessWidget {
                   const SizedBox(width: 3),
                 ],
                 Icon(
-                  immutable
-                      ? Icons.verified_user_outlined
-                      : Icons.rss_feed_outlined,
+                  Icons.rss_feed_outlined,
                   size: 17,
                   color: selected ? AtlasTheme.accent : colors.textMuted,
                 ),

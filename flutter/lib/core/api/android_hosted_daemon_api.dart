@@ -23,7 +23,6 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   static const _localServersKey = 'mosaic.android.local_servers.v1';
   static const _localGroupsKey = 'mosaic.android.local_groups.v1';
   static const _localSubscriptionID = 'local-default';
-  static const _mosaicProviderSubscriptionID = 'provider-mosaicvpn-primary';
   final _account = AndroidMosaicAccountService.instance;
   Server? _activeRoute;
 
@@ -86,21 +85,25 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
 
   @override
   Future<void> connectGroup(String groupID) async {
-    final manifest = await _account.getProviderManifest();
+    final resolved = await _resolveMosaicGroup(groupID);
+    final manifest = await getProviderManifest(subscriptionId: resolved.$1.id);
     final group = manifest.groups.cast<ManifestGroup?>().firstWhere(
           (value) => value?.id == groupID,
           orElse: () => null,
         );
     if (group == null) {
       throw StateError(
-          'Smart Group не найден. Обновите подписку и повторите попытку.');
+          'Smart Group не найдена. Обновите выбранную подписку и повторите попытку.');
     }
     if (group.disabled) {
       throw StateError(group.disabledReason.isEmpty
           ? 'Этот маршрут пока недоступен.'
           : group.disabledReason);
     }
-    final config = await _account.buildNativeTunConfig(groupId: groupID);
+    final config = await _account.buildNativeTunConfigFromSubscriptionUrl(
+      resolved.$1.url,
+      groupId: resolved.$2,
+    );
     await _startNativeRoute(
       config: config,
       route: Server(
@@ -109,7 +112,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         protocol: Protocol.custom,
         tag: group.id,
         outboundTag: group.id,
-        subscriptionID: _mosaicProviderSubscriptionID,
+        subscriptionID: resolved.$1.id,
       ),
     );
   }
@@ -133,27 +136,98 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         uri.pathSegments.isNotEmpty;
   }
 
-  Subscription _asMosaicProviderSource(Subscription value) {
-    final opaqueLinkID = value.url.trim().split('/').last;
-    return Subscription(
-      id: value.id.isEmpty ? _mosaicProviderSubscriptionID : value.id,
-      name: value.name.trim().isEmpty ? 'MosaicVPN' : value.name,
-      url: value.url,
-      autoRefresh: value.autoRefresh,
-      refreshIntervalSeconds: value.refreshIntervalSeconds,
-      serverCount: value.serverCount,
-      lastFetched: value.lastFetched,
-      hasError: value.hasError,
-      lastError: value.lastError,
-      source: 'provider',
-      providerId: 'mosaicvpn',
-      // A manually imported link has not authenticated its billing identity.
-      // Keep a device-local opaque link key until website enrollment attaches
-      // the authenticated provider account without exposing the raw node pool.
-      providerAccountId: value.providerAccountId.isNotEmpty
-          ? value.providerAccountId
-          : 'unlinked:$opaqueLinkID',
-      hidePhysicalNodes: true,
+  /// Converts the v0.3.22 special provider row into the user-owned URL
+  /// source it always represented. Provider cabinet access is attached later;
+  /// it must not alter the subscription's parsing, connection or deletion
+  /// lifecycle.
+  Subscription _asUrlSubscription(Subscription value) => Subscription(
+        id: value.id.isEmpty
+            ? 'android-local-${DateTime.now().microsecondsSinceEpoch}'
+            : value.id,
+        name: value.name.trim().isEmpty ? 'MosaicVPN' : value.name,
+        url: value.url.trim(),
+        autoRefresh: value.autoRefresh,
+        refreshIntervalSeconds: value.refreshIntervalSeconds,
+        serverCount: value.serverCount,
+        lastFetched: value.lastFetched,
+        hasError: value.hasError,
+        lastError: value.lastError,
+        source: 'url',
+      );
+
+  bool _isMosaicSubscription(Subscription value) =>
+      _isMosaicSubscriptionUrl(value.url);
+
+  String _scopedGroupID(String subscriptionID, String manifestGroupID) =>
+      'provider:$subscriptionID:$manifestGroupID';
+
+  ({String subscriptionID, String manifestGroupID})? _parseScopedGroupID(
+      String value) {
+    const prefix = 'provider:';
+    if (!value.startsWith(prefix)) {
+      return null;
+    }
+    final delimiter = value.indexOf(':', prefix.length);
+    if (delimiter <= prefix.length || delimiter == value.length - 1) {
+      return null;
+    }
+    return (
+      subscriptionID: value.substring(prefix.length, delimiter),
+      manifestGroupID: value.substring(delimiter + 1),
+    );
+  }
+
+  Future<(Subscription, String)> _resolveMosaicGroup(String groupID) async {
+    final subscriptions = await listSubscriptions();
+    final scoped = _parseScopedGroupID(groupID);
+    if (scoped != null) {
+      final subscription = subscriptions.cast<Subscription?>().firstWhere(
+            (value) => value?.id == scoped.subscriptionID,
+            orElse: () => null,
+          );
+      if (subscription != null && _isMosaicSubscription(subscription)) {
+        return (subscription, scoped.manifestGroupID);
+      }
+      throw StateError(
+          'Подписка для Smart Group не найдена. Обновите список источников.');
+    }
+
+    // Compatibility with a raw group ID returned by a pre-v0.3.23 screen.
+    final mosaicSources =
+        subscriptions.where(_isMosaicSubscription).toList(growable: false);
+    if (mosaicSources.length == 1) return (mosaicSources.single, groupID);
+    throw StateError(
+        'Не удалось определить подписку Smart Group. Откройте маршруты нужной подписки и повторите попытку.');
+  }
+
+  ProviderManifest _scopeManifest(
+      ProviderManifest manifest, String subscriptionID) {
+    if (subscriptionID.isEmpty) return manifest;
+    return ProviderManifest(
+      providerName: manifest.providerName,
+      userTier: manifest.userTier,
+      profile: manifest.profile,
+      groups: manifest.groups
+          .map((group) => ManifestGroup(
+                id: _scopedGroupID(subscriptionID, group.id),
+                title: group.title,
+                routeType: group.routeType,
+                type: group.type,
+                poolId: group.poolId,
+                userTier: group.userTier,
+                badge: group.badge,
+                category: group.category,
+                icon: group.icon,
+                description: group.description,
+                disabled: group.disabled,
+                disabledReason: group.disabledReason,
+                clientPolicy: group.clientPolicy,
+                nodes: group.nodes,
+                pingInterval: group.pingInterval,
+                maxRetries: group.maxRetries,
+                failoverDelay: group.failoverDelay,
+              ))
+          .toList(growable: false),
     );
   }
 
@@ -274,13 +348,22 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     final localSource = await _localSubscription();
     final stored = await _readLocalSubscriptions();
     var migrated = false;
-    final normalized = stored.map((value) {
-      if (!value.isProviderSource && _isMosaicSubscriptionUrl(value.url)) {
+    final normalized = <Subscription>[];
+    final urls = <String>{};
+    for (final value in stored) {
+      final legacyMosaicProvider =
+          value.isProviderSource && _isMosaicSubscriptionUrl(value.url);
+      final current = legacyMosaicProvider ? _asUrlSubscription(value) : value;
+      migrated = migrated || legacyMosaicProvider;
+      // Keep the first row in user-defined order when a previous website flow
+      // left both a generic import and a provider mirror for the same URL.
+      final key = current.url.trim();
+      if (key.isNotEmpty && !urls.add(key)) {
         migrated = true;
-        return _asMosaicProviderSource(value);
+        continue;
       }
-      return value;
-    }).toList(growable: true);
+      normalized.add(current);
+    }
     if (migrated) await _writeLocalSubscriptions(normalized);
     return [
       if (localSource != null) localSource,
@@ -312,12 +395,9 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       autoRefresh: autoRefresh,
       refreshIntervalSeconds: refreshInterval,
     );
-    final subscription = _isMosaicSubscriptionUrl(normalized)
-        ? _asMosaicProviderSource(imported)
-        : imported;
-    values.add(subscription);
+    values.add(imported);
     await _writeLocalSubscriptions(values);
-    return subscription;
+    return imported;
   }
 
   @override
@@ -335,35 +415,41 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         !_isMosaicSubscriptionUrl(subscriptionUrl)) {
       throw const FormatException('Некорректные данные подписки MosaicVPN.');
     }
-    final values = await _readLocalSubscriptions();
-    final existingIndex = values.indexWhere((value) =>
-        value.providerId == providerId &&
-        value.providerAccountId == providerAccountId);
-    final existing = existingIndex >= 0 ? values[existingIndex] : null;
-    final subscription = Subscription(
-      id: existing?.id.isNotEmpty == true
-          ? existing!.id
-          : _mosaicProviderSubscriptionID,
-      name: subscriptionName.trim().isEmpty
-          ? 'MosaicVPN'
-          : subscriptionName.trim(),
-      url: subscriptionUrl.trim(),
-      autoRefresh: true,
-      refreshIntervalSeconds: 3600,
-      source: 'provider',
-      providerId: providerId,
-      providerAccountId: providerAccountId,
-      hidePhysicalNodes: true,
-    );
-    if (existingIndex >= 0) {
-      values[existingIndex] = subscription;
-    } else {
-      values.removeWhere((value) =>
-          value.url.trim() == subscription.url && !value.isProviderSource);
-      values.add(subscription);
+    // Website enrollment is an import transport, not a special subscription
+    // type. It updates the matching ordinary URL row in-place and lets a later
+    // cabinet-binding layer own provider account credentials separately.
+    final current = await listSubscriptions();
+    final existing = current.cast<Subscription?>().firstWhere(
+          (value) => value?.url.trim() == subscriptionUrl.trim(),
+          orElse: () => null,
+        );
+    if (existing != null) {
+      final values = await _readLocalSubscriptions();
+      final index = values.indexWhere((value) => value.id == existing.id);
+      if (index >= 0) {
+        values[index] = Subscription(
+          id: existing.id,
+          name: subscriptionName.trim().isEmpty
+              ? existing.name
+              : subscriptionName.trim(),
+          url: subscriptionUrl.trim(),
+          autoRefresh: true,
+          refreshIntervalSeconds: existing.refreshIntervalSeconds,
+          serverCount: existing.serverCount,
+          lastFetched: existing.lastFetched,
+          hasError: existing.hasError,
+          lastError: existing.lastError,
+          source: 'url',
+        );
+        await _writeLocalSubscriptions(values);
+        return values[index];
+      }
     }
-    await _writeLocalSubscriptions(values);
-    return subscription;
+    return addSubscription(
+      subscriptionName.trim().isEmpty ? 'MosaicVPN' : subscriptionName.trim(),
+      subscriptionUrl,
+      autoRefresh: true,
+    );
   }
 
   @override
@@ -373,13 +459,12 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       (value) => value.id == id,
       orElse: () => throw StateError('Подписка не найдена.'),
     );
-    if (id == _mosaicProviderSubscriptionID) return current;
     return current;
   }
 
   @override
   Future<void> renameSubscription(String id, String name) async {
-    if (id == _mosaicProviderSubscriptionID || id == _localSubscriptionID) {
+    if (id == _localSubscriptionID) {
       return;
     }
     final values = await _readLocalSubscriptions();
@@ -405,9 +490,6 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
 
   @override
   Future<void> deleteSubscription(String id) async {
-    if (id == _mosaicProviderSubscriptionID) {
-      throw StateError('Основную подписку MosaicVPN нельзя удалить.');
-    }
     if (id == _localSubscriptionID) {
       throw StateError(
           'Локальный сборник удаляется через его серверы и группы.');
@@ -428,15 +510,14 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       if (value != null) reordered.add(value);
     }
     reordered.addAll(byID.values);
-    final direct =
-        reordered.where((value) => value.id == _mosaicProviderSubscriptionID);
     final local = reordered
-        .where((value) =>
-            value.id != _mosaicProviderSubscriptionID &&
-            value.id != _localSubscriptionID)
-        .toList();
+        .where((value) => value.id != _localSubscriptionID)
+        .toList(growable: false);
     await _writeLocalSubscriptions(local);
-    return [...direct, ...local];
+    return [
+      if (await _localSubscription() != null) (await _localSubscription())!,
+      ...local,
+    ];
   }
 
   @override
@@ -447,11 +528,10 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       result.addAll(await _readLocalServers());
     }
     for (final subscription in subscriptions) {
-      // Protected provider feeds expose their manifest Smart Groups, not pool
-      // candidates. User-owned and provider-published ordinary rows are parsed.
-      if (subscription.isProviderSource && subscription.hidePhysicalNodes) {
-        continue;
-      }
+      // A Mosaic URL may expose Smart Groups through its manifest. Never render
+      // the implementation feed's physical pool rows, but retain ordinary URL
+      // ownership, deletion and connection semantics for the subscription.
+      if (_isMosaicSubscription(subscription)) continue;
       if (subscription.id == _localSubscriptionID) continue;
       if (subscriptionID != null && subscription.id != subscriptionID) continue;
       try {
@@ -623,8 +703,22 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       _account.getPaymentHistory();
 
   @override
-  Future<ProviderManifest> getProviderManifest({String? subscriptionId}) =>
-      _account.getProviderManifest();
+  Future<ProviderManifest> getProviderManifest({String? subscriptionId}) async {
+    final manifest = await _account.getProviderManifest();
+    if (subscriptionId == null || subscriptionId.isEmpty) return manifest;
+    final subscriptions = await listSubscriptions();
+    final source = subscriptions.cast<Subscription?>().firstWhere(
+          (value) => value?.id == subscriptionId,
+          orElse: () => null,
+        );
+    if (source == null || !_isMosaicSubscription(source)) {
+      return ProviderManifest(
+        providerName: manifest.providerName,
+        userTier: manifest.userTier,
+      );
+    }
+    return _scopeManifest(manifest, subscriptionId);
+  }
 
   @override
   Future<LinkResult> redeemLinkCode(String code) async {

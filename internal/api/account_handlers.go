@@ -83,16 +83,17 @@ type emailLoginRequest struct {
 
 const mosaicProviderSubscriptionID = "provider-mosaicvpn-primary"
 
-// mosaicProviderSubscription represents the service-owned route catalog. It
-// is deliberately a normal provider source named MosaicVPN; `mosaic-direct`
-// remains only as a migration alias for legacy local state.
+// mosaicProviderSubscription builds a user-owned HTTPS feed subscription.
+// A compatible MosaicVPN cabinet may be attached through stored account state,
+// but the URL itself remains independently refreshable, connectable and
+// removable. `mosaic-direct` remains only as a migration alias for old state.
 func mosaicProviderSubscription(feedURL string) proto.Subscription {
 	return mosaicProviderSubscriptionFor("mosaicvpn-default", "MosaicVPN", feedURL)
 }
 
-// mosaicProviderSubscriptionFor builds a stable provider source for one
-// provider account. The account value is never used as an ID verbatim, which
-// avoids exposing account material in local daemon paths and logs.
+// mosaicProviderSubscriptionFor builds a stable local URL source for one
+// account feed. The account value is used only to derive a local opaque ID; it
+// is never persisted in the subscription metadata or exposed in UI/logs.
 func mosaicProviderSubscriptionFor(providerAccountID, name, feedURL string) proto.Subscription {
 	accountID := strings.TrimSpace(providerAccountID)
 	if accountID == "" {
@@ -113,10 +114,10 @@ func mosaicProviderSubscriptionFor(providerAccountID, name, feedURL string) prot
 		URL:                    strings.TrimSpace(feedURL),
 		AutoRefresh:            true,
 		RefreshIntervalSeconds: 3600,
-		Source:                 proto.SubscriptionSourceProvider,
-		ProviderID:             "mosaicvpn",
-		ProviderAccountID:      accountID,
-		HidePhysicalNodes:      true,
+		Source:                 proto.SubscriptionSourceURL,
+		// The manifest remains the only user-visible route catalog. Feed nodes
+		// are implementation details and are never rendered in route tables.
+		HidePhysicalNodes: true,
 	}
 }
 
@@ -148,6 +149,18 @@ func (s *Server) handleProviderEnrollment(w http.ResponseWriter, r *http.Request
 		req.SubscriptionName,
 		feedURL.String(),
 	)
+	// If this URL was already imported manually, keep its local ID and all
+	// user-visible ordering. Website enrollment enriches that same source; it
+	// must not create a second hidden/provider row or delete the original.
+	for _, existing := range s.store.Snapshot().Subscriptions {
+		if existing.URL == providerSub.URL {
+			providerSub.ID = existing.ID
+			if providerSub.Name == "" {
+				providerSub.Name = existing.Name
+			}
+			break
+		}
+	}
 
 	// The provider exchange happens over HTTPS before this loopback request.
 	// Keep the resulting cabinet session in the daemon's established account
@@ -174,19 +187,6 @@ func (s *Server) handleProviderEnrollment(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	// Remember matching plain imports, but only remove them after the provider
-	// source has refreshed successfully. A temporary provider outage must not
-	// destroy a working user-owned row.
-	var staleImports []string
-	for _, existing := range s.store.Snapshot().Subscriptions {
-		if existing.ID == providerSub.ID || existing.URL != providerSub.URL {
-			continue
-		}
-		if existing.ProviderID == "" && existing.Source != proto.SubscriptionSourceProvider {
-			staleImports = append(staleImports, existing.ID)
-		}
-	}
-
 	stored, err := s.store.AddOrUpdateSubscription(providerSub)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "store provider subscription: "+err.Error())
@@ -198,12 +198,6 @@ func (s *Server) handleProviderEnrollment(w http.ResponseWriter, r *http.Request
 		_ = s.store.MarkSubscriptionError(stored.ID, err.Error())
 		writeError(w, http.StatusBadGateway, "provider subscription refresh: "+err.Error())
 		return
-	}
-	for _, staleID := range staleImports {
-		if err := s.store.DeleteSubscription(staleID); err != nil {
-			writeError(w, http.StatusInternalServerError, "remove migrated import: "+err.Error())
-			return
-		}
 	}
 	for _, current := range s.store.Snapshot().Subscriptions {
 		if current.ID == stored.ID {

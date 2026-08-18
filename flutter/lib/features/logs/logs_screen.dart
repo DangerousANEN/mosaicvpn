@@ -8,6 +8,8 @@ import 'package:path_provider/path_provider.dart';
 import '../../core/theme/atlas_theme.dart';
 import '../../core/providers/logs_provider.dart';
 
+enum _CompactLogAction { copy, save, clear }
+
 /// Logs screen — a live auto-scrolling console showing daemon/core logs.
 class LogsScreen extends ConsumerStatefulWidget {
   const LogsScreen({super.key});
@@ -115,123 +117,211 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
       _autoScroll();
     });
 
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header with controls
-          Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 640;
+        return Padding(
+          padding: EdgeInsets.all(compact ? 16 : 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Console',
-                style: TextStyle(
-                  fontFamily: AtlasTheme.serifFamily,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: c.textPrimary,
+              // On phones no action may overflow the viewport. Keep the status,
+              // filter and Auto action visible; expose secondary actions through a
+              // semantic overflow menu instead of a clipped horizontal Row.
+              if (compact)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          'Console',
+                          style: TextStyle(
+                            fontFamily: AtlasTheme.serifFamily,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: c.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${logsState.entries.length} lines',
+                          style: TextStyle(
+                            fontFamily: AtlasTheme.monoFamily,
+                            fontSize: 11,
+                            color: c.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        _LevelFilter(
+                          current: logsState.levelFilter,
+                          onChanged: (v) =>
+                              ref.read(logsProvider.notifier).setLevelFilter(v),
+                        ),
+                        const SizedBox(width: 8),
+                        _ToolButton(
+                          icon: logsState.autoScroll
+                              ? Icons.vertical_align_bottom
+                              : Icons.vertical_align_bottom_outlined,
+                          label: 'Auto',
+                          active: logsState.autoScroll,
+                          onPressed: () => ref
+                              .read(logsProvider.notifier)
+                              .toggleAutoScroll(),
+                        ),
+                        const Spacer(),
+                        PopupMenuButton<_CompactLogAction>(
+                          tooltip: 'Действия журнала',
+                          icon: const Icon(Icons.more_horiz_rounded),
+                          onSelected: (action) {
+                            switch (action) {
+                              case _CompactLogAction.copy:
+                                _copyAll();
+                              case _CompactLogAction.save:
+                                _saveToFile();
+                              case _CompactLogAction.clear:
+                                ref.read(logsProvider.notifier).clear();
+                            }
+                          },
+                          itemBuilder: (context) => const [
+                            PopupMenuItem(
+                              value: _CompactLogAction.copy,
+                              child: ListTile(
+                                leading: Icon(Icons.copy_outlined),
+                                title: Text('Копировать все строки'),
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: _CompactLogAction.save,
+                              child: ListTile(
+                                leading: Icon(Icons.save_alt_outlined),
+                                title: Text('Сохранить в файл'),
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                            PopupMenuItem(
+                              value: _CompactLogAction.clear,
+                              child: ListTile(
+                                leading: Icon(Icons.delete_outline),
+                                title: Text('Очистить журнал'),
+                                contentPadding: EdgeInsets.zero,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                )
+              else
+                Row(
+                  children: [
+                    Text(
+                      'Console',
+                      style: TextStyle(
+                        fontFamily: AtlasTheme.serifFamily,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: c.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${logsState.entries.length} lines',
+                      style: TextStyle(
+                        fontFamily: AtlasTheme.monoFamily,
+                        fontSize: 11,
+                        color: c.textMuted,
+                      ),
+                    ),
+                    const Spacer(),
+                    _LevelFilter(
+                      current: logsState.levelFilter,
+                      onChanged: (v) =>
+                          ref.read(logsProvider.notifier).setLevelFilter(v),
+                    ),
+                    const SizedBox(width: 8),
+                    _ToolButton(
+                      icon: logsState.autoScroll
+                          ? Icons.vertical_align_bottom
+                          : Icons.vertical_align_bottom_outlined,
+                      label: 'Auto',
+                      active: logsState.autoScroll,
+                      onPressed: () =>
+                          ref.read(logsProvider.notifier).toggleAutoScroll(),
+                    ),
+                    const SizedBox(width: 8),
+                    _ToolButton(
+                      icon: Icons.copy,
+                      label: 'Copy',
+                      active: false,
+                      onPressed: _copyAll,
+                    ),
+                    const SizedBox(width: 8),
+                    _ToolButton(
+                      icon: Icons.save_alt,
+                      label: 'Save',
+                      active: false,
+                      onPressed: _saveToFile,
+                    ),
+                    const SizedBox(width: 8),
+                    _ToolButton(
+                      icon: Icons.delete_outline,
+                      label: 'Clear',
+                      active: false,
+                      onPressed: () => ref.read(logsProvider.notifier).clear(),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '${logsState.entries.length} lines',
-                style: TextStyle(
-                  fontFamily: AtlasTheme.monoFamily,
-                  fontSize: 11,
-                  color: c.textMuted,
+              const SizedBox(height: 12),
+
+              // Console body — selectable for manual copy
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: c.consoleBg,
+                    borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
+                    border: Border.all(color: c.border),
+                  ),
+                  child: entries.isEmpty
+                      ? Center(
+                          child: Text(
+                            'Waiting for log output…',
+                            style: TextStyle(
+                              fontFamily: AtlasTheme.monoFamily,
+                              fontSize: 12,
+                              color: c.textMuted,
+                            ),
+                          ),
+                        )
+                      : Scrollbar(
+                          controller: _scrollController,
+                          thumbVisibility: true,
+                          child: SelectionArea(
+                            child: ListView.builder(
+                              controller: _scrollController,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
+                              itemCount: entries.length,
+                              itemExtent: 18,
+                              itemBuilder: (context, i) {
+                                final e = entries[i];
+                                return _LogLine(entry: e);
+                              },
+                            ),
+                          ),
+                        ),
                 ),
-              ),
-              const Spacer(),
-
-              // Level filter dropdown
-              _LevelFilter(
-                current: logsState.levelFilter,
-                onChanged: (v) =>
-                    ref.read(logsProvider.notifier).setLevelFilter(v),
-              ),
-              const SizedBox(width: 8),
-
-              // Auto-scroll toggle
-              _ToolButton(
-                icon: logsState.autoScroll
-                    ? Icons.vertical_align_bottom
-                    : Icons.vertical_align_bottom_outlined,
-                label: 'Auto',
-                active: logsState.autoScroll,
-                onPressed: () =>
-                    ref.read(logsProvider.notifier).toggleAutoScroll(),
-              ),
-              const SizedBox(width: 8),
-
-              // Copy all button
-              _ToolButton(
-                icon: Icons.copy,
-                label: 'Copy',
-                active: false,
-                onPressed: _copyAll,
-              ),
-              const SizedBox(width: 8),
-
-              // Save to file button
-              _ToolButton(
-                icon: Icons.save_alt,
-                label: 'Save',
-                active: false,
-                onPressed: _saveToFile,
-              ),
-              const SizedBox(width: 8),
-
-              // Clear button
-              _ToolButton(
-                icon: Icons.delete_outline,
-                label: 'Clear',
-                active: false,
-                onPressed: () => ref.read(logsProvider.notifier).clear(),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-
-          // Console body — selectable for manual copy
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: c.consoleBg,
-                borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
-                border: Border.all(color: c.border),
-              ),
-              child: entries.isEmpty
-                  ? Center(
-                      child: Text(
-                        'Waiting for log output…',
-                        style: TextStyle(
-                          fontFamily: AtlasTheme.monoFamily,
-                          fontSize: 12,
-                          color: c.textMuted,
-                        ),
-                      ),
-                    )
-                  : Scrollbar(
-                      controller: _scrollController,
-                      thumbVisibility: true,
-                      child: SelectionArea(
-                        child: ListView.builder(
-                          controller: _scrollController,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          itemCount: entries.length,
-                          itemExtent: 18,
-                          itemBuilder: (context, i) {
-                            final e = entries[i];
-                            return _LogLine(entry: e);
-                          },
-                        ),
-                      ),
-                    ),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

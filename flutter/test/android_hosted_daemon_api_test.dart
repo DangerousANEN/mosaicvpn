@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mosaic_vpn/core/api/android_hosted_daemon_api.dart';
@@ -51,8 +53,7 @@ void main() {
     expect(servers.single.importUri, contains('vless://'));
   });
 
-  test('classifies a MosaicVPN subscription URL as a protected provider source',
-      () async {
+  test('keeps a MosaicVPN URL as a normal user-owned subscription', () async {
     final api = AndroidHostedDaemonApi.instance;
     final subscription = await api.addSubscription(
       'Моя MosaicVPN подписка',
@@ -61,10 +62,46 @@ void main() {
 
     final stored = await api.listSubscriptions();
     final mosaic = stored.singleWhere((value) => value.id == subscription.id);
-    expect(mosaic.isProviderSource, isTrue);
-    expect(mosaic.providerId, 'mosaicvpn');
-    expect(mosaic.hidePhysicalNodes, isTrue);
-    expect(mosaic.providerAccountId, startsWith('unlinked:'));
+    expect(mosaic.isProviderSource, isFalse);
+    expect(mosaic.providerId, isEmpty);
+    expect(mosaic.hidePhysicalNodes, isFalse);
+    expect(mosaic.url, 'https://sub.zxc1x1.ru/reftcT_frzSCwhav');
+
+    await api.deleteSubscription(subscription.id);
+    expect(await api.listSubscriptions(), isEmpty);
+  });
+
+  test('migrates legacy Mosaic provider rows into deletable URL subscriptions',
+      () async {
+    const subscriptionsKey = 'mosaic.android.subscriptions.v1';
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      subscriptionsKey: jsonEncode(<Map<String, Object>>[
+        <String, Object>{
+          'id': 'provider-mosaicvpn-primary',
+          'name': 'MosaicVPN',
+          'url': 'https://sub.zxc1x1.ru/legacy-opaque-link',
+          'auto_refresh': true,
+          'refresh_interval_seconds': 3600,
+          'server_count': 0,
+          'last_fetched': '2026-08-19T00:00:00.000Z',
+          'has_error': false,
+          'last_error': '',
+          'source': 'provider',
+          'provider_id': 'mosaicvpn',
+          'provider_account_id': 'telegram:123',
+          'hide_physical_nodes': true,
+        },
+      ]),
+    });
+
+    final api = AndroidHostedDaemonApi.instance;
+    final migrated = (await api.listSubscriptions()).single;
+    expect(migrated.isProviderSource, isFalse);
+    expect(migrated.source, 'url');
+    expect(migrated.id, 'provider-mosaicvpn-primary');
+
+    await api.deleteSubscription(migrated.id);
+    expect(await api.listSubscriptions(), isEmpty);
   });
 
   test('deleting an Android-local group keeps its servers but ungroups them',

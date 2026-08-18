@@ -244,18 +244,23 @@ func TestProviderEnrollmentMigratesGenericMosaicImportAndBuildsGroups(t *testing
 	if err := json.NewDecoder(response.Body).Decode(&enrolled); err != nil {
 		t.Fatal(err)
 	}
-	if (enrolled.Source != proto.SubscriptionSourceProvider && enrolled.ProviderID == "") ||
-		enrolled.ProviderID != "mosaicvpn" ||
-		enrolled.ProviderAccountID != "telegram:12345" || !enrolled.HidePhysicalNodes {
-		t.Fatalf("unexpected provider subscription: %#v", enrolled)
+	if enrolled.ID != "legacy-import" ||
+		enrolled.Source != proto.SubscriptionSourceURL ||
+		enrolled.ProviderID != "" ||
+		enrolled.ProviderAccountID != "" || !enrolled.HidePhysicalNodes {
+		t.Fatalf("unexpected URL-first enrollment subscription: %#v", enrolled)
 	}
 	if enrolled.ServerCount == 0 {
 		t.Fatal("provider enrollment returned no user-visible Smart Group routes")
 	}
+	found := false
 	for _, subscription := range s.Snapshot().Subscriptions {
 		if subscription.ID == "legacy-import" {
-			t.Fatal("matching generic subscription was not migrated away")
+			found = true
 		}
+	}
+	if !found {
+		t.Fatal("matching ordinary URL subscription must retain its local identity")
 	}
 	account := s.GetAccount()
 	if account.SessionToken != "session-token" || account.DirectToken != "direct-token" {

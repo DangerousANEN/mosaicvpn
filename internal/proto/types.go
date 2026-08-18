@@ -383,7 +383,11 @@ type SubscriptionManifest struct {
 type SubscriptionSource string
 
 const (
-	SubscriptionSourceLocal    SubscriptionSource = "local"
+	SubscriptionSourceLocal SubscriptionSource = "local"
+	// SubscriptionSourceURL is a user-owned remote feed. Compatible providers
+	// may attach a cabinet and expose Smart Groups, but that must not make the
+	// feed immutable or require a cabinet login to connect.
+	SubscriptionSourceURL      SubscriptionSource = "url"
 	SubscriptionSourceProvider SubscriptionSource = "provider"
 )
 

@@ -587,9 +587,9 @@ final mosaicManifestProvider =
 /// before any source has been selected.
 final providerManifestForSubscriptionProvider = FutureProvider.autoDispose
     .family<ProviderManifest, String>((ref, id) async {
-  if (AppPlatform.isAndroid) {
-    return AndroidMosaicAccountService.instance.getProviderManifest();
-  }
+  // The Android hosted facade applies the same subscription-scoped namespace
+  // as desktop. Calling it through DaemonApiBase keeps Smart Groups attached to
+  // the selected URL source rather than to an implicit global account.
   final api = ref.watch(daemonApiProvider);
   return api.getProviderManifest(subscriptionId: id);
 });

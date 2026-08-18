@@ -34,6 +34,25 @@ void main() {
     expect((config['dns']['servers'] as List).single['type'], 'https');
   });
 
+  test(
+      'builds a native TUN config from a fetched subscription payload without a cabinet session',
+      () {
+    const payload =
+        'vless://e619d9bd-2950-4098-bcf2-e943fd6b5647@198.51.100.44:443?security=tls&sni=example.test#URL%20subscription';
+    final config = jsonDecode(
+      AndroidMosaicAccountService.buildNativeTunConfigFromSubscriptionPayload(
+        payload,
+      ),
+    ) as Map<String, dynamic>;
+    final outbounds = config['outbounds'] as List<dynamic>;
+    final vless = outbounds.cast<Map<String, dynamic>>().firstWhere(
+          (outbound) => outbound['type'] == 'vless',
+        );
+
+    expect(vless['server'], '198.51.100.44');
+    expect(config['inbounds'], isNotEmpty);
+  });
+
   test('builds a native TUN sing-box config from a SIP002 Shadowsocks URI', () {
     const shareUri =
         'ss://YWVzLTI1Ni1nY206c2VjcmV0QDE5OC41MS4xMDAuMTA6ODM4OA#SS%20test';

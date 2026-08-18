@@ -247,16 +247,17 @@ func Open(path string) (*Store, error) {
 		s.state.ProviderManifests = map[string]*proto.SubscriptionManifest{}
 		needsPersist = true
 	}
-	// Version 3 removes the user-visible semantic of the legacy
-	// `mosaic-direct` source. Existing data is preserved, but it receives
-	// explicit provider metadata so API/UI code can stop branching on an ID.
-	if s.state.Version < 3 {
+	// Version 3 removed the `mosaic-direct` display name. Version 4 restores
+	// the intended URL-first ownership model: a legacy feed remains a normal
+	// local subscription while its private implementation pool stays hidden.
+	if s.state.Version < 4 {
 		for i := range s.state.Subscriptions {
 			sub := &s.state.Subscriptions[i]
-			if sub.ID == "mosaic-direct" {
-				sub.Source = proto.SubscriptionSourceProvider
-				sub.ProviderID = "mosaicvpn"
-				sub.ProviderAccountID = "mosaicvpn-default"
+			if sub.ID == "mosaic-direct" ||
+				(sub.Source == proto.SubscriptionSourceProvider && sub.ProviderID == "mosaicvpn") {
+				sub.Source = proto.SubscriptionSourceURL
+				sub.ProviderID = ""
+				sub.ProviderAccountID = ""
 				sub.HidePhysicalNodes = true
 				if sub.Name == "" || sub.Name == "MosaicVPN · Direct" {
 					sub.Name = "MosaicVPN"
@@ -267,7 +268,7 @@ func Open(path string) (*Store, error) {
 				needsPersist = true
 			}
 		}
-		s.state.Version = 3
+		s.state.Version = 4
 		needsPersist = true
 	}
 

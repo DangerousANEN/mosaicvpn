@@ -28,8 +28,14 @@ class SubscriptionCabinetScreen extends ConsumerWidget {
 
   final Subscription subscription;
 
-  bool get _isMosaicCabinet =>
-      subscription.isProviderSource && subscription.providerId == 'mosaicvpn';
+  bool get _isMosaicCabinet {
+    final uri = Uri.tryParse(subscription.url.trim());
+    return subscription.providerId == 'mosaicvpn' ||
+        (uri != null &&
+            uri.isScheme('https') &&
+            uri.host.toLowerCase() == 'sub.zxc1x1.ru' &&
+            uri.pathSegments.isNotEmpty);
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

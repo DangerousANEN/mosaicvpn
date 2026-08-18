@@ -413,23 +413,45 @@ class AndroidMosaicAccountService {
         .toList(growable: false);
   }
 
-  /// Downloads the authenticated opaque direct feed and builds an Android TUN
-  /// config. The selected user-facing group controls client-side filtering and
-  /// sing-box URLTest failover; traffic goes directly to the selected node.
-  Future<String> buildNativeTunConfig({String? groupId}) async {
-    final session = await restoreSession();
-    if (session == null) {
-      throw StateError('Сначала войдите в MosaicVPN.');
+  /// Builds a native Android TUN configuration from an ordinary HTTPS
+  /// subscription URL. A subscription is sufficient for connection; cabinet
+  /// authentication is an optional account capability and must never gate the
+  /// route parser or the VPN runtime.
+  Future<String> buildNativeTunConfigFromSubscriptionUrl(
+    String subscriptionUrl, {
+    String? groupId,
+  }) async {
+    final uri = Uri.tryParse(subscriptionUrl.trim());
+    if (uri == null || !uri.hasScheme || !uri.isScheme('https')) {
+      throw const FormatException('Укажите корректный HTTPS URL подписки.');
     }
-    final response = await _dio.get<Object>(
-      'https://sub.zxc1x1.ru/${Uri.encodeComponent(session.directToken)}',
+    final response = await _dio.getUri<Object>(
+      uri,
       options: Options(responseType: ResponseType.plain),
     );
     final payload = response.data?.toString().trim() ?? '';
     if (payload.isEmpty) {
-      throw StateError('Сервис не вернул конфигурацию для этого устройства.');
+      throw StateError(
+          'Подписка не вернула конфигурацию для этого устройства.');
     }
-    return _withAndroidTunInbound(payload, groupId: groupId);
+    return buildNativeTunConfigFromSubscriptionPayload(payload,
+        groupId: groupId);
+  }
+
+  /// Downloads the authenticated opaque feed only for the legacy account
+  /// fallback. New URL-backed subscriptions use
+  /// [buildNativeTunConfigFromSubscriptionUrl] and connect without a cabinet
+  /// login.
+  Future<String> buildNativeTunConfig({String? groupId}) async {
+    final session = await restoreSession();
+    if (session == null) {
+      throw StateError(
+          'Добавьте или обновите подписку MosaicVPN, затем повторите подключение.');
+    }
+    return buildNativeTunConfigFromSubscriptionUrl(
+      'https://sub.zxc1x1.ru/${Uri.encodeComponent(session.directToken)}',
+      groupId: groupId,
+    );
   }
 
   static String normalizePairingCode(String raw) {
@@ -478,6 +500,15 @@ class AndroidMosaicAccountService {
     final outbound = _outboundFromShareUri(shareUri);
     return _buildTunConfig(<Map<String, dynamic>>[outbound]);
   }
+
+  /// Converts a downloaded subscription payload into a complete native TUN
+  /// configuration. This is public for the Android hosted facade, which owns
+  /// the selected local subscription and must not depend on a cabinet session.
+  static String buildNativeTunConfigFromSubscriptionPayload(
+    String payload, {
+    String? groupId,
+  }) =>
+      _withAndroidTunInbound(payload, groupId: groupId);
 
   static String _withAndroidTunInbound(String payload, {String? groupId}) {
     final normalized = _decodeSubscriptionPayload(payload);

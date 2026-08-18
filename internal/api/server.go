@@ -19,6 +19,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -1258,6 +1259,16 @@ func (s *Server) handleGetManifest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, m)
 }
 
+// isMosaicURLSubscription identifies the compatible public feed by URL rather
+// than by subscription source metadata. The same user-owned source can then be
+// imported manually, added from the website, connected without cabinet login
+// and deleted locally, while its private implementation pool remains hidden.
+func isMosaicURLSubscription(sub proto.Subscription) bool {
+	parsed, err := url.Parse(strings.TrimSpace(sub.URL))
+	return err == nil && parsed.Scheme == "https" &&
+		strings.EqualFold(parsed.Host, "sub.zxc1x1.ru") && len(parsed.Path) > 1
+}
+
 func (s *Server) refresh(ctx context.Context, sub proto.Subscription) error {
 	body, _, err := s.fetcher(ctx, sub.URL)
 	if err != nil {
@@ -1281,12 +1292,12 @@ func (s *Server) refresh(ctx context.Context, sub proto.Subscription) error {
 	}
 
 	manifest, finalServers := subs.ParseManifestOrSynthesize(manifestBytes, sub.ID, res.Servers)
-	isProviderSource := sub.Source == proto.SubscriptionSourceProvider || sub.ProviderID != "" || sub.ID == "mosaic-direct"
-	if isProviderSource {
+	isMosaicSource := isMosaicURLSubscription(sub) || sub.ID == "mosaic-direct"
+	if isMosaicSource {
 		// A provider manifest defines the complete user-visible route catalog.
 		// If an older Mosaic feed has no manifest yet, synthesize only its virtual
 		// group rows; protected physical nodes stay hidden by subscription policy.
-		if len(manifest.Groups) == 0 && (sub.ProviderID == "mosaicvpn" || sub.ID == "mosaic-direct") {
+		if len(manifest.Groups) == 0 && isMosaicSource {
 			manifest = subs.SynthesizeManifest(sub.ID, res.Servers)
 		}
 		// Provider group IDs are local resolver IDs. Namespace them by the
