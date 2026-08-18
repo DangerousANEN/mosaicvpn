@@ -1,31 +1,22 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" dir="ltr">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex,nofollow">
-  <title>Открыть MosaicVPN</title>
+  <meta name="theme-color" content="#F4EFE6">
+  <title>Добавление в MosaicVPN</title>
   <style>
-    :root { color-scheme: dark; --bg:#0b1620; --surface:#122534; --line:#24465c; --text:#eef7fb; --muted:#a8bfcc; --accent:#72d5c5; --error:#ffaaa6; }
-    * { box-sizing:border-box; }
-    body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px; background:radial-gradient(circle at 20% 0%,#193e50 0,transparent 40%),var(--bg); color:var(--text); font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
-    main { width:min(100%,520px); background:rgba(18,37,52,.94); border:1px solid var(--line); border-radius:20px; padding:28px; }
-    .brand { color:var(--accent); font-weight:700; letter-spacing:.04em; }
-    h1 { margin:12px 0 10px; font-size:clamp(24px,7vw,34px); line-height:1.15; }
-    p { color:var(--muted); margin:0 0 20px; }
-    .button { display:block; width:100%; padding:14px 18px; border:0; border-radius:12px; background:var(--accent); color:#062229; font:700 16px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif; text-align:center; text-decoration:none; cursor:pointer; }
-    .note { margin-top:16px; font-size:14px; }
-    .error { color:var(--error); }
+    :root{--bg:#F4EFE6;--card:#EDE5D6;--elev:#E4DAC6;--ink:#2B2620;--border:#C4B89E;--border-light:#D4C9B0;--text:#2B2620;--text-2:#6B5D4A;--muted:#9A8B72;--accent:#B85C38;--accent-hi:#D4724A;--success:#5B7A3A;--danger:#9B4234;--serif:'Iowan Old Style','Palatino Linotype','Book Antiqua',Georgia,serif;--mono:'JetBrains Mono','SFMono-Regular',Consolas,'Liberation Mono',monospace;--sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}
+    *{box-sizing:border-box} body{min-height:100vh;margin:0;color:var(--text);font:16px/1.55 var(--sans);background-color:var(--bg);background-image:linear-gradient(rgba(196,184,158,.14) 1px,transparent 1px),linear-gradient(90deg,rgba(196,184,158,.14) 1px,transparent 1px);background-size:32px 32px;}
+    header{border-bottom:1px solid var(--border);background:rgba(244,239,230,.88);backdrop-filter:blur(8px)}.wrap{width:min(100% - 40px,920px);margin:0 auto}.nav{height:64px;display:flex;align-items:center;justify-content:space-between;gap:16px}.brand{display:inline-flex;align-items:center;gap:10px;color:var(--ink);font:600 21px/1 var(--serif);text-decoration:none}.mark{display:grid;place-items:center;width:27px;height:27px;border:1px solid var(--accent);border-radius:50%;color:var(--accent);font:700 13px/1 var(--mono)}.nav-note{font:12px/1.3 var(--mono);color:var(--muted);text-align:right}
+    main{display:grid;place-items:center;min-height:calc(100vh - 65px);padding:48px 0}.panel{width:min(100%,660px);overflow:hidden;border:1px solid var(--border);border-radius:14px;background:var(--card);box-shadow:0 16px 45px rgba(67,53,35,.09)}.topline{height:4px;background:linear-gradient(90deg,var(--accent),var(--accent-hi),#D9A05A)}.inner{padding:clamp(24px,6vw,48px)}.eyebrow{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--elev);font:11px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}.dot{width:7px;height:7px;border-radius:50%;background:var(--success);box-shadow:0 0 0 4px rgba(91,122,58,.12)}h1{max-width:16ch;margin:22px 0 12px;font:600 clamp(31px,7vw,52px)/1.08 var(--serif);letter-spacing:-.5px}h1 em{color:var(--accent);font-style:normal}p{max-width:54ch;margin:0;color:var(--text-2)}.handoff{display:grid;grid-template-columns:auto 1fr;gap:13px;margin:28px 0 22px;padding:16px;border:1px solid var(--border-light);border-radius:11px;background:var(--elev)}.handoff-icon{display:grid;place-items:center;width:36px;height:36px;border:1px solid var(--border);border-radius:10px;color:var(--accent);background:var(--bg);font:700 16px/1 var(--serif)}.handoff strong{display:block;margin:1px 0 2px}.handoff span{display:block;font-size:13px;color:var(--text-2)}.button{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:50px;border:1px solid var(--ink);border-radius:8px;background:var(--ink);box-shadow:0 2px 0 #5C4E3A;color:#F4EFE6;font-weight:600;text-decoration:none}.button:hover{background:#3A332B}.button svg{width:18px;height:18px}.note{margin-top:18px;font-size:13px;color:var(--muted)}.note code{font:11px var(--mono);color:var(--text-2)}.error{border-color:rgba(155,66,52,.3);background:#F3E2DB}.error .dot{background:var(--danger);box-shadow:none}.error-text{color:var(--danger)}
+    @media(max-width:520px){.wrap{width:min(100% - 28px,920px)}.nav-note{display:none}main{padding:24px 0;align-items:start}.inner{padding:27px 22px}.panel{border-radius:12px}h1{font-size:34px}.handoff{margin-top:22px}}
   </style>
 </head>
 <body>
-  <main>
-    <div class="brand">MosaicVPN</div>
-    <h1>Откройте приложение</h1>
-    <p id="message">Подготовили добавление подписки и кабинета. Нажмите кнопку, чтобы передать его в MosaicVPN.</p>
-    <a id="open-app" class="button" href="/">Открыть MosaicVPN</a>
-    <p class="note">Если приложение не открывается, установите актуальную версию MosaicVPN и повторите действие из кабинета.</p>
-  </main>
+  <header><div class="wrap nav"><a class="brand" href="/"><span class="mark">M</span><span>MosaicVPN</span></a><span class="nav-note">Защищённая передача<br>в приложение</span></div></header>
+  <main class="wrap"><section class="panel" aria-live="polite"><div class="topline"></div><div class="inner"><div id="eyebrow" class="eyebrow"><span class="dot"></span>Добавление подписки</div><h1>Откройте <em>MosaicVPN</em></h1><p id="message">Подписка и кабинет подготовлены. Подтвердите передачу в установленное приложение.</p><div class="handoff"><div class="handoff-icon">↗</div><div><strong>Один защищённый шаг</strong><span>После открытия приложение добавит подписку и свяжет доступный кабинет.</span></div></div><a id="open-app" class="button" href="/"><span>Открыть MosaicVPN</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg></a><p class="note">Если приложение не открылось, установите актуальную версию MosaicVPN и повторите действие из кабинета. Ссылка действует ограниченное время.</p></div></section></main>
   <script>
     (function () {
       'use strict';
@@ -35,10 +26,13 @@
       var valid = /^[A-Za-z0-9_-]{16,128}$/.test(code) && /^[A-Za-z0-9]{16,128}$/.test(state);
       var link = document.getElementById('open-app');
       var message = document.getElementById('message');
+      var eyebrow = document.getElementById('eyebrow');
       if (!valid) {
         link.hidden = true;
-        message.textContent = 'Ссылка добавления неполная или уже недействительна. Вернитесь в кабинет и повторите действие.';
-        message.className = 'error';
+        message.textContent = 'Ссылка добавления неполная, устарела или уже использована. Вернитесь в кабинет и создайте новую.';
+        message.className = 'error-text';
+        eyebrow.classList.add('error');
+        eyebrow.innerHTML = '<span class="dot"></span>Нужна новая ссылка';
         return;
       }
       link.href = 'mosaicvpn://enroll/callback?code=' + encodeURIComponent(code) + '&state=' + encodeURIComponent(state);
