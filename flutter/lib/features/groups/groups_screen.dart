@@ -27,7 +27,9 @@ final groupNodeHealthProvider =
   return const <String, NodeHealth>{};
 });
 
-enum _RouteSort { type, name, ping, traffic }
+enum _RouteSort { type, name, ping, traffic, jitter, loss, speed }
+
+enum _RouteColumn { type, name, ping, jitter, loss, speed, traffic, action }
 
 class _RouteRow {
   const _RouteRow({
@@ -37,6 +39,9 @@ class _RouteRow {
     required this.ping,
     required this.traffic,
     required this.isGroup,
+    this.jitter,
+    this.loss,
+    this.speed,
     required this.icon,
     this.disabled = false,
     this.disabledReason = '',
@@ -49,6 +54,12 @@ class _RouteRow {
   final String name;
   final int? ping;
   final String traffic;
+
+  /// Null means that no measurement has been run yet; the UI must render an
+  /// em dash rather than fabricate an automatic/default value.
+  final int? jitter;
+  final double? loss;
+  final int? speed;
   final bool isGroup;
   final IconData icon;
   final bool disabled;
@@ -75,6 +86,26 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   bool _ascending = true;
   List<String>? _pendingSubscriptionOrder;
   final SmartGroupSelector _smartGroupSelector = SmartGroupSelector();
+  final Map<_RouteColumn, bool> _visibleColumns = {
+    _RouteColumn.type: true,
+    _RouteColumn.name: true,
+    _RouteColumn.ping: true,
+    _RouteColumn.jitter: false,
+    _RouteColumn.loss: false,
+    _RouteColumn.speed: false,
+    _RouteColumn.traffic: true,
+    _RouteColumn.action: true,
+  };
+  final Map<_RouteColumn, double> _columnWidths = {
+    _RouteColumn.type: 144,
+    _RouteColumn.name: 330,
+    _RouteColumn.ping: 104,
+    _RouteColumn.jitter: 112,
+    _RouteColumn.loss: 104,
+    _RouteColumn.speed: 132,
+    _RouteColumn.traffic: 132,
+    _RouteColumn.action: 72,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -195,6 +226,10 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                           ascending: _ascending,
                           onSort: _applySort,
                           onSortMenu: _showSortMenu,
+                          visibleColumns: _visibleColumns,
+                          columnWidths: _columnWidths,
+                          onColumnMenu: _showColumnMenu,
+                          onResizeColumn: _resizeColumn,
                           onConnect: _connect,
                           onTest: _testRoute,
                           onDelete: _deleteRoute,
@@ -307,6 +342,11 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
               name: server.name.isEmpty ? 'Безымянный сервер' : server.name,
               ping: server.hasLatency ? server.lastTestMS : null,
               traffic: '—',
+              // Jitter and loss stay null until the live probe records them;
+              // download speed can already be supplied by a completed speed test.
+              jitter: null,
+              loss: null,
+              speed: server.downSpeed,
               isGroup: false,
               icon: Icons.dns_outlined,
               canTest: true,
@@ -328,6 +368,13 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
         result = (left.ping ?? 1 << 30).compareTo(right.ping ?? 1 << 30);
       case _RouteSort.traffic:
         result = left.traffic.compareTo(right.traffic);
+      case _RouteSort.jitter:
+        result = (left.jitter ?? 1 << 30).compareTo(right.jitter ?? 1 << 30);
+      case _RouteSort.loss:
+        result = (left.loss ?? double.infinity)
+            .compareTo(right.loss ?? double.infinity);
+      case _RouteSort.speed:
+        result = (right.speed ?? -1).compareTo(left.speed ?? -1);
     }
     if (result == 0) result = left.name.compareTo(right.name);
     return _ascending ? result : -result;
@@ -518,13 +565,64 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
         PopupMenuItem(
             value: _RouteSort.name, child: Text('Сортировать по названию')),
         PopupMenuItem(
-            value: _RouteSort.ping, child: Text('Сортировать по пингу')),
+            value: _RouteSort.ping, child: Text('Сортировать по задержке')),
+        PopupMenuItem(
+            value: _RouteSort.jitter, child: Text('Сортировать по джиттеру')),
+        PopupMenuItem(
+            value: _RouteSort.loss, child: Text('Сортировать по потерям')),
+        PopupMenuItem(
+            value: _RouteSort.speed, child: Text('Сортировать по скорости')),
         PopupMenuItem(
             value: _RouteSort.traffic, child: Text('Сортировать по трафику')),
       ],
     );
     if (selected != null && mounted) _applySort(selected);
   }
+
+  Future<void> _showColumnMenu(Offset globalPosition) async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final selected = await showMenu<_RouteColumn>(
+      context: context,
+      position: RelativeRect.fromRect(
+        globalPosition & const Size(1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: _RouteColumn.values
+          .where((column) => column != _RouteColumn.action)
+          .map(
+            (column) => CheckedPopupMenuItem<_RouteColumn>(
+              value: column,
+              checked: _visibleColumns[column] ?? false,
+              child: Text(_columnLabel(column)),
+            ),
+          )
+          .toList(growable: false),
+    );
+    if (selected == null || !mounted) return;
+    setState(() {
+      // Keep the route name permanently visible; the user must always know
+      // what a connect action targets.
+      if (selected != _RouteColumn.name) {
+        _visibleColumns[selected] = !(_visibleColumns[selected] ?? false);
+      }
+    });
+  }
+
+  void _resizeColumn(_RouteColumn column, double delta) {
+    final current = _columnWidths[column] ?? 120;
+    setState(() => _columnWidths[column] = (current + delta).clamp(72, 520));
+  }
+
+  String _columnLabel(_RouteColumn column) => switch (column) {
+        _RouteColumn.type => 'Тип',
+        _RouteColumn.name => 'Название',
+        _RouteColumn.ping => 'Задержка',
+        _RouteColumn.jitter => 'Джиттер',
+        _RouteColumn.loss => 'Потери',
+        _RouteColumn.speed => 'Скорость',
+        _RouteColumn.traffic => 'Трафик',
+        _RouteColumn.action => 'Действие',
+      };
 
   Future<void> _connect(_RouteRow row) async {
     if (row.disabled) {
@@ -539,10 +637,13 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     setState(() => _connectingId = row.id);
     try {
       final api = ref.read(daemonApiProvider);
-      final manifestGroup = ref
-          .read(mosaicManifestProvider)
-          .valueOrNull
-          ?.groups
+      final selectedSourceID = _selectedSubscriptionId;
+      final selectedManifest = selectedSourceID?.isNotEmpty == true
+          ? ref
+              .read(providerManifestForSubscriptionProvider(selectedSourceID!))
+              .valueOrNull
+          : ref.read(mosaicManifestProvider).valueOrNull;
+      final manifestGroup = selectedManifest?.groups
           .where((group) => group.id == row.id)
           .cast<ManifestGroup?>()
           .firstWhere((group) => group != null, orElse: () => null);
@@ -1417,6 +1518,10 @@ class _RouteTable extends StatelessWidget {
     required this.ascending,
     required this.onSort,
     required this.onSortMenu,
+    required this.visibleColumns,
+    required this.columnWidths,
+    required this.onColumnMenu,
+    required this.onResizeColumn,
     required this.onConnect,
     required this.onTest,
     required this.onDelete,
@@ -1429,6 +1534,10 @@ class _RouteTable extends StatelessWidget {
   final bool ascending;
   final ValueChanged<_RouteSort> onSort;
   final Future<void> Function(Offset) onSortMenu;
+  final Map<_RouteColumn, bool> visibleColumns;
+  final Map<_RouteColumn, double> columnWidths;
+  final Future<void> Function(Offset) onColumnMenu;
+  final void Function(_RouteColumn, double) onResizeColumn;
   final ValueChanged<_RouteRow> onConnect;
   final Future<void> Function(_RouteRow) onTest;
   final Future<void> Function(_RouteRow) onDelete;
@@ -1446,6 +1555,10 @@ class _RouteTable extends StatelessWidget {
       );
     }
     final colors = ThemeColors.of(context);
+    final columns = _RouteColumn.values
+        .where((column) => visibleColumns[column] ?? false)
+        .toList(growable: false);
+    final sortIndex = columns.indexWhere((column) => _sortFor(column) == sort);
     return Container(
       decoration: BoxDecoration(
         color: colors.bgCard,
@@ -1457,121 +1570,205 @@ class _RouteTable extends StatelessWidget {
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: DataTable(
+            showCheckboxColumn: false,
             headingRowColor: WidgetStatePropertyAll(colors.bgElevated),
             dataRowMinHeight: 62,
             dataRowMaxHeight: 68,
-            sortColumnIndex: _columnFor(sort),
+            sortColumnIndex: sortIndex < 0 ? null : sortIndex,
             sortAscending: ascending,
-            columns: [
-              _column(context, 'Тип', _RouteSort.type),
-              _column(context, 'Название', _RouteSort.name),
-              _column(context, 'Пинг', _RouteSort.ping, numeric: true),
-              _column(context, 'Трафик', _RouteSort.traffic, numeric: true),
-            ],
-            rows: rows.map((row) {
-              final isConnected =
-                  activeId == row.id || activeId == 'group:${row.id}';
-              final isConnecting = connectingId == row.id;
-              return DataRow(
-                selected: isConnected,
-                onSelectChanged:
-                    isConnecting || row.disabled ? null : (_) => onConnect(row),
-                cells: [
-                  DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(row.icon,
-                        size: 18,
-                        color:
-                            row.disabled ? colors.textMuted : colors.textMuted),
-                    const SizedBox(width: 8),
-                    Text(row.type,
-                        style: TextStyle(color: colors.textSecondary)),
-                  ])),
-                  DataCell(SizedBox(
-                    width: 310,
-                    child: Row(children: [
-                      Expanded(
-                        child: Text(row.name,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: row.disabled
-                                  ? colors.textMuted
-                                  : colors.textPrimary,
-                              fontWeight: FontWeight.w600,
-                            )),
-                      ),
-                      if (isConnecting)
-                        const Padding(
-                          padding: EdgeInsets.only(left: 8),
-                          child: SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2)),
-                        )
-                      else if (isConnected)
-                        const Padding(
-                          padding: EdgeInsets.only(left: 8),
-                          child: Icon(Icons.check_circle_rounded,
-                              color: AtlasTheme.success, size: 18),
-                        ),
-                    ]),
-                  )),
-                  DataCell(Text(
-                      row.ping == null
-                          ? AppStrings.of(context).t('automatic')
-                          : '${row.ping} мс',
-                      style: TextStyle(
-                          color: row.disabled
-                              ? colors.textMuted
-                              : colors.textPrimary))),
-                  DataCell(Text(row.traffic,
-                      style: TextStyle(
-                          color: row.disabled
-                              ? colors.textMuted
-                              : colors.textPrimary))),
-                ],
-              );
-            }).toList(),
+            columns: columns.map((column) => _column(context, column)).toList(),
+            rows: rows.map((row) => _row(context, row, columns)).toList(),
           ),
         ),
       ),
     );
   }
 
-  DataColumn _column(BuildContext context, String label, _RouteSort field,
-      {bool numeric = false}) {
+  DataRow _row(
+      BuildContext context, _RouteRow row, List<_RouteColumn> columns) {
+    final connected = activeId == row.id || activeId == 'group:${row.id}';
+    final connecting = connectingId == row.id;
+    return DataRow(
+      selected: connected,
+      cells: columns
+          .map((column) =>
+              DataCell(_cell(context, row, column, connected, connecting)))
+          .toList(growable: false),
+    );
+  }
+
+  Widget _cell(BuildContext context, _RouteRow row, _RouteColumn column,
+      bool connected, bool connecting) {
     final colors = ThemeColors.of(context);
-    return DataColumn(
-      numeric: numeric,
-      onSort: (_, __) => onSort(field),
-      label: Listener(
-        onPointerDown: (event) {
-          if (event.buttons == kSecondaryMouseButton) {
-            onSortMenu(event.position);
-          }
-        },
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text(label,
+    final width = columnWidths[column] ?? 120;
+    final muted = row.disabled ? colors.textMuted : colors.textSecondary;
+    final primary = row.disabled ? colors.textMuted : colors.textPrimary;
+    Widget text(String value, {bool strong = false}) => SizedBox(
+          width: width,
+          child: Text(value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                  color: colors.textPrimary, fontWeight: FontWeight.w700)),
-          const SizedBox(width: 3),
-          if (sort == field)
-            Icon(
-                ascending
-                    ? Icons.arrow_upward_rounded
-                    : Icons.arrow_downward_rounded,
-                size: 14,
-                color: AtlasTheme.accent),
-        ]),
+                color: strong ? primary : muted,
+                fontWeight: strong ? FontWeight.w600 : FontWeight.w400,
+              )),
+        );
+    return switch (column) {
+      _RouteColumn.type => SizedBox(
+          width: width,
+          child: Row(children: [
+            Icon(row.icon, size: 18, color: muted),
+            const SizedBox(width: 8),
+            Expanded(
+                child: Text(row.type,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: muted))),
+          ]),
+        ),
+      _RouteColumn.name => SizedBox(
+          width: width,
+          child: Row(children: [
+            Expanded(
+                child: Text(row.name,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: primary, fontWeight: FontWeight.w700))),
+            if (connecting)
+              const Padding(
+                  padding: EdgeInsets.only(left: 8),
+                  child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2)))
+            else if (connected)
+              const Padding(
+                  padding: EdgeInsets.only(left: 8),
+                  child: Icon(Icons.check_circle_rounded,
+                      color: AtlasTheme.success, size: 18)),
+          ]),
+        ),
+      _RouteColumn.ping => text(row.ping == null ? '—' : '${row.ping} мс'),
+      _RouteColumn.jitter =>
+        text(row.jitter == null ? '—' : '${row.jitter} мс'),
+      _RouteColumn.loss =>
+        text(row.loss == null ? '—' : '${row.loss!.toStringAsFixed(1)}%'),
+      _RouteColumn.speed =>
+        text(row.speed == null ? '—' : _formatSpeed(row.speed!)),
+      _RouteColumn.traffic => text(row.traffic),
+      _RouteColumn.action => SizedBox(
+          width: width,
+          child: IconButton(
+            tooltip: connected ? 'Подключено' : 'Подключиться',
+            onPressed: row.disabled || connecting ? null : () => onConnect(row),
+            icon: Icon(
+              connected
+                  ? Icons.check_circle_outline_rounded
+                  : Icons.play_circle_outline_rounded,
+              color: connected ? AtlasTheme.success : AtlasTheme.accent,
+            ),
+          ),
+        ),
+    };
+  }
+
+  DataColumn _column(BuildContext context, _RouteColumn column) {
+    final field = _sortFor(column);
+    return DataColumn(
+      numeric: _isNumeric(column),
+      onSort: field == null ? null : (_, __) => onSort(field),
+      label: _header(context, column, field),
+    );
+  }
+
+  Widget _header(BuildContext context, _RouteColumn column, _RouteSort? field) {
+    final colors = ThemeColors.of(context);
+    final width = columnWidths[column] ?? 120;
+    return Listener(
+      onPointerDown: (event) {
+        if (event.buttons == kSecondaryMouseButton) {
+          onColumnMenu(event.position);
+        }
+      },
+      child: GestureDetector(
+        onHorizontalDragUpdate: column == _RouteColumn.action
+            ? null
+            : (details) => onResizeColumn(column, details.delta.dx),
+        child: SizedBox(
+          width: width,
+          child: Row(children: [
+            Expanded(
+              child: Text(_label(column),
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: colors.textPrimary, fontWeight: FontWeight.w700)),
+            ),
+            if (field != null && sort == field)
+              Icon(
+                  ascending
+                      ? Icons.arrow_upward_rounded
+                      : Icons.arrow_downward_rounded,
+                  size: 14,
+                  color: AtlasTheme.accent),
+            if (column != _RouteColumn.action)
+              Icon(Icons.drag_handle_rounded,
+                  size: 14, color: colors.textMuted),
+            if (column == _RouteColumn.action)
+              IconButton(
+                tooltip: 'Настроить колонки',
+                constraints:
+                    const BoxConstraints.tightFor(width: 28, height: 28),
+                padding: EdgeInsets.zero,
+                onPressed: () {
+                  final renderBox = context.findRenderObject() as RenderBox;
+                  onColumnMenu(renderBox
+                      .localToGlobal(renderBox.size.center(Offset.zero)));
+                },
+                icon: Icon(Icons.view_column_outlined,
+                    size: 17, color: colors.textMuted),
+              ),
+          ]),
+        ),
       ),
     );
   }
 
-  int _columnFor(_RouteSort value) => switch (value) {
-        _RouteSort.type => 0,
-        _RouteSort.name => 1,
-        _RouteSort.ping => 2,
-        _RouteSort.traffic => 3,
+  String _label(_RouteColumn column) => switch (column) {
+        _RouteColumn.type => 'Тип',
+        _RouteColumn.name => 'Название',
+        _RouteColumn.ping => 'Задержка',
+        _RouteColumn.jitter => 'Джиттер',
+        _RouteColumn.loss => 'Потери',
+        _RouteColumn.speed => 'Скорость',
+        _RouteColumn.traffic => 'Трафик',
+        _RouteColumn.action => '',
       };
+
+  _RouteSort? _sortFor(_RouteColumn column) => switch (column) {
+        _RouteColumn.type => _RouteSort.type,
+        _RouteColumn.name => _RouteSort.name,
+        _RouteColumn.ping => _RouteSort.ping,
+        _RouteColumn.jitter => _RouteSort.jitter,
+        _RouteColumn.loss => _RouteSort.loss,
+        _RouteColumn.speed => _RouteSort.speed,
+        _RouteColumn.traffic => _RouteSort.traffic,
+        _RouteColumn.action => null,
+      };
+
+  bool _isNumeric(_RouteColumn column) => switch (column) {
+        _RouteColumn.ping ||
+        _RouteColumn.jitter ||
+        _RouteColumn.loss ||
+        _RouteColumn.speed ||
+        _RouteColumn.traffic =>
+          true,
+        _ => false,
+      };
+
+  String _formatSpeed(int bps) {
+    if (bps >= 1000000) return '${(bps / 1000000).toStringAsFixed(1)} Мбит/с';
+    if (bps >= 1000) return '${(bps / 1000).toStringAsFixed(0)} Кбит/с';
+    return '$bps бит/с';
+  }
 }
 
 class _MobileRouteList extends StatelessWidget {
