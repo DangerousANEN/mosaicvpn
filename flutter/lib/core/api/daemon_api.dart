@@ -165,6 +165,28 @@ class DaemonApi implements DaemonApiBase {
   }
 
   @override
+  Future<Subscription> enrollProviderSubscription({
+    required String providerId,
+    required String providerAccountId,
+    required String subscriptionName,
+    required String subscriptionUrl,
+    String? sessionToken,
+    String? directToken,
+    String? username,
+  }) async {
+    final response = await _dio.post('/v1/providers/enroll', data: {
+      'provider_id': providerId,
+      'provider_account_id': providerAccountId,
+      'subscription_name': subscriptionName,
+      'subscription_url': subscriptionUrl,
+      if (sessionToken?.isNotEmpty == true) 'session_token': sessionToken,
+      if (directToken?.isNotEmpty == true) 'direct_token': directToken,
+      if (username?.isNotEmpty == true) 'username': username,
+    });
+    return Subscription.fromJson(Map<String, dynamic>.from(response.data));
+  }
+
+  @override
   Future<Subscription> refreshSubscription(String id) async {
     final r = await _dio.post('/v1/subscriptions/$id/refresh');
     return Subscription.fromJson(r.data);
@@ -408,7 +430,8 @@ class DaemonApi implements DaemonApiBase {
     final data = <String, dynamic>{};
     if (serverID != null) data['server_id'] = serverID;
     if (policy != null) data['policy'] = policy.toJson();
-    final r = await _dio.post('/v1/test/speed', data: data.isEmpty ? null : data);
+    final r =
+        await _dio.post('/v1/test/speed', data: data.isEmpty ? null : data);
     return SpeedTestResult.fromJson(r.data);
   }
 

@@ -143,6 +143,14 @@ class AndroidMosaicAccountService {
     final callback =
         await AndroidVpnService.instance.consumeEnrollmentCallback();
     if (callback == null) return null;
+    return completeEnrollmentCallback(callback);
+  }
+
+  /// Redeems a verified website or explicit fallback enrollment callback on any
+  /// Flutter platform and persists the resulting hosted cabinet session in the
+  /// platform secure store. Despite its historical name, this service is also
+  /// the shared Mosaic account authority for desktop browser enrollment.
+  Future<AndroidMosaicSession> completeEnrollmentCallback(Uri callback) async {
     final isVerifiedWebsiteCallback = callback.scheme == 'https' &&
         callback.host == 'sub.zxc1x1.ru' &&
         callback.path == '/enroll/callback';

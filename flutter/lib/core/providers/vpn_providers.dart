@@ -252,6 +252,26 @@ class _ResolvedDaemonApi implements DaemonApiBase {
       (await _backend()).addSubscription(name, url,
           autoRefresh: autoRefresh, refreshInterval: refreshInterval);
   @override
+  Future<Subscription> enrollProviderSubscription({
+    required String providerId,
+    required String providerAccountId,
+    required String subscriptionName,
+    required String subscriptionUrl,
+    String? sessionToken,
+    String? directToken,
+    String? username,
+  }) async =>
+      (await _backend()).enrollProviderSubscription(
+        providerId: providerId,
+        providerAccountId: providerAccountId,
+        subscriptionName: subscriptionName,
+        subscriptionUrl: subscriptionUrl,
+        sessionToken: sessionToken,
+        directToken: directToken,
+        username: username,
+      );
+
+  @override
   Future<Subscription> refreshSubscription(String id) async =>
       (await _backend()).refreshSubscription(id);
   @override

@@ -591,6 +591,23 @@ type AddSubscriptionRequest struct {
 	Format Format `json:"format,omitempty"` // optional override; auto-detected if empty
 }
 
+// ProviderEnrollmentRequest attaches a subscription returned by a
+// provider-owned browser enrollment flow. It is intentionally separate from
+// AddSubscriptionRequest: generic imports must never be allowed to claim a
+// provider cabinet or provider-only Smart Groups.
+type ProviderEnrollmentRequest struct {
+	ProviderID        string `json:"provider_id"`
+	ProviderAccountID string `json:"provider_account_id"`
+	SubscriptionName  string `json:"subscription_name"`
+	SubscriptionURL   string `json:"subscription_url"`
+	// These values are accepted only by the authenticated loopback daemon and
+	// are persisted in its existing local account store for cabinet endpoints.
+	// They are never returned in subscription list or manifest responses.
+	SessionToken string `json:"session_token,omitempty"`
+	DirectToken  string `json:"direct_token,omitempty"`
+	Username     string `json:"username,omitempty"`
+}
+
 // DiagReport is the structured output of `mosaic diag`.
 type DiagReport struct {
 	GeneratedAt   time.Time      `json:"generated_at"`

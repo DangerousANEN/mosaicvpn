@@ -43,6 +43,19 @@ abstract class DaemonApiBase {
   Future<List<Subscription>> listSubscriptions();
   Future<Subscription> addSubscription(String name, String url,
       {bool autoRefresh = false, int refreshInterval = 3600});
+
+  /// Attaches a browser-authorized provider source with its provider identity.
+  /// This is deliberately distinct from a generic imported subscription URL.
+  Future<Subscription> enrollProviderSubscription({
+    required String providerId,
+    required String providerAccountId,
+    required String subscriptionName,
+    required String subscriptionUrl,
+    String? sessionToken,
+    String? directToken,
+    String? username,
+  });
+
   Future<Subscription> refreshSubscription(String id);
   Future<void> renameSubscription(String id, String name);
   Future<void> deleteSubscription(String id);

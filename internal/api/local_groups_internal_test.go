@@ -201,3 +201,72 @@ func TestReservedLTECompatibilityGroupIsDisabled(t *testing.T) {
 		t.Fatalf("reserved compatibility group must be disabled with a reason: %#v", reserved)
 	}
 }
+
+func TestProviderEnrollmentMigratesGenericMosaicImportAndBuildsGroups(t *testing.T) {
+	feedURL := "https://sub.zxc1x1.ru/example-opaque-feed"
+	feed := []byte("vless://00000000-0000-0000-0000-000000000001@198.51.100.42:443?security=tls#private-pool-node\n")
+	srv, s, hs := newInternalAPITestServer(t, func(context.Context, string) ([]byte, string, error) {
+		return feed, "text/plain", nil
+	})
+
+	legacy, err := s.AddOrUpdateSubscription(proto.Subscription{
+		ID:   "legacy-import",
+		Name: "Imported subscription",
+		URL:  feedURL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy.Source == proto.SubscriptionSourceProvider || legacy.ProviderID != "" {
+		t.Fatal("test fixture must begin as a generic import")
+	}
+
+	response := apiRequest(t, hs, srv.Token(), http.MethodPost, "/v1/providers/enroll", proto.ProviderEnrollmentRequest{
+		ProviderID:        "mosaicvpn",
+		ProviderAccountID: "telegram:12345",
+		SubscriptionName:  "MosaicVPN",
+		SubscriptionURL:   feedURL,
+		SessionToken:      "session-token",
+		DirectToken:       "direct-token",
+		Username:          "mosaic@example.test",
+	})
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("provider enrollment status = %d", response.StatusCode)
+	}
+	var enrolled proto.Subscription
+	if err := json.NewDecoder(response.Body).Decode(&enrolled); err != nil {
+		t.Fatal(err)
+	}
+	if (enrolled.Source != proto.SubscriptionSourceProvider && enrolled.ProviderID == "") ||
+		enrolled.ProviderID != "mosaicvpn" ||
+		enrolled.ProviderAccountID != "telegram:12345" || !enrolled.HidePhysicalNodes {
+		t.Fatalf("unexpected provider subscription: %#v", enrolled)
+	}
+	if enrolled.ServerCount == 0 {
+		t.Fatal("provider enrollment returned no user-visible Smart Group routes")
+	}
+	for _, subscription := range s.Snapshot().Subscriptions {
+		if subscription.ID == "legacy-import" {
+			t.Fatal("matching generic subscription was not migrated away")
+		}
+	}
+	account := s.GetAccount()
+	if account.SessionToken != "session-token" || account.DirectToken != "direct-token" {
+		t.Fatalf("provider cabinet session not persisted: %#v", account)
+	}
+
+	response = apiRequest(t, hs, srv.Token(), http.MethodGet,
+		"/v1/manifest?subscription_id="+enrolled.ID, nil)
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("provider manifest status = %d", response.StatusCode)
+	}
+	var manifest proto.SubscriptionManifest
+	if err := json.NewDecoder(response.Body).Decode(&manifest); err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Groups) == 0 {
+		t.Fatal("provider enrollment did not persist Smart Groups")
+	}
+}

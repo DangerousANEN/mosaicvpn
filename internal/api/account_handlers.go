@@ -1,9 +1,14 @@
 package api
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
@@ -82,17 +87,131 @@ const mosaicProviderSubscriptionID = "provider-mosaicvpn-primary"
 // is deliberately a normal provider source named MosaicVPN; `mosaic-direct`
 // remains only as a migration alias for legacy local state.
 func mosaicProviderSubscription(feedURL string) proto.Subscription {
+	return mosaicProviderSubscriptionFor("mosaicvpn-default", "MosaicVPN", feedURL)
+}
+
+// mosaicProviderSubscriptionFor builds a stable provider source for one
+// provider account. The account value is never used as an ID verbatim, which
+// avoids exposing account material in local daemon paths and logs.
+func mosaicProviderSubscriptionFor(providerAccountID, name, feedURL string) proto.Subscription {
+	accountID := strings.TrimSpace(providerAccountID)
+	if accountID == "" {
+		accountID = "mosaicvpn-default"
+	}
+	subscriptionID := mosaicProviderSubscriptionID
+	if accountID != "mosaicvpn-default" {
+		sum := sha256.Sum256([]byte(accountID))
+		subscriptionID = "provider-mosaicvpn-" + hex.EncodeToString(sum[:8])
+	}
+	displayName := strings.TrimSpace(name)
+	if displayName == "" {
+		displayName = "MosaicVPN"
+	}
 	return proto.Subscription{
-		ID:                     mosaicProviderSubscriptionID,
-		Name:                   "MosaicVPN",
-		URL:                    feedURL,
+		ID:                     subscriptionID,
+		Name:                   displayName,
+		URL:                    strings.TrimSpace(feedURL),
 		AutoRefresh:            true,
 		RefreshIntervalSeconds: 3600,
 		Source:                 proto.SubscriptionSourceProvider,
 		ProviderID:             "mosaicvpn",
-		ProviderAccountID:      "mosaicvpn-default",
+		ProviderAccountID:      accountID,
 		HidePhysicalNodes:      true,
 	}
+}
+
+// handleProviderEnrollment persists a website-authorized provider subscription.
+// It must never be folded into handleAddSub: a generic URL import has no proof
+// that it owns provider-only cabinet capabilities or Smart Group semantics.
+func (s *Server) handleProviderEnrollment(w http.ResponseWriter, r *http.Request) {
+	var req proto.ProviderEnrollmentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid provider enrollment body")
+		return
+	}
+	if strings.TrimSpace(req.ProviderID) != "mosaicvpn" {
+		writeError(w, http.StatusBadRequest, "unsupported provider enrollment")
+		return
+	}
+	if strings.TrimSpace(req.ProviderAccountID) == "" {
+		writeError(w, http.StatusBadRequest, "provider account identity required")
+		return
+	}
+	feedURL, err := url.Parse(strings.TrimSpace(req.SubscriptionURL))
+	if err != nil || feedURL.Scheme != "https" || !strings.EqualFold(feedURL.Host, "sub.zxc1x1.ru") || len(feedURL.Path) <= 1 {
+		writeError(w, http.StatusBadRequest, "invalid MosaicVPN subscription URL")
+		return
+	}
+
+	providerSub := mosaicProviderSubscriptionFor(
+		req.ProviderAccountID,
+		req.SubscriptionName,
+		feedURL.String(),
+	)
+
+	// The provider exchange happens over HTTPS before this loopback request.
+	// Keep the resulting cabinet session in the daemon's established account
+	// storage so existing billing endpoints work immediately on desktop. Neither
+	// token is included in subscription or manifest responses.
+	if req.SessionToken != "" || req.DirectToken != "" || req.Username != "" {
+		account := s.store.GetAccount()
+		if req.SessionToken != "" {
+			account.SessionToken = req.SessionToken
+		}
+		if req.DirectToken != "" {
+			account.DirectToken = req.DirectToken
+		}
+		account.DirectFeedURL = providerSub.URL
+		if req.Username != "" {
+			account.Username = req.Username
+			if strings.Contains(req.Username, "@") {
+				account.Email = req.Username
+			}
+		}
+		if err := s.store.SetAccount(account); err != nil {
+			writeError(w, http.StatusInternalServerError, "store provider account: "+err.Error())
+			return
+		}
+	}
+
+	// Remember matching plain imports, but only remove them after the provider
+	// source has refreshed successfully. A temporary provider outage must not
+	// destroy a working user-owned row.
+	var staleImports []string
+	for _, existing := range s.store.Snapshot().Subscriptions {
+		if existing.ID == providerSub.ID || existing.URL != providerSub.URL {
+			continue
+		}
+		if existing.ProviderID == "" && existing.Source != proto.SubscriptionSourceProvider {
+			staleImports = append(staleImports, existing.ID)
+		}
+	}
+
+	stored, err := s.store.AddOrUpdateSubscription(providerSub)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "store provider subscription: "+err.Error())
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	if err := s.refresh(ctx, stored); err != nil {
+		_ = s.store.MarkSubscriptionError(stored.ID, err.Error())
+		writeError(w, http.StatusBadGateway, "provider subscription refresh: "+err.Error())
+		return
+	}
+	for _, staleID := range staleImports {
+		if err := s.store.DeleteSubscription(staleID); err != nil {
+			writeError(w, http.StatusInternalServerError, "remove migrated import: "+err.Error())
+			return
+		}
+	}
+	for _, current := range s.store.Snapshot().Subscriptions {
+		if current.ID == stored.ID {
+			writeJSON(w, http.StatusOK, current)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, stored)
 }
 
 // handleEmailLogin authorizes a password account at the provider and creates

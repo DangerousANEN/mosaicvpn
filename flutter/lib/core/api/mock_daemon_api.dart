@@ -363,6 +363,43 @@ class MockDaemonApi implements DaemonApiBase {
   }
 
   @override
+  Future<Subscription> enrollProviderSubscription({
+    required String providerId,
+    required String providerAccountId,
+    required String subscriptionName,
+    required String subscriptionUrl,
+    String? sessionToken,
+    String? directToken,
+    String? username,
+  }) async {
+    final existingIndex = _subscriptions.indexWhere((subscription) =>
+        subscription.providerId == providerId &&
+        subscription.providerAccountId == providerAccountId);
+    final subscription = Subscription(
+      id: existingIndex >= 0
+          ? _subscriptions[existingIndex].id
+          : 'provider-$providerId-${_rand.nextInt(1 << 32)}',
+      name: subscriptionName.isEmpty ? 'MosaicVPN' : subscriptionName,
+      url: subscriptionUrl,
+      autoRefresh: true,
+      refreshIntervalSeconds: 3600,
+      lastFetched: DateTime.now(),
+      source: 'provider',
+      providerId: providerId,
+      providerAccountId: providerAccountId,
+      hidePhysicalNodes: true,
+    );
+    if (existingIndex >= 0) {
+      _subscriptions[existingIndex] = subscription;
+    } else {
+      _subscriptions.removeWhere((current) =>
+          current.url == subscriptionUrl && !current.isProviderSource);
+      _subscriptions.add(subscription);
+    }
+    return subscription;
+  }
+
+  @override
   Future<Subscription> refreshSubscription(String id) async {
     final idx = _subscriptions.indexWhere((s) => s.id == id);
     if (idx >= 0) {

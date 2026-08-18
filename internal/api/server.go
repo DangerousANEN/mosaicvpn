@@ -153,6 +153,9 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /v1/subscriptions", s.handleListSubs)
 	s.mux.HandleFunc("POST /v1/subscriptions", s.handleAddSub)
+	// Provider browser enrollment is deliberately separate from generic URL
+	// imports: it persists provider identity and provider-only route policy.
+	s.mux.HandleFunc("POST /v1/providers/enroll", s.handleProviderEnrollment)
 	s.mux.HandleFunc("POST /v1/subscriptions/refresh-all", s.handleRefreshAllSubs)
 	s.mux.HandleFunc("POST /v1/subscriptions:reorder", s.handleReorderSubs)
 	s.mux.HandleFunc("POST /v1/subscriptions/{id}/refresh", s.handleRefreshSub)

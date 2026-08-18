@@ -257,35 +257,16 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         session.providerAccountId?.trim().isNotEmpty == true
             ? session.providerAccountId!.trim()
             : 'mosaicvpn-default';
-    final values = await _readLocalSubscriptions();
-    final existingIndex = values.indexWhere((value) =>
-        value.providerId == providerId &&
-        value.providerAccountId == providerAccountId);
-    final existing = existingIndex < 0 ? null : values[existingIndex];
-    final subscription = Subscription(
-      id: existing?.id.isNotEmpty == true
-          ? existing!.id
-          : _mosaicProviderSubscriptionID,
-      name: session.subscriptionName?.trim().isNotEmpty == true
-          ? session.subscriptionName!.trim()
-          : 'MosaicVPN',
-      url: session.subscriptionUrl?.trim().isNotEmpty == true
-          ? session.subscriptionUrl!.trim()
-          : 'https://sub.zxc1x1.ru/${Uri.encodeComponent(session.directToken)}',
-      autoRefresh: true,
-      refreshIntervalSeconds: 3600,
-      source: 'provider',
+    return enrollProviderSubscription(
       providerId: providerId,
       providerAccountId: providerAccountId,
-      hidePhysicalNodes: true,
+      subscriptionName: session.subscriptionName?.trim().isNotEmpty == true
+          ? session.subscriptionName!.trim()
+          : 'MosaicVPN',
+      subscriptionUrl: session.subscriptionUrl?.trim().isNotEmpty == true
+          ? session.subscriptionUrl!.trim()
+          : 'https://sub.zxc1x1.ru/${Uri.encodeComponent(session.directToken)}',
     );
-    if (existingIndex < 0) {
-      values.add(subscription);
-    } else {
-      values[existingIndex] = subscription;
-    }
-    await _writeLocalSubscriptions(values);
-    return subscription;
   }
 
   @override
@@ -335,6 +316,52 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         ? _asMosaicProviderSource(imported)
         : imported;
     values.add(subscription);
+    await _writeLocalSubscriptions(values);
+    return subscription;
+  }
+
+  @override
+  Future<Subscription> enrollProviderSubscription({
+    required String providerId,
+    required String providerAccountId,
+    required String subscriptionName,
+    required String subscriptionUrl,
+    String? sessionToken,
+    String? directToken,
+    String? username,
+  }) async {
+    if (providerId.trim() != 'mosaicvpn' ||
+        providerAccountId.trim().isEmpty ||
+        !_isMosaicSubscriptionUrl(subscriptionUrl)) {
+      throw const FormatException('Некорректные данные подписки MosaicVPN.');
+    }
+    final values = await _readLocalSubscriptions();
+    final existingIndex = values.indexWhere((value) =>
+        value.providerId == providerId &&
+        value.providerAccountId == providerAccountId);
+    final existing = existingIndex >= 0 ? values[existingIndex] : null;
+    final subscription = Subscription(
+      id: existing?.id.isNotEmpty == true
+          ? existing!.id
+          : _mosaicProviderSubscriptionID,
+      name: subscriptionName.trim().isEmpty
+          ? 'MosaicVPN'
+          : subscriptionName.trim(),
+      url: subscriptionUrl.trim(),
+      autoRefresh: true,
+      refreshIntervalSeconds: 3600,
+      source: 'provider',
+      providerId: providerId,
+      providerAccountId: providerAccountId,
+      hidePhysicalNodes: true,
+    );
+    if (existingIndex >= 0) {
+      values[existingIndex] = subscription;
+    } else {
+      values.removeWhere((value) =>
+          value.url.trim() == subscription.url && !value.isProviderSource);
+      values.add(subscription);
+    }
     await _writeLocalSubscriptions(values);
     return subscription;
   }

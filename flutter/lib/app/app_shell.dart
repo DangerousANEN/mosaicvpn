@@ -11,8 +11,8 @@ import '../core/platform/app_platform.dart';
 import '../core/api/android_hosted_daemon_api.dart';
 import '../core/providers/vpn_providers.dart';
 import '../core/i18n/app_strings.dart';
+import '../core/services/android_mosaic_account_service.dart';
 import '../core/services/android_vpn_service.dart';
-import '../core/services/mosaic_enrollment_exchange.dart';
 import '../core/services/desktop_instance_lock.dart';
 import '../core/services/tray_service.dart';
 import '../core/services/smart_group_selector.dart';
@@ -222,30 +222,38 @@ class _AppShellState extends ConsumerState<AppShell>
     }
   }
 
-  /// Receives a desktop custom-scheme callback after the Windows/Linux
-  /// launcher passes it into the existing MosaicVPN process.
+  /// Receives a desktop callback after the Windows/Linux launcher passes it
+  /// into the existing MosaicVPN process. Unlike a manual URL import, this
+  /// preserves the provider identity and the secure hosted cabinet session.
   Future<void> _completeDesktopWebsiteEnrollment(Uri callback) async {
-    if (!AppPlatform.isDesktop ||
-        _enrollmentCompleting ||
-        !MosaicEnrollmentExchange.isSupportedCallback(callback)) {
-      return;
-    }
+    if (!AppPlatform.isDesktop || _enrollmentCompleting) return;
     try {
       _enrollmentCompleting = true;
-      final enrollment = await MosaicEnrollmentExchange.redeem(callback);
+      final enrollment = await AndroidMosaicAccountService.instance
+          .completeEnrollmentCallback(callback);
+      final providerId = enrollment.providerId?.trim().isNotEmpty == true
+          ? enrollment.providerId!.trim()
+          : 'mosaicvpn';
+      final providerAccountId =
+          enrollment.providerAccountId?.trim().isNotEmpty == true
+              ? enrollment.providerAccountId!.trim()
+              : 'mosaicvpn-default';
+      final subscriptionUrl = enrollment.subscriptionUrl?.trim().isNotEmpty ==
+              true
+          ? enrollment.subscriptionUrl!.trim()
+          : 'https://sub.zxc1x1.ru/${Uri.encodeComponent(enrollment.directToken)}';
       final api = ref.read(daemonApiProvider);
-      final subscriptions = await api.listSubscriptions();
-      final existing = subscriptions
-          .where((subscription) =>
-              subscription.url.trim() == enrollment.subscriptionUrl)
-          .firstOrNull;
-      final subscription = existing == null
-          ? await api.addSubscription(
-              enrollment.subscriptionName,
-              enrollment.subscriptionUrl,
-              autoRefresh: true,
-            )
-          : await api.refreshSubscription(existing.id);
+      final subscription = await api.enrollProviderSubscription(
+        providerId: providerId,
+        providerAccountId: providerAccountId,
+        subscriptionName: enrollment.subscriptionName?.trim().isNotEmpty == true
+            ? enrollment.subscriptionName!.trim()
+            : 'MosaicVPN',
+        subscriptionUrl: subscriptionUrl,
+        sessionToken: enrollment.sessionToken,
+        directToken: enrollment.directToken,
+        username: enrollment.username,
+      );
       if (!mounted) return;
       ref.invalidate(subscriptionsProvider);
       ref.invalidate(mosaicManifestProvider);
@@ -253,8 +261,9 @@ class _AppShellState extends ConsumerState<AppShell>
       setState(() => _currentIndex = 1);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content:
-              Text('Подписка «${subscription.name}» добавлена в приложение.'),
+          content: Text(
+            'MosaicVPN добавлен: ${subscription.serverCount} маршрутов и кабинет подключены.',
+          ),
         ),
       );
     } catch (error) {
