@@ -2,6 +2,11 @@ import 'package:flutter/widgets.dart';
 
 /// Lightweight i18n: EN + RU string tables.
 ///
+/// Public-copy policy: describe privacy, connection protection, route quality
+/// and network compatibility neutrally. Do not add user-facing claims about
+/// bypassing restrictions/censorship, blocked resources, DPI/allowlists,
+/// proxies, unlimited access or guaranteed outcomes.
+///
 /// Usage: `AppStrings.of(context).t	connect`
 /// In the widget tree, wrap with `Localizations.localeOf(context)`
 /// and map to [AppStrings.forLocale].

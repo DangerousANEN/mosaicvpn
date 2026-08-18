@@ -804,9 +804,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           const SizedBox(height: 24),
 
-          // ── Phase 2: Routing & DPI Bypass ──
+          // ── Phase 2: Routing & compatibility ──
           _SettingsGroup(
-            title: 'Routing & DPI Bypass',
+            title: 'Routing & compatibility',
             children: [
               _SettingTile(
                 label: 'Routing Mode',
@@ -837,7 +837,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 label: 'TLS Fingerprint',
                 description: 'uTLS fingerprint used for TLS handshakes',
                 tooltip:
-                    'Camouflages the TLS ClientHello to mimic a real browser. "chrome" is the safest default.',
+                    'Selects a TLS handshake compatibility profile. "chrome" is the recommended default.',
                 difficulty: 3,
                 child: DropdownButton<String>(
                   value: prefs.tlsFingerprint,
@@ -874,11 +874,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ),
               _SettingTile(
-                label: 'Fragmentation (DPI Defense)',
+                label: 'TLS segmentation',
                 description:
-                    'Split TLS ClientHello to evade SNI-based blocking',
+                    'Adjust TLS handshake segmentation for network compatibility',
                 tooltip:
-                    'Size-based: splits at a random byte in [min,max]. TLS-SNI: splits at the SNI field. Disable if your DPI only checks HTTP.',
+                    'Size-based splits at a random byte in [min,max]. TLS-SNI splits at the SNI field. Disable it if the selected route does not require segmentation.',
                 difficulty: 4,
                 child: SegmentedButton<int>(
                   segments: const [

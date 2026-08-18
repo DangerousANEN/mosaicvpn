@@ -94,6 +94,11 @@ PACKAGES = {
     30: {"months": 1.0, "price_rub": 30, "price_usdt": 0.30, "ru": "30 дней — 30 ₽", "en": "30 days — 30 RUB"},
 }
 
+# Public-copy policy: use neutral language about connection protection, privacy,
+# encryption, route quality, subscriptions and support. Never market bypassing
+# blocks/censorship, restricted resources, DPI, allowlists, free proxies, or
+# absolute/unlimited outcomes. Keep user messages readable; do not use code
+# blocks for account, tariff, payment or status summaries.
 # Bot Messages Dictionary
 MESSAGES = {
     "ru": {
