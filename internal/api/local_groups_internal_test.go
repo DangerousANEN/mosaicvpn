@@ -266,6 +266,11 @@ func TestProviderEnrollmentMigratesGenericMosaicImportAndBuildsGroups(t *testing
 	if account.SessionToken != "session-token" || account.DirectToken != "direct-token" {
 		t.Fatalf("provider cabinet session not persisted: %#v", account)
 	}
+	binding := s.GetCabinetBinding(enrolled.ID)
+	if binding.SessionToken != "session-token" || binding.DirectToken != "direct-token" ||
+		binding.DirectFeedURL != feedURL {
+		t.Fatalf("subscription cabinet binding not persisted: %#v", binding)
+	}
 
 	response = apiRequest(t, hs, srv.Token(), http.MethodGet,
 		"/v1/manifest?subscription_id="+enrolled.ID, nil)

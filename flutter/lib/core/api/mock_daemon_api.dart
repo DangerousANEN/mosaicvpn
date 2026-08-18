@@ -1664,7 +1664,8 @@ class MockDaemonApi implements DaemonApiBase {
       );
 
   @override
-  Future<LinkResult> redeemLinkCode(String code) async {
+  Future<LinkResult> redeemLinkCode(String code,
+      {String? subscriptionId}) async {
     await _delayVoid();
     final normalized =
         code.toUpperCase().replaceAll('-', '').replaceAll(' ', '');

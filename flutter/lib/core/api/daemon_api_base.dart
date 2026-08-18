@@ -179,8 +179,10 @@ abstract class DaemonApiBase {
 
   // ─── Account cabinet (T-19) ────────────────────────────────────────
 
-  /// Redeems a pairing code shown by the Telegram bot.
-  Future<LinkResult> redeemLinkCode(String code);
+  /// Redeems a one-time code shown by Telegram or the website. When
+  /// [subscriptionId] is set, the resulting cabinet is attached only to that
+  /// existing source; the source remains a normal URL subscription.
+  Future<LinkResult> redeemLinkCode(String code, {String? subscriptionId});
 
   /// Authenticates a non-Telegram account and installs its personal direct feed.
   Future<void> loginWithEmail(String email, String password);

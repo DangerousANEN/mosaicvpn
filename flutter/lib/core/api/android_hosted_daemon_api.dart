@@ -423,6 +423,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
           (value) => value?.url.trim() == subscriptionUrl.trim(),
           orElse: () => null,
         );
+    Subscription stored;
     if (existing != null) {
       final values = await _readLocalSubscriptions();
       final index = values.indexWhere((value) => value.id == existing.id);
@@ -442,14 +443,42 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
           source: 'url',
         );
         await _writeLocalSubscriptions(values);
-        return values[index];
+        stored = values[index];
+      } else {
+        stored = await addSubscription(
+          subscriptionName.trim().isEmpty
+              ? 'MosaicVPN'
+              : subscriptionName.trim(),
+          subscriptionUrl,
+          autoRefresh: true,
+        );
       }
+    } else {
+      stored = await addSubscription(
+        subscriptionName.trim().isEmpty ? 'MosaicVPN' : subscriptionName.trim(),
+        subscriptionUrl,
+        autoRefresh: true,
+      );
     }
-    return addSubscription(
-      subscriptionName.trim().isEmpty ? 'MosaicVPN' : subscriptionName.trim(),
-      subscriptionUrl,
-      autoRefresh: true,
+
+    // Cabinet credentials belong to this specific local URL source. The URL is
+    // still fully usable without this optional record.
+    final opaqueID = Uri.parse(subscriptionUrl).pathSegments.last;
+    await _account.saveBinding(
+      stored.id,
+      AndroidMosaicSession(
+        directToken: directToken?.trim().isNotEmpty == true
+            ? directToken!.trim()
+            : opaqueID,
+        sessionToken: sessionToken?.trim(),
+        username: username?.trim(),
+        subscriptionUrl: stored.url,
+        providerId: providerId.trim(),
+        providerAccountId: providerAccountId.trim(),
+        subscriptionName: stored.name,
+      ),
     );
+    return stored;
   }
 
   @override
@@ -497,6 +526,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     final values = await _readLocalSubscriptions();
     values.removeWhere((value) => value.id == id);
     await _writeLocalSubscriptions(values);
+    await _account.clearBinding(id);
   }
 
   @override
@@ -721,7 +751,24 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   }
 
   @override
-  Future<LinkResult> redeemLinkCode(String code) async {
+  Future<LinkResult> redeemLinkCode(String code,
+      {String? subscriptionId}) async {
+    if (subscriptionId?.trim().isNotEmpty == true) {
+      final subscriptions = await listSubscriptions();
+      final selected = subscriptions.cast<Subscription?>().firstWhere(
+            (value) => value?.id == subscriptionId,
+            orElse: () => null,
+          );
+      if (selected == null || !_isMosaicSubscription(selected)) {
+        throw StateError('Откройте совместимую подписку MosaicVPN.');
+      }
+      final session = await _account.attachCabinetCode(
+        subscriptionID: selected.id,
+        subscriptionUrl: selected.url,
+        rawCode: code,
+      );
+      return LinkResult(ok: true, username: session.username ?? '');
+    }
     final session = await _account.redeemTelegramCode(code);
     return LinkResult(ok: true, username: session.username ?? '');
   }

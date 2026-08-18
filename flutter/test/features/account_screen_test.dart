@@ -33,7 +33,8 @@ class _FakeApi implements DaemonApiBase {
   Future<List<PaymentEntry>> getPaymentHistory() async => payments;
 
   @override
-  Future<LinkResult> redeemLinkCode(String code) async {
+  Future<LinkResult> redeemLinkCode(String code,
+      {String? subscriptionId}) async {
     linkCalls++;
     lastCode = code;
     if (linkFailStatus != null) {

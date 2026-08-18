@@ -454,8 +454,9 @@ class _ResolvedDaemonApi implements DaemonApiBase {
       (await _backend()).getTopupStatus(invoiceId);
 
   @override
-  Future<LinkResult> redeemLinkCode(String code) async =>
-      (await _backend()).redeemLinkCode(code);
+  Future<LinkResult> redeemLinkCode(String code,
+          {String? subscriptionId}) async =>
+      (await _backend()).redeemLinkCode(code, subscriptionId: subscriptionId);
 
   @override
   Future<void> loginWithEmail(String email, String password) async =>

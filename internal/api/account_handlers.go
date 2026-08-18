@@ -74,6 +74,9 @@ func (s *Server) handleLinkCodeIssue(w http.ResponseWriter, r *http.Request) {
 // linkCodeRedeemRequest is the client-facing payload carrying a typed code.
 type linkCodeRedeemRequest struct {
 	Code string `json:"code"`
+	// SubscriptionID is optional for legacy client login. When present, the
+	// redeemed account may be attached only to that existing matching URL row.
+	SubscriptionID string `json:"subscription_id,omitempty"`
 }
 
 type emailLoginRequest struct {
@@ -163,25 +166,27 @@ func (s *Server) handleProviderEnrollment(w http.ResponseWriter, r *http.Request
 	}
 
 	// The provider exchange happens over HTTPS before this loopback request.
-	// Keep the resulting cabinet session in the daemon's established account
-	// storage so existing billing endpoints work immediately on desktop. Neither
-	// token is included in subscription or manifest responses.
-	if req.SessionToken != "" || req.DirectToken != "" || req.Username != "" {
-		account := s.store.GetAccount()
+	// Keep a subscription-scoped cabinet binding after refresh succeeds. The
+	// legacy global account is updated only for old cabinet clients; the URL row
+	// itself remains independently connectable and removable.
+	var binding store.Account
+	hasBinding := req.SessionToken != "" || req.DirectToken != "" || req.Username != ""
+	if hasBinding {
+		binding = s.store.GetAccount()
 		if req.SessionToken != "" {
-			account.SessionToken = req.SessionToken
+			binding.SessionToken = req.SessionToken
 		}
 		if req.DirectToken != "" {
-			account.DirectToken = req.DirectToken
+			binding.DirectToken = req.DirectToken
 		}
-		account.DirectFeedURL = providerSub.URL
+		binding.DirectFeedURL = providerSub.URL
 		if req.Username != "" {
-			account.Username = req.Username
+			binding.Username = req.Username
 			if strings.Contains(req.Username, "@") {
-				account.Email = req.Username
+				binding.Email = req.Username
 			}
 		}
-		if err := s.store.SetAccount(account); err != nil {
+		if err := s.store.SetAccount(binding); err != nil {
 			writeError(w, http.StatusInternalServerError, "store provider account: "+err.Error())
 			return
 		}
@@ -198,6 +203,12 @@ func (s *Server) handleProviderEnrollment(w http.ResponseWriter, r *http.Request
 		_ = s.store.MarkSubscriptionError(stored.ID, err.Error())
 		writeError(w, http.StatusBadGateway, "provider subscription refresh: "+err.Error())
 		return
+	}
+	if hasBinding {
+		if err := s.store.SetCabinetBinding(stored.ID, binding); err != nil {
+			writeError(w, http.StatusInternalServerError, "store cabinet binding: "+err.Error())
+			return
+		}
 	}
 	for _, current := range s.store.Snapshot().Subscriptions {
 		if current.ID == stored.ID {
@@ -267,26 +278,57 @@ func (s *Server) handleLinkCodeRedeem(w http.ResponseWriter, r *http.Request) {
 		res, verr := v.Verify(r.Context(), req.Code)
 		switch {
 		case verr == nil:
-			if serr := s.store.SetAccount(store.Account{
+			linked := store.Account{
 				TelegramID:    res.TelegramID,
 				SessionToken:  res.SessionToken,
 				DirectToken:   res.DirectToken,
 				DirectFeedURL: res.DirectFeedURL,
 				Username:      res.Username,
-			}); serr != nil {
+			}
+			if serr := s.store.SetAccount(linked); serr != nil {
 				writeError(w, http.StatusInternalServerError, "store: "+serr.Error())
 				return
 			}
-			// The direct subscription is only created after a successful pairing.
-			// Existing manually added subscriptions are left untouched.
-			if res.DirectFeedURL != "" {
+			if res.DirectFeedURL != "" && strings.TrimSpace(req.SubscriptionID) != "" {
+				var selected *proto.Subscription
+				for _, sub := range s.store.Snapshot().Subscriptions {
+					if sub.ID == req.SubscriptionID {
+						copy := sub
+						selected = &copy
+						break
+					}
+				}
+				if selected == nil {
+					writeError(w, http.StatusNotFound, "selected subscription not found")
+					return
+				}
+				if strings.TrimSpace(selected.URL) != strings.TrimSpace(res.DirectFeedURL) {
+					writeError(w, http.StatusConflict, "code belongs to another subscription")
+					return
+				}
+				if serr := s.refresh(r.Context(), *selected); serr != nil {
+					writeError(w, http.StatusBadGateway, "subscription fetch: "+serr.Error())
+					return
+				}
+				if serr := s.store.SetCabinetBinding(selected.ID, linked); serr != nil {
+					writeError(w, http.StatusInternalServerError, "store cabinet binding: "+serr.Error())
+					return
+				}
+			} else if res.DirectFeedURL != "" {
+				// Legacy behavior: create a URL source only when the caller did not
+				// select an existing source to attach.
 				directSub := mosaicProviderSubscription(res.DirectFeedURL)
-				if _, serr := s.store.AddOrUpdateSubscription(directSub); serr != nil {
+				stored, serr := s.store.AddOrUpdateSubscription(directSub)
+				if serr != nil {
 					writeError(w, http.StatusInternalServerError, "store direct subscription: "+serr.Error())
 					return
 				}
-				if serr := s.refresh(r.Context(), directSub); serr != nil {
+				if serr := s.refresh(r.Context(), stored); serr != nil {
 					writeError(w, http.StatusBadGateway, "direct subscription fetch: "+serr.Error())
+					return
+				}
+				if serr := s.store.SetCabinetBinding(stored.ID, linked); serr != nil {
+					writeError(w, http.StatusInternalServerError, "store cabinet binding: "+serr.Error())
 					return
 				}
 			}

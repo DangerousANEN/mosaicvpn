@@ -596,6 +596,12 @@ func (s *Server) handleDeleteSub(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Cabinet credentials are optional local capability state owned by the
+	// same URL row. Never leave them behind after a user deletes that source.
+	if err := s.store.DeleteCabinetBinding(id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

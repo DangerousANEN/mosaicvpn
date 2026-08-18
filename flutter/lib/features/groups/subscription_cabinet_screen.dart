@@ -2,14 +2,36 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/models.dart';
+import '../../core/platform/app_platform.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/services/android_mosaic_account_service.dart';
 import '../../core/theme/atlas_theme.dart';
 import '../account/unified_account_panel.dart';
 
-final subscriptionCabinetPaymentsProvider =
-    FutureProvider<List<PaymentEntry>>((ref) async {
+final subscriptionCabinetPaymentsProvider = FutureProvider.autoDispose
+    .family<List<PaymentEntry>, Subscription>((ref, subscription) async {
+  if (AppPlatform.isAndroid) {
+    return AndroidMosaicAccountService.instance
+        .getPaymentHistory(subscriptionID: subscription.id);
+  }
   return ref.watch(daemonApiProvider).getPaymentHistory();
+});
+
+final subscriptionCabinetAccountProvider = FutureProvider.autoDispose
+    .family<UnifiedAccount?, Subscription>((ref, subscription) async {
+  if (AppPlatform.isAndroid) {
+    return AndroidMosaicAccountService.instance
+        .getUnifiedAccount(subscriptionID: subscription.id);
+  }
+  return ref.watch(daemonApiProvider).getUnifiedAccount();
+});
+
+final subscriptionCabinetBindingProvider = FutureProvider.autoDispose
+    .family<bool, Subscription>((ref, subscription) async {
+  if (AppPlatform.isAndroid) {
+    return AndroidMosaicAccountService.instance.hasBinding(subscription.id);
+  }
+  return (await ref.watch(daemonApiProvider).getUnifiedAccount()) != null;
 });
 
 /// Safe base metadata exists independently of an account session and is keyed
@@ -43,9 +65,14 @@ class SubscriptionCabinetScreen extends ConsumerWidget {
     final baseProfile = _isMosaicCabinet
         ? ref.watch(mosaicBaseProfileProvider(subscription))
         : null;
-    final account = _isMosaicCabinet ? ref.watch(unifiedAccountProvider) : null;
+    final account = _isMosaicCabinet
+        ? ref.watch(subscriptionCabinetAccountProvider(subscription))
+        : null;
+    final binding = _isMosaicCabinet
+        ? ref.watch(subscriptionCabinetBindingProvider(subscription))
+        : null;
     final payments = _isMosaicCabinet
-        ? ref.watch(subscriptionCabinetPaymentsProvider)
+        ? ref.watch(subscriptionCabinetPaymentsProvider(subscription))
         : null;
     final title =
         subscription.name.isEmpty ? 'Кабинет подписки' : subscription.name;
@@ -57,8 +84,9 @@ class SubscriptionCabinetScreen extends ConsumerWidget {
         onRefresh: () async {
           if (_isMosaicCabinet) {
             ref.invalidate(mosaicBaseProfileProvider(subscription));
-            ref.invalidate(unifiedAccountProvider);
-            ref.invalidate(subscriptionCabinetPaymentsProvider);
+            ref.invalidate(subscriptionCabinetAccountProvider(subscription));
+            ref.invalidate(subscriptionCabinetBindingProvider(subscription));
+            ref.invalidate(subscriptionCabinetPaymentsProvider(subscription));
             await ref.read(mosaicBaseProfileProvider(subscription).future);
           }
         },
@@ -77,9 +105,15 @@ class SubscriptionCabinetScreen extends ConsumerWidget {
               const SizedBox(height: 14),
               account!.when(
                 loading: () => const _PanelLoading(),
-                error: (_, __) => const _CabinetUnavailable(),
+                error: (_, __) => _CabinetUnavailable(
+                  subscription: subscription,
+                  binding: binding?.valueOrNull == true,
+                ),
                 data: (value) => value == null
-                    ? const _CabinetUnavailable()
+                    ? _CabinetUnavailable(
+                        subscription: subscription,
+                        binding: binding?.valueOrNull == true,
+                      )
                     : UnifiedAccountPanel(account: value),
               ),
               if (account.valueOrNull != null) ...[
@@ -236,11 +270,62 @@ String _formatBytes(int value) {
   return '${(value / (1024 * 1024 * 1024)).toStringAsFixed(2)} ГБ';
 }
 
-class _CabinetUnavailable extends StatelessWidget {
-  const _CabinetUnavailable();
+class _CabinetUnavailable extends ConsumerStatefulWidget {
+  const _CabinetUnavailable({
+    required this.subscription,
+    required this.binding,
+  });
+
+  final Subscription subscription;
+  final bool binding;
+
+  @override
+  ConsumerState<_CabinetUnavailable> createState() =>
+      _CabinetUnavailableState();
+}
+
+class _CabinetUnavailableState extends ConsumerState<_CabinetUnavailable> {
+  final _code = TextEditingController();
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    _code.dispose();
+    super.dispose();
+  }
+
+  Future<void> _attachByCode() async {
+    try {
+      setState(() => _busy = true);
+      await ref.read(daemonApiProvider).redeemLinkCode(
+            _code.text,
+            subscriptionId: widget.subscription.id,
+          );
+      if (!mounted) return;
+      _code.clear();
+      ref.invalidate(subscriptionCabinetBindingProvider(widget.subscription));
+      ref.invalidate(subscriptionCabinetAccountProvider(widget.subscription));
+      ref.invalidate(subscriptionCabinetPaymentsProvider(widget.subscription));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Кабинет подключён к выбранной подписке.'),
+      ));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Не удалось подключить кабинет: $error'),
+        backgroundColor: ThemeColors.of(context).danger,
+      ));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
+    final bindingText = widget.binding
+        ? 'Кабинет уже связан с этой подпиской, но его данные временно не удалось обновить. Потяните экран вниз, чтобы повторить запрос.'
+        : 'Базовые срок, статус и трафик уже показаны выше. Подключите кабинет через сайт или введите одноразовый 8-символьный код из Telegram либо сайта, чтобы открыть баланс, пополнение, устройства, платежи, заморозку и ротацию ссылки.';
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -249,15 +334,46 @@ class _CabinetUnavailable extends StatelessWidget {
         border: Border.all(color: c.border),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Icon(Icons.lock_outline, color: c.textSecondary),
+        Icon(widget.binding ? Icons.sync_problem_outlined : Icons.lock_outline,
+            color: c.textSecondary),
         const SizedBox(height: 10),
-        Text('Подключите кабинет MosaicVPN',
+        Text(
+            widget.binding
+                ? 'Кабинет временно недоступен'
+                : 'Подключите кабинет MosaicVPN',
             style:
                 TextStyle(color: c.textPrimary, fontWeight: FontWeight.w700)),
         const SizedBox(height: 5),
-        Text(
-            'Базовые срок, статус и трафик уже показаны выше. Войдите через сайт или Telegram-код, чтобы открыть баланс, пополнение, устройства, платежи, заморозку и ротацию ссылки.',
+        Text(bindingText,
             style: TextStyle(color: c.textSecondary, fontSize: 12)),
+        if (!widget.binding) ...[
+          const SizedBox(height: 14),
+          TextField(
+            controller: _code,
+            textCapitalization: TextCapitalization.characters,
+            maxLength: 10,
+            decoration: const InputDecoration(
+              labelText: 'Одноразовый код',
+              hintText: 'AB23CD45',
+              counterText: '',
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _busy ? null : _attachByCode,
+              icon: _busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.key_outlined),
+              label: Text(_busy ? 'Подключаем…' : 'Подключить по коду'),
+            ),
+          ),
+        ],
       ]),
     );
   }

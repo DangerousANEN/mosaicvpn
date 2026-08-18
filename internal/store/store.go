@@ -43,7 +43,10 @@ type State struct {
 	ProviderAccounts  []proto.ProviderAccount                `json:"provider_accounts,omitempty"`
 	ProviderManifests map[string]*proto.SubscriptionManifest `json:"provider_manifests,omitempty"`
 	Version           int                                    `json:"version"`
-	Account           Account                                `json:"account,omitempty"`
+	// Account is retained for compatibility with pre-v0.3.24 clients. New
+	// provider cabinet authorization belongs to one local subscription ID.
+	Account         Account            `json:"account,omitempty"`
+	CabinetBindings map[string]Account `json:"cabinet_bindings,omitempty"`
 
 	// Billing credentials persisted so the daemon can rebuild the
 	// billing.Client across restarts without requiring the user to
@@ -247,6 +250,10 @@ func Open(path string) (*Store, error) {
 		s.state.ProviderManifests = map[string]*proto.SubscriptionManifest{}
 		needsPersist = true
 	}
+	if s.state.CabinetBindings == nil {
+		s.state.CabinetBindings = map[string]Account{}
+		needsPersist = true
+	}
 	// Version 3 removed the `mosaic-direct` display name. Version 4 restores
 	// the intended URL-first ownership model: a legacy feed remains a normal
 	// local subscription while its private implementation pool stays hidden.
@@ -269,6 +276,26 @@ func Open(path string) (*Store, error) {
 			}
 		}
 		s.state.Version = 4
+		needsPersist = true
+	}
+	// Version 5 creates a binding only when the legacy account can be
+	// assigned unambiguously to exactly one compatible URL source. Do not
+	// guess when multiple Mosaic feeds exist on the device.
+	if s.state.Version < 5 {
+		if s.state.Account.DirectFeedURL != "" {
+			matches := 0
+			var id string
+			for _, sub := range s.state.Subscriptions {
+				if sub.URL == s.state.Account.DirectFeedURL {
+					matches++
+					id = sub.ID
+				}
+			}
+			if matches == 1 {
+				s.state.CabinetBindings[id] = s.state.Account
+			}
+		}
+		s.state.Version = 5
 		needsPersist = true
 	}
 
@@ -298,6 +325,12 @@ func (s *Store) Snapshot() State {
 	cp.Profiles = append([]proto.Profile(nil), s.state.Profiles...)
 	cp.RouteProfiles = append([]proto.RouteProfile(nil), s.state.RouteProfiles...)
 	cp.ProviderAccounts = append([]proto.ProviderAccount(nil), s.state.ProviderAccounts...)
+	if s.state.CabinetBindings != nil {
+		cp.CabinetBindings = make(map[string]Account, len(s.state.CabinetBindings))
+		for id, binding := range s.state.CabinetBindings {
+			cp.CabinetBindings[id] = binding
+		}
+	}
 	if s.state.ProviderManifests != nil {
 		cp.ProviderManifests = make(map[string]*proto.SubscriptionManifest, len(s.state.ProviderManifests))
 		for id, manifest := range s.state.ProviderManifests {
@@ -959,6 +992,35 @@ func (s *Store) GetAccount() Account {
 func (s *Store) SetAccount(a Account) error {
 	return s.Update(func(st *State) error {
 		st.Account = a
+		return nil
+	})
+}
+
+// GetCabinetBinding returns the optional cabinet credentials attached to one
+// local subscription. A zero value means the URL source remains unbound.
+func (s *Store) GetCabinetBinding(subscriptionID string) Account {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.state.CabinetBindings[subscriptionID]
+}
+
+// SetCabinetBinding persists an optional provider cabinet attachment without
+// modifying the URL subscription itself or the legacy global account.
+func (s *Store) SetCabinetBinding(subscriptionID string, binding Account) error {
+	return s.Update(func(st *State) error {
+		if st.CabinetBindings == nil {
+			st.CabinetBindings = map[string]Account{}
+		}
+		st.CabinetBindings[subscriptionID] = binding
+		return nil
+	})
+}
+
+// DeleteCabinetBinding is intentionally called alongside subscription removal
+// so a deleted local URL source cannot leave cabinet credentials behind.
+func (s *Store) DeleteCabinetBinding(subscriptionID string) error {
+	return s.Update(func(st *State) error {
+		delete(st.CabinetBindings, subscriptionID)
 		return nil
 	})
 }

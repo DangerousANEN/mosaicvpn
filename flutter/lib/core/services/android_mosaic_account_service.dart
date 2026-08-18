@@ -30,6 +30,33 @@ class AndroidMosaicSession {
   final String? providerId;
   final String? providerAccountId;
   final String? subscriptionName;
+
+  Map<String, String> toSecureMap() => <String, String>{
+        'direct_token': directToken,
+        if (sessionToken?.isNotEmpty == true) 'session_token': sessionToken!,
+        if (username?.isNotEmpty == true) 'username': username!,
+        if (subscriptionUrl?.isNotEmpty == true)
+          'subscription_url': subscriptionUrl!,
+        if (providerId?.isNotEmpty == true) 'provider_id': providerId!,
+        if (providerAccountId?.isNotEmpty == true)
+          'provider_account_id': providerAccountId!,
+        if (subscriptionName?.isNotEmpty == true)
+          'subscription_name': subscriptionName!,
+      };
+
+  static AndroidMosaicSession? fromSecureMap(Map<String, dynamic> value) {
+    final directToken = value['direct_token']?.toString() ?? '';
+    if (directToken.isEmpty) return null;
+    return AndroidMosaicSession(
+      directToken: directToken,
+      sessionToken: value['session_token']?.toString(),
+      username: value['username']?.toString(),
+      subscriptionUrl: value['subscription_url']?.toString(),
+      providerId: value['provider_id']?.toString(),
+      providerAccountId: value['provider_account_id']?.toString(),
+      subscriptionName: value['subscription_name']?.toString(),
+    );
+  }
 }
 
 /// Account authority for Android, where a desktop loopback daemon does not
@@ -46,6 +73,11 @@ class AndroidMosaicAccountService {
   static const _sessionTokenKey = 'mosaic_android_session_token';
   static const _usernameKey = 'mosaic_android_username';
   static const _appAuthStateKey = 'mosaic_android_app_auth_state';
+  // Secure JSON map: local subscription ID -> AndroidMosaicSession fields.
+  // A binding grants optional cabinet access only; VPN connection continues
+  // through the subscription URL and never reads this map.
+  static const _subscriptionBindingsKey =
+      'mosaic_android_subscription_cabinet_bindings.v1';
   static const _pairingAlphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
   final Dio _dio = Dio(BaseOptions(
@@ -68,17 +100,123 @@ class AndroidMosaicAccountService {
     );
   }
 
+  Future<Map<String, AndroidMosaicSession>> _readSubscriptionBindings() async {
+    final raw = await _secureStorage.read(key: _subscriptionBindingsKey);
+    if (raw == null || raw.isEmpty) return <String, AndroidMosaicSession>{};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return <String, AndroidMosaicSession>{};
+      final bindings = <String, AndroidMosaicSession>{};
+      decoded.forEach((key, value) {
+        if (key is! String || value is! Map) return;
+        final session = AndroidMosaicSession.fromSecureMap(
+          Map<String, dynamic>.from(value),
+        );
+        if (session != null) bindings[key] = session;
+      });
+      return bindings;
+    } on FormatException {
+      return <String, AndroidMosaicSession>{};
+    }
+  }
+
+  Future<void> _writeSubscriptionBindings(
+    Map<String, AndroidMosaicSession> bindings,
+  ) =>
+      _secureStorage.write(
+        key: _subscriptionBindingsKey,
+        value: jsonEncode(bindings.map(
+          (key, value) => MapEntry(key, value.toSecureMap()),
+        )),
+      );
+
+  Future<AndroidMosaicSession?> restoreBinding(String subscriptionID) async {
+    if (subscriptionID.trim().isEmpty) return null;
+    return (await _readSubscriptionBindings())[subscriptionID];
+  }
+
+  Future<bool> hasBinding(String subscriptionID) async =>
+      (await restoreBinding(subscriptionID)) != null;
+
+  Future<void> saveBinding(
+    String subscriptionID,
+    AndroidMosaicSession session,
+  ) async {
+    if (subscriptionID.trim().isEmpty) {
+      throw const FormatException(
+          'Не удалось определить подписку для кабинета.');
+    }
+    final bindings = await _readSubscriptionBindings();
+    bindings[subscriptionID] = session;
+    await _writeSubscriptionBindings(bindings);
+  }
+
+  Future<void> clearBinding(String subscriptionID) async {
+    final bindings = await _readSubscriptionBindings();
+    if (bindings.remove(subscriptionID) != null) {
+      await _writeSubscriptionBindings(bindings);
+    }
+  }
+
   Future<AndroidMosaicSession> redeemTelegramCode(String rawCode) async {
+    final payload = await _redeemPairingCodePayload(rawCode);
+    return _savePayload(payload, directKey: 'direct_token');
+  }
+
+  /// Attaches a one-time website or Telegram code to the exact URL source that
+  /// the user opened. The code is burned by the server before this method gets a
+  /// response; a mismatch therefore cannot accidentally attach one account's
+  /// cabinet to another account's subscription.
+  Future<AndroidMosaicSession> attachCabinetCode({
+    required String subscriptionID,
+    required String subscriptionUrl,
+    required String rawCode,
+  }) async {
+    final payload = await _redeemPairingCodePayload(rawCode);
+    final session = _sessionFromPayload(payload, directKey: 'direct_token');
+    final returnedUrl = session.subscriptionUrl?.trim() ?? '';
+    if (!_sameMosaicSubscriptionUrl(subscriptionUrl, returnedUrl)) {
+      throw StateError(
+        'Этот код относится к другой подписке. Откройте нужную подписку и запросите новый код.',
+      );
+    }
+    await saveBinding(
+      subscriptionID,
+      AndroidMosaicSession(
+        directToken: session.directToken,
+        sessionToken: session.sessionToken,
+        username: session.username,
+        subscriptionUrl: subscriptionUrl.trim(),
+        providerId: session.providerId ?? 'mosaicvpn',
+        providerAccountId: session.providerAccountId,
+        subscriptionName: session.subscriptionName,
+      ),
+    );
+    return session;
+  }
+
+  Future<Map<String, dynamic>> _redeemPairingCodePayload(String rawCode) async {
     final code = normalizePairingCode(rawCode);
     if (code.length != 8) {
-      throw const FormatException('Введите все 8 символов кода из Telegram.');
+      throw const FormatException('Введите все 8 символов одноразового кода.');
     }
     final response = await _dio.post<Map<String, dynamic>>(
       '/api/link/redeem',
       data: {'code': code},
     );
-    final payload = Map<String, dynamic>.from(response.data ?? const {});
-    return _savePayload(payload, directKey: 'direct_token');
+    return Map<String, dynamic>.from(response.data ?? const {});
+  }
+
+  bool _sameMosaicSubscriptionUrl(String left, String right) {
+    final leftUri = Uri.tryParse(left.trim());
+    final rightUri = Uri.tryParse(right.trim());
+    if (leftUri == null || rightUri == null) return false;
+    return leftUri.isScheme('https') &&
+        rightUri.isScheme('https') &&
+        leftUri.host.toLowerCase() == rightUri.host.toLowerCase() &&
+        leftUri.pathSegments.isNotEmpty &&
+        rightUri.pathSegments.isNotEmpty &&
+        leftUri.pathSegments.last == rightUri.pathSegments.last;
   }
 
   Future<AndroidMosaicSession> loginWithEmail(
@@ -96,6 +234,7 @@ class AndroidMosaicAccountService {
     await _secureStorage.delete(key: _sessionTokenKey);
     await _secureStorage.delete(key: _usernameKey);
     await _secureStorage.delete(key: _appAuthStateKey);
+    await _secureStorage.delete(key: _subscriptionBindingsKey);
   }
 
   /// Creates the website URL for primary sign-in. Existing cabinet sessions
@@ -190,17 +329,24 @@ class AndroidMosaicAccountService {
     ).join();
   }
 
-  Future<String> _sessionToken() async {
-    final session = await restoreSession();
+  Future<String> _sessionToken({String? subscriptionID}) async {
+    final session = subscriptionID?.trim().isNotEmpty == true
+        ? await restoreBinding(subscriptionID!)
+        : await restoreSession();
     final token = session?.sessionToken;
     if (token == null || token.isEmpty) {
-      throw StateError('Сначала войдите через сайт или Telegram.');
+      throw StateError(subscriptionID?.trim().isNotEmpty == true
+          ? 'Сначала подключите кабинет этой подписки.'
+          : 'Сначала войдите через сайт или Telegram.');
     }
     return token;
   }
 
-  Future<Map<String, dynamic>> _getAccountJson(String path) async {
-    final token = await _sessionToken();
+  Future<Map<String, dynamic>> _getAccountJson(
+    String path, {
+    String? subscriptionID,
+  }) async {
+    final token = await _sessionToken(subscriptionID: subscriptionID);
     final response = await _dio.get<Map<String, dynamic>>(
       path,
       queryParameters: {'token': token},
@@ -211,8 +357,9 @@ class AndroidMosaicAccountService {
   Future<Map<String, dynamic>> _postAccountJson(
     String path, {
     Map<String, dynamic>? data,
+    String? subscriptionID,
   }) async {
-    final token = await _sessionToken();
+    final token = await _sessionToken(subscriptionID: subscriptionID);
     final response = await _dio.post<Map<String, dynamic>>(
       path,
       data: <String, dynamic>{'token': token, ...?data},
@@ -247,27 +394,41 @@ class AndroidMosaicAccountService {
     );
   }
 
-  Future<UnifiedAccount?> getUnifiedAccount() async {
-    final session = await restoreSession();
+  Future<UnifiedAccount?> getUnifiedAccount({String? subscriptionID}) async {
+    final session = subscriptionID?.trim().isNotEmpty == true
+        ? await restoreBinding(subscriptionID!)
+        : await restoreSession();
     if (session == null) return null;
-    final payload = await _getAccountJson('/api/billing/profile');
+    final payload = await _getAccountJson(
+      '/api/billing/profile',
+      subscriptionID: subscriptionID,
+    );
     if (payload['linked'] == false) return null;
     return UnifiedAccount.fromJson(payload['account'] is Map
         ? Map<String, dynamic>.from(payload['account'] as Map)
         : payload);
   }
 
-  Future<UnifiedAccount> setFrozen(bool frozen) async {
+  Future<UnifiedAccount> setFrozen(
+    bool frozen, {
+    String? subscriptionID,
+  }) async {
     final payload = await _postAccountJson(
       frozen ? '/api/account/freeze' : '/api/account/unfreeze',
+      subscriptionID: subscriptionID,
     );
     return UnifiedAccount.fromJson(payload['account'] is Map
         ? Map<String, dynamic>.from(payload['account'] as Map)
         : payload);
   }
 
-  Future<List<CheckoutProviderOption>> getCheckoutOptions() async {
-    final payload = await _getAccountJson('/api/checkout/options');
+  Future<List<CheckoutProviderOption>> getCheckoutOptions({
+    String? subscriptionID,
+  }) async {
+    final payload = await _getAccountJson(
+      '/api/checkout/options',
+      subscriptionID: subscriptionID,
+    );
     final raw = payload['providers'];
     if (raw is! List) return const <CheckoutProviderOption>[];
     return raw
@@ -280,16 +441,26 @@ class AndroidMosaicAccountService {
   Future<CheckoutSession> createCheckout({
     required int amountRub,
     required String provider,
+    String? subscriptionID,
   }) async {
-    final payload = await _postAccountJson('/api/checkout/create', data: {
-      'amount_rub': amountRub,
-      'provider': provider,
-    });
+    final payload = await _postAccountJson(
+      '/api/checkout/create',
+      subscriptionID: subscriptionID,
+      data: {
+        'amount_rub': amountRub,
+        'provider': provider,
+      },
+    );
     return CheckoutSession.fromJson(payload);
   }
 
-  Future<RotatedSubscriptionLink> rotateSubscriptionLink() async {
-    final payload = await _postAccountJson('/api/subscription/link/rotate');
+  Future<RotatedSubscriptionLink> rotateSubscriptionLink({
+    String? subscriptionID,
+  }) async {
+    final payload = await _postAccountJson(
+      '/api/subscription/link/rotate',
+      subscriptionID: subscriptionID,
+    );
     return RotatedSubscriptionLink.fromJson(payload);
   }
 
@@ -363,8 +534,10 @@ class AndroidMosaicAccountService {
 
   /// Returns hosted payment history for the linked account. Billing outages
   /// must not turn the entire Android cabinet into a VPN-runtime error.
-  Future<List<PaymentEntry>> getPaymentHistory() async {
-    final session = await restoreSession();
+  Future<List<PaymentEntry>> getPaymentHistory({String? subscriptionID}) async {
+    final session = subscriptionID?.trim().isNotEmpty == true
+        ? await restoreBinding(subscriptionID!)
+        : await restoreSession();
     final token = session?.sessionToken;
     if (token == null || token.isEmpty) return const <PaymentEntry>[];
     try {
@@ -463,34 +636,41 @@ class AndroidMosaicAccountService {
     return normalized.toString();
   }
 
-  Future<AndroidMosaicSession> _savePayload(
+  AndroidMosaicSession _sessionFromPayload(
     Map<String, dynamic> payload, {
     required String directKey,
-  }) async {
+  }) {
     final directToken = payload[directKey]?.toString() ?? '';
     if (directToken.isEmpty) {
       throw StateError('Сервис не выдал токен конфигурации для устройства.');
     }
-    final sessionToken =
-        payload['session_token']?.toString() ?? payload['token']?.toString();
-    final username =
-        payload['username']?.toString() ?? payload['email']?.toString();
-    await _secureStorage.write(key: _directTokenKey, value: directToken);
-    if (sessionToken != null && sessionToken.isNotEmpty) {
-      await _secureStorage.write(key: _sessionTokenKey, value: sessionToken);
-    }
-    if (username != null && username.isNotEmpty) {
-      await _secureStorage.write(key: _usernameKey, value: username);
-    }
     return AndroidMosaicSession(
       directToken: directToken,
-      sessionToken: sessionToken,
-      username: username,
+      sessionToken:
+          payload['session_token']?.toString() ?? payload['token']?.toString(),
+      username: payload['username']?.toString() ?? payload['email']?.toString(),
       subscriptionUrl: payload['subscription_url']?.toString(),
       providerId: payload['provider_id']?.toString(),
       providerAccountId: payload['provider_account_id']?.toString(),
       subscriptionName: payload['subscription_name']?.toString(),
     );
+  }
+
+  Future<AndroidMosaicSession> _savePayload(
+    Map<String, dynamic> payload, {
+    required String directKey,
+  }) async {
+    final session = _sessionFromPayload(payload, directKey: directKey);
+    await _secureStorage.write(
+        key: _directTokenKey, value: session.directToken);
+    if (session.sessionToken?.isNotEmpty == true) {
+      await _secureStorage.write(
+          key: _sessionTokenKey, value: session.sessionToken);
+    }
+    if (session.username?.isNotEmpty == true) {
+      await _secureStorage.write(key: _usernameKey, value: session.username);
+    }
+    return session;
   }
 
   /// Builds a TUN config from a single user-imported share URI. This path is

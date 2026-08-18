@@ -553,8 +553,13 @@ class DaemonApi implements DaemonApiBase {
   // ─── Account cabinet (T-19) ────────────────────────────────────────
 
   @override
-  Future<LinkResult> redeemLinkCode(String code) async {
-    final r = await _dio.post('/v1/account/link', data: {'code': code});
+  Future<LinkResult> redeemLinkCode(String code,
+      {String? subscriptionId}) async {
+    final r = await _dio.post('/v1/account/link', data: {
+      'code': code,
+      if (subscriptionId?.trim().isNotEmpty == true)
+        'subscription_id': subscriptionId!.trim(),
+    });
     return LinkResult.fromJson(Map<String, dynamic>.from(r.data as Map));
   }
 

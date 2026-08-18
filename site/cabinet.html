@@ -172,6 +172,16 @@
       </div>
     </section>
 
+    <section aria-labelledby="subscription-controls-title">
+      <div class="surface action-card">
+        <div class="section-title"><div><div class="fig">Подписка и приложение</div><h2 id="subscription-controls-title">Ссылка и управление доступом</h2></div><p>Ссылка принадлежит вашему аккаунту. Не передавайте её третьим лицам.</p></div>
+        <p class="field-label">Ссылка подписки</p>
+        <div class="account-id"><span id="subscription-link" class="account-id-value">Загружаем…</span><button id="copy-subscription-link" class="copy-btn" type="button" aria-label="Скопировать ссылку подписки" title="Скопировать ссылку"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
+        <div class="btn-row" style="margin-top:14px"><button id="issue-app-code-button" class="btn btn-secondary" type="button">Получить код для приложения</button><button id="freeze-access-button" class="btn btn-secondary" type="button">Поставить доступ на паузу</button><button id="rotate-link-button" class="btn btn-secondary" type="button">Перевыпустить ссылку</button></div>
+        <div id="subscription-control-message" class="message" role="status"></div>
+      </div>
+    </section>
+
     <section aria-labelledby="topup-title">
       <div class="surface action-card">
         <div class="section-title"><div><div class="fig">Продлить доступ</div><h2 id="topup-title">Пополнение без лишних шагов</h2></div><p>1 ₽ добавляет 1 день доступа. Сумма зачисляется после подтверждения платежа.</p></div>
@@ -218,6 +228,10 @@
   var API_PAYMENTS = '/api/billing/payments';
   var API_LAVA_CREATE = '/api/billing/lava/create';
   var API_APP_AUTH_ISSUE = '/api/app-auth/issue';
+  var API_LINK_ISSUE = '/api/link/issue';
+  var API_FREEZE = '/api/account/freeze';
+  var API_UNFREEZE = '/api/account/unfreeze';
+  var API_ROTATE_LINK = '/api/subscription/link/rotate';
   var TOKEN_KEY = 'mv_session_token';
   var savedToken = localStorage.getItem(TOKEN_KEY);
   var requestedReturn = new URLSearchParams(window.location.search).get('return_to') || '';
@@ -241,6 +255,7 @@
   function formatDate(value) { if (!value) return '—'; var date = new Date(value); return isNaN(date.getTime()) ? '—' : date.toLocaleDateString('ru-RU', {day:'numeric',month:'long',year:'numeric'}); }
   function formatTraffic(bytes) { var value = Number(bytes) || 0; if (!value) return '—'; if (value >= 1073741824) return (value / 1073741824).toFixed(value >= 10737418240 ? 0 : 1).replace('.', ',') + ' ГБ'; return Math.max(1, Math.round(value / 1048576)) + ' МБ'; }
   function setMessage(text, kind) { var node = document.getElementById('payment-message'); node.textContent = text || ''; node.style.color = kind === 'error' ? 'var(--err)' : kind === 'success' ? 'var(--ok)' : 'var(--text-2)'; }
+  function setSubscriptionMessage(text, kind) { var node = document.getElementById('subscription-control-message'); node.textContent = text || ''; node.style.color = kind === 'error' ? 'var(--err)' : kind === 'success' ? 'var(--ok)' : 'var(--text-2)'; }
   function showGate(message) { account.classList.add('hidden'); gate.classList.remove('hidden'); if (message) codeError.textContent = message; }
 
   function showAccount(profile) {
@@ -267,6 +282,9 @@
     status.className = 'status' + (days <= 0 ? ' err' : days <= 3 ? ' warn' : '');
     status.textContent = days <= 0 ? 'Доступ не активен' : days <= 3 ? 'Скоро закончится' : 'Доступ активен';
     document.getElementById('admin-entry').classList.toggle('hidden', profile.is_admin !== true);
+    var subUrl = String(profile.sub_url || profile.subscription_url || '');
+    document.getElementById('subscription-link').textContent = subUrl || 'Ссылка временно недоступна';
+    document.getElementById('freeze-access-button').textContent = profile.status === 'frozen' ? 'Возобновить доступ' : 'Поставить доступ на паузу';
   }
 
   function dayWord(value) { var mod10 = value % 10, mod100 = value % 100; if (mod10 === 1 && mod100 !== 11) return 'день'; if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'дня'; return 'дней'; }
@@ -381,6 +399,38 @@
     });
   }
 
+  function issueAppCode() {
+    if (!savedToken) { setSubscriptionMessage('Сначала войдите в кабинет.', 'error'); return; }
+    var button = document.getElementById('issue-app-code-button');
+    button.disabled = true; setSubscriptionMessage('Готовим одноразовый код…');
+    requestJSON(API_LINK_ISSUE, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:savedToken})}).then(function (result) {
+      if (result.status !== 200 || !result.body.code) { setSubscriptionMessage(result.body.error || 'Не удалось создать код.', 'error'); return; }
+      var seconds = Math.max(1, Number(result.body.expires_in) || 600);
+      setSubscriptionMessage('Код для приложения: ' + result.body.code + '. Он действует ' + Math.ceil(seconds / 60) + ' мин. Введите его в профиле нужной подписки.', 'success');
+    }).catch(function () { setSubscriptionMessage('Не удалось подключиться к сервису.', 'error'); }).finally(function () { button.disabled = false; });
+  }
+
+  function changeFreeze() {
+    if (!savedToken || !profileState) { setSubscriptionMessage('Сначала войдите в кабинет.', 'error'); return; }
+    var targetFrozen = profileState.status !== 'frozen';
+    if (!window.confirm(targetFrozen ? 'Поставить доступ на паузу и остановить ежедневные списания?' : 'Возобновить доступ и ежедневные списания?')) return;
+    requestJSON(targetFrozen ? API_FREEZE : API_UNFREEZE, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:savedToken})}).then(function (result) {
+      if (result.status !== 200) { setSubscriptionMessage(result.body.error || 'Не удалось изменить доступ.', 'error'); return; }
+      setSubscriptionMessage(targetFrozen ? 'Доступ поставлен на паузу.' : 'Доступ возобновлён.', 'success'); loadProfile(savedToken);
+    }).catch(function () { setSubscriptionMessage('Не удалось подключиться к сервису.', 'error'); });
+  }
+
+  function rotateSubscriptionLink() {
+    if (!savedToken) { setSubscriptionMessage('Сначала войдите в кабинет.', 'error'); return; }
+    if (!window.confirm('Перевыпустить ссылку? Старая ссылка перестанет работать на устройствах, где она была добавлена.')) return;
+    requestJSON(API_ROTATE_LINK, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:savedToken})}).then(function (result) {
+      if (result.status !== 200) { setSubscriptionMessage(result.body.error || 'Не удалось перевыпустить ссылку.', 'error'); return; }
+      var url = String(result.body.subscription_url || result.body.sub_url || '');
+      if (url) document.getElementById('subscription-link').textContent = url;
+      setSubscriptionMessage(url ? 'Новая ссылка готова. Скопируйте её и обновите источники на устройствах.' : 'Ссылка перевыпущена. Обновите кабинет.', 'success'); loadProfile(savedToken);
+    }).catch(function () { setSubscriptionMessage('Не удалось подключиться к сервису.', 'error'); });
+  }
+
   function startLavaPayment(amount) {
     amount = Number(amount); if (!savedToken) { setMessage('Сначала войдите в кабинет.', 'error'); return; }
     if (!Number.isInteger(amount) || amount < 1 || amount > 100000) { setMessage('Введите целую сумму от 1 до 100000 ₽.', 'error'); return; }
@@ -394,6 +444,10 @@
   codeForm.addEventListener('submit', function (event) { event.preventDefault(); submitCode((codeInput.value || '').trim().toUpperCase()); });
   codeInput.addEventListener('input', function () { this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8); });
   document.getElementById('add-to-app-button').addEventListener('click', startAppEnrollment);
+  document.getElementById('issue-app-code-button').addEventListener('click', issueAppCode);
+  document.getElementById('freeze-access-button').addEventListener('click', changeFreeze);
+  document.getElementById('rotate-link-button').addEventListener('click', rotateSubscriptionLink);
+  document.getElementById('copy-subscription-link').addEventListener('click', function () { var url = String(document.getElementById('subscription-link').textContent || ''); if (!/^https:\/\//.test(url)) return; var done = function () { setSubscriptionMessage('Ссылка подписки скопирована.', 'success'); }; if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(url).then(done).catch(function () { window.prompt('Скопируйте ссылку подписки:', url); }); } else { window.prompt('Скопируйте ссылку подписки:', url); } });
   document.querySelectorAll('.lava-pay').forEach(function (button) { button.addEventListener('click', function () { startLavaPayment(button.getAttribute('data-amount')); }); });
   document.getElementById('custom-payment-form').addEventListener('submit', function (event) { event.preventDefault(); startLavaPayment(document.getElementById('custom-amount').value); });
   document.getElementById('logout-button').addEventListener('click', function () { localStorage.removeItem(TOKEN_KEY); savedToken = null; profileState = null; preparedEnrollment = null; enrollmentPreparation = null; codeInput.value = ''; codeError.textContent = ''; showGate(); window.scrollTo({top:0,behavior:'smooth'}); });

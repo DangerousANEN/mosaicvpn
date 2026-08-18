@@ -2971,6 +2971,11 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         # side that reaches out. The bot issues codes; this endpoint burns them.
         if path == "/api/link/redeem":
             return self._handle_link_redeem()
+        # Authenticated website code generator. It reuses the same single-use
+        # pairing-code table and grammar as /link in Telegram, so a profile can
+        # be attached in the client without exposing browser session material.
+        if path == "/api/link/issue":
+            return self._handle_link_issue()
         # Web cabinet: exchange pairing code for a long-lived web session token
         if path == "/api/session":
             return self._handle_session_create()
@@ -3366,6 +3371,34 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             "provider_name": "MosaicVPN",
             "user_tier": "standard",
             "groups": groups,
+        })
+
+    def _handle_link_issue(self):
+        payload = self._read_json_body()
+        if not payload:
+            self._send_json(400, {"error": "invalid body"})
+            return
+        session = get_web_session(str(payload.get("token") or ""))
+        if not session:
+            self._send_json(401, {"error": "invalid or expired session"})
+            return
+        db_user = get_user(session["telegram_id"])
+        short_uuid = (db_user or {}).get("short_uuid") or ""
+        if not short_uuid:
+            self._send_json(404, {"error": "subscription profile not found"})
+            return
+        try:
+            code, expires = issue_link_code(
+                session["telegram_id"], session.get("username", ""), short_uuid)
+        except Exception as exc:
+            logging.error("website link-code issue failed: %s", exc)
+            self._send_json(500, {"error": "could not issue code"})
+            return
+        self._send_json(200, {
+            "code": code,
+            "expires_at": expires.isoformat(),
+            "expires_in": LINK_CODE_TTL_MINUTES * 60,
+            "subscription_url": f"https://sub.zxc1x1.ru/{short_uuid}",
         })
 
     def _handle_link_redeem(self):
