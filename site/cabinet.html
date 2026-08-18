@@ -230,9 +230,9 @@
   var codeInput = document.getElementById('code-input');
   var codeError = document.getElementById('code-error');
   var profileState = null;
-  // Chrome may block external custom-scheme navigation that happens after an
-  // asynchronous request. Keep the one-time callback ready, then launch it
-  // only from the user's explicit click on the MosaicVPN button.
+  // Keep the one-time callback ready before the user clicks. The primary
+  // transport is a verified HTTPS Android App Link; browser fallback handling
+  // remains on the controlled callback page rather than in this cabinet page.
   var preparedEnrollment = null;
   var enrollmentPreparation = null;
 
@@ -339,10 +339,10 @@
     }).then(function (result) {
       enrollmentPreparation = null;
       if (result.status !== 200 || !result.body.code || result.body.purpose !== 'enroll') throw new Error('issue failed');
-      // The deep link contains only a one-time code and state. Browser session
+      // The App Link contains only a one-time code and state. Browser session
       // material and the subscription URL are never put into the callback.
       preparedEnrollment = {
-        url:'mosaicvpn://enroll/callback?code=' + encodeURIComponent(result.body.code) + '&state=' + encodeURIComponent(state),
+        url:'https://sub.zxc1x1.ru/enroll/callback?code=' + encodeURIComponent(result.body.code) + '&state=' + encodeURIComponent(state),
         expiresAt:Date.now() + Math.max(1, Number(result.body.expires_in) || 300) * 1000
       };
       return preparedEnrollment;
@@ -360,8 +360,9 @@
     if (preparedEnrollment && preparedEnrollment.expiresAt > Date.now()) {
       message.textContent = 'Открываем MosaicVPN…';
       message.style.color = 'var(--text-2)';
-      // This navigation is inside the click handler. It preserves the browser
-      // user gesture required for custom URI schemes on Android and desktop.
+      // This navigation is inside the click handler. Android routes this
+      // verified HTTPS App Link directly to MosaicVPN when the domain has been
+      // associated; otherwise the controlled callback page provides a fallback.
       window.location.assign(preparedEnrollment.url);
       return;
     }

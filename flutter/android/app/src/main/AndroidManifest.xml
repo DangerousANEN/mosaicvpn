@@ -41,9 +41,18 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="mosaicvpn" android:host="auth" android:path="/callback" />
             </intent-filter>
-            <!-- Explicit website enrollment callback. It carries the same
-                 short-lived code/state pair as sign-in but is consumed through
-                 a separate native slot, so callbacks cannot overwrite each other. -->
+            <!-- Verified HTTPS App Link is the primary website-to-app enrollment
+                 transport. Android validates sub.zxc1x1.ru using the published
+                 Digital Asset Links file, so browser-originated enrollment works
+                 without relying on an unverified custom scheme. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https" android:host="sub.zxc1x1.ru" android:path="/enroll/callback" />
+            </intent-filter>
+            <!-- Custom scheme remains an explicit fallback for platforms or app
+                 versions where Android domain verification is not yet available. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>

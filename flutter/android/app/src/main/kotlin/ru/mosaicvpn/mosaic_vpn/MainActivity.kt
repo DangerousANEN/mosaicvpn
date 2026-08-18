@@ -2,6 +2,7 @@ package ru.mosaicvpn.mosaic_vpn
 
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import android.net.VpnService
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -89,12 +90,19 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun storeAppCallback(callback: String) {
+        val uri = runCatching { Uri.parse(callback) }.getOrNull() ?: return
+        val isWebsiteEnrollment = uri.scheme == "https" &&
+            uri.host == "sub.zxc1x1.ru" &&
+            uri.path == "/enroll/callback"
+        val isCustomEnrollmentFallback = uri.scheme == "mosaicvpn" &&
+            uri.host == "enroll" &&
+            uri.path == "/callback"
         when {
-            callback.startsWith("mosaicvpn://auth/callback") -> {
+            uri.scheme == "mosaicvpn" && uri.host == "auth" && uri.path == "/callback" -> {
                 pendingAuthCallback = callback
                 bridgeChannel?.invokeMethod("authCallbackReceived", callback)
             }
-            callback.startsWith("mosaicvpn://enroll/callback") -> {
+            isWebsiteEnrollment || isCustomEnrollmentFallback -> {
                 pendingEnrollmentCallback = callback
                 // Do not depend solely on `resumed`: Android can deliver a
                 // new VIEW intent to an already resumed Flutter activity.

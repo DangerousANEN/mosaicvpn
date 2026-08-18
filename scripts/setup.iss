@@ -52,6 +52,12 @@ Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Registry]
+; Register the explicit MosaicVPN callback protocol for installed builds. The
+; client validates the host/path and exchanges only short-lived opaque codes.
+Root: HKCU; Subkey: "Software\Classes\mosaicvpn"; ValueType: string; ValueData: "URL:MosaicVPN Protocol"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\mosaicvpn"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\mosaicvpn\DefaultIcon"; ValueType: string; ValueData: "{app}\{#MyAppExeName},0"
+Root: HKCU; Subkey: "Software\Classes\mosaicvpn\shell\open\command"; ValueType: string; ValueData: """{app}\{#MyAppExeName}"" ""%1"""
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "MosaicVPN"; ValueData: """{app}\{#MyAppExeName}"""; Tasks: autostart; Flags: uninsdeletevalue
 
 [Run]

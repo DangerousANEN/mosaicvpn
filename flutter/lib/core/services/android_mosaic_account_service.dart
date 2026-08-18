@@ -143,6 +143,16 @@ class AndroidMosaicAccountService {
     final callback =
         await AndroidVpnService.instance.consumeEnrollmentCallback();
     if (callback == null) return null;
+    final isVerifiedWebsiteCallback = callback.scheme == 'https' &&
+        callback.host == 'sub.zxc1x1.ru' &&
+        callback.path == '/enroll/callback';
+    final isCustomSchemeFallback = callback.scheme == 'mosaicvpn' &&
+        callback.host == 'enroll' &&
+        callback.path == '/callback';
+    if (!isVerifiedWebsiteCallback && !isCustomSchemeFallback) {
+      throw const FormatException(
+          'Получена неподдерживаемая ссылка добавления подписки.');
+    }
     final code = callback.queryParameters['code'] ?? '';
     final state = callback.queryParameters['state'] ?? '';
     if (code.isEmpty || state.isEmpty) {

@@ -1,7 +1,7 @@
 name: mosaic_vpn
 description: MosaicVPN — lightweight cross-platform VPN client
 publish_to: 'none'
-version: 0.3.20+20
+version: 0.3.21+21
 
 environment:
   sdk: ^3.5.0
@@ -22,6 +22,9 @@ dependencies:
 
   # Window management (desktop)
   window_manager: ^0.4.3
+
+  # Incoming HTTPS App Links and custom URI callbacks on desktop.
+  app_links: ^7.2.1
 
   # Charts (traffic stats, speed test)
   fl_chart: ^0.69.2

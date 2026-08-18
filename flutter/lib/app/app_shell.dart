@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +12,7 @@ import '../core/api/android_hosted_daemon_api.dart';
 import '../core/providers/vpn_providers.dart';
 import '../core/i18n/app_strings.dart';
 import '../core/services/android_vpn_service.dart';
+import '../core/services/mosaic_enrollment_exchange.dart';
 import '../core/services/desktop_instance_lock.dart';
 import '../core/services/tray_service.dart';
 import '../core/services/smart_group_selector.dart';
@@ -49,6 +51,7 @@ class _AppShellState extends ConsumerState<AppShell>
   bool _trayQuickPanelVisible = false;
   bool _enrollmentCompleting = false;
   StreamSubscription<Uri>? _enrollmentCallbackSubscription;
+  StreamSubscription<Uri>? _desktopEnrollmentCallbackSubscription;
   final SmartGroupSelector _smartGroupSelector = SmartGroupSelector();
 
   // Only build a tab after the user opens it. This prevents hidden technical
@@ -145,6 +148,11 @@ class _AppShellState extends ConsumerState<AppShell>
         onQuickPanel: _showTrayQuickPanel,
         onQuit: _quitApplication,
       );
+      // app_links delivers both the startup URI and later Windows/Linux
+      // protocol launches. Android keeps its dedicated native callback slots
+      // to prevent an auth callback from colliding with enrollment.
+      _desktopEnrollmentCallbackSubscription =
+          AppLinks().uriLinkStream.listen(_completeDesktopWebsiteEnrollment);
     }
     if (AppPlatform.isAndroid) {
       _enrollmentCallbackSubscription =
@@ -160,6 +168,7 @@ class _AppShellState extends ConsumerState<AppShell>
   @override
   void dispose() {
     _enrollmentCallbackSubscription?.cancel();
+    _desktopEnrollmentCallbackSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     if (AppPlatform.isDesktop) {
       windowManager.removeListener(this);
@@ -207,6 +216,52 @@ class _AppShellState extends ConsumerState<AppShell>
             error.toString().replaceFirst('Bad state: ', ''),
           ),
         ),
+      );
+    } finally {
+      _enrollmentCompleting = false;
+    }
+  }
+
+  /// Receives a desktop custom-scheme callback after the Windows/Linux
+  /// launcher passes it into the existing MosaicVPN process.
+  Future<void> _completeDesktopWebsiteEnrollment(Uri callback) async {
+    if (!AppPlatform.isDesktop ||
+        _enrollmentCompleting ||
+        !MosaicEnrollmentExchange.isSupportedCallback(callback)) {
+      return;
+    }
+    try {
+      _enrollmentCompleting = true;
+      final enrollment = await MosaicEnrollmentExchange.redeem(callback);
+      final api = ref.read(daemonApiProvider);
+      final subscriptions = await api.listSubscriptions();
+      final existing = subscriptions
+          .where((subscription) =>
+              subscription.url.trim() == enrollment.subscriptionUrl)
+          .firstOrNull;
+      final subscription = existing == null
+          ? await api.addSubscription(
+              enrollment.subscriptionName,
+              enrollment.subscriptionUrl,
+              autoRefresh: true,
+            )
+          : await api.refreshSubscription(existing.id);
+      if (!mounted) return;
+      ref.invalidate(subscriptionsProvider);
+      ref.invalidate(mosaicManifestProvider);
+      ref.invalidate(unifiedAccountProvider);
+      setState(() => _currentIndex = 1);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text('Подписка «${subscription.name}» добавлена в приложение.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(error.toString().replaceFirst('Bad state: ', ''))),
       );
     } finally {
       _enrollmentCompleting = false;

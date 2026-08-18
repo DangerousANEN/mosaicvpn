@@ -83,11 +83,12 @@ cat > "$PACKAGE_ROOT/usr/share/applications/ru.mosaicvpn.client.desktop" <<'EOF'
 [Desktop Entry]
 Name=MosaicVPN
 Comment=MosaicVPN desktop client
-Exec=/opt/mosaicvpn/mosaicvpn
+Exec=/opt/mosaicvpn/mosaicvpn %u
 Icon=ru.mosaicvpn.client
 Terminal=false
 Type=Application
 Categories=Network;Utility;
+MimeType=x-scheme-handler/mosaicvpn;
 StartupWMClass=ru.mosaicvpn.client
 EOF
 for directory in "$FLUTTER_DIR/assets/icons/hicolor"/*x*; do

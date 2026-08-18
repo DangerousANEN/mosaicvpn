@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "ru.mosaicvpn.mosaic_vpn",
+      "sha256_cert_fingerprints": [
+        "7E:22:2C:E3:6E:18:E8:A2:79:95:05:80:8E:03:7B:8F:8A:BB:B9:BE:B3:67:12:33:68:C4:DB:DB:28:6A:F7:4A"
+      ]
+    }
+  }
+]
