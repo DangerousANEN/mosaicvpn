@@ -29,6 +29,10 @@ class SmartGroupSelector {
   static const _installationKey = 'mosaic.smart_group.installation_id.v1';
   static const _qualityKey = 'mosaic.smart_group.quality.v1';
 
+  /// Returns the stable anonymous installation identity used only to request a
+  /// bounded opaque candidate shard from the local daemon.
+  Future<String> installationID() => _installationID();
+
   Future<String> _installationID() async {
     final prefs = await SharedPreferences.getInstance();
     final existing = prefs.getString(_installationKey);
@@ -92,11 +96,9 @@ class SmartGroupSelector {
         ? 0.0
         : 1 / (1 + result.medianLatencyMs / 150);
     final stability = 1 / (1 + result.jitterMs / 100);
-    final target = policy.speedProbe.targetMbps <= 0
-        ? 50.0
-        : policy.speedProbe.targetMbps;
-    final measuredMbps = max(result.downloadMbps,
-        result.uploadMbps * 0.5);
+    final target =
+        policy.speedProbe.targetMbps <= 0 ? 50.0 : policy.speedProbe.targetMbps;
+    final measuredMbps = max(result.downloadMbps, result.uploadMbps * 0.5);
     final speed = (measuredMbps / target).clamp(0.0, 1.0);
     return reliability * policy.lossWeight +
         latency * policy.latencyWeight +
@@ -182,8 +184,8 @@ class SmartGroupSelector {
     }
     final untouched = ranked.skip(limit);
     final combined = <SmartGroupSelection>[...measured, ...untouched];
-    combined.sort((left, right) => _score(right.probe, policy)
-        .compareTo(_score(left.probe, policy)));
+    combined.sort((left, right) =>
+        _score(right.probe, policy).compareTo(_score(left.probe, policy)));
     return combined;
   }
 
@@ -243,9 +245,8 @@ class SmartGroupSelector {
     }
     ranked.sort((left, right) => _score(right.probe, group.clientPolicy)
         .compareTo(_score(left.probe, group.clientPolicy)));
-    final ordered = measureSpeed
-        ? await _measureSpeed(api, group, ranked)
-        : ranked;
+    final ordered =
+        measureSpeed ? await _measureSpeed(api, group, ranked) : ranked;
     return ordered.where((selection) => selection.probe.successful).toList();
   }
 

@@ -9,6 +9,7 @@ import '../../core/i18n/app_strings.dart';
 import '../../core/models/models.dart';
 import '../../core/platform/app_platform.dart';
 import '../../core/providers/vpn_providers.dart';
+import '../../core/services/smart_group_latency_test.dart';
 import '../../core/services/smart_group_selector.dart';
 import '../../core/theme/atlas_theme.dart';
 import '../subscriptions/subscriptions_screen.dart';
@@ -30,6 +31,8 @@ final groupNodeHealthProvider =
 enum _RouteSort { type, name, ping, traffic, jitter, loss, speed }
 
 enum _RouteColumn { type, name, ping, jitter, loss, speed, traffic, action }
+
+enum _RouteAction { testLatency, stopLatencyTest, delete }
 
 class _RouteRow {
   const _RouteRow({
@@ -86,6 +89,8 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   bool _ascending = true;
   List<String>? _pendingSubscriptionOrder;
   final SmartGroupSelector _smartGroupSelector = SmartGroupSelector();
+  SmartGroupLatencyTest? _activeGroupLatencyTest;
+  SmartGroupLatencyProgress? _groupLatencyProgress;
   final Map<_RouteColumn, bool> _visibleColumns = {
     _RouteColumn.type: true,
     _RouteColumn.name: true,
@@ -230,6 +235,12 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                           columnWidths: _columnWidths,
                           onColumnMenu: _showColumnMenu,
                           onResizeColumn: _resizeColumn,
+                          activeLatencyTestGroupId:
+                              _activeGroupLatencyTest == null
+                                  ? null
+                                  : _groupLatencyProgress?.groupId,
+                          onStopGroupLatencyTest: _stopGroupLatencyTest,
+                          onRouteMenu: _showRouteMenu,
                           onConnect: _connect,
                           onTest: _testRoute,
                           onDelete: _deleteRoute,
@@ -306,12 +317,23 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
               id: group.id,
               type: strings.t('smart_group'),
               name: _groupTitle(group),
-              ping: null,
-              traffic: strings.t('automatic'),
+              ping: _groupLatencyProgress?.groupId == group.id
+                  ? _groupLatencyProgress?.latencyMs
+                  : null,
+              jitter: _groupLatencyProgress?.groupId == group.id
+                  ? _groupLatencyProgress?.jitterMs
+                  : null,
+              loss: _groupLatencyProgress?.groupId == group.id
+                  ? _groupLatencyProgress?.lossPercent
+                  : null,
+              traffic: _groupLatencyProgress?.groupId == group.id
+                  ? '${_groupLatencyProgress!.label} проверено'
+                  : '—',
               isGroup: true,
               icon: _groupIcon(group.icon),
               disabled: group.disabled,
               disabledReason: group.disabledReason,
+              canTest: true,
             ),
           ));
     }
@@ -677,12 +699,93 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     }
   }
 
+  Future<void> _showRouteMenu(_RouteRow row, Offset globalPosition) async {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final activeGroupID =
+        _activeGroupLatencyTest == null ? null : _groupLatencyProgress?.groupId;
+    final action = await showMenu<_RouteAction>(
+      context: context,
+      position: RelativeRect.fromRect(
+        globalPosition & const Size(1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        if (row.isGroup && activeGroupID == row.id)
+          const PopupMenuItem(
+            value: _RouteAction.stopLatencyTest,
+            child: ListTile(
+              leading: Icon(Icons.stop_circle_outlined),
+              title: Text('Остановить тест задержки'),
+              contentPadding: EdgeInsets.zero,
+            ),
+          )
+        else
+          PopupMenuItem(
+            value: _RouteAction.testLatency,
+            enabled: row.canTest && activeGroupID == null,
+            child: ListTile(
+              leading: const Icon(Icons.network_ping_rounded),
+              title: Text(row.isGroup
+                  ? 'Тест задержки группы'
+                  : 'Проверить задержку маршрута'),
+              subtitle: activeGroupID == null
+                  ? null
+                  : const Text('Сначала завершите активный тест'),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
+        if (row.canDelete)
+          PopupMenuItem(
+            value: _RouteAction.delete,
+            child: ListTile(
+              leading: Icon(Icons.delete_outline,
+                  color: ThemeColors.of(context).danger),
+              title: Text('Удалить с устройства',
+                  style: TextStyle(color: ThemeColors.of(context).danger)),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
+      ],
+    );
+    if (action == null || !mounted) return;
+    switch (action) {
+      case _RouteAction.testLatency:
+        await _testRoute(row);
+      case _RouteAction.stopLatencyTest:
+        _stopGroupLatencyTest();
+      case _RouteAction.delete:
+        await _deleteRoute(row);
+    }
+  }
+
   Future<void> _testRoute(_RouteRow row) async {
-    if (!row.canTest || row.isGroup) {
+    if (!row.canTest) return;
+    if (_activeGroupLatencyTest != null) {
       _showMessage(
-        'Smart Group оценивается локально при подключении; физические ноды не показываются.',
-        ThemeColors.of(context).textSecondary,
+        'Сначала завершите или остановите активную проверку задержки.',
+        ThemeColors.of(context).warning,
       );
+      return;
+    }
+    if (row.isGroup) {
+      final sourceID = _selectedSubscriptionId;
+      final manifest = sourceID?.isNotEmpty == true
+          ? await ref
+              .read(providerManifestForSubscriptionProvider(sourceID!).future)
+          : await ref.read(mosaicManifestProvider.future);
+      if (!mounted) return;
+      final group = manifest.groups.cast<ManifestGroup?>().firstWhere(
+            (value) => value?.id == row.id,
+            orElse: () => null,
+          );
+      if (group == null) {
+        _showMessage(
+          'Smart Group не найдена. Обновите подписку и повторите попытку.',
+          ThemeColors.of(context).warning,
+        );
+        return;
+      }
+      await _runGroupLatencyTest(group);
       return;
     }
     try {
@@ -698,6 +801,52 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
         ThemeColors.of(context).danger,
       );
     }
+  }
+
+  Future<void> _runGroupLatencyTest(ManifestGroup group) async {
+    final runner = SmartGroupLatencyTest(
+      api: ref.read(daemonApiProvider),
+      selector: _smartGroupSelector,
+    );
+    setState(() {
+      _activeGroupLatencyTest = runner;
+      _groupLatencyProgress = SmartGroupLatencyProgress(
+        groupId: group.id,
+        completed: 0,
+        total: 0,
+        successful: 0,
+      );
+    });
+    try {
+      final result = await runner.run(group, onProgress: (progress) {
+        if (mounted) setState(() => _groupLatencyProgress = progress);
+      });
+      if (!mounted) return;
+      _showMessage(
+        result.cancelled
+            ? 'Проверка задержки остановлена: ${result.label}.'
+            : 'Проверка задержки завершена: ${result.label}.',
+        result.cancelled
+            ? ThemeColors.of(context).warning
+            : ThemeColors.of(context).success,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      _showMessage(
+        error.toString().replaceFirst('Bad state: ', ''),
+        ThemeColors.of(context).danger,
+      );
+    } finally {
+      if (mounted) setState(() => _activeGroupLatencyTest = null);
+    }
+  }
+
+  void _stopGroupLatencyTest() {
+    final active = _activeGroupLatencyTest;
+    if (active == null) return;
+    active.cancel();
+    _showMessage('Остановка проверки задержки после текущего измерения…',
+        ThemeColors.of(context).textSecondary);
   }
 
   Future<void> _deleteRoute(_RouteRow row) async {
@@ -1522,6 +1671,9 @@ class _RouteTable extends StatelessWidget {
     required this.columnWidths,
     required this.onColumnMenu,
     required this.onResizeColumn,
+    required this.activeLatencyTestGroupId,
+    required this.onStopGroupLatencyTest,
+    required this.onRouteMenu,
     required this.onConnect,
     required this.onTest,
     required this.onDelete,
@@ -1538,6 +1690,9 @@ class _RouteTable extends StatelessWidget {
   final Map<_RouteColumn, double> columnWidths;
   final Future<void> Function(Offset) onColumnMenu;
   final void Function(_RouteColumn, double) onResizeColumn;
+  final String? activeLatencyTestGroupId;
+  final VoidCallback onStopGroupLatencyTest;
+  final Future<void> Function(_RouteRow, Offset) onRouteMenu;
   final ValueChanged<_RouteRow> onConnect;
   final Future<void> Function(_RouteRow) onTest;
   final Future<void> Function(_RouteRow) onDelete;
@@ -1552,6 +1707,9 @@ class _RouteTable extends StatelessWidget {
         onConnect: onConnect,
         onTest: onTest,
         onDelete: onDelete,
+        activeLatencyTestGroupId: activeLatencyTestGroupId,
+        onStopGroupLatencyTest: onStopGroupLatencyTest,
+        onRouteMenu: onRouteMenu,
       );
     }
     final colors = ThemeColors.of(context);
@@ -1625,27 +1783,34 @@ class _RouteTable extends StatelessWidget {
                     style: TextStyle(color: muted))),
           ]),
         ),
-      _RouteColumn.name => SizedBox(
-          width: width,
-          child: Row(children: [
-            Expanded(
-                child: Text(row.name,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: primary, fontWeight: FontWeight.w700))),
-            if (connecting)
-              const Padding(
-                  padding: EdgeInsets.only(left: 8),
-                  child: SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2)))
-            else if (connected)
-              const Padding(
-                  padding: EdgeInsets.only(left: 8),
-                  child: Icon(Icons.check_circle_rounded,
-                      color: AtlasTheme.success, size: 18)),
-          ]),
+      _RouteColumn.name => Listener(
+          onPointerDown: (event) {
+            if (event.buttons == kSecondaryMouseButton) {
+              onRouteMenu(row, event.position);
+            }
+          },
+          child: SizedBox(
+            width: width,
+            child: Row(children: [
+              Expanded(
+                  child: Text(row.name,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: primary, fontWeight: FontWeight.w700))),
+              if (connecting)
+                const Padding(
+                    padding: EdgeInsets.only(left: 8),
+                    child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2)))
+              else if (connected)
+                const Padding(
+                    padding: EdgeInsets.only(left: 8),
+                    child: Icon(Icons.check_circle_rounded,
+                        color: AtlasTheme.success, size: 18)),
+            ]),
+          ),
         ),
       _RouteColumn.ping => text(row.ping == null ? '—' : '${row.ping} мс'),
       _RouteColumn.jitter =>
@@ -1779,6 +1944,9 @@ class _MobileRouteList extends StatelessWidget {
     required this.onConnect,
     required this.onTest,
     required this.onDelete,
+    required this.activeLatencyTestGroupId,
+    required this.onStopGroupLatencyTest,
+    required this.onRouteMenu,
   });
 
   final List<_RouteRow> rows;
@@ -1787,6 +1955,9 @@ class _MobileRouteList extends StatelessWidget {
   final ValueChanged<_RouteRow> onConnect;
   final Future<void> Function(_RouteRow) onTest;
   final Future<void> Function(_RouteRow) onDelete;
+  final String? activeLatencyTestGroupId;
+  final VoidCallback onStopGroupLatencyTest;
+  final Future<void> Function(_RouteRow, Offset) onRouteMenu;
 
   Future<void> _actions(BuildContext context, _RouteRow row) async {
     await showModalBottomSheet<void>(
@@ -1806,17 +1977,32 @@ class _MobileRouteList extends StatelessWidget {
                       onConnect(row);
                     },
             ),
-            if (row.canTest)
+            if (row.isGroup && activeLatencyTestGroupId == row.id)
+              ListTile(
+                leading: const Icon(Icons.stop_circle_outlined),
+                title: const Text('Остановить тест задержки'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  onStopGroupLatencyTest();
+                },
+              )
+            else if (row.canTest)
               ListTile(
                 leading: const Icon(Icons.network_ping_rounded),
-                title: const Text('Проверить маршрут'),
-                subtitle: Text(row.isGroup
-                    ? 'Оценить Smart Group без показа нод пула'
-                    : 'Измерить доступность выбранного сервера'),
-                onTap: () async {
-                  Navigator.of(sheetContext).pop();
-                  await onTest(row);
-                },
+                title: Text(
+                    row.isGroup ? 'Тест задержки группы' : 'Проверить маршрут'),
+                subtitle: Text(activeLatencyTestGroupId == null
+                    ? (row.isGroup
+                        ? 'Проверить группу без показа нод пула'
+                        : 'Измерить доступность выбранного сервера')
+                    : 'Сначала завершите активный тест'),
+                enabled: activeLatencyTestGroupId == null,
+                onTap: activeLatencyTestGroupId == null
+                    ? () async {
+                        Navigator.of(sheetContext).pop();
+                        await onTest(row);
+                      }
+                    : null,
               ),
             if (row.canDelete)
               ListTile(
