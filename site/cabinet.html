@@ -230,6 +230,11 @@
   var codeInput = document.getElementById('code-input');
   var codeError = document.getElementById('code-error');
   var profileState = null;
+  // Chrome may block external custom-scheme navigation that happens after an
+  // asynchronous request. Keep the one-time callback ready, then launch it
+  // only from the user's explicit click on the MosaicVPN button.
+  var preparedEnrollment = null;
+  var enrollmentPreparation = null;
 
   function esc(value) { return String(value == null ? '' : value).replace(/[&<>"']/g, function (char) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]; }); }
   function money(value, currency) { return new Intl.NumberFormat('ru-RU').format(Number(value) || 0) + ' ' + (currency === 'USDT' ? 'USDT' : '₽'); }
@@ -301,6 +306,7 @@
       if (profile.status === 401 || profile.body.error) { localStorage.removeItem(TOKEN_KEY); showGate('Сессия закончилась. Получите новый код в боте.'); return; }
       if (profile.status !== 200) { showGate('Не удалось загрузить кабинет. Попробуйте ещё раз.'); return; }
       showAccount(profile.body); showPayments(payments.status === 200 ? payments.body.payments || [] : []);
+      prepareAppEnrollment();
     }).catch(function () { showGate('Не удалось подключиться к сервису. Проверьте сеть и повторите попытку.'); });
   }
 
@@ -321,31 +327,55 @@
     return Array.prototype.map.call(values, function (value) { return alphabet[value % alphabet.length]; }).join('');
   }
 
-  function startAppEnrollment() {
-    var button = document.getElementById('add-to-app-button');
-    var message = document.getElementById('app-enrollment-message');
-    if (!savedToken) { message.textContent = 'Сначала войдите в кабинет.'; message.style.color = 'var(--err)'; return; }
+  function prepareAppEnrollment() {
+    if (!savedToken) return Promise.reject(new Error('no session'));
+    if (preparedEnrollment && preparedEnrollment.expiresAt > Date.now()) return Promise.resolve(preparedEnrollment);
+    if (enrollmentPreparation) return enrollmentPreparation;
     var state = newAppState();
-    button.disabled = true;
-    message.textContent = 'Готовим безопасное добавление в приложение…';
-    message.style.color = 'var(--text-2)';
-    requestJSON(API_APP_AUTH_ISSUE, {
+    enrollmentPreparation = requestJSON(API_APP_AUTH_ISSUE, {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({token:savedToken,state:state,purpose:'enroll'})
     }).then(function (result) {
-      if (result.status !== 200 || !result.body.code || result.body.purpose !== 'enroll') {
-        button.disabled = false;
-        message.textContent = 'Не удалось подготовить добавление. Повторите попытку.';
-        message.style.color = 'var(--err)';
-        return;
-      }
+      enrollmentPreparation = null;
+      if (result.status !== 200 || !result.body.code || result.body.purpose !== 'enroll') throw new Error('issue failed');
       // The deep link contains only a one-time code and state. Browser session
       // material and the subscription URL are never put into the callback.
-      window.location.assign('mosaicvpn://enroll/callback?code=' + encodeURIComponent(result.body.code) + '&state=' + encodeURIComponent(state));
+      preparedEnrollment = {
+        url:'mosaicvpn://enroll/callback?code=' + encodeURIComponent(result.body.code) + '&state=' + encodeURIComponent(state),
+        expiresAt:Date.now() + Math.max(1, Number(result.body.expires_in) || 300) * 1000
+      };
+      return preparedEnrollment;
+    }).catch(function (error) {
+      enrollmentPreparation = null;
+      throw error;
+    });
+    return enrollmentPreparation;
+  }
+
+  function startAppEnrollment() {
+    var button = document.getElementById('add-to-app-button');
+    var message = document.getElementById('app-enrollment-message');
+    if (!savedToken) { message.textContent = 'Сначала войдите в кабинет.'; message.style.color = 'var(--err)'; return; }
+    if (preparedEnrollment && preparedEnrollment.expiresAt > Date.now()) {
+      message.textContent = 'Открываем MosaicVPN…';
+      message.style.color = 'var(--text-2)';
+      // This navigation is inside the click handler. It preserves the browser
+      // user gesture required for custom URI schemes on Android and desktop.
+      window.location.assign(preparedEnrollment.url);
+      return;
+    }
+    button.disabled = true;
+    message.textContent = 'Готовим добавление в приложение…';
+    message.style.color = 'var(--text-2)';
+    prepareAppEnrollment().then(function () {
+      button.disabled = false;
+      button.textContent = 'Открыть MosaicVPN';
+      message.textContent = 'Готово. Нажмите «Открыть MosaicVPN», чтобы завершить добавление.';
+      message.style.color = 'var(--ok)';
     }).catch(function () {
       button.disabled = false;
-      message.textContent = 'Не удалось связаться с сервисом.';
+      message.textContent = 'Не удалось подготовить добавление. Повторите попытку.';
       message.style.color = 'var(--err)';
     });
   }
@@ -365,7 +395,7 @@
   document.getElementById('add-to-app-button').addEventListener('click', startAppEnrollment);
   document.querySelectorAll('.lava-pay').forEach(function (button) { button.addEventListener('click', function () { startLavaPayment(button.getAttribute('data-amount')); }); });
   document.getElementById('custom-payment-form').addEventListener('submit', function (event) { event.preventDefault(); startLavaPayment(document.getElementById('custom-amount').value); });
-  document.getElementById('logout-button').addEventListener('click', function () { localStorage.removeItem(TOKEN_KEY); savedToken = null; profileState = null; codeInput.value = ''; codeError.textContent = ''; showGate(); window.scrollTo({top:0,behavior:'smooth'}); });
+  document.getElementById('logout-button').addEventListener('click', function () { localStorage.removeItem(TOKEN_KEY); savedToken = null; profileState = null; preparedEnrollment = null; enrollmentPreparation = null; codeInput.value = ''; codeError.textContent = ''; showGate(); window.scrollTo({top:0,behavior:'smooth'}); });
   document.getElementById('copy-account-id').addEventListener('click', function () { var id = profileState && profileState.telegram_id ? String(profileState.telegram_id) : ''; if (!id) return; var done = function () { setMessage('ID аккаунта скопирован.'); }; if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(id).then(done).catch(function () { window.prompt('Скопируйте ID аккаунта:', id); }); } else { window.prompt('Скопируйте ID аккаунта:', id); } });
   if (appReturn && !savedToken) {
     showGate('Войдите в кабинет, чтобы продолжить вход в приложении MosaicVPN.');
