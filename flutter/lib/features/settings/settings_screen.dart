@@ -329,7 +329,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 label: s.t('direct_dns'),
                 description: s.t('direct_dns_description'),
                 tooltip:
-                    'DNS server for domains that bypass the tunnel (e.g. local domains). Usually your router or a public resolver like 1.1.1.1.',
+                    'DNS server for domains resolved through the local network, such as internal or router-provided names. Usually your router or a public resolver like 1.1.1.1.',
                 difficulty: 3,
                 child: SizedBox(
                   width: 240,
@@ -354,7 +354,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 label: 'Enable WARP',
                 description: 'Prepend Cloudflare WARP outbound to the chain',
                 tooltip:
-                    'When enabled, all traffic first goes through Cloudflare WARP before reaching your VPN server. This can help bypass ISP throttling and improve routing. WARP+ requires a license key.',
+                    'When enabled, traffic first goes through Cloudflare WARP before reaching the selected route. This optional mode may improve network compatibility and routing. WARP+ requires a license key.',
                 difficulty: 2,
                 child: Switch(
                   value: _warpEnabled,
@@ -812,7 +812,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 label: 'Routing Mode',
                 description: 'Active: ${prefs.routingMode.toUpperCase()}',
                 tooltip:
-                    'Managed via Routes tab. Global: all traffic via VPN. Rule: route by GeoIP/GeoSite rules. Direct: bypass VPN.',
+                    'Managed via Routes tab. Global: all traffic uses the selected route. Rule: route by GeoIP/GeoSite rules. Direct: use the local network connection.',
                 difficulty: 2,
                 child: Container(
                   padding:
@@ -972,7 +972,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 description:
                     'Exclude or include specific apps/domains from VPN',
                 tooltip:
-                    'Exclude: listed items bypass VPN. Include: only listed items go through VPN.',
+                    'Exclude: listed items use the local network connection. Include: only listed items use the selected route.',
                 difficulty: 2,
                 child: SegmentedButton<String>(
                   segments: const [

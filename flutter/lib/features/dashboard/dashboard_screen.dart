@@ -577,7 +577,7 @@ class _ConnectionPanelState extends ConsumerState<_ConnectionPanel> {
             child: Text(
               'The system is in ${status.tunnelMode} mode. '
               '${status.killSwitch ? "Kill switch is armed." : "Kill switch is off."} '
-              '${status.allowLAN ? "Local networks bypass the tunnel." : "Local networks are tunneled."}',
+              '${status.allowLAN ? "Local networks use the local connection." : "Local networks use the selected route."}',
               style: TextStyle(
                 fontSize: 10,
                 fontStyle: FontStyle.italic,
@@ -909,6 +909,7 @@ class _WorldChartPanelState extends ConsumerState<_WorldChartPanel>
 /// `zoom` fits the You↔Server bounding box with ~15% padding.
 class _AnimatedMap extends StatelessWidget {
   final List<MapPin> pins;
+
   /// Null until GeoIP resolves the client's location; the map omits the pin
   /// rather than showing one in the wrong place.
   final MapPin? youPin;
@@ -1340,312 +1341,319 @@ class _StationsPanelState extends ConsumerState<_StationsPanel> {
       child: Material(
         type: MaterialType.transparency,
         child: ExpansionTile(
-        title: Text(
-          title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          softWrap: false,
-          style: TextStyle(
-            fontFamily: AtlasTheme.serifFamily,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: hasActiveInGroup ? AtlasTheme.accent : null,
+          title: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            softWrap: false,
+            style: TextStyle(
+              fontFamily: AtlasTheme.serifFamily,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: hasActiveInGroup ? AtlasTheme.accent : null,
+            ),
           ),
-        ),
-        subtitle: Text(
-          '${servers.length} stations',
-          style: TextStyle(fontSize: 10, color: c.textMuted),
-        ),
-        leading: Icon(
-          Icons.folder_open,
-          size: 18,
-          color: hasActiveInGroup ? AtlasTheme.accent : c.textMuted,
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Context menu for subscription group
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert, size: 18),
-              color: Theme.of(context).cardColor,
-              onSelected: (action) =>
-                  _handleGroupAction(context, ref, action, groupId, sub),
-              itemBuilder: (context) => [
-                if (sub != null) ...[
-                  const PopupMenuItem(
-                    value: 'refresh',
-                    child: Row(
-                      children: [
-                        Icon(Icons.refresh, size: 14),
-                        SizedBox(width: 8),
-                        Text('Update/Refresh', style: TextStyle(fontSize: 11)),
-                      ],
+          subtitle: Text(
+            '${servers.length} stations',
+            style: TextStyle(fontSize: 10, color: c.textMuted),
+          ),
+          leading: Icon(
+            Icons.folder_open,
+            size: 18,
+            color: hasActiveInGroup ? AtlasTheme.accent : c.textMuted,
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Context menu for subscription group
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert, size: 18),
+                color: Theme.of(context).cardColor,
+                onSelected: (action) =>
+                    _handleGroupAction(context, ref, action, groupId, sub),
+                itemBuilder: (context) => [
+                  if (sub != null) ...[
+                    const PopupMenuItem(
+                      value: 'refresh',
+                      child: Row(
+                        children: [
+                          Icon(Icons.refresh, size: 14),
+                          SizedBox(width: 8),
+                          Text('Update/Refresh',
+                              style: TextStyle(fontSize: 11)),
+                        ],
+                      ),
                     ),
-                  ),
+                    const PopupMenuItem(
+                      value: 'copy_url',
+                      child: Row(
+                        children: [
+                          Icon(Icons.link, size: 14),
+                          SizedBox(width: 8),
+                          Text('Copy subscription URL',
+                              style: TextStyle(fontSize: 11)),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'open_url',
+                      child: Row(
+                        children: [
+                          Icon(Icons.open_in_browser, size: 14),
+                          SizedBox(width: 8),
+                          Text('Open in browser',
+                              style: TextStyle(fontSize: 11)),
+                        ],
+                      ),
+                    ),
+                  ],
                   const PopupMenuItem(
-                    value: 'copy_url',
+                    value: 'ping_all',
                     child: Row(
                       children: [
-                        Icon(Icons.link, size: 14),
+                        Icon(Icons.flash_on, size: 14),
                         SizedBox(width: 8),
-                        Text('Copy subscription URL',
+                        Text('Test ping of group',
                             style: TextStyle(fontSize: 11)),
                       ],
                     ),
                   ),
-                  const PopupMenuItem(
-                    value: 'open_url',
-                    child: Row(
-                      children: [
-                        Icon(Icons.open_in_browser, size: 14),
-                        SizedBox(width: 8),
-                        Text('Open in browser', style: TextStyle(fontSize: 11)),
-                      ],
+                  if (sub != null) ...[
+                    const PopupMenuDivider(),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete, color: AtlasTheme.error, size: 14),
+                          SizedBox(width: 8),
+                          Text('Delete Group',
+                              style: TextStyle(
+                                  color: AtlasTheme.error, fontSize: 11)),
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                 ],
-                const PopupMenuItem(
-                  value: 'ping_all',
-                  child: Row(
-                    children: [
-                      Icon(Icons.flash_on, size: 14),
-                      SizedBox(width: 8),
-                      Text('Test ping of group',
-                          style: TextStyle(fontSize: 11)),
-                    ],
+              ),
+            ],
+          ),
+          childrenPadding: const EdgeInsets.only(left: 6),
+          children: servers.map((s) {
+            final isActive = activeServerID == s.id;
+            final isSelected = widget.selectedServerId == s.id;
+            final isMulti = _isMultiSelected(s.id);
+            final isFav = ref.watch(favoriteServersProvider).contains(s.id);
+            return Container(
+              decoration: BoxDecoration(
+                color: isMulti
+                    ? AtlasTheme.accent.withValues(alpha: 0.15)
+                    : isSelected
+                        ? AtlasTheme.accent.withValues(alpha: 0.22)
+                        : null,
+                border: isMulti
+                    ? Border.all(
+                        color: AtlasTheme.accent.withValues(alpha: 0.4),
+                        width: 1)
+                    : isSelected
+                        ? Border(
+                            left:
+                                BorderSide(color: AtlasTheme.accent, width: 3),
+                          )
+                        : null,
+              ),
+              child: ListTile(
+                dense: true,
+                selected: isSelected || isMulti,
+                selectedTileColor: Colors.transparent,
+                contentPadding: const EdgeInsets.only(right: 2, left: 4),
+                onTap: () async {
+                  final isShift = HardwareKeyboard.instance.isShiftPressed;
+                  final isCtrl = HardwareKeyboard.instance.isControlPressed;
+                  // Shift/Ctrl+click — multi-select
+                  if (isShift || isCtrl) {
+                    _onServerTap(s, shift: isShift, ctrl: isCtrl);
+                    return;
+                  }
+                  // If multi-select is active and this tile is in the selection,
+                  // a plain tap clears multi-select and selects just this one.
+                  if (_multiSelected.isNotEmpty &&
+                      !_multiSelected.contains(s.id)) {
+                    _onServerTap(s);
+                    return;
+                  }
+                  if (isMulti) {
+                    // In multi-select mode, toggle connection for all selected
+                    if (isActive) {
+                      await _disconnectFromVpn();
+                      ref.invalidate(vpnStatusProvider);
+                    }
+                    _onServerTap(s);
+                    return;
+                  }
+                  if (isSelected) {
+                    // Repeat tap -> Toggle connection
+                    if (isActive) {
+                      await _disconnectFromVpn();
+                    } else {
+                      await _connectToServer(s.id);
+                    }
+                    ref.invalidate(vpnStatusProvider);
+                  } else {
+                    // First tap -> Select server to show on map with line
+                    _onServerTap(s);
+                  }
+                },
+                leading: isActive
+                    ? const StatusDot(color: AtlasTheme.success, size: 6)
+                    : StatusDot(color: c.textMuted, size: 5),
+                title: ConstrainedBox(
+                  constraints:
+                      const BoxConstraints(minWidth: _kStationNameMinWidth),
+                  child: Text(
+                    s.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight:
+                          isActive ? FontWeight.bold : FontWeight.normal,
+                      color: isActive ? c.textPrimary : c.textSecondary,
+                    ),
                   ),
                 ),
-                if (sub != null) ...[
-                  const PopupMenuDivider(),
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete, color: AtlasTheme.error, size: 14),
-                        SizedBox(width: 8),
-                        Text('Delete Group',
-                            style: TextStyle(
-                                color: AtlasTheme.error, fontSize: 11)),
-                      ],
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ],
-        ),
-        childrenPadding: const EdgeInsets.only(left: 6),
-        children: servers.map((s) {
-          final isActive = activeServerID == s.id;
-          final isSelected = widget.selectedServerId == s.id;
-          final isMulti = _isMultiSelected(s.id);
-          final isFav = ref.watch(favoriteServersProvider).contains(s.id);
-          return Container(
-            decoration: BoxDecoration(
-              color: isMulti
-                  ? AtlasTheme.accent.withValues(alpha: 0.15)
-                  : isSelected
-                      ? AtlasTheme.accent.withValues(alpha: 0.22)
-                      : null,
-              border: isMulti
-                  ? Border.all(
-                      color: AtlasTheme.accent.withValues(alpha: 0.4), width: 1)
-                  : isSelected
-                      ? Border(
-                          left: BorderSide(color: AtlasTheme.accent, width: 3),
-                        )
-                      : null,
-            ),
-            child: ListTile(
-              dense: true,
-              selected: isSelected || isMulti,
-              selectedTileColor: Colors.transparent,
-              contentPadding: const EdgeInsets.only(right: 2, left: 4),
-              onTap: () async {
-                final isShift = HardwareKeyboard.instance.isShiftPressed;
-                final isCtrl = HardwareKeyboard.instance.isControlPressed;
-                // Shift/Ctrl+click — multi-select
-                if (isShift || isCtrl) {
-                  _onServerTap(s, shift: isShift, ctrl: isCtrl);
-                  return;
-                }
-                // If multi-select is active and this tile is in the selection,
-                // a plain tap clears multi-select and selects just this one.
-                if (_multiSelected.isNotEmpty &&
-                    !_multiSelected.contains(s.id)) {
-                  _onServerTap(s);
-                  return;
-                }
-                if (isMulti) {
-                  // In multi-select mode, toggle connection for all selected
-                  if (isActive) {
-                    await _disconnectFromVpn();
-                    ref.invalidate(vpnStatusProvider);
-                  }
-                  _onServerTap(s);
-                  return;
-                }
-                if (isSelected) {
-                  // Repeat tap -> Toggle connection
-                  if (isActive) {
-                    await _disconnectFromVpn();
-                  } else {
-                    await _connectToServer(s.id);
-                  }
-                  ref.invalidate(vpnStatusProvider);
-                } else {
-                  // First tap -> Select server to show on map with line
-                  _onServerTap(s);
-                }
-              },
-              leading: isActive
-                  ? const StatusDot(color: AtlasTheme.success, size: 6)
-                  : StatusDot(color: c.textMuted, size: 5),
-              title: ConstrainedBox(
-                constraints:
-                    const BoxConstraints(minWidth: _kStationNameMinWidth),
-                child: Text(
-                  s.name,
+                subtitle: Text(
+                  s.country.isNotEmpty ? s.country : '${s.address}:${s.port}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                    color: isActive ? c.textPrimary : c.textSecondary,
-                  ),
+                  style: TextStyle(fontSize: 9, color: c.textMuted),
                 ),
-              ),
-              subtitle: Text(
-                s.country.isNotEmpty ? s.country : '${s.address}:${s.port}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 9, color: c.textMuted),
-              ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Favorite star
-                  Tooltip(
-                    message:
-                        isFav ? 'Remove from favorites' : 'Add to favorites',
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: () {
-                        ref.read(favoriteServersProvider.notifier).toggle(s.id);
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: Icon(
-                          isFav
-                              ? Icons.star_rounded
-                              : Icons.star_outline_rounded,
-                          size: 14,
-                          color: isFav ? AtlasTheme.warning : c.textMuted,
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Favorite star
+                    Tooltip(
+                      message:
+                          isFav ? 'Remove from favorites' : 'Add to favorites',
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () {
+                          ref
+                              .read(favoriteServersProvider.notifier)
+                              .toggle(s.id);
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(
+                            isFav
+                                ? Icons.star_rounded
+                                : Icons.star_outline_rounded,
+                            size: 14,
+                            color: isFav ? AtlasTheme.warning : c.textMuted,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 2),
-                  // Fixed-width latency slot. It is reserved even before a
-                  // measurement exists, otherwise the badge appearing after a
-                  // ping steals width from the title and the server name gets
-                  // ellipsised down to a few characters.
-                  SizedBox(
-                    width: _kLatencySlotWidth,
-                    child: s.lastTestMS > 0
-                        ? Align(
-                            alignment: Alignment.centerRight,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 4, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: (s.lastTestMS < 120
+                    const SizedBox(width: 2),
+                    // Fixed-width latency slot. It is reserved even before a
+                    // measurement exists, otherwise the badge appearing after a
+                    // ping steals width from the title and the server name gets
+                    // ellipsised down to a few characters.
+                    SizedBox(
+                      width: _kLatencySlotWidth,
+                      child: s.lastTestMS > 0
+                          ? Align(
+                              alignment: Alignment.centerRight,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: (s.lastTestMS < 120
+                                          ? AtlasTheme.success
+                                          : AtlasTheme.warning)
+                                      .withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                                child: Text(
+                                  '${s.lastTestMS}ms',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.clip,
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontFamily: AtlasTheme.monoFamily,
+                                    color: s.lastTestMS < 120
                                         ? AtlasTheme.success
-                                        : AtlasTheme.warning)
-                                    .withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(3),
-                              ),
-                              child: Text(
-                                '${s.lastTestMS}ms',
-                                maxLines: 1,
-                                overflow: TextOverflow.clip,
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  fontFamily: AtlasTheme.monoFamily,
-                                  color: s.lastTestMS < 120
-                                      ? AtlasTheme.success
-                                      : AtlasTheme.warning,
+                                        : AtlasTheme.warning,
+                                  ),
                                 ),
                               ),
-                            ),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-                  const SizedBox(width: 2),
-                  IconButton(
-                    icon: Icon(
-                      isActive
-                          ? Icons.pause_circle_filled
-                          : Icons.play_circle_outline,
-                      size: 18,
-                      color: isActive ? AtlasTheme.error : AtlasTheme.accent,
+                            )
+                          : const SizedBox.shrink(),
                     ),
-                    tooltip: isActive ? 'Disconnect' : 'Connect',
-                    onPressed: () async {
-                      if (isActive) {
-                        await _disconnectFromVpn();
-                      } else {
-                        await _connectToServer(s.id);
-                      }
-                      ref.invalidate(vpnStatusProvider);
-                    },
-                  ),
-                  PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_vert, size: 16),
-                    color: Theme.of(context).cardColor,
-                    onSelected: (action) =>
-                        _handleServerAction(context, ref, action, s),
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(
-                        value: 'ping',
-                        child: Row(
-                          children: [
-                            Icon(Icons.speed, size: 14),
-                            SizedBox(width: 8),
-                            Text('Test latency (ping)',
-                                style: TextStyle(fontSize: 11)),
-                          ],
-                        ),
+                    const SizedBox(width: 2),
+                    IconButton(
+                      icon: Icon(
+                        isActive
+                            ? Icons.pause_circle_filled
+                            : Icons.play_circle_outline,
+                        size: 18,
+                        color: isActive ? AtlasTheme.error : AtlasTheme.accent,
                       ),
-                      const PopupMenuItem(
-                        value: 'copy',
-                        child: Row(
-                          children: [
-                            Icon(Icons.copy, size: 14),
-                            SizedBox(width: 8),
-                            Text('Copy address',
-                                style: TextStyle(fontSize: 11)),
-                          ],
+                      tooltip: isActive ? 'Disconnect' : 'Connect',
+                      onPressed: () async {
+                        if (isActive) {
+                          await _disconnectFromVpn();
+                        } else {
+                          await _connectToServer(s.id);
+                        }
+                        ref.invalidate(vpnStatusProvider);
+                      },
+                    ),
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert, size: 16),
+                      color: Theme.of(context).cardColor,
+                      onSelected: (action) =>
+                          _handleServerAction(context, ref, action, s),
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'ping',
+                          child: Row(
+                            children: [
+                              Icon(Icons.speed, size: 14),
+                              SizedBox(width: 8),
+                              Text('Test latency (ping)',
+                                  style: TextStyle(fontSize: 11)),
+                            ],
+                          ),
                         ),
-                      ),
-                      const PopupMenuItem(
-                        value: 'edit_raw',
-                        child: Row(
-                          children: [
-                            Icon(Icons.edit_document, size: 14),
-                            SizedBox(width: 8),
-                            Text('Edit raw config',
-                                style: TextStyle(fontSize: 11)),
-                          ],
+                        const PopupMenuItem(
+                          value: 'copy',
+                          child: Row(
+                            children: [
+                              Icon(Icons.copy, size: 14),
+                              SizedBox(width: 8),
+                              Text('Copy address',
+                                  style: TextStyle(fontSize: 11)),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                        const PopupMenuItem(
+                          value: 'edit_raw',
+                          child: Row(
+                            children: [
+                              Icon(Icons.edit_document, size: 14),
+                              SizedBox(width: 8),
+                              Text('Edit raw config',
+                                  style: TextStyle(fontSize: 11)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          );
-        }).toList(),
+            );
+          }).toList(),
         ),
       ),
     );

@@ -98,17 +98,14 @@ PACKAGES = {
 MESSAGES = {
     "ru": {
         "welcome": (
-            "🛡 **Mosaic vpn.** — Атлас свободных маршрутов\n\n"
-            "Никаких блокировок YouTube, Instagram и любимых сайтов. "
-            "Протокол **VLESS xHTTP** маскирует трафик под обычные веб-страницы — заблокировать невозможно.\n\n"
-            "✅ Ваш маршрут открыт: **3 дня тест-драйва** зачислены, подписка активна.\n\n"
-            "```\n"
-            " TARIFF · 1 RUB = 1 DAY\n"
-            " DEVICES · 5 (HWID CONTROL)\n"
-            " LATENCY · LOW · SPEED · HIGH\n"
-            "```\n"
-            "\n"
-            "Перейдите в **📖 Инструкция** для установки за 1 минуту."
+            "🛡 **MosaicVPN** — защита сетевого соединения\n\n"
+            "Сервис помогает поддерживать приватность соединения и безопасно пользоваться сетью. "
+            "Маршруты подбираются автоматически с учётом доступности и качества связи.\n\n"
+            "✅ **Тестовый доступ активирован на 3 дня.**\n\n"
+            "• Стоимость после тестового периода — 1 ₽ в день\n"
+            "• До 5 устройств на одной подписке\n"
+            "• Подбор стабильного маршрута выполняется автоматически\n\n"
+            "Откройте **📖 Инструкция**, чтобы добавить подписку в приложение."
         ),
         "menu_buy": "🛒 Купить подписку",
         "menu_profile": "👤 Мой профиль",
@@ -116,38 +113,29 @@ MESSAGES = {
         "menu_instructions": "📖 Инструкция",
         "menu_lang": "🌐 Язык / Language",
         "buy_title": "🛒 Выберите пакет пополнения (1 рубль = 1 день):",
-        "pay_title": "💳 **Счёт готов**\n\n```\n ITEM  · {days} DAYS TOP-UP\n AMOUNT · {amount:.2f} USDT\n```\n\nНажмите кнопку ниже для оплаты через CryptoBot.",
+        "pay_title": "💳 **Счёт готов**\n\nСумма пополнения: **{amount:.2f} USDT**\nПериод доступа: **{days} дней**\n\nНажмите кнопку ниже, чтобы перейти к оплате.",
         "pay_button": "💳 Оплатить через CryptoBot",
         "lava_button": "🏦 Оплатить через СБП / карту",
         "custom_button": "✍️ Своя сумма",
         "p2p_info": (
-            "\n\n*💳 Как оплатить картой РФ / СБП без криптовалюты?*\n"
-            "1. Перейдите в @CryptoBot -> Маркет (P2P).\n"
-            "2. Купите необходимое количество USDT за рубли через СБП / карту банка в 2 клика.\n"
-            "3. Оплатите выданный ботом счет в один клик с вашего баланса CryptoBot!"
+            "\n\n💳 Выберите доступный способ оплаты в следующем шаге. "
+            "После подтверждения оплата будет зачислена на баланс доступа автоматически."
         ),
         "profile_active": (
-            "👤 **Ваш Профиль**\n\n"
-            "```\n"
-            " USER     · {username}\n"
-            " STATUS   · АКТИВЕН\n"
-            " BALANCE  · {balance} RUB\n"
-            " REMAINING· {days} ДНЕЙ (ДО {expire_date})\n"
-            " HWID     · 5 УСТРОЙСТВ\n"
-            "```\n\n"
-            "🔗 **Ваша ссылка на подписку (Атлас):**\n"
+            "👤 **Профиль MosaicVPN**\n\n"
+            "Статус: **активен**\n"
+            "Баланс доступа: **{balance} ₽**\n"
+            "Осталось: **{days} дней**, до {expire_date}\n"
+            "Устройства: до **5** одновременно\n\n"
+            "🔗 **Ссылка на подписку**\n"
             "`{sub_url}`\n\n"
-            "Скопируйте ссылку или откройте веб-карту для настройки приложений."
+            "Откройте веб-кабинет или добавьте ссылку в приложение MosaicVPN."
         ),
         "profile_inactive": (
-            "👤 **Ваш Профиль**\n\n"
-            "```\n"
-            " USER     · {username}\n"
-            " STATUS   · ПРОСРОЧЕН\n"
-            " BALANCE  · 0 RUB\n"
-            " EXPIRES  · {expire_date}\n"
-            "```\n\n"
-            "Пополните баланс для восстановления доступа."
+            "👤 **Профиль MosaicVPN**\n\n"
+            "Статус: **требуется продление**\n"
+            "Срок доступа завершился: {expire_date}\n\n"
+            "Пополните баланс, чтобы снова активировать подписку."
         ),
         "profile_not_found": "⚠️ Профиль не найден. Нажмите **🛒 Купить подписку** для создания.",
         "tariffs": (
@@ -171,12 +159,9 @@ MESSAGES = {
         ),
         "payment_success": (
             "✅ **Оплата зачислена**\n\n"
-            "```\n"
-            " TOP-UP    · {days} RUB\n"
-            " EXTENDED  · {days} DAYS\n"
-            " VALID TO  · {expire_date}\n"
-            "```\n\n"
-            "🔗 Ссылка на подписку:\n"
+            "Доступ продлён на **{days} дней**.\n"
+            "Новый срок действия: **до {expire_date}**.\n\n"
+            "🔗 **Ссылка на подписку**\n"
             "`{sub_url}`"
         ),
         "lang_title": "🌐 Выберите язык / Select language:",
@@ -192,17 +177,14 @@ MESSAGES = {
     },
     "en": {
         "welcome": (
-            "🛡 **Mosaic vpn.** — Atlas of Secure Routes\n\n"
-            "Bypass censorship of YouTube, Instagram and other blocked sites. "
-            "Our **VLESS xHTTP** protocol disguises traffic as ordinary web pages — unblockable by design.\n\n"
-            "✅ Your route is open: **3-day free trial** activated, subscription is live.\n\n"
-            "```\n"
-            " TARIFF · 1 RUB = 1 DAY\n"
-            " DEVICES · 5 (HWID CONTROL)\n"
-            " LATENCY · LOW · SPEED · HIGH\n"
-            "```\n"
-            "\n"
-            "Open **📖 Setup Instructions** to configure in 1 minute."
+            "🛡 **MosaicVPN** — secure network connection\n\n"
+            "The service helps maintain connection privacy and use the network securely. "
+            "Routes are selected automatically according to availability and connection quality.\n\n"
+            "✅ **Your 3-day trial is active.**\n\n"
+            "• Access costs 1 RUB per day after the trial\n"
+            "• Up to 5 devices on one subscription\n"
+            "• A stable route is selected automatically\n\n"
+            "Open **📖 Setup** to add the subscription to your app."
         ),
         "menu_buy": "🛒 Buy subscription",
         "menu_profile": "👤 Profile",
@@ -210,38 +192,29 @@ MESSAGES = {
         "menu_instructions": "📖 Setup",
         "menu_lang": "🌐 Language / Язык",
         "buy_title": "🛒 Select a top-up package (1 RUB = 1 day):",
-        "pay_title": "💳 **Invoice ready**\n\n```\n ITEM  · {days} DAYS TOP-UP\n AMOUNT · {amount:.2f} USDT\n```\n\nClick the button below to pay via CryptoBot.",
+        "pay_title": "💳 **Invoice ready**\n\nTop-up amount: **{amount:.2f} USDT**\nAccess period: **{days} days**\n\nUse the button below to continue to payment.",
         "pay_button": "💳 Pay via CryptoBot",
         "lava_button": "🏦 Pay by SBP / card",
         "custom_button": "✍️ Custom amount",
         "p2p_info": (
-            "\n\n*💳 How to pay with RU card / SBP without crypto?*\n"
-            "1. Open @CryptoBot → Market (P2P).\n"
-            "2. Buy USDT for rubles via SBP / bank card in 2 clicks.\n"
-            "3. Pay the invoice in one click from your CryptoBot balance!"
+            "\n\n💳 Choose an available payment method in the next step. "
+            "After confirmation, payment is credited to the access balance automatically."
         ),
         "profile_active": (
-            "👤 **Profile**\n\n"
-            "```\n"
-            " USER     · {username}\n"
-            " STATUS   · ACTIVE\n"
-            " BALANCE  · {balance} RUB\n"
-            " REMAINING· {days} DAYS (TO {expire_date})\n"
-            " HWID     · 5 DEVICES\n"
-            "```\n\n"
-            "🔗 **Subscription link:**\n"
+            "👤 **MosaicVPN profile**\n\n"
+            "Status: **active**\n"
+            "Access balance: **{balance} RUB**\n"
+            "Remaining: **{days} days**, until {expire_date}\n"
+            "Devices: up to **5** at the same time\n\n"
+            "🔗 **Subscription link**\n"
             "`{sub_url}`\n\n"
-            "Copy this link or open the web map to manage subscription and setup apps."
+            "Open the web cabinet or add the link to the MosaicVPN app."
         ),
         "profile_inactive": (
-            "👤 **Profile**\n\n"
-            "```\n"
-            " USER     · {username}\n"
-            " STATUS   · EXPIRED\n"
-            " BALANCE  · 0 RUB\n"
-            " EXPIRES  · {expire_date}\n"
-            "```\n\n"
-            "Please top up your balance to restore access."
+            "👤 **MosaicVPN profile**\n\n"
+            "Status: **renewal required**\n"
+            "Access period ended: {expire_date}\n\n"
+            "Top up your balance to activate the subscription again."
         ),
         "profile_not_found": "⚠️ Profile not found. Click **🛒 Buy subscription** to create one.",
         "tariffs": (
@@ -265,12 +238,9 @@ MESSAGES = {
         ),
         "payment_success": (
             "✅ **Payment received**\n\n"
-            "```\n"
-            " TOP-UP    · {days} RUB\n"
-            " EXTENDED  · {days} DAYS\n"
-            " VALID TO  · {expire_date}\n"
-            "```\n\n"
-            "🔗 Subscription link:\n"
+            "Your access has been extended by **{days} days**.\n"
+            "New expiry date: **{expire_date}**.\n\n"
+            "🔗 **Subscription link**\n"
             "`{sub_url}`"
         ),
         "lang_title": "🌐 Select language / Выберите язык:",
@@ -286,12 +256,13 @@ MESSAGES = {
     }
 }
 
-# Inject new messages for Free Proxies
-MESSAGES["ru"]["menu_proxies"] = "⚡ Бесплатные прокси"
-MESSAGES["ru"]["proxies_welcome"] = "⚡ **Бесплатные MTProto и SOCKS5 прокси**\n\nАвтоматически проверяемые прокси, устойчивые к блокировкам DPI.\n\nВыберите категорию ниже:"
-MESSAGES["ru"]["proxies_loading"] = "⏳ Загружаю актуальные прокси..."
-MESSAGES["ru"]["proxies_error"] = "⚠️ Не удалось загрузить прокси. Попробуйте позже."
-MESSAGES["ru"]["proxies_list_title"] = "⚡ **Доступные прокси (топ по пингу):**"
+# Legacy network-tools strings are retained only for backward-compatible
+# callback parsing. The feature is deliberately not exposed in public menus.
+MESSAGES["ru"]["menu_proxies"] = "Дополнительные инструменты"
+MESSAGES["ru"]["proxies_welcome"] = "Этот раздел временно недоступен."
+MESSAGES["ru"]["proxies_loading"] = "⏳ Проверяем доступность..."
+MESSAGES["ru"]["proxies_error"] = "⚠️ Раздел временно недоступен."
+MESSAGES["ru"]["proxies_list_title"] = ""
 
 MESSAGES["ru"]["menu_referral"] = "🎁 Пригласить друга"
 MESSAGES["ru"]["menu_support"] = "🎧 Поддержка"
@@ -303,21 +274,17 @@ MESSAGES["ru"]["support_prompt"] = (
 MESSAGES["ru"]["referral_promo"] = (
     "🎁 **Получите VPN бесплатно**\n\n"
     "Пригласите друга в Mosaic VPN! Когда он оплатит подписку, вы **ОБА** получите бонусные дни.\n\n"
-    "```"
-    " FRIEND PAYS · 10 DAYS → +10 FOR BOTH\n"
-    " FRIEND PAYS · 30 DAYS → +30 FOR BOTH\n"
-    " FRIEND PAYS · 90 DAYS → +90 FOR BOTH\n"
-    "```\n\n"
-    "Без ограничений — приглашайте сколько угодно.\n\n"
+    "Когда приглашённый пользователь оплачивает подписку, вам и ему добавляются бонусные дни.\n\n"
+    "Приглашайте друзей и получайте бонусные дни за успешное подключение.\n\n"
     "Нажмите кнопку ниже, чтобы получить реферальную ссылку."
 )
 MESSAGES["ru"]["referral_link_text"] = "🔗 **Ваша реферальная ссылка:**\n`{link}`\n\nОтправьте её другу. Когда он запустит бота, система свяжет ваши профили."
 
-MESSAGES["en"]["menu_proxies"] = "⚡ Free Proxies"
-MESSAGES["en"]["proxies_welcome"] = "⚡ **Free MTProto & SOCKS5 Proxies**\n\nAutomatically verified proxies resistant to DPI blocking.\n\nSelect a category below:"
-MESSAGES["en"]["proxies_loading"] = "⏳ Loading fresh proxies..."
-MESSAGES["en"]["proxies_error"] = "⚠️ Failed to load proxies. Please try again later."
-MESSAGES["en"]["proxies_list_title"] = "⚡ **Available proxies (top by latency):**"
+MESSAGES["en"]["menu_proxies"] = "Additional tools"
+MESSAGES["en"]["proxies_welcome"] = "This section is temporarily unavailable."
+MESSAGES["en"]["proxies_loading"] = "⏳ Checking availability..."
+MESSAGES["en"]["proxies_error"] = "⚠️ This section is temporarily unavailable."
+MESSAGES["en"]["proxies_list_title"] = ""
 
 MESSAGES["en"]["menu_referral"] = "🎁 Invite a Friend"
 MESSAGES["en"]["menu_support"] = "🎧 Support"
@@ -327,15 +294,9 @@ MESSAGES["en"]["support_prompt"] = (
     "Choose an action below — we're available 24/7."
 )
 MESSAGES["en"]["referral_promo"] = (
-    "🎁 **Get VPN for free**\n\n"
-    "Invite a friend to Mosaic VPN! When they purchase a subscription, you **BOTH** get bonus days.\n\n"
-    "```"
-    " FRIEND PAYS · 10 DAYS → +10 FOR BOTH\n"
-    " FRIEND PAYS · 30 DAYS → +30 FOR BOTH\n"
-    " FRIEND PAYS · 90 DAYS → +90 FOR BOTH\n"
-    "```\n\n"
-    "No limits — invite as many friends as you want!\n\n"
-    "Click the button below to get your referral link."
+    "🎁 **Invite a friend and receive bonus days**\n\n"
+    "When an invited user purchases a subscription, bonus days are added to both profiles.\n\n"
+    "Use the button below to get your referral link."
 )
 MESSAGES["en"]["referral_link_text"] = "🔗 **Your referral link:**\n`{link}`\n\nShare it with a friend. When they start the bot, our system will link your accounts."
 
@@ -1504,7 +1465,6 @@ def send_payment_success_notification(telegram_id, days, short_uuid, expire_at_s
     
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("🗺 Web Map" if lang == 'en' else "🗺 Открыть веб-карту", url=sub_url))
-    markup.add(types.InlineKeyboardButton("⚡ Бесплатные прокси" if lang == 'ru' else "⚡ Free Proxies", callback_data="proxy_all"))
     
     try:
         bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
@@ -1861,9 +1821,8 @@ def get_main_menu(lang):
     t = MESSAGES[lang]
     markup.row(t["menu_buy"], t["menu_profile"])
     markup.row(t["menu_tariffs"], t["menu_instructions"])
-    markup.row(t["menu_lang"], t["menu_proxies"])
-    markup.row(t["menu_referral"], t["menu_support"])
-    markup.row(t["menu_status"])
+    markup.row(t["menu_lang"], t["menu_referral"])
+    markup.row(t["menu_support"], t["menu_status"])
     return markup
 
 @bot.message_handler(commands=["start"])
@@ -2001,8 +1960,7 @@ def send_welcome(message):
         
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🗺 Web Map" if lang == 'en' else "🗺 Открыть веб-карту", url=sub_url))
-        markup.add(types.InlineKeyboardButton("⚡ Бесплатные прокси" if lang == 'ru' else "⚡ Free Proxies", callback_data="proxy_all"))
-        
+
         bot.send_message(message.chat.id, full_text, parse_mode="Markdown", reply_markup=markup)
         bot.send_message(message.chat.id, "Вы можете управлять аккаунтом с помощью меню ниже:" if lang == "ru" else "You can manage your account using the menu below:", reply_markup=get_main_menu(lang))
     else:
@@ -2142,7 +2100,6 @@ def show_profile(message):
                 
             markup = types.InlineKeyboardMarkup()
             markup.add(types.InlineKeyboardButton("🗺 Web Map" if lang == 'en' else "🗺 Открыть веб-карту", url=sub_url))
-            markup.add(types.InlineKeyboardButton("⚡ Бесплатные прокси" if lang == 'ru' else "⚡ Free Proxies", callback_data="proxy_all"))
             bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
             return
             
@@ -2929,22 +2886,22 @@ def setup_bot_branding():
         
         # Set description (locale RU)
         bot.set_my_description(
-            "🛡 **Mosaic vpn.** — быстрый и безопасный доступ к заблокированным ресурсам без ограничений скорости.\n\n"
+            "🛡 **MosaicVPN** — безопасное сетевое соединение и защита трафика.\n\n"
             "🎁 **3 дня бесплатного тест-драйва** каждому новому пользователю!\n"
             "• Стоимость: **1 рубль в день**.\n"
             "• HWID лимит: до **5 устройств** на профиле.\n"
-            "• Протокол **VLESS xHTTP** против блокировок.\n\n"
+            "• Автоматический выбор стабильного маршрута.\n\n"
             "💬 Поддержка: @mosaicsup\n\n"
             "Нажмите /start, чтобы получить доступ!",
             language_code="ru"
         )
         # Set description (locale EN)
         bot.set_my_description(
-            "🛡 **Mosaic vpn.** — fast and secure access to blocked resources without speed limits.\n\n"
+            "🛡 **MosaicVPN** — secure network connection and traffic protection.\n\n"
             "🎁 **3-day FREE trial** for every new user!\n"
             "• Price: **1 ruble per day**.\n"
             "• HWID limit: up to **5 devices** per profile.\n"
-            "• Core **VLESS xHTTP** protocol against censorship.\n\n"
+            "• Automatic selection of a stable route.\n\n"
             "💬 Support: @mosaicsup\n\n"
             "Type /start to begin!",
             language_code="en"
@@ -3391,7 +3348,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                 "client_policy": {**policy, "mode": "latency"},
             },
             {
-                "id": "reserved-lte-compat", "title": "Свободный LTE", "route_type": "smart_group",
+                "id": "reserved-lte-compat", "title": "Резервная совместимость", "route_type": "smart_group",
                 "type": "urltest", "pool_id": "reserved-lte-compat", "category": "compatibility",
                 "icon": "cellular", "badge": "Скоро", "description": "Категория зарезервирована до подключения авторизованного источника профилей.",
                 "disabled": True, "disabled_reason": "Требуется подключение авторизованного источника профилей.",
@@ -3919,16 +3876,10 @@ def show_proxies_menu(message):
     telegram_id = message.chat.id
     db_user = get_user(telegram_id)
     lang = db_user["language"] if db_user else "ru"
-    t = MESSAGES[lang]
-    
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("🇷🇺 RU MTProto", callback_data="proxy_ru"),
-        types.InlineKeyboardButton("🇪🇺 EU MTProto", callback_data="proxy_eu"),
-        types.InlineKeyboardButton("🌍 All MTProto", callback_data="proxy_all"),
-        types.InlineKeyboardButton("🔌 SOCKS5", callback_data="proxy_socks5")
-    )
-    bot.send_message(telegram_id, t["proxies_welcome"], parse_mode="Markdown", reply_markup=markup)
+    text = ("Этот раздел временно недоступен. Используйте основное меню MosaicVPN."
+            if lang == "ru" else
+            "This section is temporarily unavailable. Please use the MosaicVPN main menu.")
+    bot.send_message(telegram_id, text)
 
 def check_proxy_alive(server, port, timeout=8, proxy_type="mtproto", secret=None):
     """
@@ -4104,10 +4055,17 @@ def handle_proxy_callback(call):
     telegram_id = call.message.chat.id
     db_user = get_user(telegram_id)
     lang = db_user["language"] if db_user else "ru"
+    text = ("Этот раздел временно недоступен. Используйте основное меню MosaicVPN."
+            if lang == "ru" else
+            "This section is temporarily unavailable. Please use the MosaicVPN main menu.")
+    bot.answer_callback_query(call.id, text)
+    bot.send_message(telegram_id, text)
+    return
+
+    # Legacy implementation below is unreachable while this product surface is
+    # disabled. It is retained temporarily for migration compatibility.
     t = MESSAGES[lang]
-    
     proxy_type = call.data.split("_")[1]
-    
     bot.answer_callback_query(call.id, t["proxies_loading"])
     
     urls_primary = {
@@ -4648,30 +4606,16 @@ def run_notifications_check():
                     
                     if lang == "ru":
                         text = (
-                            f"🎁 **{display_name}, получите VPN бесплатно!**\n\n"
-                            f"Пригласите друга в Mosaic VPN — когда он оплатит подписку, вы **ОБА** получите бонусные дни!\n\n"
-                            f"```\n"
-                            f" FRIEND PAYS · 10 → +10 FOR BOTH\n"
-                            f" FRIEND PAYS · 30 → +30 FOR BOTH\n"
-                            f" FRIEND PAYS · 90 → +90 FOR BOTH\n"
-                            f"```\n"
-                            f"• Друг оплатил 10 дней → **+10 дней** вам и другу!\n"
-                            f"• Друг оплатил 30 дней → **+30 дней** вам и другу!\n"
-                            f"• Друг оплатил 90 дней → **+90 дней** вам и другу!\n\n"
-                            f"Без ограничений — приглашайте сколько угодно!\n\n"
+                            f"🎁 **{display_name}, получите бонусные дни!**\n\n"
+                            f"Пригласите друга в MosaicVPN. Когда он оплатит подписку, бонусные дни будут добавлены вам и приглашённому пользователю.\n\n"
                             f"Нажмите кнопку ниже, чтобы получить реферальную ссылку."
                         )
                         btn_link = "Получить реферальную ссылку"
                         btn_tariffs = "Тарифы"
                     else:
                         text = (
-                            f"🎁 **{display_name}, get VPN for free!**\n\n"
-                            f"Invite a friend to Mosaic VPN — when they pay, you **BOTH** get reward days!\n\n"
-                            f"✅ **Bonus matches subscription bought:**\n"
-                            f"• Friend bought 10 days → **+10 days** free!\n"
-                            f"• Friend bought 30 days → **+30 days** free!\n"
-                            f"• Friend bought 90 days → **+90 days** free!\n\n"
-                            f"No limits — invite anyone!"
+                            f"🎁 **{display_name}, receive bonus days!**\n\n"
+                            f"Invite a friend to MosaicVPN. When they purchase a subscription, bonus days are added to both profiles."
                         )
                         btn_link = "Get Referral Link"
                         btn_tariffs = "Tariffs"

@@ -344,7 +344,7 @@
           <tr><td class="mono">nodes</td><td class="mono">array</td><td>—</td><td>Обязательное. Узлы группы</td></tr>
           <tr><td class="mono">user_tier</td><td class="mono">string</td><td>—</td><td>Минимальный уровень для доступа к группе</td></tr>
           <tr><td class="mono">badge</td><td class="mono">string</td><td>—</td><td>Короткая метка на карточке</td></tr>
-          <tr><td class="mono">category</td><td class="mono">string</td><td>—</td><td><code>smart</code>, <code>whitelist</code>, <code>raw</code></td></tr>
+          <tr><td class="mono">category</td><td class="mono">string</td><td>—</td><td><code>smart</code>, <code>compatibility</code>, <code>raw</code></td></tr>
           <tr><td class="mono">icon</td><td class="mono">string</td><td>—</td><td>Например <code>shield</code>, <code>lightning</code>, <code>flag_de</code></td></tr>
           <tr><td class="mono">description</td><td class="mono">string</td><td>—</td><td>Пояснение под названием</td></tr>
           <tr><td class="mono">ping_interval</td><td class="mono">int</td><td><code>30</code></td><td>Секунды между проверками живости</td></tr>
@@ -388,7 +388,7 @@
       "logo_url": "https://example.com/logo.svg",
       "accent_color": "#B85C38",
       "support_url": "https://t.me/mosaicvpnbot",
-      "provider_description": "Быстрый доступ без ограничений"
+      "provider_description": "Защищённое сетевое соединение"
     }
   }
 }</code></pre>
@@ -428,7 +428,7 @@
     <h3>Свои блоки в интерфейсе</h3>
     <p>
       Секции <code>services</code> и <code>widgets</code> позволяют добавить в клиент
-      собственные элементы: выбор прокси, показатель трафика, кнопку действия или
+      собственные элементы: выбор маршрута, показатель трафика, кнопку действия или
       ссылку на ваш ресурс.
     </p>
 <pre><code>{
@@ -437,8 +437,8 @@
       {
         "id": "streaming",
         "type": "proxy_picker",
-        "title": "Разблокировка стриминга",
-        "description": "Отдельные узлы под видеосервисы",
+        "title": "Маршрут для видеосервисов",
+        "description": "Отдельная группа маршрутов для медиасценариев",
         "icon": "play",
         "config": { "group_id": "streaming" }
       }
