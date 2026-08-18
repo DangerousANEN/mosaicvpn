@@ -204,6 +204,24 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, prefs s
 		return fmt.Errorf("write sing-box config: %w", err)
 	}
 
+	// Validate against the exact bundled sing-box binary before creating any
+	// runtime process or TUN adapter. This turns incompatible config fields into
+	// a deterministic diagnostics response instead of an opaque HTTP 400.
+	checkCtx, checkCancel := context.WithTimeout(ctx, 10*time.Second)
+	check := exec.CommandContext(checkCtx, bin, "check", "-c", cfgPath, "-D", b.dataDir)
+	hideConsoleWindow(check)
+	check.Dir = b.dataDir
+	checkOutput, checkErr := check.CombinedOutput()
+	checkCancel()
+	if checkErr != nil {
+		b.mu.Unlock()
+		detail := strings.TrimSpace(string(checkOutput))
+		if detail == "" {
+			detail = checkErr.Error()
+		}
+		return fmt.Errorf("sing-box config check: %s", detail)
+	}
+
 	cctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(cctx, bin, "run", "-c", cfgPath, "-D", b.dataDir)
 	hideConsoleWindow(cmd)
@@ -594,14 +612,6 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 			}
 		}
 
-		if len(childNodes) == 0 {
-			for _, sv := range allServers {
-				if !sv.IsVirtualGroup {
-					childNodes = append(childNodes, sv)
-				}
-			}
-		}
-
 		var nodeTags []string
 		for i, node := range childNodes {
 			nodeTag := fmt.Sprintf("node-%s-%d", node.ID, i)
@@ -613,7 +623,10 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 		}
 
 		if len(nodeTags) == 0 {
-			nodeTags = []string{"direct"}
+			// A protected Smart Group must never silently degrade to direct
+			// traffic. The caller receives a typed configuration failure and can
+			// refresh the provider manifest instead of bypassing the group policy.
+			return nil, fmt.Errorf("smart group %q has no usable provider candidates", server.Name)
 		}
 
 		intervalSeconds := outboundIntHint(server, "mosaic_ping_interval")
@@ -877,6 +890,10 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 		"final":                   "proxy",
 		"rules":                   routeRules,
 		"default_domain_resolver": dnsServerTag,
+		// Desktop TUN needs to bind outbound dials to the default physical
+		// interface; otherwise the upstream transport can re-enter its own TUN
+		// route and fail before the proxy handshake reaches the provider.
+		"auto_detect_interface": true,
 	}
 	if dns.Mode == "disabled" {
 		delete(routeBlock, "default_domain_resolver")

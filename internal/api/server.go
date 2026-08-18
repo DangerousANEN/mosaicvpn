@@ -296,10 +296,53 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.mgr.Status())
 }
 
+type connectFailure struct {
+	Error         string `json:"error"`
+	Code          string `json:"code"`
+	Retryable     bool   `json:"retryable"`
+	CorrelationID string `json:"correlation_id"`
+}
+
+func writeConnectFailure(w http.ResponseWriter, status int, code, message string, retryable bool, cause error) {
+	correlationID := newToken()[:16]
+	if cause != nil {
+		logx.Warn("connect failed", "code", code, "correlation_id", correlationID, "err", cause)
+	}
+	writeJSON(w, status, connectFailure{
+		Error:         message,
+		Code:          code,
+		Retryable:     retryable,
+		CorrelationID: correlationID,
+	})
+}
+
+func classifyConnectFailure(err error) (code, message string, retryable bool) {
+	lower := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(lower, "server") && strings.Contains(lower, "not found"):
+		return "route_not_found", "Выбранный маршрут больше недоступен. Обновите подписку.", true
+	case strings.Contains(lower, "already connecting"):
+		return "connection_in_progress", "Подключение уже выполняется.", true
+	case strings.Contains(lower, "sing-box binary not found"),
+		strings.Contains(lower, "vpn runtime unavailable"):
+		return "runtime_unavailable", "VPN runtime не найден. Переустановите приложение или откройте диагностику.", false
+	case strings.Contains(lower, "build sing-box config"),
+		strings.Contains(lower, "sing-box config check"):
+		return "config_invalid", "Конфигурация маршрута не прошла проверку.", false
+	case strings.Contains(lower, "could not bind a free loopback port"):
+		return "runtime_ports_unavailable", "Не удалось открыть локальные порты VPN runtime.", true
+	case strings.Contains(lower, "sing-box did not start"),
+		strings.Contains(lower, "start sing-box"):
+		return "runtime_start_failed", "VPN runtime не запустился. Откройте диагностику и повторите попытку.", true
+	default:
+		return "connection_failed", "Не удалось установить подключение. Откройте диагностику и повторите попытку.", true
+	}
+}
+
 func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	var req proto.ConnectRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid body")
+		writeConnectFailure(w, http.StatusBadRequest, "invalid_request", "Некорректный запрос подключения.", false, err)
 		return
 	}
 	// A client-side smart-group selector may pin a candidate after local probes.
@@ -310,7 +353,7 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	if req.GroupID != "" && req.ServerID != "" {
 		group, ok := s.store.Group(req.GroupID)
 		if !ok {
-			writeError(w, http.StatusNotFound, "group not found")
+			writeConnectFailure(w, http.StatusNotFound, "group_not_found", "Smart Group больше недоступна. Обновите подписку.", true, nil)
 			return
 		}
 		member := false
@@ -321,11 +364,11 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !member {
-			writeError(w, http.StatusBadRequest, "candidate does not belong to group")
+			writeConnectFailure(w, http.StatusBadRequest, "candidate_not_member", "Выбранный кандидат не относится к Smart Group.", true, nil)
 			return
 		}
 		if _, ok := s.store.FindServer(req.ServerID); !ok {
-			writeError(w, http.StatusBadRequest, "candidate is no longer available")
+			writeConnectFailure(w, http.StatusBadRequest, "candidate_unavailable", "Выбранный кандидат больше недоступен. Запустите проверку группы снова.", true, nil)
 			return
 		}
 		res = state.Resolution{ServerID: req.ServerID, GroupID: req.GroupID, Step: state.StepExplicit}
@@ -340,20 +383,26 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 		if errors.As(err, &rerr) {
 			// Report the reason and the steps tried instead of a bare failure,
 			// so the UI can explain the problem and offer a retry.
+			correlationID := newToken()[:16]
+			logx.Warn("connect resolution failed", "correlation_id", correlationID, "reason", rerr.Reason)
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-				"error":     rerr.Reason,
-				"details":   rerr.Details,
-				"tried":     rerr.Tried,
-				"retryable": rerr.Retryable,
+				"error":          "Не удалось выбрать доступный маршрут.",
+				"code":           "route_unavailable",
+				"details":        rerr.Details,
+				"tried":          rerr.Tried,
+				"retryable":      rerr.Retryable,
+				"correlation_id": correlationID,
 			})
 			return
 		}
-		writeError(w, http.StatusBadRequest, err.Error())
+		code, message, retryable := classifyConnectFailure(err)
+		writeConnectFailure(w, http.StatusBadRequest, code, message, retryable, err)
 		return
 	}
 
 	if err := s.mgr.Connect(r.Context(), res.ServerID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		code, message, retryable := classifyConnectFailure(err)
+		writeConnectFailure(w, http.StatusBadRequest, code, message, retryable, err)
 		return
 	}
 

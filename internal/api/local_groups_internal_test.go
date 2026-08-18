@@ -276,3 +276,22 @@ func TestProviderEnrollmentMigratesGenericMosaicImportAndBuildsGroups(t *testing
 		t.Fatal("provider enrollment did not persist Smart Groups")
 	}
 }
+
+func TestConnectFailureReturnsSafeTypedDiagnostic(t *testing.T) {
+	srv, _, hs := newInternalAPITestServer(t, nil)
+	response := apiRequest(t, hs, srv.Token(), http.MethodPost, "/v1/connect", map[string]string{
+		"server_id": "missing-route",
+	})
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("connect status = %d, want %d", response.StatusCode, http.StatusServiceUnavailable)
+	}
+	var failure connectFailure
+	if err := json.NewDecoder(response.Body).Decode(&failure); err != nil {
+		t.Fatal(err)
+	}
+	if failure.Code != "route_unavailable" || failure.CorrelationID == "" ||
+		failure.Error == "" || failure.Retryable {
+		t.Fatalf("unexpected typed failure: %#v", failure)
+	}
+}

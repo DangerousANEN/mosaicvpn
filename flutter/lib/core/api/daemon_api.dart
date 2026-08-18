@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 
 import '../models/models.dart';
 import 'daemon_api_base.dart';
+import 'daemon_api_exception.dart';
 
 /// Resolves the current local daemon endpoint from its lockfile.
 ///
@@ -100,15 +101,21 @@ class DaemonApi implements DaemonApiBase {
     return VpnStatus.fromJson(r.data);
   }
 
-  @override
-  Future<void> connect(String serverID) async {
-    await _dio.post('/v1/connect', data: {'server_id': serverID});
+  Future<void> _connectRequest(Map<String, String> body) async {
+    try {
+      await _dio.post('/v1/connect', data: body);
+    } on DioException catch (error) {
+      throw DaemonApiException.fromDio(error);
+    }
   }
 
   @override
-  Future<void> connectGroup(String groupID) async {
-    await _dio.post('/v1/connect', data: {'group_id': groupID});
-  }
+  Future<void> connect(String serverID) =>
+      _connectRequest({'server_id': serverID});
+
+  @override
+  Future<void> connectGroup(String groupID) =>
+      _connectRequest({'group_id': groupID});
 
   @override
   Future<SmartGroupCandidateShard> getCandidateShard(
@@ -129,10 +136,8 @@ class DaemonApi implements DaemonApiBase {
   }
 
   @override
-  Future<void> connectGroupCandidate(String groupID, String candidateID) async {
-    await _dio.post('/v1/connect',
-        data: {'group_id': groupID, 'server_id': candidateID});
-  }
+  Future<void> connectGroupCandidate(String groupID, String candidateID) =>
+      _connectRequest({'group_id': groupID, 'server_id': candidateID});
 
   @override
   Future<void> disconnect() async {
