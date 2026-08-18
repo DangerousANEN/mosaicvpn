@@ -623,7 +623,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       _account.getPaymentHistory();
 
   @override
-  Future<ProviderManifest> getProviderManifest() =>
+  Future<ProviderManifest> getProviderManifest({String? subscriptionId}) =>
       _account.getProviderManifest();
 
   @override

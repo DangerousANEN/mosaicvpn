@@ -1839,7 +1839,7 @@ class MockDaemonApi implements DaemonApiBase {
   // ─── Provider Manifest ─────────────────────────────────────────────
 
   @override
-  Future<ProviderManifest> getProviderManifest() async {
+  Future<ProviderManifest> getProviderManifest({String? subscriptionId}) async {
     await Future.delayed(const Duration(milliseconds: 200));
     return ProviderManifest.fromJson({
       'provider_name': 'MosaicVPN',

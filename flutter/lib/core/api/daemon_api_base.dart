@@ -203,7 +203,9 @@ abstract class DaemonApiBase {
 
   // ─── Provider Manifest ─────────────────────────────────────────────
 
-  Future<ProviderManifest> getProviderManifest();
+  /// Returns a provider manifest scoped to one subscription when supplied.
+  /// Omit [subscriptionId] only for legacy callers that have no selection yet.
+  Future<ProviderManifest> getProviderManifest({String? subscriptionId});
 
   // ─── Pool / Group Selection ────────────────────────────────────────
 

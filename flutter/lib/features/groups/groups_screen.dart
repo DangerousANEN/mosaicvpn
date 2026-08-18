@@ -79,7 +79,10 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   @override
   Widget build(BuildContext context) {
     final colors = ThemeColors.of(context);
-    final manifestAsync = ref.watch(mosaicManifestProvider);
+    // The legacy manifest is used only to make an older Android source visible
+    // before its subscription list has refreshed. Route rows themselves always
+    // use the selected subscription-scoped manifest below.
+    final legacyManifestAsync = ref.watch(mosaicManifestProvider);
     final subscriptions =
         ref.watch(subscriptionsProvider).valueOrNull ?? const <Subscription>[];
     final servers = ref.watch(serversProvider).valueOrNull ?? const <Server>[];
@@ -87,21 +90,24 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
         const <ServerGroup>[];
     final status = ref.watch(vpnStatusProvider).valueOrNull;
 
-    if (manifestAsync.isLoading && subscriptions.isEmpty) {
+    if (legacyManifestAsync.isLoading && subscriptions.isEmpty) {
       return Scaffold(
         backgroundColor: colors.bgBase,
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
-    final manifest = manifestAsync.valueOrNull;
-    final sources = _sourcesFor(manifest, subscriptions);
+    final sources = _sourcesFor(legacyManifestAsync.valueOrNull, subscriptions);
     final selectedSource = sources.firstWhere(
       (source) => source.id == _selectedSubscriptionId,
       orElse: () => sources.isNotEmpty ? sources.first : Subscription(),
     );
+    final selectedManifestAsync = selectedSource.isProviderSource &&
+            selectedSource.id.isNotEmpty
+        ? ref.watch(providerManifestForSubscriptionProvider(selectedSource.id))
+        : null;
     final rows = _rowsFor(
-      manifest: manifest,
+      manifest: selectedManifestAsync?.valueOrNull,
       source: selectedSource,
       servers: servers,
       localGroups: localGroups,
@@ -166,7 +172,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                             : () => _openSubscriptionCabinet(selectedSource),
                       ),
                       const SizedBox(height: 14),
-                      if (manifestAsync.hasError &&
+                      if (selectedManifestAsync?.hasError == true &&
                           selectedSource.isProviderSource)
                         _InlineNotice(
                           icon: Icons.sync_problem_outlined,

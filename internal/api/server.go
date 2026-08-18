@@ -1240,6 +1240,10 @@ func (s *Server) refresh(ctx context.Context, sub proto.Subscription) error {
 		if len(manifest.Groups) == 0 && (sub.ProviderID == "mosaicvpn" || sub.ID == "mosaic-direct") {
 			manifest = subs.SynthesizeManifest(sub.ID, res.Servers)
 		}
+		// Provider group IDs are local resolver IDs. Namespace them by the
+		// subscription source before persisting, so two provider accounts
+		// cannot overwrite each other's Smart Group selection state.
+		manifest = scopeManifestForSubscription(manifest, sub.ID)
 		if len(manifest.Groups) > 0 {
 			hasVirtualGroups := false
 			for _, server := range finalServers {
@@ -1257,10 +1261,8 @@ func (s *Server) refresh(ctx context.Context, sub proto.Subscription) error {
 				)
 			}
 		}
-		if sub.ProviderID == "mosaicvpn" || sub.ID == "mosaic-direct" {
-			if err := s.syncMosaicGroups(manifest); err != nil {
-				return fmt.Errorf("sync Mosaic groups: %w", err)
-			}
+		if err := s.syncProviderGroups(sub.ID, manifest); err != nil {
+			return fmt.Errorf("sync provider groups: %w", err)
 		}
 		s.manifestMu.Lock()
 		s.activeManifest = &manifest
@@ -1280,10 +1282,41 @@ func (s *Server) refresh(ctx context.Context, sub proto.Subscription) error {
 	return s.store.ReplaceServersFor(sub.ID, finalServers)
 }
 
-// syncMosaicGroups mirrors the public manifest into the resolver's local
-// group store. The node references stay daemon-side, while the UI sees the
-// manifest alone and connects using group_id rather than an endpoint.
-func (s *Server) syncMosaicGroups(manifest proto.SubscriptionManifest) error {
+// scopeManifestForSubscription rewrites only the local resolver route IDs.
+// The public title, policy and opaque node references retain the provider's
+// contract. No physical pool endpoint is added to the user-facing manifest.
+func scopeManifestForSubscription(manifest proto.SubscriptionManifest, subscriptionID string) proto.SubscriptionManifest {
+	if subscriptionID == "" || len(manifest.Groups) == 0 {
+		return manifest
+	}
+	copy := manifest
+	copy.Groups = append([]proto.ManifestGroup(nil), manifest.Groups...)
+	for index := range copy.Groups {
+		group := &copy.Groups[index]
+		group.ID = "provider:" + subscriptionID + ":" + group.ID
+	}
+	return copy
+}
+
+// syncProviderGroups mirrors one subscription-scoped public manifest into the
+// local resolver. The node references remain daemon-side and the Flutter UI
+// connects only through the scoped group_id. Stale groups from the same source
+// are removed when a provider changes its route catalog.
+func (s *Server) syncProviderGroups(subscriptionID string, manifest proto.SubscriptionManifest) error {
+	prefix := "provider:" + subscriptionID + ":"
+	desired := make(map[string]struct{}, len(manifest.Groups))
+	for _, manifestGroup := range manifest.Groups {
+		desired[manifestGroup.ID] = struct{}{}
+	}
+	for _, existing := range s.store.Snapshot().Groups {
+		if strings.HasPrefix(existing.ID, prefix) {
+			if _, keep := desired[existing.ID]; !keep {
+				if err := s.store.DeleteGroup(existing.ID); err != nil {
+					return err
+				}
+			}
+		}
+	}
 	for _, manifestGroup := range manifest.Groups {
 		group := manifestGroup.ToServerGroup()
 		group.Source = proto.GroupSourcePool

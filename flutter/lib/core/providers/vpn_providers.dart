@@ -487,8 +487,9 @@ class _ResolvedDaemonApi implements DaemonApiBase {
       (await _backend()).rotateSubscriptionLink();
 
   @override
-  Future<ProviderManifest> getProviderManifest() async =>
-      (await _backend()).getProviderManifest();
+  Future<ProviderManifest> getProviderManifest(
+          {String? subscriptionId}) async =>
+      (await _backend()).getProviderManifest(subscriptionId: subscriptionId);
 
   @override
   Future<Map<String, NodeHealth>> getGroupHealth(String groupId) async =>
@@ -578,6 +579,19 @@ final mosaicManifestProvider =
   }
   final api = ref.watch(daemonApiProvider);
   return api.getProviderManifest();
+});
+
+/// Provider manifests are always scoped to the selected provider subscription.
+/// This prevents routes from one provider account being rendered under another
+/// source. The legacy global provider above remains for dashboard compatibility
+/// before any source has been selected.
+final providerManifestForSubscriptionProvider = FutureProvider.autoDispose
+    .family<ProviderManifest, String>((ref, id) async {
+  if (AppPlatform.isAndroid) {
+    return AndroidMosaicAccountService.instance.getProviderManifest();
+  }
+  final api = ref.watch(daemonApiProvider);
+  return api.getProviderManifest(subscriptionId: id);
 });
 
 // ─── Subscriptions ─────────────────────────────────────────────────

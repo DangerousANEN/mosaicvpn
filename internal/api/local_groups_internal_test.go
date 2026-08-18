@@ -78,11 +78,12 @@ func TestMosaicDirectFeedSynthesizesPublicSmartGroups(t *testing.T) {
 	if len(manifest.Groups) == 0 {
 		t.Fatal("official direct feed returned no public smart groups")
 	}
-	if _, ok := s.Group("rg-all"); !ok {
+	groupID := manifest.Groups[0].ID
+	if _, ok := s.Group(groupID); !ok {
 		t.Fatal("synthesized smart group was not synced to resolver store")
 	}
 
-	response = apiRequest(t, hs, srv.Token(), http.MethodPost, "/v1/connect", map[string]string{"group_id": "rg-all"})
+	response = apiRequest(t, hs, srv.Token(), http.MethodPost, "/v1/connect", map[string]string{"group_id": groupID})
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("connect official group status = %d", response.StatusCode)
@@ -143,7 +144,7 @@ func TestLocalCollectionGroupServerAndConnectLifecycle(t *testing.T) {
 
 func TestSmartGroupCandidateShardAndBoundConnect(t *testing.T) {
 	feed := []byte("vless://00000000-0000-0000-0000-000000000001@198.51.100.42:443?security=tls#Mosaic%20private%20node\n")
-	srv, _, hs := newInternalAPITestServer(t, func(context.Context, string) ([]byte, string, error) {
+	srv, s, hs := newInternalAPITestServer(t, func(context.Context, string) ([]byte, string, error) {
 		return feed, "text/plain", nil
 	})
 	if err := srv.refresh(context.Background(), proto.Subscription{
@@ -152,8 +153,13 @@ func TestSmartGroupCandidateShardAndBoundConnect(t *testing.T) {
 		t.Fatalf("refresh direct feed: %v", err)
 	}
 
+	manifest := s.ManifestForSubscription("mosaic-direct")
+	if manifest == nil || len(manifest.Groups) == 0 {
+		t.Fatal("missing subscription-scoped provider manifest")
+	}
+	groupID := manifest.Groups[0].ID
 	response := apiRequest(t, hs, srv.Token(), http.MethodGet,
-		"/v1/groups/rg-all/candidates?installation_id=test-install", nil)
+		"/v1/groups/"+groupID+"/candidates?installation_id=test-install", nil)
 	if response.StatusCode != http.StatusOK {
 		response.Body.Close()
 		t.Fatalf("candidate shard status = %d", response.StatusCode)
@@ -164,12 +170,12 @@ func TestSmartGroupCandidateShardAndBoundConnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	response.Body.Close()
-	if shard.GroupID != "rg-all" || shard.Version == "" || len(shard.CandidateIDs) != 1 {
+	if shard.GroupID != groupID || shard.Version == "" || len(shard.CandidateIDs) != 1 {
 		t.Fatalf("unexpected shard: %#v", shard)
 	}
 
 	response = apiRequest(t, hs, srv.Token(), http.MethodPost, "/v1/connect", map[string]string{
-		"group_id": "rg-all", "server_id": shard.CandidateIDs[0],
+		"group_id": groupID, "server_id": shard.CandidateIDs[0],
 	})
 	if response.StatusCode != http.StatusOK {
 		response.Body.Close()
@@ -178,7 +184,7 @@ func TestSmartGroupCandidateShardAndBoundConnect(t *testing.T) {
 	response.Body.Close()
 
 	response = apiRequest(t, hs, srv.Token(), http.MethodPost, "/v1/connect", map[string]string{
-		"group_id": "rg-all", "server_id": "not-a-member",
+		"group_id": groupID, "server_id": "not-a-member",
 	})
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusBadRequest {

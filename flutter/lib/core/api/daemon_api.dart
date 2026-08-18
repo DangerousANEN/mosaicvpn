@@ -632,8 +632,13 @@ class DaemonApi implements DaemonApiBase {
   // ─── Provider Manifest ─────────────────────────────────────────────
 
   @override
-  Future<ProviderManifest> getProviderManifest() async {
-    final r = await _dio.get('/v1/manifest');
+  Future<ProviderManifest> getProviderManifest({String? subscriptionId}) async {
+    final r = await _dio.get(
+      '/v1/manifest',
+      queryParameters: subscriptionId?.isNotEmpty == true
+          ? {'subscription_id': subscriptionId}
+          : null,
+    );
     return ProviderManifest.fromJson(r.data);
   }
 
