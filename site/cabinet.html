@@ -91,6 +91,7 @@
   .custom-form{display:grid;grid-template-columns:auto minmax(130px,170px) auto;align-items:center;gap:10px;margin-top:13px}.custom-form label{font-size:14px;color:var(--text-2)}
   .field{width:100%;min-height:45px;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:#fff;color:var(--text);outline:none}.field:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
   .message{min-height:21px;margin:11px 0 0;color:var(--text-2);font-size:13px}
+  .linking-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.linking-panel{padding:18px;border:1px solid var(--border);border-radius:13px;background:#fff}.linking-panel h3{font-size:19px}.linking-panel p{margin:7px 0 0;color:var(--text-2);font-size:13px}.code-output{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:13px;padding:10px 10px 10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--card-strong)}.code-output strong{font-family:var(--mono);font-size:18px;letter-spacing:.14em;color:var(--text)}.binding-state{display:inline-flex;align-items:center;gap:6px;margin-top:12px;font-size:12px;font-weight:700;color:var(--text-2)}.binding-state.ok{color:var(--ok)}.binding-state::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor}
 
   .activity{display:grid;gap:9px}.activity-row{display:grid;grid-template-columns:minmax(120px,1fr) auto auto;gap:18px;align-items:center;padding:14px 16px;border:1px solid var(--border);border-radius:11px;background:var(--card)}
   .activity-main{min-width:0}.activity-title{font-size:14px;font-weight:600}.activity-meta{margin-top:3px;color:var(--text-2);font-size:12px}.activity-amount{font-family:var(--serif);font-size:19px;white-space:nowrap}.activity-status{font-size:12px;white-space:nowrap;color:var(--ok)}.activity-status.pending{color:var(--warn)}.activity-empty{padding:18px;border:1px dashed var(--border);border-radius:11px;color:var(--muted);font-size:14px}
@@ -105,7 +106,7 @@
 
   footer{margin-top:22px;border-top:1px solid var(--border);padding:27px 0 42px;color:var(--muted);font-size:13px}footer a{color:var(--text-2);text-decoration:none}footer a:hover{color:var(--accent)}.footer-links{display:flex;flex-wrap:wrap;gap:6px 13px;margin-top:8px}
 
-  @media(max-width:760px){.wrap{padding:0 16px}.nav{min-height:58px}.nav-links{display:none}.nav-home{display:block}.brand{font-size:18px}.page-head{padding:31px 0 22px}.lede{font-size:15px}main section{padding:22px 0}.section-title{display:block;margin-bottom:12px}.section-title p{margin-top:6px;text-align:left}.identity{grid-template-columns:1fr;padding:20px}.identity-side{min-width:0;padding:14px 0 0;border-left:0;border-top:1px solid var(--border)}.metrics{grid-template-columns:1fr 1fr}.metric{min-height:122px;padding:15px}.metric:last-child{grid-column:1/-1}.payment-options{grid-template-columns:1fr}.pay-option{padding:14px}.custom-form{grid-template-columns:1fr}.custom-form .btn{width:100%}.desktop-table{display:none}.table-wrap{display:none}.mobile-activity{display:grid}.devices-card{padding:19px}.account-guide{grid-template-columns:1fr}.admin-entry{display:block;padding:19px}.admin-entry .btn{width:100%;margin-top:14px}.btn-row .btn{flex:1}.gate{padding:25px 18px}.code-input{font-size:19px}.footer-links{gap:6px 11px}}
+  @media(max-width:760px){.wrap{padding:0 16px}.nav{min-height:58px}.nav-links{display:none}.nav-home{display:block}.brand{font-size:18px}.page-head{padding:31px 0 22px}.lede{font-size:15px}main section{padding:22px 0}.section-title{display:block;margin-bottom:12px}.section-title p{margin-top:6px;text-align:left}.identity{grid-template-columns:1fr;padding:20px}.identity-side{min-width:0;padding:14px 0 0;border-left:0;border-top:1px solid var(--border)}.metrics{grid-template-columns:1fr 1fr}.metric{min-height:122px;padding:15px}.metric:last-child{grid-column:1/-1}.payment-options{grid-template-columns:1fr}.pay-option{padding:14px}.custom-form{grid-template-columns:1fr}.custom-form .btn{width:100%}.desktop-table{display:none}.table-wrap{display:none}.mobile-activity{display:grid}.devices-card{padding:19px}.account-guide{grid-template-columns:1fr}.linking-grid{grid-template-columns:1fr}.admin-entry{display:block;padding:19px}.admin-entry .btn{width:100%;margin-top:14px}.btn-row .btn{flex:1}.gate{padding:25px 18px}.code-input{font-size:19px}.footer-links{gap:6px 11px}}
   @media(max-width:380px){.metrics{grid-template-columns:1fr}.metric:last-child{grid-column:auto}.identity{padding:18px}.account-id{font-size:11px}.btn-row{display:grid;grid-template-columns:1fr}.btn-row .btn{width:100%}}
 </style>
 </head>
@@ -189,8 +190,28 @@
         <div class="section-title"><div><div class="fig">Подписка и приложение</div><h2 id="subscription-controls-title">Ссылка и управление доступом</h2></div><p>Ссылка принадлежит вашему аккаунту. Не передавайте её третьим лицам.</p></div>
         <p class="field-label">Ссылка подписки</p>
         <div class="account-id"><span id="subscription-link" class="account-id-value">Загружаем…</span><button id="copy-subscription-link" class="copy-btn" type="button" aria-label="Скопировать ссылку подписки" title="Скопировать ссылку"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
-        <div class="btn-row" style="margin-top:14px"><button id="issue-app-code-button" class="btn btn-secondary" type="button">Получить код для приложения</button><button id="freeze-access-button" class="btn btn-secondary" type="button">Поставить доступ на паузу</button><button id="rotate-link-button" class="btn btn-secondary" type="button">Перевыпустить ссылку</button></div>
+        <div class="btn-row" style="margin-top:14px"><button id="freeze-access-button" class="btn btn-secondary" type="button">Поставить доступ на паузу</button><button id="rotate-link-button" class="btn btn-secondary" type="button">Перевыпустить ссылку</button></div>
         <div id="subscription-control-message" class="message" role="status"></div>
+      </div>
+    </section>
+
+    <section aria-labelledby="linking-title">
+      <div class="surface action-card">
+        <div class="section-title"><div><div class="fig">Связанные устройства</div><h2 id="linking-title">Приложение и Telegram</h2></div><p>Одноразовые коды действуют 10 минут. Они не передают пароль, сессию или ссылку подписки.</p></div>
+        <div class="linking-grid">
+          <article class="linking-panel">
+            <div class="fig">MosaicVPN app</div><h3>Код для приложения</h3><p>Введите его в кабинете нужной подписки на Windows, Linux или Android.</p>
+            <div id="app-code-output" class="code-output hidden"><strong id="app-code-value">—</strong><button id="copy-app-code" class="copy-btn" type="button" aria-label="Скопировать код приложения" title="Скопировать код">Копировать</button></div>
+            <div class="btn-row" style="margin-top:14px"><button id="issue-app-code-button" class="btn btn-primary" type="button">Получить код</button></div>
+          </article>
+          <article class="linking-panel">
+            <div class="fig">Telegram</div><h3>Привязка Telegram</h3><p id="telegram-link-description">Привяжите бот к этому профилю, чтобы получать коды для приложения и управлять тем же доступом.</p>
+            <div id="telegram-link-state" class="binding-state">Telegram пока не привязан</div>
+            <div id="telegram-code-output" class="code-output hidden"><strong id="telegram-code-value">—</strong><button id="copy-telegram-code" class="copy-btn" type="button" aria-label="Скопировать код Telegram" title="Скопировать код">Копировать</button></div>
+            <div class="btn-row" style="margin-top:14px"><button id="issue-telegram-link-button" class="btn btn-primary" type="button">Получить код Telegram</button><a id="open-telegram-link" class="btn btn-secondary hidden" href="https://t.me/mosaicvpnbot" target="_blank" rel="noopener">Открыть бот</a><button id="unlink-telegram-button" class="btn btn-secondary hidden" type="button">Отвязать Telegram</button></div>
+          </article>
+        </div>
+        <div id="linking-message" class="message" role="status"></div>
       </div>
     </section>
 
@@ -245,6 +266,8 @@
   var API_LAVA_CREATE = '/api/billing/lava/create';
   var API_APP_AUTH_ISSUE = '/api/app-auth/issue';
   var API_LINK_ISSUE = '/api/link/issue';
+  var API_TELEGRAM_LINK_ISSUE = '/api/telegram/link/issue';
+  var API_TELEGRAM_LINK_UNLINK = '/api/telegram/link/unlink';
   var API_FREEZE = '/api/account/freeze';
   var API_UNFREEZE = '/api/account/unfreeze';
   var API_ROTATE_LINK = '/api/subscription/link/rotate';
@@ -276,6 +299,7 @@
   function formatTraffic(bytes) { var value = Number(bytes) || 0; if (!value) return '—'; if (value >= 1073741824) return (value / 1073741824).toFixed(value >= 10737418240 ? 0 : 1).replace('.', ',') + ' ГБ'; return Math.max(1, Math.round(value / 1048576)) + ' МБ'; }
   function setMessage(text, kind) { var node = document.getElementById('payment-message'); node.textContent = text || ''; node.style.color = kind === 'error' ? 'var(--err)' : kind === 'success' ? 'var(--ok)' : 'var(--text-2)'; }
   function setSubscriptionMessage(text, kind) { var node = document.getElementById('subscription-control-message'); node.textContent = text || ''; node.style.color = kind === 'error' ? 'var(--err)' : kind === 'success' ? 'var(--ok)' : 'var(--text-2)'; }
+  function setLinkingMessage(text, kind) { var node = document.getElementById('linking-message'); node.textContent = text || ''; node.style.color = kind === 'error' ? 'var(--err)' : kind === 'success' ? 'var(--ok)' : 'var(--text-2)'; }
   function showGate(message) { account.classList.add('hidden'); gate.classList.remove('hidden'); if (message) codeError.textContent = message; }
 
   function showAccount(profile) {
@@ -305,6 +329,22 @@
     var subUrl = String(profile.sub_url || profile.subscription_url || '');
     document.getElementById('subscription-link').textContent = subUrl || 'Ссылка временно недоступна';
     document.getElementById('freeze-access-button').textContent = profile.status === 'frozen' ? 'Возобновить доступ' : 'Поставить доступ на паузу';
+    var telegramLink = profile.telegram_link || {};
+    var telegramState = document.getElementById('telegram-link-state');
+    var telegramDescription = document.getElementById('telegram-link-description');
+    var issueTelegramButton = document.getElementById('issue-telegram-link-button');
+    var unlinkTelegramButton = document.getElementById('unlink-telegram-button');
+    if (telegramLink.linked) {
+      var linkedName = String(telegramLink.username || '').replace(/^@/, '');
+      telegramState.textContent = linkedName ? 'Связан с @' + linkedName : 'Telegram привязан';
+      telegramState.className = 'binding-state ok';
+      telegramDescription.textContent = 'Этот чат получает коды для приложения и управляет тем же профилем доступа.';
+      issueTelegramButton.classList.add('hidden'); unlinkTelegramButton.classList.remove('hidden');
+    } else {
+      telegramState.textContent = 'Telegram пока не привязан'; telegramState.className = 'binding-state';
+      telegramDescription.textContent = 'Привяжите бот к этому профилю, чтобы получать коды для приложения и управлять тем же доступом.';
+      issueTelegramButton.classList.remove('hidden'); unlinkTelegramButton.classList.add('hidden');
+    }
   }
 
   function dayWord(value) { var mod10 = value % 10, mod100 = value % 100; if (mod10 === 1 && mod100 !== 11) return 'день'; if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'дня'; return 'дней'; }
@@ -464,15 +504,55 @@
     });
   }
 
+  function copyVisibleCode(valueId, label) {
+    var code = String(document.getElementById(valueId).textContent || '').trim();
+    if (!/^[A-Z0-9]{8}$/.test(code)) return;
+    var done = function () { setLinkingMessage(label + ' скопирован.', 'success'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(code).then(done).catch(function () { window.prompt('Скопируйте код:', code); });
+    } else { window.prompt('Скопируйте код:', code); }
+  }
+
   function issueAppCode() {
-    if (!savedToken) { setSubscriptionMessage('Сначала войдите в кабинет.', 'error'); return; }
+    if (!savedToken) { setLinkingMessage('Сначала войдите в кабинет.', 'error'); return; }
     var button = document.getElementById('issue-app-code-button');
-    button.disabled = true; setSubscriptionMessage('Готовим одноразовый код…');
+    button.disabled = true; setLinkingMessage('Готовим одноразовый код для приложения…');
     requestJSON(API_LINK_ISSUE, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:savedToken})}).then(function (result) {
-      if (result.status !== 200 || !result.body.code) { setSubscriptionMessage(result.body.error || 'Не удалось создать код.', 'error'); return; }
+      if (result.status !== 200 || !result.body.code) { setLinkingMessage(result.body.error || 'Не удалось создать код.', 'error'); return; }
       var seconds = Math.max(1, Number(result.body.expires_in) || 600);
-      setSubscriptionMessage('Код для приложения: ' + result.body.code + '. Он действует ' + Math.ceil(seconds / 60) + ' мин. Введите его в профиле нужной подписки.', 'success');
-    }).catch(function () { setSubscriptionMessage('Не удалось подключиться к сервису.', 'error'); }).finally(function () { button.disabled = false; });
+      document.getElementById('app-code-value').textContent = String(result.body.code).toUpperCase();
+      document.getElementById('app-code-output').classList.remove('hidden');
+      setLinkingMessage('Код для приложения готов. Введите его в кабинете нужной подписки; он действует ' + Math.ceil(seconds / 60) + ' мин.', 'success');
+    }).catch(function () { setLinkingMessage('Не удалось подключиться к сервису.', 'error'); }).finally(function () { button.disabled = false; });
+  }
+
+  function issueTelegramLink() {
+    if (!savedToken) { setLinkingMessage('Сначала войдите в кабинет.', 'error'); return; }
+    var button = document.getElementById('issue-telegram-link-button');
+    button.disabled = true; setLinkingMessage('Готовим код привязки Telegram…');
+    requestJSON(API_TELEGRAM_LINK_ISSUE, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:savedToken})}).then(function (result) {
+      if (result.status !== 200 || !result.body.code) { setLinkingMessage(result.body.error || 'Не удалось создать код Telegram.', 'error'); return; }
+      var code = String(result.body.code).toUpperCase();
+      var seconds = Math.max(1, Number(result.body.expires_in) || 600);
+      document.getElementById('telegram-code-value').textContent = code;
+      document.getElementById('telegram-code-output').classList.remove('hidden');
+      var botLink = document.getElementById('open-telegram-link');
+      botLink.href = String(result.body.telegram_bot_url || 'https://t.me/mosaicvpnbot'); botLink.classList.remove('hidden');
+      setLinkingMessage('Откройте бот кнопкой «Открыть бот» или отправьте ему: /link ' + code + '. Код действует ' + Math.ceil(seconds / 60) + ' мин.', 'success');
+    }).catch(function () { setLinkingMessage('Не удалось подключиться к сервису.', 'error'); }).finally(function () { button.disabled = false; });
+  }
+
+  function unlinkTelegram() {
+    if (!savedToken) { setLinkingMessage('Сначала войдите в кабинет.', 'error'); return; }
+    if (!window.confirm('Отвязать Telegram от этого профиля? Доступ и подписка не будут удалены.')) return;
+    var button = document.getElementById('unlink-telegram-button'); button.disabled = true;
+    requestJSON(API_TELEGRAM_LINK_UNLINK, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:savedToken})}).then(function (result) {
+      if (result.status !== 200) { setLinkingMessage(result.body.error || 'Не удалось отвязать Telegram.', 'error'); return; }
+      document.getElementById('telegram-code-output').classList.add('hidden');
+      document.getElementById('open-telegram-link').classList.add('hidden');
+      setLinkingMessage(result.body.removed ? 'Telegram отвязан от профиля.' : 'Telegram уже не был привязан к профилю.', 'success');
+      loadProfile(savedToken);
+    }).catch(function () { setLinkingMessage('Не удалось подключиться к сервису.', 'error'); }).finally(function () { button.disabled = false; });
   }
 
   function changeFreeze() {
@@ -514,6 +594,10 @@
   codeInput.addEventListener('input', function () { this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8); });
   document.getElementById('add-to-app-button').addEventListener('click', startAppEnrollment);
   document.getElementById('issue-app-code-button').addEventListener('click', issueAppCode);
+  document.getElementById('copy-app-code').addEventListener('click', function () { copyVisibleCode('app-code-value', 'Код для приложения'); });
+  document.getElementById('issue-telegram-link-button').addEventListener('click', issueTelegramLink);
+  document.getElementById('copy-telegram-code').addEventListener('click', function () { copyVisibleCode('telegram-code-value', 'Код Telegram'); });
+  document.getElementById('unlink-telegram-button').addEventListener('click', unlinkTelegram);
   document.getElementById('freeze-access-button').addEventListener('click', changeFreeze);
   document.getElementById('rotate-link-button').addEventListener('click', rotateSubscriptionLink);
   document.getElementById('copy-subscription-link').addEventListener('click', function () { var url = String(document.getElementById('subscription-link').textContent || ''); if (!/^https:\/\//.test(url)) return; var done = function () { setSubscriptionMessage('Ссылка подписки скопирована.', 'success'); }; if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(url).then(done).catch(function () { window.prompt('Скопируйте ссылку подписки:', url); }); } else { window.prompt('Скопируйте ссылку подписки:', url); } });

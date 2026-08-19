@@ -454,6 +454,27 @@ def init_db():
         attempts INTEGER DEFAULT 0
     )
     """)
+    # Website accounts and Telegram chats are separate identities. A user may
+    # bind one Telegram chat to the subscription profile authenticated on the
+    # website without exposing a browser session or subscription URL to Telegram.
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS telegram_link_codes (
+        code TEXT PRIMARY KEY,
+        account_id INTEGER NOT NULL,
+        issued_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0
+    )
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS telegram_account_links (
+        telegram_id INTEGER PRIMARY KEY,
+        account_id INTEGER NOT NULL UNIQUE,
+        telegram_username TEXT,
+        linked_at TEXT NOT NULL
+    )
+    """)
     # #13: User complaints (quick report-bad-connection)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS complaints (
@@ -674,6 +695,141 @@ def redeem_link_code(raw_code):
         "username": username or "",
         "session_token": session_token or "",
     }, None
+
+
+# --- Website profile ↔ Telegram chat binding --------------------------------
+
+def issue_telegram_link_code(account_id):
+    """Mint a short-lived code that can bind one Telegram chat to a website profile.
+
+    This deliberately uses a different table from client pairing codes. A code
+    generated in the cabinet can only be consumed by the Telegram binding flow;
+    it cannot be redeemed by a client to obtain a subscription capability.
+    """
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM telegram_link_codes WHERE account_id = ? AND used_at IS NULL", (account_id,))
+        now = datetime.datetime.now(datetime.timezone.utc)
+        expires = now + datetime.timedelta(minutes=LINK_CODE_TTL_MINUTES)
+        for _ in range(12):
+            code = "".join(secrets.choice(LINK_CODE_ALPHABET) for _ in range(8))
+            try:
+                cursor.execute(
+                    "INSERT INTO telegram_link_codes (code, account_id, issued_at, expires_at) VALUES (?, ?, ?, ?)",
+                    (code, account_id, now.isoformat(), expires.isoformat()),
+                )
+                conn.commit()
+                return code, expires
+            except sqlite3.IntegrityError:
+                continue
+        raise RuntimeError("could not allocate telegram binding code")
+    finally:
+        conn.close()
+
+
+def get_telegram_account_link(account_id):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT telegram_id, telegram_username, linked_at FROM telegram_account_links WHERE account_id = ?",
+        (account_id,),
+    )
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        return None
+    return {"telegram_id": int(row[0]), "username": row[1] or "", "linked_at": row[2]}
+
+
+def resolve_telegram_account_id(telegram_id):
+    """Return the profile currently bound to this chat, otherwise its own ID."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT account_id FROM telegram_account_links WHERE telegram_id = ?", (telegram_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return int(row[0]) if row else int(telegram_id)
+
+
+def claim_telegram_link_code(raw_code, telegram_id, telegram_username):
+    """Atomically consume a cabinet-issued code and bind the calling Telegram chat."""
+    code = _link_code_normalise(raw_code)
+    if not code:
+        return None, "not_found"
+    now = datetime.datetime.now(datetime.timezone.utc)
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT account_id, expires_at, used_at, attempts FROM telegram_link_codes WHERE code = ?",
+            (code,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            conn.rollback()
+            return None, "not_found"
+        account_id, expires_at, used_at, attempts = row
+        if used_at:
+            conn.rollback()
+            return None, "used"
+        if int(attempts or 0) >= LINK_CODE_MAX_ATTEMPTS:
+            conn.rollback()
+            return None, "attempts"
+        try:
+            expires = datetime.datetime.fromisoformat(expires_at)
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=datetime.timezone.utc)
+        except (TypeError, ValueError):
+            expires = None
+        if expires is not None and expires < now:
+            conn.rollback()
+            return None, "expired"
+        cursor.execute("SELECT account_id FROM telegram_account_links WHERE telegram_id = ?", (telegram_id,))
+        existing_chat = cursor.fetchone()
+        if existing_chat:
+            conn.rollback()
+            return None, "already_linked" if int(existing_chat[0]) == int(account_id) else "telegram_already_linked"
+        # Do not silently replace a standalone Telegram subscription with a
+        # different website profile. Account consolidation needs a separately
+        # confirmed migration flow; this one only binds a previously unbound chat.
+        cursor.execute("SELECT 1 FROM users WHERE telegram_id = ? AND telegram_id != ?", (telegram_id, account_id))
+        if cursor.fetchone():
+            conn.rollback()
+            return None, "telegram_profile_exists"
+        cursor.execute("SELECT telegram_id FROM telegram_account_links WHERE account_id = ?", (account_id,))
+        if cursor.fetchone():
+            conn.rollback()
+            return None, "account_already_linked"
+        cursor.execute(
+            "UPDATE telegram_link_codes SET used_at = ?, attempts = attempts + 1 WHERE code = ? AND used_at IS NULL",
+            (now.isoformat(), code),
+        )
+        if cursor.rowcount != 1:
+            conn.rollback()
+            return None, "used"
+        cursor.execute(
+            "INSERT INTO telegram_account_links (telegram_id, account_id, telegram_username, linked_at) VALUES (?, ?, ?, ?)",
+            (telegram_id, account_id, telegram_username or "", now.isoformat()),
+        )
+        conn.commit()
+        return {"account_id": int(account_id)}, None
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def unlink_telegram_account(account_id):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM telegram_account_links WHERE account_id = ?", (account_id,))
+    removed = cursor.rowcount == 1
+    conn.commit()
+    conn.close()
+    return removed
 
 
 # --- Website password accounts and recovery ---------------------------------
@@ -1103,13 +1259,14 @@ def get_admin_balance_credit_history(limit=50):
 
 
 def get_user(telegram_id):
+    account_id = resolve_telegram_account_id(telegram_id)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT username, short_uuid, language, trial_used, referrer_id FROM users WHERE telegram_id = ?", (telegram_id,))
+    cursor.execute("SELECT username, short_uuid, language, trial_used, referrer_id FROM users WHERE telegram_id = ?", (account_id,))
     row = cursor.fetchone()
     conn.close()
     if row:
-        return {"username": row[0], "short_uuid": row[1], "language": row[2], "trial_used": row[3], "referrer_id": row[4]}
+        return {"account_id": account_id, "username": row[0], "short_uuid": row[1], "language": row[2], "trial_used": row[3], "referrer_id": row[4]}
     return None
 
 def save_user(telegram_id, username, short_uuid, language='ru', trial_used=0, referrer_id=None):
@@ -1129,9 +1286,10 @@ def save_user(telegram_id, username, short_uuid, language='ru', trial_used=0, re
     conn.close()
 
 def update_user_lang(telegram_id, language):
+    account_id = resolve_telegram_account_id(telegram_id)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("UPDATE users SET language = ? WHERE telegram_id = ?", (language, telegram_id))
+    cursor.execute("UPDATE users SET language = ? WHERE telegram_id = ?", (language, account_id))
     conn.commit()
     conn.close()
 
@@ -2132,13 +2290,51 @@ def get_main_menu(lang):
     markup.row(t["menu_support"], t["menu_status"])
     return markup
 
+def _claim_telegram_profile_link(message, raw_code):
+    """Consume a cabinet-issued code in the Telegram chat that will be bound."""
+    telegram_id = message.chat.id
+    username = getattr(message.from_user, "username", "") or ""
+    try:
+        result, reason = claim_telegram_link_code(raw_code, telegram_id, username)
+    except Exception as exc:
+        logger.error("telegram profile-link claim failed for %s: %s", telegram_id, exc)
+        bot.send_message(telegram_id, "Не удалось привязать профиль. Попробуйте получить новый код на сайте.")
+        return True
+    if not result:
+        labels = {
+            "not_found": "Код не найден. Получите новый код в кабинете сайта.",
+            "expired": "Код истёк. Получите новый код в кабинете сайта.",
+            "used": "Код уже использован. Получите новый код в кабинете сайта.",
+            "attempts": "Слишком много попыток. Получите новый код в кабинете сайта.",
+            "already_linked": "Этот Telegram уже привязан к данному профилю.",
+            "telegram_already_linked": "Этот Telegram уже привязан к другому профилю. Сначала отвяжите его в соответствующем кабинете.",
+            "account_already_linked": "К этому профилю уже привязан другой Telegram. Отвяжите его в кабинете сайта перед повторной попыткой.",
+            "telegram_profile_exists": "У этого Telegram уже есть самостоятельный профиль. Автоматическое объединение отключено, чтобы не потерять доступ или баланс.",
+        }
+        bot.send_message(telegram_id, labels.get(reason, "Не удалось привязать профиль. Получите новый код на сайте."))
+        return True
+    account = get_user(telegram_id) or {}
+    profile_name = account.get("username") or "MosaicVPN"
+    bot.send_message(
+        telegram_id,
+        "Профиль сайта привязан к этому Telegram.\n\n"
+        f"Профиль: {profile_name}\n"
+        "Теперь команда /link будет выдавать код для приложения именно для этого профиля.",
+        reply_markup=get_main_menu(account.get("language") or "ru"),
+    )
+    return True
+
+
 @bot.message_handler(commands=["start"])
 def send_welcome(message):
     telegram_id = message.chat.id
+    args = message.text.split()
+    if len(args) > 1 and args[1].startswith("link_"):
+        _claim_telegram_profile_link(message, args[1][5:])
+        return
     db_user = get_user(telegram_id)
     
     referrer_id = None
-    args = message.text.split()
     if len(args) > 1:
         ref_param = args[1]
         if ref_param.startswith("ref_"):
@@ -2275,11 +2471,15 @@ def send_welcome(message):
 
 @bot.message_handler(commands=["link"])
 def issue_link_code_command(message):
-    """Show a single-use code the user types into the desktop/mobile app."""
+    """Issue an app pairing code, or claim a website profile binding code."""
     telegram_id = message.chat.id
+    args = message.text.split(maxsplit=1)
+    if len(args) > 1 and args[1].strip():
+        _claim_telegram_profile_link(message, args[1].strip())
+        return
+
     db_user = get_user(telegram_id)
     lang = db_user["language"] if db_user else "ru"
-
     if not db_user:
         bot.send_message(
             telegram_id,
@@ -2289,7 +2489,7 @@ def issue_link_code_command(message):
 
     try:
         code, expires = issue_link_code(
-            telegram_id, db_user.get("username"), db_user.get("short_uuid"))
+            resolve_telegram_account_id(telegram_id), db_user.get("username"), db_user.get("short_uuid"))
     except Exception as exc:
         logging.error("issue_link_code failed for %s: %s", telegram_id, exc)
         bot.send_message(
@@ -2300,13 +2500,15 @@ def issue_link_code_command(message):
 
     minutes = LINK_CODE_TTL_MINUTES
     if lang == "ru":
-        text = (f"Код для входа в приложение:\n\n<code>{code}</code>\n\n"
-                f"Введите его в приложении в разделе «Кабинет».\n"
-                f"Код действует {minutes} минут и работает один раз.")
+        text = ("Код для входа в приложение\n\n"
+                f"Код: <b>{code}</b>\n\n"
+                "Введите его в приложении в кабинете нужной подписки.\n"
+                f"Код действует {minutes} минут и используется один раз.")
     else:
-        text = (f"Your app sign-in code:\n\n<code>{code}</code>\n\n"
-                f"Enter it in the app under \"Account\".\n"
-                f"Valid for {minutes} minutes, single use.")
+        text = ("App sign-in code\n\n"
+                f"Code: <b>{code}</b>\n\n"
+                "Enter it in the cabinet for the required subscription.\n"
+                f"Valid for {minutes} minutes and single-use.")
     bot.send_message(telegram_id, text, parse_mode="HTML")
 
 
@@ -3282,6 +3484,12 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         # be attached in the client without exposing browser session material.
         if path == "/api/link/issue":
             return self._handle_link_issue()
+        # Website profile ↔ Telegram binding uses a separate purpose-specific
+        # code table. It must never be redeemable as an app-session credential.
+        if path == "/api/telegram/link/issue":
+            return self._handle_telegram_link_issue()
+        if path == "/api/telegram/link/unlink":
+            return self._handle_telegram_link_unlink()
         # Website password account routes intentionally return generic errors
         # for login/recovery to avoid revealing whether an email is registered.
         if path == "/api/auth/register":
@@ -3585,6 +3793,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         lifetime_traffic = int((remote or {}).get("lifetimeUsedTrafficBytes") or 0)
         device_limit = int((remote or {}).get("hwidDeviceLimit") or (remote or {}).get("hwidDevicesLimit") or 5)
         daily_price_rub = get_daily_price_rub()
+        telegram_link = get_telegram_account_link(telegram_id)
         return {
             "account_id": str(telegram_id),
             "telegram_id": telegram_id,
@@ -3613,6 +3822,12 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                 "last_sync_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             },
             "billing": {"price_per_day_rub": daily_price_rub, "timezone": "Europe/Moscow", "checkout_discount_percent": 0},
+            "telegram_link": {
+                "linked": telegram_link is not None,
+                "telegram_id": telegram_link.get("telegram_id") if telegram_link else None,
+                "username": telegram_link.get("username") if telegram_link else "",
+                "linked_at": telegram_link.get("linked_at") if telegram_link else None,
+            },
             "is_admin": is_admin(telegram_id),
         }
 
@@ -3775,6 +3990,30 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             "expires_in": LINK_CODE_TTL_MINUTES * 60,
             "subscription_url": f"https://sub.zxc1x1.ru/{short_uuid}",
         })
+
+    def _handle_telegram_link_issue(self):
+        session, _ = self._authenticated_account_post()
+        if not session:
+            return
+        try:
+            code, expires = issue_telegram_link_code(session["telegram_id"])
+        except Exception as exc:
+            logger.error("telegram binding-code issue failed: %s", exc)
+            self._send_json(500, {"error": "could not issue telegram linking code"})
+            return
+        self._send_json(200, {
+            "code": code,
+            "expires_at": expires.isoformat(),
+            "expires_in": LINK_CODE_TTL_MINUTES * 60,
+            "telegram_bot_url": f"https://t.me/mosaicvpnbot?start=link_{code}",
+        })
+
+    def _handle_telegram_link_unlink(self):
+        session, _ = self._authenticated_account_post()
+        if not session:
+            return
+        removed = unlink_telegram_account(session["telegram_id"])
+        self._send_json(200, {"ok": True, "removed": removed})
 
     def _handle_link_redeem(self):
         try:

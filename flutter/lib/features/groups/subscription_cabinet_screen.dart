@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/models/models.dart';
 import '../../core/platform/app_platform.dart';
@@ -294,6 +295,16 @@ class _CabinetUnavailableState extends ConsumerState<_CabinetUnavailable> {
     super.dispose();
   }
 
+  Future<void> _openWebsiteCabinet() async {
+    final uri = Uri.parse('https://sub.zxc1x1.ru/cabinet.html');
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!mounted || opened) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: const Text('Не удалось открыть сайт кабинета.'),
+      backgroundColor: ThemeColors.of(context).danger,
+    ));
+  }
+
   Future<void> _attachByCode() async {
     try {
       setState(() => _busy = true);
@@ -325,7 +336,7 @@ class _CabinetUnavailableState extends ConsumerState<_CabinetUnavailable> {
     final c = ThemeColors.of(context);
     final bindingText = widget.binding
         ? 'Кабинет уже связан с этой подпиской, но его данные временно не удалось обновить. Потяните экран вниз, чтобы повторить запрос.'
-        : 'Базовые срок, статус и трафик уже показаны выше. Подключите кабинет через сайт или введите одноразовый 8-символьный код из Telegram либо сайта, чтобы открыть баланс, пополнение, устройства, платежи, заморозку и ротацию ссылки.';
+        : 'Базовые срок, статус и трафик уже показаны выше. Откройте сайт кабинета, войдите в нужный профиль и получите одноразовый код. Тот же код можно получить командой /link в привязанном Telegram. После ввода здесь откроются баланс, пополнение, устройства, платежи, заморозка и ротация ссылки.';
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -348,13 +359,23 @@ class _CabinetUnavailableState extends ConsumerState<_CabinetUnavailable> {
             style: TextStyle(color: c.textSecondary, fontSize: 12)),
         if (!widget.binding) ...[
           const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _busy ? null : _openWebsiteCabinet,
+              icon: const Icon(Icons.open_in_browser_outlined),
+              label: const Text('Открыть сайт и получить код'),
+            ),
+          ),
+          const SizedBox(height: 10),
           TextField(
             controller: _code,
             textCapitalization: TextCapitalization.characters,
             maxLength: 10,
             decoration: const InputDecoration(
-              labelText: 'Одноразовый код',
+              labelText: 'Код из сайта или Telegram',
               hintText: 'AB23CD45',
+              helperText: 'Код действует 10 минут и используется один раз.',
               counterText: '',
             ),
           ),
@@ -370,7 +391,7 @@ class _CabinetUnavailableState extends ConsumerState<_CabinetUnavailable> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.key_outlined),
-              label: Text(_busy ? 'Подключаем…' : 'Подключить по коду'),
+              label: Text(_busy ? 'Подключаем…' : 'Подключить профиль по коду'),
             ),
           ),
         ],

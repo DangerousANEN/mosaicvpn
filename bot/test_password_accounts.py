@@ -1,12 +1,19 @@
+import importlib.util
 import os
 import pathlib
+import sys
 import tempfile
 import unittest
 
 os.environ.setdefault("MOSAIC_BOT_TOKEN", "123456:test-token")
 os.environ.setdefault("MOSAIC_REMNAWAVE_TOKEN", "test-remnawave-token")
 
-import bot as service  # noqa: E402
+_bot_path = pathlib.Path(__file__).resolve().with_name("bot.py")
+_spec = importlib.util.spec_from_file_location("mosaic_bot_password_test", _bot_path)
+service = importlib.util.module_from_spec(_spec)
+sys.modules[_spec.name] = service
+assert _spec.loader is not None
+_spec.loader.exec_module(service)
 
 
 class PasswordAccountTests(unittest.TestCase):

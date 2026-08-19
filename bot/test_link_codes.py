@@ -34,6 +34,9 @@ _ns = {
     "datetime": datetime,
     "secrets": __import__("secrets"),
     "logging": __import__("logging"),
+    "re": re,
+    "hashlib": __import__("hashlib"),
+    "hmac": __import__("hmac"),
 }
 exec(compile(_BLOCK, BOT_PY, "exec"), _ns)
 

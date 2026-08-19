@@ -8,6 +8,7 @@ A drift on either side fails here rather than in production.
 import datetime
 import json
 import os
+import re
 import sqlite3
 import tempfile
 import threading
@@ -36,6 +37,9 @@ _ns = {
     "datetime": datetime,
     "secrets": __import__("secrets"),
     "logging": __import__("logging"),
+    "re": re,
+    "hashlib": __import__("hashlib"),
+    "hmac": __import__("hmac"),
     "json": json,
     "BaseHTTPRequestHandler": BaseHTTPRequestHandler,
     # The real do_POST checks webhook paths before the link route. The test
