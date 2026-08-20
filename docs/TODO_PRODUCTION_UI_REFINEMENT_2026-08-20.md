@@ -144,19 +144,29 @@ Production-файл `cabinet.html` опубликован с совпадающ�
 
 ### Next: public feed simplification and route UX
 
-- [ ] Сверить фактический публичный subscription feed с target-контрактом: один прямой public server для обычных клиентов; Smart Groups только как client-side virtual routes MosaicVPN.
-- [ ] Убрать из выдачи сторонних клиентов server-side pool/proxy rows и любые старые Smart Group ссылки, не раскрывая private pool members.
-- [ ] Сохранить в MosaicVPN один direct route плюс Smart Groups, которые выбирают кандидатов только локальным daemon/client runtime.
-- [ ] Сделать hover/press/selected состояние строк в таблице «Маршруты» единым для всей строки, а не отдельной ячейки.
-- [ ] Ограничить или адаптивно скрывать колонки таблицы, чтобы они не уходили за границу small desktop/mobile экранов.
-- [ ] Заменить стандартный dropdown подписок на branded selector и переработать выбор маршрута в dashboard в более понятный компактный интерфейс.
-- [ ] Прогнать Go/Flutter tests, собрать и опубликовать новый cross-platform release, затем проверить feed, сайт и временный SSH-ключ удалить.
+- [x] Сверить фактический публичный subscription feed с target-контрактом: один прямой public server для обычных клиентов; Smart Groups только как client-side virtual routes MosaicVPN.
+- [x] Убрать из выдачи сторонних клиентов server-side pool/proxy rows и любые старые Smart Group ссылки, не раскрывая private pool members.
+- [x] Сохранить в MosaicVPN один direct route плюс Smart Groups, которые выбирают кандидатов только локальным daemon/client runtime.
+- [x] Сделать hover/press/selected состояние строк в таблице «Маршруты» единым для всей строки, а не отдельной ячейки.
+- [x] Ограничить или адаптивно скрывать колонки таблицы, чтобы они не уходили за границу small desktop/mobile экранов.
+- [x] Заменить стандартный dropdown подписок на branded selector и переработать выбор маршрута в dashboard в более понятный компактный интерфейс.
+- [x] Прогнать Go/Flutter tests, собрать и опубликовать новый cross-platform release, затем проверить feed, сайт и временный SSH-ключ удалить.
 
 #### Production inventory 2026-08-21
 
 - Public subscription сейчас содержит 13 опубликованных host profiles: `/direct`, семь country routes и пять legacy server-side pool/proxy routes. Целевым остаётся только `/direct`.
 - Production collector хранит отдельные direct candidate profiles и регулярно выполняет ограниченную TCP/proxy-проверку через sing-box. В pool groups есть свежие usable candidates для all, Germany, Canada, min-latency, max-speed и stable; legacy `owned` group пустая.
 - Эти collector candidates не должны попадать в обычный subscription feed. Следующая реализация должна передавать их только локальному daemon MosaicVPN как scoped opaque candidate feed, а затем выполнять выбор и failover на устройстве пользователя.
+
+#### Release v0.3.29 — опубликован и проверен 2026-08-21
+
+- В Remnawave отключены 12 legacy host profiles. Обычная публичная subscription link теперь выдаёт ровно один VLESS profile с transport path `/direct`; закрытый backup таблицы `hosts` создан на VPS до изменения.
+- Backend добавляет доступный только локальному daemon `GET /api/client-candidates/{opaque-subscription-id}`. Он возвращает максимум 80 свежих, успешно proxy-проверенных кандидатов в sing-box формате, без вывода их в обычный subscription response или UI-маршруты.
+- MosaicVPN резолвит Smart Groups только по marker `mosaic_client_candidate`; direct virtual route разрешается исключительно к non-candidate profile с `direct_path=/direct`. Live-проверка подтвердила 31 bounded daemon-only candidate profiles и один ordinary public route.
+- Таблица Routes теперь обрабатывает select/hover/press на уровне `DataRow`; на ограниченной ширине secondary telemetry-колонки временно скрываются, а name/action остаются видимыми. Предпочтения колонок сохраняются для широкого окна.
+- Dashboard получил branded dialog selectors для subscription и route choice вместо стандартного `DropdownButtonFormField` и нижней шторки. Новый interaction smoke-test проверяет оба dialog flow.
+- Пройдены `go test ./...`, весь Flutter suite (73 теста), Flutter analysis и локальная Linux portable+DEB сборка. GitHub release v0.3.29 содержит Windows Setup/Portable, Linux DEB/Portable и signed Android APK; все три release jobs завершились успешно.
+- Production backend и landing page опубликованы. Live landing page содержит все пять v0.3.29 asset links, а каждый GitHub download URL вернул HTTP 200. Временный SSH-ключ удалён после проверки.
 
 ## Результаты визуальной проверки
 
