@@ -130,4 +130,22 @@ void main() {
     expect(tester.takeException(), isNull,
         reason: 'English dashboard must render without a framework exception');
   });
+
+  testWidgets('dashboard uses branded dialogs for route and subscription choice',
+      (tester) async {
+    await _pumpAt(tester, const Size(1440, 960));
+
+    await tester.tap(find.text('Выбрать'));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.byType(Dialog), findsOneWidget);
+    expect(find.text('[SG] Минимальный пинг'), findsNWidgets(2));
+    await tester.tap(find.byIcon(Icons.close_rounded));
+    await tester.pump(const Duration(milliseconds: 250));
+
+    await tester.tap(find.byIcon(Icons.unfold_more_rounded));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.byType(Dialog), findsOneWidget);
+    expect(find.text('Выберите подписку'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
