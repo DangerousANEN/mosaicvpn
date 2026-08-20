@@ -126,14 +126,21 @@ Production-файл `cabinet.html` опубликован с совпадающ�
 - [x] Реализовать server-side выдачу кандидатов с реальными geo-фильтрами, bounded speed probe и безопасный public direct route без раскрытия private pool.
 - [x] Обновить Windows/Linux/Android клиент: показать public direct route рядом с Smart Groups и честные состояния групп.
 - [x] Прогнать backend и Flutter-тесты, включая speed selection, manifest parsing и подключение.
-- [ ] Собрать и опубликовать новый кроссплатформенный релиз, обновить сайт и production backend.
-- [ ] Подготовить итоговый список маршрутов и smoke checklist для Windows и Android.
+- [x] Собрать и опубликовать новый кроссплатформенный релиз, обновить сайт и production backend.
+- [x] Подготовить итоговый список маршрутов и smoke checklist для Windows и Android.
 
 #### Production inventory decision 2026-08-21
 
 - В user-facing Remnawave feed подтверждён только активный публичный немецкий node/host set. Поэтому manifest объявляет `[SG] Германия` и отдельный `Mosaic Direct · Германия` с `country_code=DE`; CA и RU не публикуются как маршруты.
 - Отдельные внешние записи Mosaic node inventory не считаются operator-controlled public route и не используются ни как Smart Group pool, ни как direct route.
 - `[SG] Максимальная скорость` запускает проверку только после явного подключения: максимум два кандидата последовательно, по 2 MiB download/upload HTTPS-пробе, с лимитом 12 секунд. Провайдером endpoint является Cloudflare; Ookla не используется.
+
+#### Release v0.3.28 — опубликован и проверен 2026-08-21
+
+- GitHub release содержит Windows Setup и Portable, Linux DEB и Portable, а также подписанный Android APK. Все три GitHub Actions jobs завершились успешно.
+- Backend manifest опубликован и live-проверен: `auto-speed` содержит ограничение в два 2 MiB HTTPS-теста, `[SG] Германия` имеет `country_code=DE`, а `direct_routes` содержит один `direct-de` VLESS маршрут. Зарезервированная compatibility-группа сохранена отключённой.
+- Главная страница опубликована с пятью ссылками v0.3.28. Каждая ссылка и её целевой GitHub asset вернули HTTP 200 при проверке.
+- Временные SSH-ключи удалены локально после каждой отдельной production-сессии.
 
 ## Результаты визуальной проверки
 
