@@ -3902,8 +3902,8 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         # to read public route capability metadata.
         _ = (query.get("subscription_id") or [""])[0]
         policy = {
-            "shard_size": 16,
-            "max_parallel_probes": 4,
+            "shard_size": 12,
+            "max_parallel_probes": 3,
             "probe_ttl_seconds": 600,
             "max_failover_tries": 3,
             "latency_weight": 0.45,
@@ -3915,38 +3915,43 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         groups = [
             {
                 "id": "rg-all", "title": "[SG] Минимальный пинг", "route_type": "smart_group",
-                "type": "urltest", "pool_id": "mosaicvpn", "category": "smart",
+                "type": "urltest", "pool_id": "mosaic-public-global", "category": "smart",
                 "icon": "lightning", "badge": "Авто", "description": "Выбор маршрута с минимальной задержкой на этом устройстве.",
                 "client_policy": {**policy, "mode": "latency"},
             },
             {
                 "id": "auto-stable", "title": "[SG] Оптимальный", "route_type": "smart_group",
-                "type": "urltest", "pool_id": "mosaicvpn", "category": "smart",
+                "type": "urltest", "pool_id": "mosaic-public-global", "category": "smart",
                 "icon": "shield", "badge": "Рекомендуется", "description": "Баланс стабильности и задержки с локальным failover.",
                 "client_policy": {**policy, "mode": "stability", "stability_weight": 0.45, "latency_weight": 0.30},
             },
             {
                 "id": "auto-speed", "title": "[SG] Максимальная скорость", "route_type": "smart_group",
-                "type": "urltest", "pool_id": "mosaicvpn", "category": "smart",
-                "icon": "speed", "badge": "Авто", "description": "Маршрут с клиентской проверкой производительности.",
-                "client_policy": {**policy, "mode": "speed", "speed_weight": 0.45, "latency_weight": 0.25},
-            },
-            {
-                "id": "auto-ru", "title": "[SG] Локальные сервисы (RU)", "route_type": "smart_group",
-                "type": "urltest", "pool_id": "mosaicvpn", "category": "smart",
-                "icon": "flag_ru", "badge": "Локальный", "description": "Автоматический маршрут для локального доступа.",
-                "client_policy": {**policy, "mode": "latency"},
-            },
-            {
-                "id": "auto-ca", "title": "[SG] Канада", "route_type": "smart_group",
-                "type": "urltest", "pool_id": "mosaicvpn", "category": "smart",
-                "icon": "flag_ca", "badge": "Авто", "description": "Канадский маршрут, если поддерживается вашим профилем.",
-                "client_policy": {**policy, "mode": "latency"},
+                "type": "urltest", "pool_id": "mosaic-public-global", "category": "smart",
+                "icon": "speed", "badge": "Авто", "description": "Сравнивает не более двух подходящих маршрутов на этом устройстве.",
+                "client_policy": {
+                    **policy,
+                    "mode": "speed",
+                    "speed_weight": 0.45,
+                    "latency_weight": 0.25,
+                    # The client clamps this to two sequential 2 MiB HTTPS
+                    # samples with a 12 second timeout. This uses Cloudflare's
+                    # public endpoint, not Ookla, and never runs in background.
+                    "speed_probe": {
+                        "enabled": True,
+                        "download_urls": ["https://speed.cloudflare.com/__down"],
+                        "upload_url": "https://speed.cloudflare.com/__up",
+                        "sample_bytes": 2 * 1024 * 1024,
+                        "timeout_seconds": 12,
+                        "max_candidates": 2,
+                        "target_mbps": 50,
+                    },
+                },
             },
             {
                 "id": "auto-de", "title": "[SG] Германия", "route_type": "smart_group",
-                "type": "urltest", "pool_id": "mosaicvpn", "category": "smart",
-                "icon": "flag_de", "badge": "Авто", "description": "Немецкий маршрут, если поддерживается вашим профилем.",
+                "type": "urltest", "pool_id": "mosaic-public-de", "country_code": "DE", "category": "smart",
+                "icon": "flag_de", "badge": "Авто", "description": "Автоматический выбор среди подтверждённых маршрутов в Германии.",
                 "client_policy": {**policy, "mode": "latency"},
             },
             {
@@ -3961,6 +3966,17 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             "provider_name": "MosaicVPN",
             "user_tier": "standard",
             "groups": groups,
+            # A direct route is deliberately separate from Smart Groups. Its
+            # physical configuration is fetched by the local daemon from the
+            # ordinary subscription feed and never appears in the UI list.
+            "direct_routes": [
+                {
+                    "id": "direct-de", "title": "Mosaic Direct · Германия", "route_type": "direct",
+                    "type": "direct_node", "pool_id": "mosaic-public-de", "country_code": "DE",
+                    "protocol": "vless", "category": "direct", "icon": "flag_de", "badge": "Прямой",
+                    "description": "Прямой публичный маршрут с подтверждённой точкой выхода в Германии.",
+                },
+            ],
         })
 
     def _handle_link_issue(self):

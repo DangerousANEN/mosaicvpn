@@ -172,6 +172,48 @@ func TestParseManifestOrSynthesizePreservesExplicitProviderGroups(t *testing.T) 
 	}
 }
 
+func TestParseManifestOrSynthesizeResolvesExplicitDirectRoute(t *testing.T) {
+	raw := []proto.Server{
+		{ID: "de-public", Name: "Public DE", Country: "DE", Protocol: proto.ProtoVLESS},
+		{ID: "ca-private", Name: "Private CA", Country: "CA", Protocol: proto.ProtoVLESS},
+	}
+	content := []byte(`{
+		"provider_name":"Example provider",
+		"direct_routes":[{
+			"id":"direct-de",
+			"title":"Example Direct · Germany",
+			"route_type":"direct",
+			"type":"direct_node",
+			"pool_id":"example-public-de",
+			"country_code":"DE",
+			"protocol":"vless",
+			"category":"direct"
+		}]
+	}`)
+
+	manifest, servers := ParseManifestOrSynthesize(content, "example-subscription", raw)
+	if len(manifest.Groups) != 0 || len(manifest.DirectRoutes) != 1 {
+		t.Fatalf("routes = groups:%d direct:%d; want groups:0 direct:1", len(manifest.Groups), len(manifest.DirectRoutes))
+	}
+	route := manifest.DirectRoutes[0]
+	if len(route.Nodes) != 1 || route.Nodes[0].ID != "de-public" {
+		t.Fatalf("direct route resolved nodes = %#v; want only confirmed DE node", route.Nodes)
+	}
+	if len(servers) != 3 || !servers[0].IsVirtualGroup || servers[0].Country != "DE" {
+		t.Fatalf("virtual direct row = %#v; want a DE virtual route plus untouched raw nodes", servers)
+	}
+	if got := servers[0].Raw["mosaic_route_type"]; got != "direct" {
+		t.Fatalf("virtual direct route type = %#v; want direct", got)
+	}
+
+	missingGeo := resolveGroupNodes(proto.ManifestGroup{
+		ID: "direct-unverified", Category: "direct", RouteType: "direct",
+	}, raw)
+	if len(missingGeo) != 0 {
+		t.Fatalf("direct route without verified country must not include nodes: %#v", missingGeo)
+	}
+}
+
 func TestSynthesizeManifestIsExplicitlyOptIn(t *testing.T) {
 	manifest := SynthesizeManifest("mosaic-direct", []proto.Server{{ID: "pool-node", Protocol: proto.ProtoVLESS}})
 	if len(manifest.Groups) == 0 {

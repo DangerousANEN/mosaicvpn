@@ -7,20 +7,29 @@ class ProviderManifest {
   final String providerName;
   final String userTier;
   final List<ManifestGroup> groups;
+  final List<ManifestGroup> directRoutes;
   final ProviderProfile? profile;
 
   ProviderManifest({
     required this.providerName,
     this.userTier = 'free',
     this.groups = const [],
+    this.directRoutes = const [],
     this.profile,
   });
+
+  /// All user-visible virtual routes. Source pool nodes are not included.
+  List<ManifestGroup> get routes => [...groups, ...directRoutes];
 
   factory ProviderManifest.fromJson(Map<String, dynamic> j) {
     return ProviderManifest(
       providerName: (j['provider_name'] ?? '').toString(),
       userTier: (j['user_tier'] ?? 'free').toString(),
       groups: (j['groups'] as List?)
+              ?.map((g) => ManifestGroup.fromJson(g as Map<String, dynamic>))
+              .toList() ??
+          const [],
+      directRoutes: (j['direct_routes'] as List?)
               ?.map((g) => ManifestGroup.fromJson(g as Map<String, dynamic>))
               .toList() ??
           const [],
@@ -101,7 +110,8 @@ class SpeedProbePolicy {
       enabled: value['enabled'] == true,
       downloadUrls: urls,
       uploadUrl: value['upload_url']?.toString() ?? '',
-      sampleBytes: boundedInt('sample_bytes', 2 * 1024 * 1024, 256 * 1024, 8 * 1024 * 1024),
+      sampleBytes: boundedInt(
+          'sample_bytes', 2 * 1024 * 1024, 256 * 1024, 8 * 1024 * 1024),
       timeoutSeconds: boundedInt('timeout_seconds', 12, 3, 30),
       maxCandidates: boundedInt('max_candidates', 2, 1, 3),
       targetMbps: target.clamp(1, 1000).toDouble(),
@@ -171,6 +181,8 @@ class ManifestGroup {
   /// Backend selection strategy, such as urltest or fallback.
   final String type;
   final String poolId;
+  final String countryCode;
+  final String protocol;
   final String userTier;
   final String badge;
   final String category;
@@ -190,6 +202,8 @@ class ManifestGroup {
     this.routeType = 'smart_group',
     this.type = 'urltest',
     this.poolId = '',
+    this.countryCode = '',
+    this.protocol = '',
     this.userTier = 'free',
     this.badge = '',
     this.category = '',
@@ -211,6 +225,8 @@ class ManifestGroup {
       routeType: (j['route_type'] ?? 'smart_group').toString(),
       type: (j['type'] ?? 'urltest').toString(),
       poolId: (j['pool_id'] ?? '').toString(),
+      countryCode: (j['country_code'] ?? '').toString().toUpperCase(),
+      protocol: (j['protocol'] ?? '').toString(),
       userTier: (j['user_tier'] ?? 'free').toString(),
       badge: (j['badge'] ?? '').toString(),
       category: (j['category'] ?? '').toString(),

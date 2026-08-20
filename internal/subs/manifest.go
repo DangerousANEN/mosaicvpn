@@ -76,12 +76,25 @@ func matchGroupFilter(group proto.ManifestGroup, srv proto.Server) bool {
 
 	// Category-based matching as fallback.
 	switch group.Category {
+	case "direct":
+		// A public direct route must be explicit and geographically verified.
+		// Do not fall back to all subscription nodes: that could silently turn a
+		// direct row into a view of the private pool.
+		country := group.CountryCode
+		if country == "" {
+			country = groupCountryFromID(group.ID)
+		}
+		return country != "" && strings.EqualFold(srv.Country, country)
 	case "whitelist":
 		nameLower := strings.ToLower(srv.Name + " " + srv.Tag)
 		return strings.Contains(nameLower, "whitelist") || strings.Contains(nameLower, "4g") || strings.Contains(nameLower, "tspu") || srv.Protocol == "vless"
 	case "smart":
-		// Country-based matching from group ID suffix.
-		cc := groupCountryFromID(group.ID)
+		// Country metadata takes precedence. ID suffix is a compatibility
+		// fallback for already issued third-party manifests.
+		cc := group.CountryCode
+		if cc == "" {
+			cc = groupCountryFromID(group.ID)
+		}
 		if cc == "" {
 			return true
 		} // rg-all → all nodes
@@ -187,13 +200,20 @@ func ParseManifestOrSynthesize(content []byte, subID string, rawServers []proto.
 	var manifest proto.SubscriptionManifest
 
 	// Attempt JSON manifest parse
-	if len(content) > 0 && json.Unmarshal(content, &manifest) == nil && len(manifest.Groups) > 0 {
+	if len(content) > 0 && json.Unmarshal(content, &manifest) == nil && manifest.HasRoutes() {
 		for i := range manifest.Groups {
 			if manifest.Groups[i].PoolID == "" {
 				manifest.Groups[i].PoolID = subID
 			}
 			manifest.Groups[i].Nodes = resolveGroupNodes(manifest.Groups[i], rawServers)
 			manifest.Groups[i].SetDefaults()
+		}
+		for i := range manifest.DirectRoutes {
+			if manifest.DirectRoutes[i].PoolID == "" {
+				manifest.DirectRoutes[i].PoolID = subID
+			}
+			manifest.DirectRoutes[i].Nodes = resolveGroupNodes(manifest.DirectRoutes[i], rawServers)
+			manifest.DirectRoutes[i].SetDefaults()
 		}
 		virtualServers := BuildVirtualServersFromManifest(manifest, subID)
 		allServers := append(virtualServers, rawServers...)
@@ -430,11 +450,15 @@ func SynthesizeManifest(subID string, rawServers []proto.Server) proto.Subscript
 // BuildVirtualServersFromManifest converts manifest groups to proto.Server virtual group entries.
 func BuildVirtualServersFromManifest(manifest proto.SubscriptionManifest, subID string) []proto.Server {
 	var list []proto.Server
-	for _, g := range manifest.Groups {
+	for _, g := range manifest.Routes() {
+		protocol := g.Protocol
+		if protocol == "" {
+			protocol = "vless"
+		}
 		srv := proto.Server{
 			ID:             fmt.Sprintf("group-%s", g.ID),
 			Name:           g.Title,
-			Protocol:       "vless",
+			Protocol:       proto.Protocol(protocol),
 			Address:        "127.0.0.1",
 			Port:           443,
 			SubscriptionID: subID,
@@ -445,12 +469,17 @@ func BuildVirtualServersFromManifest(manifest proto.SubscriptionManifest, subID 
 			Tag:            g.Badge,
 			Raw: map[string]any{
 				"mosaic_group_type":     g.Type,
+				"mosaic_route_type":     g.RouteType,
+				"mosaic_country_code":   g.CountryCode,
+				"mosaic_protocol":       protocol,
 				"mosaic_ping_interval":  g.PingInterval,
 				"mosaic_max_retries":    g.MaxRetries,
 				"mosaic_failover_delay": g.FailoverDelay,
 			},
 		}
 		switch {
+		case g.CountryCode != "":
+			srv.Country = strings.ToUpper(g.CountryCode)
 		case strings.Contains(g.ID, "de"):
 			srv.Country = "DE"
 		case strings.Contains(g.ID, "nl"):

@@ -297,9 +297,13 @@ type ManifestGroup struct {
 	// RouteType is the generic UI/API type (normally "smart_group"). Strategy
 	// remains a separate implementation detail so the client never presents
 	// urltest/fallback as a user-visible protocol.
-	RouteType      string                `json:"route_type,omitempty"`
-	Type           string                `json:"type"` // runtime strategy: urltest, fallback, weighted_round_robin, direct_node
-	PoolID         string                `json:"pool_id,omitempty"`
+	RouteType string `json:"route_type,omitempty"`
+	Type      string `json:"type"` // runtime strategy: urltest, fallback, weighted_round_robin, direct_node
+	PoolID    string `json:"pool_id,omitempty"`
+	// CountryCode and Protocol describe a user-visible route, never a pool
+	// member. They are present only when the provider can verify them.
+	CountryCode    string                `json:"country_code,omitempty"`
+	Protocol       string                `json:"protocol,omitempty"`
 	Nodes          []ManifestNode        `json:"nodes"`
 	UserTier       UserTier              `json:"user_tier,omitempty"`
 	Badge          string                `json:"badge,omitempty"`
@@ -369,12 +373,50 @@ type CandidateProbeResult struct {
 
 // SubscriptionManifest is the provider-controlled routing & load-balancing manifest.
 type SubscriptionManifest struct {
-	ProviderName string           `json:"provider_name,omitempty"`
-	UserTier     UserTier         `json:"user_tier,omitempty"`
-	TelemetryURL string           `json:"telemetry_url,omitempty"`
-	Groups       []ManifestGroup  `json:"groups"`
+	ProviderName string          `json:"provider_name,omitempty"`
+	UserTier     UserTier        `json:"user_tier,omitempty"`
+	TelemetryURL string          `json:"telemetry_url,omitempty"`
+	Groups       []ManifestGroup `json:"groups"`
+	// DirectRoutes are explicit provider-operated public route entries. They
+	// deliberately remain separate from Smart Groups so a generic client can
+	// present the direct route without exposing the source pool or its members.
+	DirectRoutes []ManifestGroup  `json:"direct_routes,omitempty"`
 	Rules        []Rule           `json:"routing_rules,omitempty"`
 	Profile      *ProviderProfile `json:"profile,omitempty"`
+}
+
+// Routes returns every user-visible virtual route in manifest order: Smart
+// Groups first, then explicitly declared direct routes. Physical nodes are not
+// included here and remain inside the local daemon store.
+func (m SubscriptionManifest) Routes() []ManifestGroup {
+	routes := make([]ManifestGroup, 0, len(m.Groups)+len(m.DirectRoutes))
+	routes = append(routes, m.Groups...)
+	routes = append(routes, m.DirectRoutes...)
+	return routes
+}
+
+// HasRoutes reports whether a provider manifest supplies any virtual route.
+func (m SubscriptionManifest) HasRoutes() bool {
+	return len(m.Groups) > 0 || len(m.DirectRoutes) > 0
+}
+
+// RouteByID resolves a subscription-scoped virtual route from either manifest
+// section. It never resolves a physical pool member.
+func (m *SubscriptionManifest) RouteByID(id string) *ManifestGroup {
+	if m == nil {
+		return nil
+	}
+	for index := range m.Groups {
+		if m.Groups[index].ID == id {
+			return &m.Groups[index]
+		}
+	}
+	for index := range m.DirectRoutes {
+		if m.DirectRoutes[index].ID == id {
+			return &m.DirectRoutes[index]
+		}
+	}
+	return nil
 }
 
 // SubscriptionSource distinguishes provider-owned route catalogs from an

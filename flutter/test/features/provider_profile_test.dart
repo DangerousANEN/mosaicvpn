@@ -37,6 +37,37 @@ Widget _harness(BillingProfile profile) {
 }
 
 void main() {
+  group('ProviderManifest direct routes', () {
+    test('parses direct_routes separately and exposes all virtual routes', () {
+      final manifest = ProviderManifest.fromJson(const {
+        'provider_name': 'Test Provider',
+        'groups': [
+          {'id': 'smart', 'title': 'Smart', 'route_type': 'smart_group'},
+        ],
+        'direct_routes': [
+          {
+            'id': 'direct-de',
+            'title': 'Direct Germany',
+            'route_type': 'direct',
+            'type': 'direct_node',
+            'country_code': 'DE',
+            'protocol': 'vless',
+          },
+        ],
+      });
+
+      expect(manifest.groups, hasLength(1));
+      expect(manifest.directRoutes, hasLength(1));
+      expect(manifest.routes.map((route) => route.id), ['smart', 'direct-de']);
+      final direct = manifest.directRoutes.single;
+      expect(direct.routeType, 'direct');
+      expect(direct.type, 'direct_node');
+      expect(direct.countryCode, 'DE');
+      expect(direct.protocol, 'vless');
+      expect(direct.nodes, isEmpty);
+    });
+  });
+
   group('ProviderProfileScreen account state', () {
     testWidgets('unlinked account shows no tariff or traffic figures',
         (tester) async {

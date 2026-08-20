@@ -339,6 +339,7 @@ func (s *Store) Snapshot() State {
 			}
 			copy := *manifest
 			copy.Groups = append([]proto.ManifestGroup(nil), manifest.Groups...)
+			copy.DirectRoutes = append([]proto.ManifestGroup(nil), manifest.DirectRoutes...)
 			copy.Rules = append([]proto.Rule(nil), manifest.Rules...)
 			cp.ProviderManifests[id] = &copy
 		}
@@ -811,6 +812,7 @@ func (s *Store) ManifestForSubscription(subscriptionID string) *proto.Subscripti
 	}
 	copy := *manifest
 	copy.Groups = append([]proto.ManifestGroup(nil), manifest.Groups...)
+	copy.DirectRoutes = append([]proto.ManifestGroup(nil), manifest.DirectRoutes...)
 	copy.Rules = append([]proto.Rule(nil), manifest.Rules...)
 	return &copy
 }

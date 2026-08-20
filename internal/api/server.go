@@ -1324,14 +1324,14 @@ func (s *Server) refresh(ctx context.Context, sub proto.Subscription) error {
 		// A provider manifest defines the complete user-visible route catalog.
 		// If an older Mosaic feed has no manifest yet, synthesize only its virtual
 		// group rows; protected physical nodes stay hidden by subscription policy.
-		if len(manifest.Groups) == 0 && isMosaicSource {
+		if !manifest.HasRoutes() && isMosaicSource {
 			manifest = subs.SynthesizeManifest(sub.ID, res.Servers)
 		}
 		// Provider group IDs are local resolver IDs. Namespace them by the
 		// subscription source before persisting, so two provider accounts
 		// cannot overwrite each other's Smart Group selection state.
 		manifest = scopeManifestForSubscription(manifest, sub.ID)
-		if len(manifest.Groups) > 0 {
+		if manifest.HasRoutes() {
 			hasVirtualGroups := false
 			for _, server := range finalServers {
 				if server.IsVirtualGroup {
@@ -1373,14 +1373,19 @@ func (s *Server) refresh(ctx context.Context, sub proto.Subscription) error {
 // The public title, policy and opaque node references retain the provider's
 // contract. No physical pool endpoint is added to the user-facing manifest.
 func scopeManifestForSubscription(manifest proto.SubscriptionManifest, subscriptionID string) proto.SubscriptionManifest {
-	if subscriptionID == "" || len(manifest.Groups) == 0 {
+	if subscriptionID == "" || !manifest.HasRoutes() {
 		return manifest
 	}
 	copy := manifest
 	copy.Groups = append([]proto.ManifestGroup(nil), manifest.Groups...)
+	copy.DirectRoutes = append([]proto.ManifestGroup(nil), manifest.DirectRoutes...)
 	for index := range copy.Groups {
 		group := &copy.Groups[index]
 		group.ID = "provider:" + subscriptionID + ":" + group.ID
+	}
+	for index := range copy.DirectRoutes {
+		route := &copy.DirectRoutes[index]
+		route.ID = "provider:" + subscriptionID + ":" + route.ID
 	}
 	return copy
 }
@@ -1391,8 +1396,9 @@ func scopeManifestForSubscription(manifest proto.SubscriptionManifest, subscript
 // are removed when a provider changes its route catalog.
 func (s *Server) syncProviderGroups(subscriptionID string, manifest proto.SubscriptionManifest) error {
 	prefix := "provider:" + subscriptionID + ":"
-	desired := make(map[string]struct{}, len(manifest.Groups))
-	for _, manifestGroup := range manifest.Groups {
+	routes := manifest.Routes()
+	desired := make(map[string]struct{}, len(routes))
+	for _, manifestGroup := range routes {
 		desired[manifestGroup.ID] = struct{}{}
 	}
 	for _, existing := range s.store.Snapshot().Groups {
@@ -1404,7 +1410,7 @@ func (s *Server) syncProviderGroups(subscriptionID string, manifest proto.Subscr
 			}
 		}
 	}
-	for _, manifestGroup := range manifest.Groups {
+	for _, manifestGroup := range routes {
 		group := manifestGroup.ToServerGroup()
 		group.Source = proto.GroupSourcePool
 		group.Description = manifestGroup.Description
@@ -1898,10 +1904,10 @@ func (s *Server) StartPool(ctx context.Context) {
 	manifest := s.activeManifest
 	s.manifestMu.RUnlock()
 	snap := s.store.Snapshot()
-	if manifest == nil || len(manifest.Groups) == 0 {
+	if manifest == nil || !manifest.HasRoutes() {
 		return
 	}
-	s.pool.Start(ctx, manifest.Groups, snap.Servers)
+	s.pool.Start(ctx, manifest.Routes(), snap.Servers)
 }
 
 // handleCandidateShard returns a bounded deterministic candidate subset to
@@ -1921,7 +1927,7 @@ func (s *Server) handleCandidateShard(w http.ResponseWriter, r *http.Request) {
 	policy := proto.ClientSelectionPolicy{}
 	s.manifestMu.RLock()
 	if s.activeManifest != nil {
-		for _, manifestGroup := range s.activeManifest.Groups {
+		for _, manifestGroup := range s.activeManifest.Routes() {
 			if manifestGroup.ID != groupID {
 				continue
 			}

@@ -59,7 +59,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
             providerManifestForSubscriptionProvider(selectedSubscription.id))
         : null;
     final manifestGroups =
-        (selectedManifest?.valueOrNull?.groups ?? <ManifestGroup>[])
+        (selectedManifest?.valueOrNull?.routes ?? <ManifestGroup>[])
             .where((group) => group.category != 'raw')
             .toList();
     final userServers = ref.watch(serversProvider).valueOrNull ?? <Server>[];
@@ -306,7 +306,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
             error: true);
       } else if (AppPlatform.isAndroid) {
         await _toggleAndroidRuntime(status, selected);
-      } else if (selected.isGroup && selected.manifestGroup != null) {
+      } else if (selected.isSmartGroup && selected.manifestGroup != null) {
         await _smartGroupSelector.connect(api, selected.manifestGroup!);
       } else if (selected.isGroup) {
         await api.connectGroup(selected.id);
@@ -433,11 +433,17 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
       id: group.id,
       title: _localizedGroupTitle(context, group),
       subtitle: [
-        strings.t('smart_group'),
+        group.routeType == 'direct'
+            ? [
+                if (group.protocol.isNotEmpty) group.protocol.toUpperCase(),
+                if (group.countryCode.isNotEmpty) group.countryCode,
+              ].join(' · ')
+            : strings.t('smart_group'),
         if (description.isNotEmpty) description,
       ].join(' · '),
       icon: group.icon,
       isGroup: true,
+      isSmartGroup: group.routeType == 'smart_group',
       disabled: group.disabled,
       disabledReason: group.disabledReason,
       manifestGroup: group,
@@ -455,6 +461,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
             : server.protocol.displayName,
         icon: 'node',
         isGroup: false,
+        isSmartGroup: false,
       );
 
   void _notice(String value, {bool error = false}) =>
@@ -470,6 +477,7 @@ class _RouteChoice {
     required this.subtitle,
     required this.icon,
     required this.isGroup,
+    required this.isSmartGroup,
     this.disabled = false,
     this.disabledReason = '',
     this.manifestGroup,
@@ -481,6 +489,7 @@ class _RouteChoice {
   final String subtitle;
   final String icon;
   final bool isGroup;
+  final bool isSmartGroup;
   final bool disabled;
   final String disabledReason;
   final ManifestGroup? manifestGroup;

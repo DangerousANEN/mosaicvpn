@@ -59,6 +59,7 @@ class _RouteRow {
     required this.ping,
     required this.traffic,
     required this.isGroup,
+    this.isSmartGroup = false,
     this.jitter,
     this.loss,
     this.speed,
@@ -83,6 +84,7 @@ class _RouteRow {
   final int? speed;
   final String country;
   final bool isGroup;
+  final bool isSmartGroup;
   final IconData icon;
   final bool disabled;
   final String disabledReason;
@@ -328,7 +330,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     final rows = <_RouteRow>[];
     if (_isMosaicSubscription(source) || source.isProviderSource) {
       final strings = AppStrings.of(context);
-      rows.addAll((manifest?.groups ?? const <ManifestGroup>[])
+      rows.addAll((manifest?.routes ?? const <ManifestGroup>[])
           // The provider decides which route categories exist. A group stays a
           // normal route row even when disabled; private physical pool nodes
           // never cross this manifest/UI boundary.
@@ -336,7 +338,11 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
           .map(
             (group) => _RouteRow(
               id: group.id,
-              type: strings.t('smart_group'),
+              type: group.routeType == 'direct'
+                  ? (group.protocol.isEmpty
+                      ? 'VLESS'
+                      : group.protocol.toUpperCase())
+                  : strings.t('smart_group'),
               name: _groupTitle(group),
               ping: _groupLatencyProgress?.groupId == group.id
                   ? _groupLatencyProgress?.latencyMs
@@ -350,7 +356,9 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
               traffic: _groupLatencyProgress?.groupId == group.id
                   ? '${_groupLatencyProgress!.label} проверено'
                   : '—',
+              country: group.countryCode,
               isGroup: true,
+              isSmartGroup: group.routeType == 'smart_group',
               icon: _groupIcon(group.icon),
               disabled: group.disabled,
               disabledReason: group.disabledReason,
@@ -696,7 +704,10 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       // Desktop ranks opaque Smart Group candidates through its local daemon.
       // Android has no mosaicd: its facade builds a signed group-scoped native
       // TUN config and waits for the real VpnService terminal state instead.
-      if (row.isGroup && manifestGroup != null && !AppPlatform.isAndroid) {
+      if (row.isGroup &&
+          row.isSmartGroup &&
+          manifestGroup != null &&
+          !AppPlatform.isAndroid) {
         await _smartGroupSelector.connect(api, manifestGroup);
       } else if (row.isGroup) {
         await api.connectGroup(row.id);
