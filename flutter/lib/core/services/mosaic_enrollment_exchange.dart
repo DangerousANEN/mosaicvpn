@@ -42,18 +42,34 @@ class MosaicEnrollmentExchange {
     return isVerifiedWebsiteCallback || isCustomSchemeFallback;
   }
 
+  /// Canonical short-lived callback identity used by desktop callers to ignore
+  /// duplicate URI deliveries. The server still enforces one-time redemption;
+  /// this only prevents the same running app from redeeming an already accepted
+  /// callback a second time and surfacing a misleading HTTP 409 to the user.
+  static String? callbackDeliveryKey(Uri callback) {
+    if (!isSupportedCallback(callback)) return null;
+    final code = callback.queryParameters['code'] ?? '';
+    final state = callback.queryParameters['state'] ?? '';
+    if (!RegExp(r'^[A-Za-z0-9_-]{16,128}$').hasMatch(code) ||
+        !RegExp(r'^[A-Za-z0-9]{16,128}$').hasMatch(state)) {
+      return null;
+    }
+    return '$code::$state';
+  }
+
   static Future<MosaicWebsiteEnrollment> redeem(Uri callback) async {
     if (!isSupportedCallback(callback)) {
       throw const FormatException(
           'Получена неподдерживаемая ссылка добавления подписки.');
     }
-    final code = callback.queryParameters['code'] ?? '';
-    final state = callback.queryParameters['state'] ?? '';
-    if (!RegExp(r'^[A-Za-z0-9_-]{16,128}$').hasMatch(code) ||
-        !RegExp(r'^[A-Za-z0-9]{16,128}$').hasMatch(state)) {
+    final key = callbackDeliveryKey(callback);
+    if (key == null) {
       throw const FormatException(
           'Ссылка добавления неполная или уже недействительна. Повторите действие на сайте.');
     }
+    final separator = key.lastIndexOf('::');
+    final code = key.substring(0, separator);
+    final state = key.substring(separator + 2);
     final response = await _dio.post<Map<String, dynamic>>(
       '/api/app-auth/exchange',
       data: {'code': code, 'state': state},

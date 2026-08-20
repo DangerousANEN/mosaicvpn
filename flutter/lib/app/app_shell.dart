@@ -9,11 +9,13 @@ import 'package:window_manager/window_manager.dart';
 import '../core/theme/atlas_theme.dart';
 import '../core/platform/app_platform.dart';
 import '../core/api/android_hosted_daemon_api.dart';
+import '../core/models/subscription.dart';
 import '../core/providers/vpn_providers.dart';
 import '../core/i18n/app_strings.dart';
 import '../core/services/android_mosaic_account_service.dart';
 import '../core/services/android_vpn_service.dart';
 import '../core/services/desktop_instance_lock.dart';
+import '../core/services/mosaic_enrollment_exchange.dart';
 import '../core/services/tray_service.dart';
 import '../core/services/smart_group_selector.dart';
 import '../shared/widgets/mosaic_tray_quick_panel.dart';
@@ -50,6 +52,7 @@ class _AppShellState extends ConsumerState<AppShell>
   bool _quitting = false;
   bool _trayQuickPanelVisible = false;
   bool _enrollmentCompleting = false;
+  final Set<String> _completedDesktopEnrollmentCallbacks = <String>{};
   StreamSubscription<Uri>? _enrollmentCallbackSubscription;
   StreamSubscription<Uri>? _desktopEnrollmentCallbackSubscription;
   final SmartGroupSelector _smartGroupSelector = SmartGroupSelector();
@@ -227,10 +230,25 @@ class _AppShellState extends ConsumerState<AppShell>
   /// preserves the provider identity and the secure hosted cabinet session.
   Future<void> _completeDesktopWebsiteEnrollment(Uri callback) async {
     if (!AppPlatform.isDesktop || _enrollmentCompleting) return;
+    final callbackKey = MosaicEnrollmentExchange.callbackDeliveryKey(callback);
+    if (callbackKey != null &&
+        _completedDesktopEnrollmentCallbacks.contains(callbackKey)) {
+      // Windows can deliver a protocol invocation more than once to an already
+      // running application. The first delivery has already installed the same
+      // source; do not re-redeem its one-time browser code and create a 409.
+      ref.invalidate(subscriptionsProvider);
+      ref.invalidate(mosaicManifestProvider);
+      ref.invalidate(unifiedAccountProvider);
+      if (mounted) setState(() => _currentIndex = 1);
+      return;
+    }
     try {
       _enrollmentCompleting = true;
       final enrollment = await AndroidMosaicAccountService.instance
           .completeEnrollmentCallback(callback);
+      if (callbackKey != null) {
+        _completedDesktopEnrollmentCallbacks.add(callbackKey);
+      }
       final providerId = enrollment.providerId?.trim().isNotEmpty == true
           ? enrollment.providerId!.trim()
           : 'mosaicvpn';
@@ -590,7 +608,21 @@ class _AppShellState extends ConsumerState<AppShell>
       final status = await api.getStatus();
       if (status.state == 'connected' || status.state == 'connecting') return;
 
-      final manifest = await api.getProviderManifest();
+      final subscriptions = await api.listSubscriptions();
+      Subscription? mosaicSubscription;
+      for (final subscription in subscriptions) {
+        final uri = Uri.tryParse(subscription.url.trim());
+        if (uri != null &&
+            uri.isScheme('https') &&
+            uri.host.toLowerCase() == 'sub.zxc1x1.ru' &&
+            uri.pathSegments.isNotEmpty) {
+          mosaicSubscription = subscription;
+          break;
+        }
+      }
+      final manifest = await api.getProviderManifest(
+        subscriptionId: mosaicSubscription?.id,
+      );
       final firstEnabledGroup =
           manifest.groups.where((group) => !group.disabled);
       if (firstEnabledGroup.isNotEmpty) {

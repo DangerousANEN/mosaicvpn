@@ -30,9 +30,26 @@ final groupNodeHealthProvider =
 
 enum _RouteSort { type, name, ping, traffic, jitter, loss, speed }
 
-enum _RouteColumn { type, name, ping, jitter, loss, speed, traffic, action }
+enum _RouteColumn {
+  type,
+  name,
+  country,
+  ping,
+  jitter,
+  loss,
+  speed,
+  traffic,
+  action,
+}
 
-enum _RouteAction { testLatency, stopLatencyTest, delete }
+enum _RouteAction {
+  connect,
+  disconnect,
+  testLatency,
+  stopLatencyTest,
+  testSpeed,
+  delete,
+}
 
 class _RouteRow {
   const _RouteRow({
@@ -45,6 +62,7 @@ class _RouteRow {
     this.jitter,
     this.loss,
     this.speed,
+    this.country = '',
     required this.icon,
     this.disabled = false,
     this.disabledReason = '',
@@ -63,6 +81,7 @@ class _RouteRow {
   final int? jitter;
   final double? loss;
   final int? speed;
+  final String country;
   final bool isGroup;
   final IconData icon;
   final bool disabled;
@@ -84,6 +103,7 @@ class GroupsScreen extends ConsumerStatefulWidget {
 
 class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   String? _selectedSubscriptionId;
+  String? _selectedRouteId;
   String? _connectingId;
   _RouteSort _sort = _RouteSort.name;
   bool _ascending = true;
@@ -94,6 +114,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   final Map<_RouteColumn, bool> _visibleColumns = {
     _RouteColumn.type: true,
     _RouteColumn.name: true,
+    _RouteColumn.country: true,
     _RouteColumn.ping: true,
     _RouteColumn.jitter: false,
     _RouteColumn.loss: false,
@@ -104,6 +125,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   final Map<_RouteColumn, double> _columnWidths = {
     _RouteColumn.type: 144,
     _RouteColumn.name: 330,
+    _RouteColumn.country: 128,
     _RouteColumn.ping: 104,
     _RouteColumn.jitter: 112,
     _RouteColumn.loss: 104,
@@ -224,8 +246,11 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                         _RouteTable(
                           rows: rows,
                           activeId: status?.isConnected == true
-                              ? status?.server?.id
+                              ? (status!.activeGroupId.isNotEmpty
+                                  ? status.activeGroupId
+                                  : status.server?.id)
                               : null,
+                          selectedId: _selectedRouteId,
                           connectingId: _connectingId,
                           sort: _sort,
                           ascending: _ascending,
@@ -241,6 +266,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                                   : _groupLatencyProgress?.groupId,
                           onStopGroupLatencyTest: _stopGroupLatencyTest,
                           onRouteMenu: _showRouteMenu,
+                          onPrimaryAction: _handleRoutePrimaryAction,
                           onConnect: _connect,
                           onTest: _testRoute,
                           onDelete: _deleteRoute,
@@ -365,6 +391,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
               jitter: null,
               loss: null,
               speed: server.downSpeed,
+              country: server.country,
               isGroup: false,
               icon: Icons.dns_outlined,
               canTest: true,
@@ -634,6 +661,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   String _columnLabel(_RouteColumn column) => switch (column) {
         _RouteColumn.type => 'Тип',
         _RouteColumn.name => 'Название',
+        _RouteColumn.country => 'Страна',
         _RouteColumn.ping => 'Задержка',
         _RouteColumn.jitter => 'Джиттер',
         _RouteColumn.loss => 'Потери',
@@ -695,10 +723,25 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     }
   }
 
+  void _handleRoutePrimaryAction(_RouteRow row) {
+    if (row.disabled || _connectingId != null) return;
+    if (_selectedRouteId == row.id) {
+      _connect(row);
+      return;
+    }
+    setState(() => _selectedRouteId = row.id);
+  }
+
   Future<void> _showRouteMenu(_RouteRow row, Offset globalPosition) async {
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
     final activeGroupID =
         _activeGroupLatencyTest == null ? null : _groupLatencyProgress?.groupId;
+    final status = ref.read(vpnStatusProvider).valueOrNull;
+    final activeRouteID = status?.activeGroupId.isNotEmpty == true
+        ? status!.activeGroupId
+        : status?.server?.id;
+    final isActiveRoute =
+        status?.isConnected == true && activeRouteID == row.id;
     final action = await showMenu<_RouteAction>(
       context: context,
       position: RelativeRect.fromRect(
@@ -706,6 +749,18 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
         Offset.zero & overlay.size,
       ),
       items: [
+        PopupMenuItem(
+          value: isActiveRoute ? _RouteAction.disconnect : _RouteAction.connect,
+          enabled: !row.disabled,
+          child: ListTile(
+            leading: Icon(isActiveRoute
+                ? Icons.stop_circle_outlined
+                : Icons.play_circle_outline_rounded),
+            title: Text(isActiveRoute ? 'Остановить маршрут' : 'Подключиться'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        const PopupMenuDivider(),
         if (row.isGroup && activeGroupID == row.id)
           const PopupMenuItem(
             value: _RouteAction.stopLatencyTest,
@@ -730,6 +785,15 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
               contentPadding: EdgeInsets.zero,
             ),
           ),
+        if (!row.isGroup)
+          const PopupMenuItem(
+            value: _RouteAction.testSpeed,
+            child: ListTile(
+              leading: Icon(Icons.speed_rounded),
+              title: Text('Тест скорости маршрута'),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
         if (row.canDelete)
           PopupMenuItem(
             value: _RouteAction.delete,
@@ -745,12 +809,57 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     );
     if (action == null || !mounted) return;
     switch (action) {
+      case _RouteAction.connect:
+        await _connect(row);
+      case _RouteAction.disconnect:
+        try {
+          await ref.read(daemonApiProvider).disconnect();
+          ref.invalidate(vpnStatusProvider);
+        } catch (_) {
+          if (mounted) {
+            _showMessage('Не удалось остановить маршрут.',
+                ThemeColors.of(context).danger);
+          }
+        }
       case _RouteAction.testLatency:
         await _testRoute(row);
       case _RouteAction.stopLatencyTest:
         _stopGroupLatencyTest();
+      case _RouteAction.testSpeed:
+        await _testSpeedRoute(row);
       case _RouteAction.delete:
         await _deleteRoute(row);
+    }
+  }
+
+  String _formatSpeed(int bps) {
+    if (bps >= 1000000) return '${(bps / 1000000).toStringAsFixed(1)} Мбит/с';
+    if (bps >= 1000) return '${(bps / 1000).toStringAsFixed(0)} Кбит/с';
+    return '$bps бит/с';
+  }
+
+  Future<void> _testSpeedRoute(_RouteRow row) async {
+    if (row.isGroup) return;
+    try {
+      final result =
+          await ref.read(daemonApiProvider).speedTest(serverID: row.id);
+      if (!mounted) return;
+      if (result.error.isNotEmpty) {
+        _showMessage(result.error, ThemeColors.of(context).danger);
+        return;
+      }
+      _showMessage(
+        result.downloadBps > 0
+            ? 'Тест скорости завершён: ${_formatSpeed(result.downloadBps)}.'
+            : 'Тест скорости завершён.',
+        ThemeColors.of(context).success,
+      );
+      ref.invalidate(serversProvider);
+    } catch (_) {
+      if (mounted) {
+        _showMessage('Не удалось выполнить тест скорости маршрута.',
+            ThemeColors.of(context).danger);
+      }
     }
   }
 
@@ -1653,6 +1762,7 @@ class _RouteTable extends StatelessWidget {
   const _RouteTable({
     required this.rows,
     required this.activeId,
+    required this.selectedId,
     required this.connectingId,
     required this.sort,
     required this.ascending,
@@ -1665,6 +1775,7 @@ class _RouteTable extends StatelessWidget {
     required this.activeLatencyTestGroupId,
     required this.onStopGroupLatencyTest,
     required this.onRouteMenu,
+    required this.onPrimaryAction,
     required this.onConnect,
     required this.onTest,
     required this.onDelete,
@@ -1672,6 +1783,7 @@ class _RouteTable extends StatelessWidget {
 
   final List<_RouteRow> rows;
   final String? activeId;
+  final String? selectedId;
   final String? connectingId;
   final _RouteSort sort;
   final bool ascending;
@@ -1684,6 +1796,7 @@ class _RouteTable extends StatelessWidget {
   final String? activeLatencyTestGroupId;
   final VoidCallback onStopGroupLatencyTest;
   final Future<void> Function(_RouteRow, Offset) onRouteMenu;
+  final ValueChanged<_RouteRow> onPrimaryAction;
   final ValueChanged<_RouteRow> onConnect;
   final Future<void> Function(_RouteRow) onTest;
   final Future<void> Function(_RouteRow) onDelete;
@@ -1737,11 +1850,36 @@ class _RouteTable extends StatelessWidget {
       BuildContext context, _RouteRow row, List<_RouteColumn> columns) {
     final connected = activeId == row.id || activeId == 'group:${row.id}';
     final connecting = connectingId == row.id;
+    final selected = selectedId == row.id;
     return DataRow(
-      selected: connected,
+      selected: connected || selected,
+      color: WidgetStateProperty.resolveWith((states) {
+        if (connected) return AtlasTheme.success.withValues(alpha: .12);
+        if (selected || states.contains(WidgetState.selected)) {
+          return AtlasTheme.accent.withValues(alpha: .14);
+        }
+        if (states.contains(WidgetState.hovered)) {
+          return AtlasTheme.accent.withValues(alpha: .06);
+        }
+        if (states.contains(WidgetState.pressed)) {
+          return AtlasTheme.accent.withValues(alpha: .18);
+        }
+        return null;
+      }),
       cells: columns
-          .map((column) =>
-              DataCell(_cell(context, row, column, connected, connecting)))
+          .map((column) => DataCell(
+                Listener(
+                  onPointerDown: (event) {
+                    if (event.buttons == kSecondaryMouseButton) {
+                      onRouteMenu(row, event.position);
+                    }
+                  },
+                  child: _cell(context, row, column, connected, connecting),
+                ),
+                onTap: row.disabled || connecting
+                    ? null
+                    : () => onPrimaryAction(row),
+              ))
           .toList(growable: false),
     );
   }
@@ -1774,35 +1912,29 @@ class _RouteTable extends StatelessWidget {
                     style: TextStyle(color: muted))),
           ]),
         ),
-      _RouteColumn.name => Listener(
-          onPointerDown: (event) {
-            if (event.buttons == kSecondaryMouseButton) {
-              onRouteMenu(row, event.position);
-            }
-          },
-          child: SizedBox(
-            width: width,
-            child: Row(children: [
-              Expanded(
-                  child: Text(row.name,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          color: primary, fontWeight: FontWeight.w700))),
-              if (connecting)
-                const Padding(
-                    padding: EdgeInsets.only(left: 8),
-                    child: SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2)))
-              else if (connected)
-                const Padding(
-                    padding: EdgeInsets.only(left: 8),
-                    child: Icon(Icons.check_circle_rounded,
-                        color: AtlasTheme.success, size: 18)),
-            ]),
-          ),
+      _RouteColumn.name => SizedBox(
+          width: width,
+          child: Row(children: [
+            Expanded(
+                child: Text(row.name,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: primary, fontWeight: FontWeight.w700))),
+            if (connecting)
+              const Padding(
+                  padding: EdgeInsets.only(left: 8),
+                  child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2)))
+            else if (connected)
+              const Padding(
+                  padding: EdgeInsets.only(left: 8),
+                  child: Icon(Icons.check_circle_rounded,
+                      color: AtlasTheme.success, size: 18)),
+          ]),
         ),
+      _RouteColumn.country => text(_countryLabel(row.country)),
       _RouteColumn.ping => text(row.ping == null ? '—' : '${row.ping} мс'),
       _RouteColumn.jitter =>
         text(row.jitter == null ? '—' : '${row.jitter} мс'),
@@ -1891,6 +2023,7 @@ class _RouteTable extends StatelessWidget {
   String _label(_RouteColumn column) => switch (column) {
         _RouteColumn.type => 'Тип',
         _RouteColumn.name => 'Название',
+        _RouteColumn.country => 'Страна',
         _RouteColumn.ping => 'Задержка',
         _RouteColumn.jitter => 'Джиттер',
         _RouteColumn.loss => 'Потери',
@@ -1902,6 +2035,7 @@ class _RouteTable extends StatelessWidget {
   _RouteSort? _sortFor(_RouteColumn column) => switch (column) {
         _RouteColumn.type => _RouteSort.type,
         _RouteColumn.name => _RouteSort.name,
+        _RouteColumn.country => null,
         _RouteColumn.ping => _RouteSort.ping,
         _RouteColumn.jitter => _RouteSort.jitter,
         _RouteColumn.loss => _RouteSort.loss,
@@ -1924,6 +2058,19 @@ class _RouteTable extends StatelessWidget {
     if (bps >= 1000000) return '${(bps / 1000000).toStringAsFixed(1)} Мбит/с';
     if (bps >= 1000) return '${(bps / 1000).toStringAsFixed(0)} Кбит/с';
     return '$bps бит/с';
+  }
+
+  String _countryLabel(String value) {
+    final country = value.trim();
+    if (country.isEmpty) return '—';
+    final code = country.toUpperCase();
+    if (RegExp(r'^[A-Z]{2}$').hasMatch(code)) {
+      final flag = String.fromCharCodes(
+        code.codeUnits.map((unit) => 0x1F1E6 + unit - 65),
+      );
+      return '$flag $code';
+    }
+    return country;
   }
 }
 

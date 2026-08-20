@@ -540,8 +540,12 @@ const (
 
 // Status is the aggregate runtime state exposed by the daemon API.
 type Status struct {
-	State          State     `json:"state"`
-	Server         *Server   `json:"server,omitempty"`
+	State  State   `json:"state"`
+	Server *Server `json:"server,omitempty"`
+	// ActiveGroupID is the user-facing Smart Group that resolved the current
+	// connection. It is intentionally a virtual route ID: the selected pool node
+	// remains daemon-private and never needs to enter the client UI.
+	ActiveGroupID  string    `json:"active_group_id,omitempty"`
 	Since          time.Time `json:"since,omitempty"`
 	LastError      string    `json:"last_error,omitempty"`
 	LatencyMS      int       `json:"latency_ms,omitempty"`

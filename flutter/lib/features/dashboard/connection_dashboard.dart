@@ -41,37 +41,29 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
   Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
     final status = ref.watch(vpnStatusProvider).valueOrNull ?? VpnStatus();
-    final manifest = ref.watch(mosaicManifestProvider);
-    final manifestGroups = (manifest.valueOrNull?.groups ?? <ManifestGroup>[])
-        // Group categories are provider-defined. The generic client excludes
-        // only raw/internal entries and otherwise renders each one as a route.
-        .where((group) => group.category != 'raw')
-        .toList();
-    final loadedSubscriptions =
+    // Dashboard and Routes must start from the same persisted sources. A
+    // synthetic global Mosaic row made the Dashboard show a different number
+    // of subscriptions and used unscoped group IDs that the daemon cannot
+    // connect on multi-subscription installs.
+    final subscriptions =
         ref.watch(subscriptionsProvider).valueOrNull ?? <Subscription>[];
-    final hasProviderSource = loadedSubscriptions
-        .any((subscription) => subscription.isProviderSource);
-    final subscriptions = <Subscription>[
-      if (!hasProviderSource && manifestGroups.isNotEmpty)
-        Subscription(
-          id: 'provider-mosaicvpn-primary',
-          name: manifest.valueOrNull?.providerName.isNotEmpty == true
-              ? manifest.valueOrNull!.providerName
-              : 'MosaicVPN',
-          source: 'provider',
-          providerId: 'mosaicvpn',
-          hidePhysicalNodes: true,
-        ),
-      ...loadedSubscriptions,
-    ];
     final selectedSubscription = subscriptions.firstWhere(
       (subscription) => subscription.id == _selectedSubscriptionId,
       orElse: () =>
           subscriptions.isNotEmpty ? subscriptions.first : Subscription(),
     );
-    final isProviderSource = selectedSubscription.isProviderSource;
+    final isMosaicSource = _isMosaicSubscription(selectedSubscription);
+    final selectedManifest = isMosaicSource &&
+            selectedSubscription.id.isNotEmpty
+        ? ref.watch(
+            providerManifestForSubscriptionProvider(selectedSubscription.id))
+        : null;
+    final manifestGroups =
+        (selectedManifest?.valueOrNull?.groups ?? <ManifestGroup>[])
+            .where((group) => group.category != 'raw')
+            .toList();
     final userServers = ref.watch(serversProvider).valueOrNull ?? <Server>[];
-    final List<_RouteChoice> groups = isProviderSource
+    final List<_RouteChoice> groups = isMosaicSource
         ? manifestGroups.map<_RouteChoice>(_manifestAsRouteChoice).toList()
         : userServers
             .where((server) => server.subscriptionID == selectedSubscription.id)
@@ -126,6 +118,15 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
               ),
       ),
     );
+  }
+
+  bool _isMosaicSubscription(Subscription subscription) {
+    if (subscription.id == 'mosaic-direct') return true;
+    final uri = Uri.tryParse(subscription.url.trim());
+    return uri != null &&
+        uri.isScheme('https') &&
+        uri.host.toLowerCase() == 'sub.zxc1x1.ru' &&
+        uri.pathSegments.isNotEmpty;
   }
 
   Widget _buildMobileLayout(

@@ -14,10 +14,33 @@ import 'package:mosaic_vpn/core/platform/app_platform.dart';
 /// value: the real provider polls on a periodic Timer that outlives the widget
 /// tree and trips the binding's pending-timer assertion on teardown, while an
 /// unmocked HttpClient makes the suite emit network warnings.
+final _mosaicTestSubscription = Subscription(
+  id: 'mosaic-test-subscription',
+  name: 'MosaicVPN',
+  url: 'https://sub.zxc1x1.ru/test-feed',
+  hidePhysicalNodes: true,
+);
+
+final _mosaicTestManifest = ProviderManifest(
+  providerName: 'MosaicVPN',
+  groups: [
+    ManifestGroup(
+      id: 'provider:mosaic-test-subscription:rg-all',
+      title: '[SG] Минимальный пинг',
+      description: 'Выбор маршрута с минимальной задержкой.',
+      icon: 'lightning',
+    ),
+  ],
+);
+
 Widget _harness({Locale locale = const Locale('ru')}) => ProviderScope(
       overrides: [
         daemonApiProvider.overrideWithValue(MockDaemonApi()),
         vpnStatusProvider.overrideWith((ref) => Stream.value(VpnStatus())),
+        subscriptionsProvider
+            .overrideWith((ref) async => [_mosaicTestSubscription]),
+        providerManifestForSubscriptionProvider(_mosaicTestSubscription.id)
+            .overrideWith((ref) async => _mosaicTestManifest),
       ],
       child: MaterialApp(
         locale: locale,
@@ -90,7 +113,8 @@ void main() {
         reason: 'wide layout uses the compact sidebar');
     expect(find.text('Не подключено'), findsWidgets,
         reason: 'the primary desktop screen must be ConnectionDashboard');
-    expect(find.textContaining('Маршруты: Минимальный пинг'), findsOneWidget);
+    expect(
+        find.textContaining('Маршруты: [SG] Минимальный пинг'), findsOneWidget);
     expect(tester.takeException(), isNull,
         reason: 'English dashboard must render without an exception');
   });
@@ -100,7 +124,8 @@ void main() {
     await _pumpAt(tester, const Size(1440, 960), locale: const Locale('en'));
 
     expect(find.text('Not connected'), findsWidgets);
-    expect(find.textContaining('Routes: Минимальный пинг'), findsOneWidget);
+    expect(
+        find.textContaining('Routes: [SG] Минимальный пинг'), findsOneWidget);
     expect(find.text('Subscriptions'), findsWidgets);
     expect(tester.takeException(), isNull,
         reason: 'English dashboard must render without a framework exception');

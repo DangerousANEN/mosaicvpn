@@ -9,6 +9,9 @@ class VpnStatus {
   final bool killSwitch;
   final bool allowLAN;
   final Server? server; // current connected server
+  /// Virtual Smart Group that resolved the current server. This is supplied by
+  /// the daemon and never exposes a private pool member to the interface.
+  final String activeGroupId;
   final String proxySocks; // e.g. "127.0.0.1:1080"
   final String proxyHTTP; // e.g. "127.0.0.1:1081"
   final int latencyMS;
@@ -24,6 +27,7 @@ class VpnStatus {
     this.killSwitch = true,
     this.allowLAN = true,
     this.server,
+    this.activeGroupId = '',
     this.proxySocks = '',
     this.proxyHTTP = '',
     this.latencyMS = 0,
@@ -40,6 +44,7 @@ class VpnStatus {
         killSwitch: j['kill_switch'] ?? true,
         allowLAN: j['allow_lan'] ?? true,
         server: j['server'] != null ? Server.fromJson(j['server']) : null,
+        activeGroupId: j['active_group_id'] ?? '',
         proxySocks: j['proxy_socks'] ?? '',
         proxyHTTP: j['proxy_http'] ?? '',
         latencyMS: j['latency_ms'] ?? 0,
@@ -63,6 +68,7 @@ class VpnStatus {
     bool? killSwitch,
     bool? allowLAN,
     Server? server,
+    String? activeGroupId,
     String? proxySocks,
     String? proxyHTTP,
     int? latencyMS,
@@ -78,6 +84,7 @@ class VpnStatus {
       killSwitch: killSwitch ?? this.killSwitch,
       allowLAN: allowLAN ?? this.allowLAN,
       server: server ?? this.server,
+      activeGroupId: activeGroupId ?? this.activeGroupId,
       proxySocks: proxySocks ?? this.proxySocks,
       proxyHTTP: proxyHTTP ?? this.proxyHTTP,
       latencyMS: latencyMS ?? this.latencyMS,

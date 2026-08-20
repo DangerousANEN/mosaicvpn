@@ -8,19 +8,22 @@
 <link rel="canonical" href="https://sub.zxc1x1.ru/cabinet.html" />
 <meta name="robots" content="noindex, nofollow" />
 <meta name="theme-color" content="#F4EFE6" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet" />
 <style>
   :root{
     --bg:#F4EFE6; --card:#FBF8F2; --card-strong:#EDE5D6; --border:#DED3C0;
     --text:#241F1A; --text-2:#6B6157; --muted:#8A7F72; --accent:#B85C38;
     --accent-soft:rgba(184,92,56,.12); --ok:#3F6B4A; --ok-soft:rgba(63,107,74,.1);
     --warn:#8A6A1F; --warn-soft:rgba(138,106,31,.1); --err:#8C3A2E;
-    --serif:'Iowan Old Style','Palatino Linotype','Book Antiqua',Georgia,serif;
+    --serif:'Source Serif 4','Iowan Old Style','Palatino Linotype','Book Antiqua',Georgia,serif;
     --mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
-    --sans:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    --sans:Manrope,Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
   }
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
-  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased;
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.55;font-feature-settings:'kern' 1,'liga' 1;-webkit-font-smoothing:antialiased;
        background-image:linear-gradient(rgba(196,184,158,.14) 1px,transparent 1px),linear-gradient(90deg,rgba(196,184,158,.14) 1px,transparent 1px);background-size:32px 32px}
   button,input{font:inherit}
   button{cursor:pointer}
@@ -37,13 +40,13 @@
   .nav-links a{text-decoration:none}.nav-links a:hover{color:var(--accent)}
   .nav-home{display:none;margin-left:auto;font-size:14px;text-decoration:none;color:var(--text-2)}
 
-  .page-head{padding:48px 0 30px;border-bottom:1px solid var(--border)}
-  .fig{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
-  h1,h2,h3{font-family:var(--serif);font-weight:600}
-  h1{font-size:clamp(32px,5vw,46px);line-height:1.08;margin:10px 0 13px;letter-spacing:-.03em}
-  h2{font-size:clamp(22px,3vw,29px);line-height:1.15;margin:0}
-  h3{font-size:20px;line-height:1.2;margin:0}
-  .lede{max-width:66ch;margin:0;color:var(--text-2);font-size:16px}
+  .page-head{padding:50px 0 33px;border-bottom:1px solid var(--border)}
+  .fig{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.17em;text-transform:uppercase;color:var(--muted)}
+  h1,h2,h3{font-family:var(--serif);font-weight:600;text-wrap:balance}
+  h1{font-size:clamp(34px,5vw,48px);line-height:1.03;margin:11px 0 15px;letter-spacing:-.045em}
+  h2{font-size:clamp(23px,3vw,30px);line-height:1.1;letter-spacing:-.025em;margin:0}
+  h3{font-size:20px;line-height:1.16;letter-spacing:-.015em;margin:0}
+  .lede{max-width:66ch;margin:0;color:var(--text-2);font-size:16px;line-height:1.7}
 
   main section{padding:30px 0}
   .surface{background:var(--card);border:1px solid var(--border);border-radius:16px}
@@ -67,30 +70,31 @@
   .btn-soft{background:var(--card-strong);border-color:var(--border);color:var(--text)}
   .btn-block{width:100%}.btn-row{display:flex;flex-wrap:wrap;gap:10px}
 
-  .identity{padding:clamp(20px,4vw,30px);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:22px;align-items:center}
+  .identity{position:relative;overflow:hidden;padding:clamp(22px,4vw,32px);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:26px;align-items:center}
+  .identity::before{content:'';position:absolute;top:0;left:0;width:104px;height:3px;background:var(--accent)}
   .identity-main{min-width:0}.identity-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .status{display:inline-flex;align-items:center;gap:7px;padding:6px 9px;border-radius:999px;background:var(--ok-soft);color:var(--ok);font-size:12px;font-weight:700}
   .status::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor}.status.warn{background:var(--warn-soft);color:var(--warn)}.status.err{background:rgba(140,58,46,.1);color:var(--err)}
-  .account-name{margin:12px 0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--serif);font-size:clamp(24px,4vw,34px);line-height:1.1}
-  .account-id{display:inline-flex;align-items:center;gap:9px;max-width:100%;padding:7px 9px 7px 11px;border:1px solid var(--border);border-radius:9px;background:var(--card-strong);font-family:var(--mono);font-size:12px;color:var(--text-2)}
+  .account-name{margin:14px 0 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--serif);font-size:clamp(27px,4vw,38px);line-height:1.02;letter-spacing:-.035em}
+  .account-id{display:inline-flex;align-items:center;gap:9px;max-width:100%;padding:8px 9px 8px 12px;border:1px solid var(--border);border-radius:9px;background:var(--card-strong);font-family:var(--mono);font-size:11.5px;letter-spacing:.015em;color:var(--text-2)}
   .account-id-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.copy-btn{display:inline-grid;place-items:center;width:27px;height:27px;margin:-3px -4px -3px 0;padding:0;border:0;border-radius:6px;background:transparent;color:var(--accent)}.copy-btn:hover{background:var(--accent-soft)}
-  .identity-side{min-width:185px;padding:14px 16px;border-left:1px solid var(--border)}
-  .identity-side .label{font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted)}
-  .identity-side .date{margin-top:5px;font-family:var(--serif);font-size:22px;line-height:1.2}.identity-side .note{margin-top:3px;font-size:12px;color:var(--text-2)}
+  .identity-side{min-width:210px;padding:5px 0 5px 24px;border-left:1px solid var(--border)}
+  .identity-side .label{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  .identity-side .date{margin-top:7px;font-family:var(--serif);font-size:clamp(24px,3vw,29px);line-height:1.06;letter-spacing:-.03em}.identity-side .note{margin-top:7px;font-size:12px;color:var(--text-2)}
 
-  .metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:14px}
-  .metric{min-height:138px;padding:18px;border:1px solid var(--border);border-radius:13px;background:var(--card)}
-  .metric .label{font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted)}
-  .metric .value{margin-top:8px;font-family:var(--serif);font-size:clamp(24px,3vw,31px);line-height:1.05}.metric .sub{margin-top:7px;font-size:12px;color:var(--text-2)}
+  .metrics{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:0;margin-top:15px;overflow:hidden;border:1px solid var(--border);border-radius:14px;background:var(--card)}
+  .metric{min-height:136px;padding:20px;border:0;border-right:1px solid var(--border);background:transparent}.metric:last-child{border-right:0}
+  .metric .label{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  .metric .value{margin-top:9px;font-family:var(--serif);font-size:clamp(26px,3vw,33px);line-height:1.02;letter-spacing:-.03em}.metric .sub{margin-top:8px;font-size:12px;line-height:1.48;color:var(--text-2)}
   .metric .value.warn{color:var(--warn)}.metric .value.err{color:var(--err)}
 
-  .action-card{padding:clamp(20px,4vw,28px)}
-  .payment-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:18px}
-  .pay-option{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--text);text-align:left}
-  .pay-option:hover{border-color:var(--accent);background:var(--card)}.pay-option .sum{font-family:var(--serif);font-size:22px;line-height:1.1}.pay-option .hint{margin-top:4px;font-size:12px;color:var(--text-2)}.pay-option svg{width:19px;height:19px;flex:none;color:var(--accent)}
-  .custom-form{display:grid;grid-template-columns:auto minmax(130px,170px) auto;align-items:center;gap:10px;margin-top:13px}.custom-form label{font-size:14px;color:var(--text-2)}
+  .action-card{padding:clamp(22px,4vw,30px)}
+  .payment-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;margin-top:20px}
+  .pay-option{position:relative;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-height:105px;padding:18px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--text);text-align:left;text-decoration:none;transition:transform .12s ease,background .15s ease,border-color .15s ease}
+  .pay-option:hover{border-color:var(--accent);background:var(--card);transform:translateY(-1px)}.pay-option .sum{font-family:var(--serif);font-size:clamp(24px,2.5vw,28px);line-height:1.03;letter-spacing:-.025em}.pay-option .hint{display:block;max-width:18ch;margin-top:7px;font-size:12px;line-height:1.45;color:var(--text-2)}.pay-option svg{width:19px;height:19px;flex:none;color:var(--accent)}
+  .custom-form{display:grid;grid-template-columns:minmax(180px,1fr) minmax(150px,205px) auto;align-items:center;gap:14px;margin-top:13px;padding:14px 15px;border:1px solid var(--border);border-radius:12px;background:var(--card-strong)}.custom-form label{display:grid;gap:3px;font-family:var(--serif);font-size:19px;line-height:1.1;color:var(--text)}.custom-form label small{font-family:var(--sans);font-size:12px;line-height:1.4;color:var(--text-2)}
   .field{width:100%;min-height:45px;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:#fff;color:var(--text);outline:none}.field:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
-  .message{min-height:21px;margin:11px 0 0;color:var(--text-2);font-size:13px}
+  .message{min-height:21px;margin:12px 0 0;color:var(--text-2);font-size:13px;line-height:1.45}
   .linking-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.linking-panel{padding:18px;border:1px solid var(--border);border-radius:13px;background:#fff}.linking-panel h3{font-size:19px}.linking-panel p{margin:7px 0 0;color:var(--text-2);font-size:13px}.code-output{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:13px;padding:10px 10px 10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--card-strong)}.code-output strong{font-family:var(--mono);font-size:18px;letter-spacing:.14em;color:var(--text)}.binding-state{display:inline-flex;align-items:center;gap:6px;margin-top:12px;font-size:12px;font-weight:700;color:var(--text-2)}.binding-state.ok{color:var(--ok)}.binding-state::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor}
 
   .activity{display:grid;gap:9px}.activity-row{display:grid;grid-template-columns:minmax(120px,1fr) auto auto;gap:18px;align-items:center;padding:14px 16px;border:1px solid var(--border);border-radius:11px;background:var(--card)}
@@ -106,8 +110,8 @@
 
   footer{margin-top:22px;border-top:1px solid var(--border);padding:27px 0 42px;color:var(--muted);font-size:13px}footer a{color:var(--text-2);text-decoration:none}footer a:hover{color:var(--accent)}.footer-links{display:flex;flex-wrap:wrap;gap:6px 13px;margin-top:8px}
 
-  @media(max-width:760px){.wrap{padding:0 16px}.nav{min-height:58px}.nav-links{display:none}.nav-home{display:block}.brand{font-size:18px}.page-head{padding:31px 0 22px}.lede{font-size:15px}main section{padding:22px 0}.section-title{display:block;margin-bottom:12px}.section-title p{margin-top:6px;text-align:left}.identity{grid-template-columns:1fr;padding:20px}.identity-side{min-width:0;padding:14px 0 0;border-left:0;border-top:1px solid var(--border)}.metrics{grid-template-columns:1fr 1fr}.metric{min-height:122px;padding:15px}.metric:last-child{grid-column:1/-1}.payment-options{grid-template-columns:1fr}.pay-option{padding:14px}.custom-form{grid-template-columns:1fr}.custom-form .btn{width:100%}.desktop-table{display:none}.table-wrap{display:none}.mobile-activity{display:grid}.devices-card{padding:19px}.account-guide{grid-template-columns:1fr}.linking-grid{grid-template-columns:1fr}.admin-entry{display:block;padding:19px}.admin-entry .btn{width:100%;margin-top:14px}.btn-row .btn{flex:1}.gate{padding:25px 18px}.code-input{font-size:19px}.footer-links{gap:6px 11px}}
-  @media(max-width:380px){.metrics{grid-template-columns:1fr}.metric:last-child{grid-column:auto}.identity{padding:18px}.account-id{font-size:11px}.btn-row{display:grid;grid-template-columns:1fr}.btn-row .btn{width:100%}}
+  @media(max-width:760px){.wrap{padding:0 16px}.nav{min-height:58px}.nav-links{display:none}.nav-home{display:block}.brand{font-size:18px}.page-head{padding:33px 0 23px}.lede{font-size:15px}main section{padding:22px 0}.section-title{display:block;margin-bottom:12px}.section-title p{margin-top:7px;text-align:left}.identity{grid-template-columns:1fr;padding:22px 20px}.identity-side{min-width:0;padding:17px 0 0;border-left:0;border-top:1px solid var(--border)}.metrics{grid-template-columns:1fr 1fr;margin-top:13px}.metric{min-height:126px;padding:16px;border-right:1px solid var(--border);border-bottom:1px solid var(--border)}.metric:nth-child(2){border-right:0}.metric:last-child{grid-column:1/-1;border-bottom:0;border-right:0}.payment-options{grid-template-columns:1fr}.pay-option{min-height:90px;padding:16px}.pay-option .hint{max-width:none}.custom-form{grid-template-columns:1fr;padding:16px}.custom-form .btn{width:100%}.desktop-table{display:none}.table-wrap{display:none}.mobile-activity{display:grid}.devices-card{padding:19px}.account-guide{grid-template-columns:1fr}.linking-grid{grid-template-columns:1fr}.admin-entry{display:block;padding:19px}.admin-entry .btn{width:100%;margin-top:14px}.btn-row .btn{flex:1}.gate{padding:25px 18px}.code-input{font-size:19px}.footer-links{gap:6px 11px}}
+  @media(max-width:380px){.metrics{grid-template-columns:1fr}.metric,.metric:nth-child(2),.metric:last-child{grid-column:auto;border-right:0;border-bottom:1px solid var(--border)}.metric:last-child{border-bottom:0}.identity{padding:20px 18px}.account-id{font-size:11px}.btn-row{display:grid;grid-template-columns:1fr}.btn-row .btn{width:100%}}
 </style>
 </head>
 <body>
@@ -221,9 +225,9 @@
         <div class="payment-options">
           <button class="pay-option lava-pay" data-amount="10" type="button"><span><span class="sum">10 ₽</span><span class="hint">10 дней доступа</span></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg></button>
           <button class="pay-option lava-pay" data-amount="30" type="button"><span><span class="sum">30 ₽</span><span class="hint">30 дней доступа</span></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg></button>
-          <a class="pay-option" href="https://t.me/mosaicvpnbot?start=topup" target="_blank" rel="noopener"><span><span class="sum">В боте</span><span class="hint">Открыть @mosaicvpnbot</span></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg></a>
+          <a class="pay-option" href="https://t.me/mosaicvpnbot?start=topup" target="_blank" rel="noopener"><span><span class="sum">В Telegram</span><span class="hint">Открыть @mosaicvpnbot</span></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg></a>
         </div>
-        <form id="custom-payment-form" class="custom-form"><label for="custom-amount">Своя сумма, ₽</label><input id="custom-amount" class="field" type="number" min="1" max="100000" step="1" inputmode="numeric" placeholder="Например, 45" /><button class="btn btn-secondary" type="submit">Перейти к оплате</button></form>
+        <form id="custom-payment-form" class="custom-form"><label for="custom-amount"><span>Своя сумма</span><small>Введите сумму от 1 ₽ — она равна числу дней доступа.</small></label><input id="custom-amount" class="field" type="number" min="1" max="100000" step="1" inputmode="numeric" placeholder="Например, 45" /><button class="btn btn-secondary" type="submit">Перейти к оплате</button></form>
         <div id="payment-message" class="message" role="status"></div>
       </div>
     </section>
@@ -306,9 +310,10 @@
     profileState = profile;
     gate.classList.add('hidden'); account.classList.remove('hidden');
     var accountId = String(profile.telegram_id || '—');
-    var username = String(profile.username || '').replace(/^@/, '');
     document.getElementById('account-id').textContent = accountId;
-    document.getElementById('account-name').textContent = username ? '@' + username : 'Аккаунт MosaicVPN';
+    // Account labels must never expose a technical Telegram-derived alias such as
+    // @tg_<id>. The stable account ID below remains available for support requests.
+    document.getElementById('account-name').textContent = 'Аккаунт MosaicVPN';
 
     var days = Number(profile.days_left) || 0;
     var displayedBalance = profile.balance !== undefined && profile.balance !== null ? Number(profile.balance) : days;

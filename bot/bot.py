@@ -3914,43 +3914,43 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         }
         groups = [
             {
-                "id": "rg-all", "title": "Минимальный пинг", "route_type": "smart_group",
+                "id": "rg-all", "title": "[SG] Минимальный пинг", "route_type": "smart_group",
                 "type": "urltest", "pool_id": "mosaicvpn", "category": "smart",
                 "icon": "lightning", "badge": "Авто", "description": "Выбор маршрута с минимальной задержкой на этом устройстве.",
                 "client_policy": {**policy, "mode": "latency"},
             },
             {
-                "id": "auto-stable", "title": "Оптимальный", "route_type": "smart_group",
+                "id": "auto-stable", "title": "[SG] Оптимальный", "route_type": "smart_group",
                 "type": "urltest", "pool_id": "mosaicvpn", "category": "smart",
                 "icon": "shield", "badge": "Рекомендуется", "description": "Баланс стабильности и задержки с локальным failover.",
                 "client_policy": {**policy, "mode": "stability", "stability_weight": 0.45, "latency_weight": 0.30},
             },
             {
-                "id": "auto-speed", "title": "Максимальная скорость", "route_type": "smart_group",
+                "id": "auto-speed", "title": "[SG] Максимальная скорость", "route_type": "smart_group",
                 "type": "urltest", "pool_id": "mosaicvpn", "category": "smart",
                 "icon": "speed", "badge": "Авто", "description": "Маршрут с клиентской проверкой производительности.",
                 "client_policy": {**policy, "mode": "speed", "speed_weight": 0.45, "latency_weight": 0.25},
             },
             {
-                "id": "auto-ru", "title": "Локальные сервисы (RU)", "route_type": "smart_group",
+                "id": "auto-ru", "title": "[SG] Локальные сервисы (RU)", "route_type": "smart_group",
                 "type": "urltest", "pool_id": "mosaicvpn", "category": "smart",
                 "icon": "flag_ru", "badge": "Локальный", "description": "Автоматический маршрут для локального доступа.",
                 "client_policy": {**policy, "mode": "latency"},
             },
             {
-                "id": "auto-ca", "title": "Канада", "route_type": "smart_group",
+                "id": "auto-ca", "title": "[SG] Канада", "route_type": "smart_group",
                 "type": "urltest", "pool_id": "mosaicvpn", "category": "smart",
                 "icon": "flag_ca", "badge": "Авто", "description": "Канадский маршрут, если поддерживается вашим профилем.",
                 "client_policy": {**policy, "mode": "latency"},
             },
             {
-                "id": "auto-de", "title": "Германия", "route_type": "smart_group",
+                "id": "auto-de", "title": "[SG] Германия", "route_type": "smart_group",
                 "type": "urltest", "pool_id": "mosaicvpn", "category": "smart",
                 "icon": "flag_de", "badge": "Авто", "description": "Немецкий маршрут, если поддерживается вашим профилем.",
                 "client_policy": {**policy, "mode": "latency"},
             },
             {
-                "id": "reserved-lte-compat", "title": "Резервная совместимость", "route_type": "smart_group",
+                "id": "reserved-lte-compat", "title": "[SG] Резервная совместимость", "route_type": "smart_group",
                 "type": "urltest", "pool_id": "reserved-lte-compat", "category": "compatibility",
                 "icon": "cellular", "badge": "Скоро", "description": "Категория зарезервирована до подключения авторизованного источника профилей.",
                 "disabled": True, "disabled_reason": "Требуется подключение авторизованного источника профилей.",

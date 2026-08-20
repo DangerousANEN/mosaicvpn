@@ -56,6 +56,8 @@ type Server struct {
 	activeManifest     *proto.SubscriptionManifest
 	manifestMu         sync.RWMutex
 	pool               *subs.PoolEngine
+	activeGroupMu      sync.RWMutex
+	activeGroupID      string
 
 	shutdownRequested chan struct{}
 	shutdownOnce      sync.Once
@@ -294,7 +296,23 @@ func (s *Server) routes() {
 // ---------- handlers ------------------------------------------------------
 
 func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.mgr.Status())
+	status := s.mgr.Status()
+	if status.State == proto.StateConnected || status.State == proto.StateConnecting {
+		status.ActiveGroupID = s.currentActiveGroupID()
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
+func (s *Server) setActiveGroupID(groupID string) {
+	s.activeGroupMu.Lock()
+	s.activeGroupID = groupID
+	s.activeGroupMu.Unlock()
+}
+
+func (s *Server) currentActiveGroupID() string {
+	s.activeGroupMu.RLock()
+	defer s.activeGroupMu.RUnlock()
+	return s.activeGroupID
 }
 
 type connectFailure struct {
@@ -406,6 +424,7 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 		writeConnectFailure(w, http.StatusBadRequest, code, message, retryable, err)
 		return
 	}
+	s.setActiveGroupID(res.GroupID)
 
 	// Remember the group only after the connection actually came up, so a
 	// failing group does not become the preferred choice next time.
@@ -429,6 +448,7 @@ func (s *Server) handleDisconnect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.setActiveGroupID("")
 	writeJSON(w, http.StatusOK, s.mgr.Status())
 }
 
@@ -441,6 +461,7 @@ func (s *Server) handleRuntimeShutdown(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.setActiveGroupID("")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "state": "stopping"})
 	s.shutdownOnce.Do(func() { close(s.shutdownRequested) })
 }
