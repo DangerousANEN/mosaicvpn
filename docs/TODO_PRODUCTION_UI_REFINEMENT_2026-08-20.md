@@ -142,6 +142,22 @@ Production-файл `cabinet.html` опубликован с совпадающ�
 - Главная страница опубликована с пятью ссылками v0.3.28. Каждая ссылка и её целевой GitHub asset вернули HTTP 200 при проверке.
 - Временные SSH-ключи удалены локально после каждой отдельной production-сессии.
 
+### Next: public feed simplification and route UX
+
+- [ ] Сверить фактический публичный subscription feed с target-контрактом: один прямой public server для обычных клиентов; Smart Groups только как client-side virtual routes MosaicVPN.
+- [ ] Убрать из выдачи сторонних клиентов server-side pool/proxy rows и любые старые Smart Group ссылки, не раскрывая private pool members.
+- [ ] Сохранить в MosaicVPN один direct route плюс Smart Groups, которые выбирают кандидатов только локальным daemon/client runtime.
+- [ ] Сделать hover/press/selected состояние строк в таблице «Маршруты» единым для всей строки, а не отдельной ячейки.
+- [ ] Ограничить или адаптивно скрывать колонки таблицы, чтобы они не уходили за границу small desktop/mobile экранов.
+- [ ] Заменить стандартный dropdown подписок на branded selector и переработать выбор маршрута в dashboard в более понятный компактный интерфейс.
+- [ ] Прогнать Go/Flutter tests, собрать и опубликовать новый cross-platform release, затем проверить feed, сайт и временный SSH-ключ удалить.
+
+#### Production inventory 2026-08-21
+
+- Public subscription сейчас содержит 13 опубликованных host profiles: `/direct`, семь country routes и пять legacy server-side pool/proxy routes. Целевым остаётся только `/direct`.
+- Production collector хранит отдельные direct candidate profiles и регулярно выполняет ограниченную TCP/proxy-проверку через sing-box. В pool groups есть свежие usable candidates для all, Germany, Canada, min-latency, max-speed и stable; legacy `owned` group пустая.
+- Эти collector candidates не должны попадать в обычный subscription feed. Следующая реализация должна передавать их только локальному daemon MosaicVPN как scoped opaque candidate feed, а затем выполнять выбор и failover на устройстве пользователя.
+
 ## Результаты визуальной проверки
 
 Локальный desktop- и mobile-рендер страницы входа подтвердил, что обновлённая пара шрифтов сохраняет действующий Atlas-стиль: тёплая сетка, засечковые заголовки, моноширинные служебные метки и терракотовый акцент остаются без изменений. На ширине 390 px заголовок, описание, поля и кнопка не выходят за границы экрана. Карточки профиля и пополнения остаются скрытыми до авторизации; их DOM-идентификаторы и встроенный JavaScript дополнительно прошли синтаксическую проверку.

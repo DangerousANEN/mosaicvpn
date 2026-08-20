@@ -3914,20 +3914,20 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         }
         groups = [
             {
-                "id": "rg-all", "title": "[SG] Минимальный пинг", "route_type": "smart_group",
-                "type": "urltest", "pool_id": "mosaic-public-global", "category": "smart",
+                "id": "min-latency", "title": "[SG] Минимальный пинг", "route_type": "smart_group",
+                "type": "urltest", "pool_id": "client-min-latency", "category": "smart",
                 "icon": "lightning", "badge": "Авто", "description": "Выбор маршрута с минимальной задержкой на этом устройстве.",
                 "client_policy": {**policy, "mode": "latency"},
             },
             {
-                "id": "auto-stable", "title": "[SG] Оптимальный", "route_type": "smart_group",
-                "type": "urltest", "pool_id": "mosaic-public-global", "category": "smart",
+                "id": "stable", "title": "[SG] Оптимальный", "route_type": "smart_group",
+                "type": "urltest", "pool_id": "client-stable", "category": "smart",
                 "icon": "shield", "badge": "Рекомендуется", "description": "Баланс стабильности и задержки с локальным failover.",
                 "client_policy": {**policy, "mode": "stability", "stability_weight": 0.45, "latency_weight": 0.30},
             },
             {
-                "id": "auto-speed", "title": "[SG] Максимальная скорость", "route_type": "smart_group",
-                "type": "urltest", "pool_id": "mosaic-public-global", "category": "smart",
+                "id": "max-speed", "title": "[SG] Максимальная скорость", "route_type": "smart_group",
+                "type": "urltest", "pool_id": "client-max-speed", "category": "smart",
                 "icon": "speed", "badge": "Авто", "description": "Сравнивает не более двух подходящих маршрутов на этом устройстве.",
                 "client_policy": {
                     **policy,
@@ -3949,17 +3949,16 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                 },
             },
             {
-                "id": "auto-de", "title": "[SG] Германия", "route_type": "smart_group",
-                "type": "urltest", "pool_id": "mosaic-public-de", "country_code": "DE", "category": "smart",
+                "id": "germany", "title": "[SG] Германия", "route_type": "smart_group",
+                "type": "urltest", "pool_id": "client-germany", "country_code": "DE", "category": "smart",
                 "icon": "flag_de", "badge": "Авто", "description": "Автоматический выбор среди подтверждённых маршрутов в Германии.",
                 "client_policy": {**policy, "mode": "latency"},
             },
             {
-                "id": "reserved-lte-compat", "title": "[SG] Резервная совместимость", "route_type": "smart_group",
-                "type": "urltest", "pool_id": "reserved-lte-compat", "category": "compatibility",
-                "icon": "cellular", "badge": "Скоро", "description": "Категория зарезервирована до подключения авторизованного источника профилей.",
-                "disabled": True, "disabled_reason": "Требуется подключение авторизованного источника профилей.",
-                "client_policy": {**policy, "mode": "stability"},
+                "id": "canada", "title": "[SG] Канада", "route_type": "smart_group",
+                "type": "urltest", "pool_id": "client-canada", "country_code": "CA", "category": "smart",
+                "icon": "flag_ca", "badge": "Авто", "description": "Автоматический выбор среди подтверждённых маршрутов в Канаде.",
+                "client_policy": {**policy, "mode": "latency"},
             },
         ]
         self._send_json(200, {
@@ -3971,13 +3970,73 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             # ordinary subscription feed and never appears in the UI list.
             "direct_routes": [
                 {
-                    "id": "direct-de", "title": "Mosaic Direct · Германия", "route_type": "direct",
-                    "type": "direct_node", "pool_id": "mosaic-public-de", "country_code": "DE",
-                    "protocol": "vless", "category": "direct", "icon": "flag_de", "badge": "Прямой",
-                    "description": "Прямой публичный маршрут с подтверждённой точкой выхода в Германии.",
+                    "id": "direct", "title": "Mosaic Direct", "route_type": "direct",
+                    "type": "direct_node", "pool_id": "public-direct", "direct_path": "/direct",
+                    "protocol": "vless", "category": "direct", "icon": "node", "badge": "Прямой",
+                    "description": "Единственный прямой маршрут из публичной подписки.",
                 },
             ],
         })
+
+    def _handle_client_candidates(self, opaque_id):
+        """Return a bounded daemon-only sing-box candidate feed.
+
+        The opaque subscription link remains the bearer capability. Physical
+        profiles are intentionally never appended to the ordinary subscription
+        response or manifest route rows; the local Mosaic daemon uses them only
+        to resolve client-side Smart Groups.
+        """
+        if not re.fullmatch(r"[A-Za-z0-9_-]{8,256}", opaque_id or ""):
+            self._send_json(404, {"error": "subscription not found"})
+            return
+        profile = self.get_subscription_base_profile(opaque_id)
+        if not profile or profile.get("status") != "active":
+            self._send_json(404, {"error": "subscription not found"})
+            return
+        try:
+            pg_conn = psycopg2.connect(
+                host="127.0.0.1", port=6767, user="postgres",
+                password="postgres", database="postgres"
+            )
+            cursor = pg_conn.cursor()
+            cursor.execute("""
+                SELECT mn.fingerprint, mn.config, mn.country_code, mn.speed_mbps,
+                       array_agg(DISTINCT gn.group_id ORDER BY gn.group_id)
+                FROM mosaic_group_nodes gn
+                JOIN mosaic_nodes mn ON mn.id = gn.node_id
+                WHERE gn.group_id = ANY(%s)
+                  AND mn.enabled IS TRUE
+                  AND mn.proxy_ok IS TRUE
+                  AND mn.last_checked_at >= now() - interval '6 hours'
+                GROUP BY mn.fingerprint, mn.config, mn.country_code, mn.speed_mbps
+                ORDER BY min(gn.priority), mn.speed_mbps DESC NULLS LAST
+                LIMIT 80
+            """, (["min_latency", "stable", "max_speed", "germany", "canada"],))
+            outbounds = []
+            for fingerprint, config, country_code, speed_mbps, group_ids in cursor.fetchall():
+                if not isinstance(config, dict):
+                    continue
+                outbound_type = str(config.get("type") or "").lower()
+                if outbound_type not in {"vless", "hysteria2", "shadowsocks", "naive", "wireguard"}:
+                    continue
+                outbound = dict(config)
+                outbound["tag"] = f"mosaic-candidate-{str(fingerprint)[:12]}"
+                outbound["mosaic_client_candidate"] = True
+                outbound["mosaic_candidate_groups"] = list(group_ids or [])
+                outbound["mosaic_stable"] = "stable" in (group_ids or [])
+                outbound["mosaic_speed_eligible"] = "max_speed" in (group_ids or [])
+                if country_code:
+                    outbound["mosaic_country"] = str(country_code).upper()
+                if speed_mbps is not None:
+                    outbound["mosaic_speed_mbps"] = float(speed_mbps)
+                outbounds.append(outbound)
+            cursor.close()
+            pg_conn.close()
+        except Exception as exc:
+            logger.error("Client candidate feed lookup failed: %s", exc)
+            self._send_json(503, {"error": "candidate feed unavailable"})
+            return
+        self._send_json(200, {"outbounds": outbounds})
 
     def _handle_link_issue(self):
         payload = self._read_json_body()
@@ -4276,6 +4335,13 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         if path.startswith("/api/subscription/profile/"):
             opaque_id = urllib.parse.unquote(path.rsplit("/", 1)[-1])
             return self._handle_subscription_base_profile(opaque_id)
+
+        # Daemon-only candidate feed. It shares the opaque subscription bearer
+        # capability but remains separate from the ordinary client feed and the
+        # user-visible manifest route catalog.
+        if path.startswith("/api/client-candidates/"):
+            opaque_id = urllib.parse.unquote(path.rsplit("/", 1)[-1])
+            return self._handle_client_candidates(opaque_id)
 
         # Provider route metadata for generic MosaicVPN clients. This endpoint
         # intentionally contains no share URIs or physical node pool; clients

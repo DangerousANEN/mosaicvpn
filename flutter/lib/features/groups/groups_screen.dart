@@ -1828,10 +1828,9 @@ class _RouteTable extends StatelessWidget {
       );
     }
     final colors = ThemeColors.of(context);
-    final columns = _RouteColumn.values
+    final preferredColumns = _RouteColumn.values
         .where((column) => visibleColumns[column] ?? false)
         .toList(growable: false);
-    final sortIndex = columns.indexWhere((column) => _sortFor(column) == sort);
     return Container(
       decoration: BoxDecoration(
         color: colors.bgCard,
@@ -1840,30 +1839,97 @@ class _RouteTable extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: DataTable(
-            showCheckboxColumn: false,
-            headingRowColor: WidgetStatePropertyAll(colors.bgElevated),
-            dataRowMinHeight: 62,
-            dataRowMaxHeight: 68,
-            sortColumnIndex: sortIndex < 0 ? null : sortIndex,
-            sortAscending: ascending,
-            columns: columns.map((column) => _column(context, column)).toList(),
-            rows: rows.map((row) => _row(context, row, columns)).toList(),
-          ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final layout =
+                _layoutForWidth(preferredColumns, constraints.maxWidth);
+            final sortIndex =
+                layout.columns.indexWhere((column) => _sortFor(column) == sort);
+            return DataTable(
+              showCheckboxColumn: false,
+              horizontalMargin: 12,
+              columnSpacing: 16,
+              headingRowColor: WidgetStatePropertyAll(colors.bgElevated),
+              dataRowMinHeight: 62,
+              dataRowMaxHeight: 68,
+              sortColumnIndex: sortIndex < 0 ? null : sortIndex,
+              sortAscending: ascending,
+              columns: layout.columns
+                  .map((column) => _column(context, column, layout.widths))
+                  .toList(),
+              rows: rows
+                  .map((row) =>
+                      _row(context, row, layout.columns, layout.widths))
+                  .toList(),
+            );
+          },
         ),
       ),
     );
   }
 
-  DataRow _row(
-      BuildContext context, _RouteRow row, List<_RouteColumn> columns) {
+  _RouteTableLayout _layoutForWidth(
+      List<_RouteColumn> preferred, double maxWidth) {
+    final candidates = <_RouteColumn>[
+      _RouteColumn.name,
+      _RouteColumn.action,
+      _RouteColumn.type,
+      _RouteColumn.country,
+      _RouteColumn.ping,
+      _RouteColumn.traffic,
+      _RouteColumn.jitter,
+      _RouteColumn.loss,
+      _RouteColumn.speed,
+    ].where(preferred.contains).toList(growable: false);
+    if (!candidates.contains(_RouteColumn.name)) {
+      candidates.insert(0, _RouteColumn.name);
+    }
+    if (!candidates.contains(_RouteColumn.action)) {
+      candidates.insert(1, _RouteColumn.action);
+    }
+    final widths = <_RouteColumn, double>{
+      for (final column in candidates) column: _effectiveWidth(column),
+    };
+    final selected = <_RouteColumn>[];
+    final available = (maxWidth - 24).clamp(220.0, double.infinity);
+    double used = 0;
+    for (final column in candidates) {
+      final next = used + (selected.isEmpty ? 0 : 16) + widths[column]!;
+      if (selected.isEmpty || next <= available) {
+        selected.add(column);
+        used = next;
+      }
+    }
+    // A compact desktop table must always leave a clearly labelled route and
+    // an explicit connect/settings affordance. User visibility preferences are
+    // preserved; non-fitting secondary columns reappear on wider windows.
+    if (!selected.contains(_RouteColumn.name)) {
+      selected.insert(0, _RouteColumn.name);
+    }
+    if (!selected.contains(_RouteColumn.action)) {
+      selected.add(_RouteColumn.action);
+    }
+    return _RouteTableLayout(columns: selected, widths: widths);
+  }
+
+  double _effectiveWidth(_RouteColumn column) {
+    final preferred = columnWidths[column] ?? 120;
+    return switch (column) {
+      _RouteColumn.name => preferred.clamp(180, 320).toDouble(),
+      _RouteColumn.action => 56,
+      _ => preferred.clamp(72, 160).toDouble(),
+    };
+  }
+
+  DataRow _row(BuildContext context, _RouteRow row, List<_RouteColumn> columns,
+      Map<_RouteColumn, double> widths) {
     final connected = activeId == row.id || activeId == 'group:${row.id}';
     final connecting = connectingId == row.id;
     final selected = selectedId == row.id;
     return DataRow(
       selected: connected || selected,
+      onSelectChanged:
+          row.disabled || connecting ? null : (_) => onPrimaryAction(row),
       color: WidgetStateProperty.resolveWith((states) {
         if (connected) return AtlasTheme.success.withValues(alpha: .12);
         if (selected || states.contains(WidgetState.selected)) {
@@ -1880,25 +1946,24 @@ class _RouteTable extends StatelessWidget {
       cells: columns
           .map((column) => DataCell(
                 Listener(
+                  behavior: HitTestBehavior.opaque,
                   onPointerDown: (event) {
                     if (event.buttons == kSecondaryMouseButton) {
                       onRouteMenu(row, event.position);
                     }
                   },
-                  child: _cell(context, row, column, connected, connecting),
+                  child: _cell(
+                      context, row, column, connected, connecting, widths),
                 ),
-                onTap: row.disabled || connecting
-                    ? null
-                    : () => onPrimaryAction(row),
               ))
           .toList(growable: false),
     );
   }
 
   Widget _cell(BuildContext context, _RouteRow row, _RouteColumn column,
-      bool connected, bool connecting) {
+      bool connected, bool connecting, Map<_RouteColumn, double> widths) {
     final colors = ThemeColors.of(context);
-    final width = columnWidths[column] ?? 120;
+    final width = widths[column] ?? _effectiveWidth(column);
     final muted = row.disabled ? colors.textMuted : colors.textSecondary;
     final primary = row.disabled ? colors.textMuted : colors.textPrimary;
     Widget text(String value, {bool strong = false}) => SizedBox(
@@ -1970,18 +2035,20 @@ class _RouteTable extends StatelessWidget {
     };
   }
 
-  DataColumn _column(BuildContext context, _RouteColumn column) {
+  DataColumn _column(BuildContext context, _RouteColumn column,
+      Map<_RouteColumn, double> widths) {
     final field = _sortFor(column);
     return DataColumn(
       numeric: _isNumeric(column),
       onSort: field == null ? null : (_, __) => onSort(field),
-      label: _header(context, column, field),
+      label: _header(context, column, field, widths),
     );
   }
 
-  Widget _header(BuildContext context, _RouteColumn column, _RouteSort? field) {
+  Widget _header(BuildContext context, _RouteColumn column, _RouteSort? field,
+      Map<_RouteColumn, double> widths) {
     final colors = ThemeColors.of(context);
-    final width = columnWidths[column] ?? 120;
+    final width = widths[column] ?? _effectiveWidth(column);
     return Listener(
       onPointerDown: (event) {
         if (event.buttons == kSecondaryMouseButton) {
@@ -2083,6 +2150,13 @@ class _RouteTable extends StatelessWidget {
     }
     return country;
   }
+}
+
+class _RouteTableLayout {
+  const _RouteTableLayout({required this.columns, required this.widths});
+
+  final List<_RouteColumn> columns;
+  final Map<_RouteColumn, double> widths;
 }
 
 class _MobileRouteList extends StatelessWidget {

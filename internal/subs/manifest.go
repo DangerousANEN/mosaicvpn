@@ -32,7 +32,7 @@ func resolveGroupNodes(group proto.ManifestGroup, rawServers []proto.Server) []p
 			// The optional auto-speed group is a client-side weighted choice.
 			// The provider supplies only a recent bounded probe result; the
 			// client still performs its own health checks before connecting.
-			if group.ID == "auto-speed" {
+			if group.ID == "max-speed" {
 				if speed, ok := srv.Raw["mosaic_speed_mbps"].(float64); ok && speed > 0 {
 					weight := int(speed * 10)
 					if weight < 1 {
@@ -54,16 +54,22 @@ func resolveGroupNodes(group proto.ManifestGroup, rawServers []proto.Server) []p
 }
 
 func matchGroupFilter(group proto.ManifestGroup, srv proto.Server) bool {
+	// Smart Groups select only daemon-side client candidates. The ordinary
+	// subscription profile is reserved for the explicit direct route and must
+	// never be included in a client-side selection pool.
+	if group.Category == "smart" && !boolRaw(srv, "mosaic_client_candidate") {
+		return false
+	}
 	// Mosaic's direct pool optionally includes opaque, aggregate selection hints.
 	// Their presence takes precedence; ordinary third-party subscriptions retain
 	// the legacy heuristic below for backwards compatibility.
 	switch group.ID {
-	case "auto-stable":
+	case "auto-stable", "stable":
 		if stable, present := boolHint(srv, "mosaic_stable"); present {
 			return stable
 		}
 		return true
-	case "auto-speed":
+	case "auto-speed", "max-speed":
 		if eligible, present := boolHint(srv, "mosaic_speed_eligible"); present {
 			return eligible
 		}
@@ -77,9 +83,13 @@ func matchGroupFilter(group proto.ManifestGroup, srv proto.Server) bool {
 	// Category-based matching as fallback.
 	switch group.Category {
 	case "direct":
-		// A public direct route must be explicit and geographically verified.
-		// Do not fall back to all subscription nodes: that could silently turn a
-		// direct row into a view of the private pool.
+		// A public direct route must be explicit. Do not fall back to all
+		// subscription nodes: that could silently turn a direct row into a view
+		// of the daemon-only candidate pool.
+		if group.DirectPath != "" {
+			path, _ := srv.Raw["path"].(string)
+			return path == group.DirectPath && !boolRaw(srv, "mosaic_client_candidate")
+		}
 		country := group.CountryCode
 		if country == "" {
 			country = groupCountryFromID(group.ID)
@@ -101,6 +111,11 @@ func matchGroupFilter(group proto.ManifestGroup, srv proto.Server) bool {
 		return strings.EqualFold(srv.Country, cc)
 	}
 	return true
+}
+
+func boolRaw(srv proto.Server, key string) bool {
+	value, _ := srv.Raw[key].(bool)
+	return value
 }
 
 func boolHint(srv proto.Server, key string) (bool, bool) {
@@ -129,7 +144,7 @@ func numericHint(srv proto.Server, key string) int {
 
 func failoverPriority(groupID string, srv proto.Server) int {
 	switch groupID {
-	case "auto-stable":
+	case "auto-stable", "stable":
 		return numericHint(srv, "mosaic_stable_priority")
 	case "auto-allowlist":
 		return numericHint(srv, "mosaic_allowlist_priority")
@@ -160,6 +175,56 @@ func deriveManifestURL(subURL string) string {
 	u.Path = "/api/manifest.json"
 	u.RawQuery = ""
 	return u.String()
+}
+
+// deriveCandidateFeedURL derives the daemon-only candidate endpoint from one
+// Mosaic subscription URL. The opaque subscription token stays in the path so
+// the provider can validate the same capability as the ordinary feed.
+func deriveCandidateFeedURL(subURL string) string {
+	u, err := url.Parse(subURL)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	token := strings.Trim(strings.TrimSpace(u.Path), "/")
+	if token == "" || strings.Contains(token, "/") {
+		return ""
+	}
+	u.Path = "/api/client-candidates/" + url.PathEscape(token)
+	u.RawQuery = ""
+	return u.String()
+}
+
+// FetchClientCandidates downloads a bounded sing-box feed used only by the
+// local Mosaic daemon for Smart Group ranking and failover. Its physical
+// profiles never become ordinary UI route rows.
+func FetchClientCandidates(ctx context.Context, subURL, subID string) ([]proto.Server, error) {
+	feedURL := deriveCandidateFeedURL(subURL)
+	if feedURL == "" {
+		return nil, nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "MosaicVPN-daemon/1")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("candidate feed: unexpected HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := ParseAs(subID, body, proto.FormatSingbox)
+	if err != nil {
+		return nil, fmt.Errorf("candidate feed: %w", err)
+	}
+	return parsed.Servers, nil
 }
 
 // FetchProviderManifest attempts to download the provider's JSON manifest.

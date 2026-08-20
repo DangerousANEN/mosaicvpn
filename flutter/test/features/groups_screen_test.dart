@@ -61,8 +61,10 @@ void main() {
       expect(find.text('Smart Group'), findsOneWidget);
       expect(find.text('Тип'), findsOneWidget);
       expect(find.text('Название'), findsOneWidget);
-      expect(find.text('Задержка'), findsOneWidget);
-      expect(find.text('Трафик'), findsOneWidget);
+      expect(find.text('Задержка'), findsNothing,
+          reason: 'secondary telemetry must not force a narrow desktop table off-screen');
+      expect(find.text('Трафик'), findsNothing,
+          reason: 'secondary telemetry reappears automatically on a wider window');
     });
 
     testWidgets('shows a third-party node only after its source is selected',

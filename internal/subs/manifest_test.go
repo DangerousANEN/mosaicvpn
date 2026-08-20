@@ -18,11 +18,20 @@ func TestDeriveManifestURL(t *testing.T) {
 	}
 }
 
+func TestDeriveCandidateFeedURL(t *testing.T) {
+	subURL := "https://sub.zxc1x1.ru/reftcT_frzSCwhav"
+	got := deriveCandidateFeedURL(subURL)
+	want := "https://sub.zxc1x1.ru/api/client-candidates/reftcT_frzSCwhav"
+	if got != want {
+		t.Errorf("deriveCandidateFeedURL(%q) = %q; want %q", subURL, got, want)
+	}
+}
+
 func TestResolveGroupNodes(t *testing.T) {
 	servers := []proto.Server{
-		{ID: "srv-1", Name: "DE Server", Country: "DE", Protocol: "vless"},
-		{ID: "srv-2", Name: "NL Server", Country: "NL", Protocol: "vless"},
-		{ID: "srv-3", Name: "Whitelist 4G", Country: "RU", Protocol: "vless"},
+		{ID: "srv-1", Name: "DE Server", Country: "DE", Protocol: "vless", Raw: map[string]any{"mosaic_client_candidate": true}},
+		{ID: "srv-2", Name: "NL Server", Country: "NL", Protocol: "vless", Raw: map[string]any{"mosaic_client_candidate": true}},
+		{ID: "srv-3", Name: "Whitelist 4G", Country: "RU", Protocol: "vless", Raw: map[string]any{"mosaic_client_candidate": true}},
 	}
 
 	groupSmartDE := proto.ManifestGroup{
@@ -41,6 +50,41 @@ func TestResolveGroupNodes(t *testing.T) {
 	nodesWL := resolveGroupNodes(groupWhitelist, servers)
 	if len(nodesWL) != 3 { // all 3 are vless or match whitelist
 		t.Errorf("resolveGroupNodes(auto-whitelist) got len %d; want 3", len(nodesWL))
+	}
+}
+
+func TestDirectPathNeverMatchesClientCandidates(t *testing.T) {
+	servers := []proto.Server{
+		{ID: "direct", Protocol: proto.ProtoVLESS, Raw: map[string]any{"path": "/direct"}},
+		{ID: "candidate", Protocol: proto.ProtoVLESS, Raw: map[string]any{
+			"path": "/direct", "mosaic_client_candidate": true,
+		}},
+	}
+	nodes := resolveGroupNodes(proto.ManifestGroup{
+		ID: "direct", RouteType: "direct", Category: "direct", DirectPath: "/direct",
+	}, servers)
+	if len(nodes) != 1 || nodes[0].ID != "direct" {
+		t.Fatalf("direct nodes = %#v; want only ordinary /direct profile", nodes)
+	}
+}
+
+func TestFetchClientCandidates(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/client-candidates/token123" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"outbounds":[{"type":"vless","tag":"candidate-1","server":"candidate.example","server_port":443,"uuid":"test","mosaic_client_candidate":true,"mosaic_country":"DE"}]}`))
+	}))
+	defer server.Close()
+
+	candidates, err := FetchClientCandidates(context.Background(), server.URL+"/token123", "sub-id")
+	if err != nil {
+		t.Fatalf("FetchClientCandidates error: %v", err)
+	}
+	if len(candidates) != 1 || candidates[0].Country != "DE" || !boolRaw(candidates[0], "mosaic_client_candidate") {
+		t.Fatalf("candidates = %#v; want one marked DE candidate", candidates)
 	}
 }
 
@@ -83,6 +127,7 @@ func TestResolveMosaicHintGroups(t *testing.T) {
 			ID:       "stable-fast",
 			Protocol: "vless",
 			Raw: map[string]any{
+				"mosaic_client_candidate":  true,
 				"mosaic_stable":            true,
 				"mosaic_stable_priority":   float64(2),
 				"mosaic_speed_eligible":    true,
@@ -94,6 +139,7 @@ func TestResolveMosaicHintGroups(t *testing.T) {
 			ID:       "allowlist-primary",
 			Protocol: "vless",
 			Raw: map[string]any{
+				"mosaic_client_candidate":   true,
 				"mosaic_stable":             true,
 				"mosaic_stable_priority":    float64(1),
 				"mosaic_speed_eligible":     false,
@@ -105,19 +151,20 @@ func TestResolveMosaicHintGroups(t *testing.T) {
 			ID:       "ordinary",
 			Protocol: "shadowsocks",
 			Raw: map[string]any{
-				"mosaic_stable":         false,
-				"mosaic_speed_eligible": false,
-				"mosaic_allowlist":      false,
+				"mosaic_client_candidate": true,
+				"mosaic_stable":           false,
+				"mosaic_speed_eligible":   false,
+				"mosaic_allowlist":        false,
 			},
 		},
 	}
 
-	stable := resolveGroupNodes(proto.ManifestGroup{ID: "auto-stable", Category: "smart"}, servers)
+	stable := resolveGroupNodes(proto.ManifestGroup{ID: "stable", Category: "smart"}, servers)
 	if len(stable) != 2 || stable[0].ID != "stable-fast" || stable[0].Priority != 2 || stable[1].ID != "allowlist-primary" || stable[1].Priority != 1 {
 		t.Fatalf("stable group = %#v; expected exactly the two stable candidates with priorities", stable)
 	}
 
-	speed := resolveGroupNodes(proto.ManifestGroup{ID: "auto-speed", Category: "smart"}, servers)
+	speed := resolveGroupNodes(proto.ManifestGroup{ID: "max-speed", Category: "smart"}, servers)
 	if len(speed) != 1 || speed[0].ID != "stable-fast" {
 		t.Fatalf("speed group = %#v; expected only speed-eligible candidate", speed)
 	}

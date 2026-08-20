@@ -113,8 +113,8 @@ void main() {
         reason: 'wide layout uses the compact sidebar');
     expect(find.text('Не подключено'), findsWidgets,
         reason: 'the primary desktop screen must be ConnectionDashboard');
-    expect(
-        find.textContaining('Маршруты: [SG] Минимальный пинг'), findsOneWidget);
+    expect(find.text('ТЕКУЩИЙ МАРШРУТ'), findsOneWidget);
+    expect(find.text('[SG] Минимальный пинг'), findsOneWidget);
     expect(tester.takeException(), isNull,
         reason: 'English dashboard must render without an exception');
   });
@@ -124,8 +124,8 @@ void main() {
     await _pumpAt(tester, const Size(1440, 960), locale: const Locale('en'));
 
     expect(find.text('Not connected'), findsWidgets);
-    expect(
-        find.textContaining('Routes: [SG] Минимальный пинг'), findsOneWidget);
+    expect(find.text('ТЕКУЩИЙ МАРШРУТ'), findsOneWidget);
+    expect(find.text('[SG] Минимальный пинг'), findsOneWidget);
     expect(find.text('Subscriptions'), findsWidgets);
     expect(tester.takeException(), isNull,
         reason: 'English dashboard must render without a framework exception');

@@ -300,6 +300,10 @@ type ManifestGroup struct {
 	RouteType string `json:"route_type,omitempty"`
 	Type      string `json:"type"` // runtime strategy: urltest, fallback, weighted_round_robin, direct_node
 	PoolID    string `json:"pool_id,omitempty"`
+	// DirectPath binds an explicit direct route to one public subscription
+	// profile transport path. It is meaningful only for category=direct and
+	// prevents fallback to any candidate held by the local Smart Group pool.
+	DirectPath string `json:"direct_path,omitempty"`
 	// CountryCode and Protocol describe a user-visible route, never a pool
 	// member. They are present only when the provider can verify them.
 	CountryCode    string                `json:"country_code,omitempty"`

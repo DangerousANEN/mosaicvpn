@@ -358,59 +358,20 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
 
   Future<void> _pickGroup(BuildContext context, List<_RouteChoice> groups,
       _RouteChoice current) async {
-    final selected = await showModalBottomSheet<_RouteChoice>(
+    final selected = await showDialog<_RouteChoice>(
       context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.72,
-          minChildSize: 0.42,
-          maxChildSize: 0.92,
-          builder: (context, scrollController) => Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(AppStrings.of(context).t('route_picker'),
-                    style: TextStyle(
-                        fontFamily: AtlasTheme.serifFamily,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 23,
-                        color: ThemeColors.of(context).textPrimary)),
-                const SizedBox(height: 6),
-                Text(AppStrings.of(context).t('route_picker_hint'),
-                    style: TextStyle(
-                        color: ThemeColors.of(context).textSecondary,
-                        fontSize: 12)),
-                const SizedBox(height: 10),
-                Expanded(
-                  child: ListView.separated(
-                    controller: scrollController,
-                    itemCount: groups.length,
-                    separatorBuilder: (_, __) => Divider(
-                        height: 1, color: ThemeColors.of(context).border),
-                    itemBuilder: (context, index) {
-                      final group = groups[index];
-                      return ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: _groupIcon(group.icon),
-                        title: Text(group.title),
-                        subtitle: Text(group.subtitle),
-                        trailing: group.id == current.id
-                            ? const Icon(Icons.check_circle,
-                                color: AtlasTheme.accent)
-                            : const Icon(Icons.chevron_right),
-                        onTap: () => Navigator.pop(context, group),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+      builder: (_) => _AtlasChoiceDialog<_RouteChoice>(
+        eyebrow: 'Маршруты',
+        title: AppStrings.of(context).t('route_picker'),
+        hint: AppStrings.of(context).t('route_picker_hint'),
+        choices: groups,
+        selectedId: current.id,
+        titleOf: (route) => route.title,
+        subtitleOf: (route) => route.disabled && route.disabledReason.isNotEmpty
+            ? route.disabledReason
+            : route.subtitle,
+        iconOf: (route) => _groupIcon(route.icon),
+        enabledOf: (route) => !route.disabled,
       ),
     );
     if (selected != null && mounted) {
@@ -514,35 +475,256 @@ class _SubscriptionSelector extends StatelessWidget {
     final c = ThemeColors.of(context);
     final s = AppStrings.of(context);
     if (subscriptions.isEmpty) return const SizedBox.shrink();
-    return DropdownButtonFormField<String>(
-      initialValue: selected.id.isEmpty ? null : selected.id,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: compact ? s.t('subscriptions') : s.t('route_source'),
-        prefixIcon: const Icon(Icons.layers_outlined),
-        filled: true,
-        fillColor: c.bgCard,
-        contentPadding:
-            EdgeInsets.symmetric(horizontal: 12, vertical: compact ? 10 : 12),
-      ),
-      items: subscriptions
-          .map((subscription) => DropdownMenuItem<String>(
-                value: subscription.id,
-                child: Text(
-                  subscription.name.isEmpty
-                      ? AppStrings.of(context).t('unnamed_subscription')
-                      : subscription.name,
-                  overflow: TextOverflow.ellipsis,
+    final label = compact ? s.t('subscriptions') : s.t('route_source');
+    final title = selected.name.isEmpty
+        ? AppStrings.of(context).t('unnamed_subscription')
+        : selected.name;
+    final subtitle = selected.isProviderSource
+        ? 'Профиль MosaicVPN · ${selected.serverCount} маршрутов'
+        : selected.serverCount == 1
+            ? '1 маршрут'
+            : '${selected.serverCount} маршрутов';
+    return Semantics(
+      button: true,
+      label: label,
+      child: Material(
+        color: c.bgCard,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () async {
+            final picked = await showDialog<Subscription>(
+              context: context,
+              builder: (_) => _AtlasChoiceDialog<Subscription>(
+                eyebrow: label,
+                title: 'Выберите подписку',
+                hint:
+                    'Маршруты и состояние подключения меняются только внутри выбранного источника.',
+                choices: subscriptions,
+                selectedId: selected.id,
+                titleOf: (subscription) => subscription.name.isEmpty
+                    ? AppStrings.of(context).t('unnamed_subscription')
+                    : subscription.name,
+                subtitleOf: (subscription) => subscription.isProviderSource
+                    ? 'MosaicVPN · ${subscription.serverCount} маршрутов'
+                    : subscription.serverCount == 1
+                        ? '1 маршрут'
+                        : '${subscription.serverCount} маршрутов',
+                iconOf: (_) => const Icon(Icons.layers_outlined),
+              ),
+            );
+            if (picked != null) onChanged(picked);
+          },
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+                14, compact ? 10 : 12, 12, compact ? 10 : 12),
+            child: Row(children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: AtlasTheme.accent.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(11),
                 ),
-              ))
-          .toList(),
-      onChanged: (id) {
-        final subscription = subscriptions.firstWhere(
-          (candidate) => candidate.id == id,
-          orElse: () => selected,
-        );
-        onChanged(subscription);
-      },
+                child: const Icon(Icons.layers_outlined,
+                    size: 19, color: AtlasTheme.accent),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(label,
+                        style: TextStyle(
+                            color: c.textMuted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 2),
+                    Text(title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: c.textPrimary, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text(subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: c.textMuted, fontSize: 11)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.unfold_more_rounded, color: c.textMuted),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AtlasChoiceDialog<T> extends StatelessWidget {
+  const _AtlasChoiceDialog({
+    required this.eyebrow,
+    required this.title,
+    required this.hint,
+    required this.choices,
+    required this.selectedId,
+    required this.titleOf,
+    required this.subtitleOf,
+    required this.iconOf,
+    this.enabledOf,
+  });
+
+  final String eyebrow;
+  final String title;
+  final String hint;
+  final List<T> choices;
+  final String selectedId;
+  final String Function(T choice) titleOf;
+  final String Function(T choice) subtitleOf;
+  final Widget Function(T choice) iconOf;
+  final bool Function(T choice)? enabledOf;
+
+  String _idOf(T choice) {
+    if (choice is Subscription) return choice.id;
+    if (choice is _RouteChoice) return choice.id;
+    return titleOf(choice);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeColors.of(context);
+    return Dialog(
+      insetPadding: const EdgeInsets.all(20),
+      backgroundColor: Colors.transparent,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 620),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: c.bgElevated,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: c.border),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 14, 14),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(eyebrow.toUpperCase(),
+                            style: TextStyle(
+                                color: AtlasTheme.accent,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.1)),
+                        const SizedBox(height: 5),
+                        Text(title,
+                            style: TextStyle(
+                                fontFamily: AtlasTheme.serifFamily,
+                                color: c.textPrimary,
+                                fontSize: 24,
+                                fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 5),
+                        Text(hint,
+                            style: TextStyle(
+                                color: c.textSecondary, fontSize: 12)),
+                      ]),
+                ),
+                IconButton(
+                  tooltip: 'Закрыть',
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: Icon(Icons.close_rounded, color: c.textMuted),
+                ),
+              ]),
+              const SizedBox(height: 16),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: choices.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (context, index) {
+                    final choice = choices[index];
+                    final active = _idOf(choice) == selectedId;
+                    final enabled = enabledOf?.call(choice) ?? true;
+                    return Material(
+                      color: active
+                          ? AtlasTheme.accent.withValues(alpha: .13)
+                          : c.bgCard,
+                      borderRadius: BorderRadius.circular(15),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(15),
+                        onTap: enabled
+                            ? () => Navigator.of(context).pop(choice)
+                            : null,
+                        child: Container(
+                          padding: const EdgeInsets.all(13),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(15),
+                            border: Border.all(
+                              color: active ? AtlasTheme.accent : c.border,
+                            ),
+                          ),
+                          child: Row(children: [
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color:
+                                    (active ? AtlasTheme.accent : c.textMuted)
+                                        .withValues(alpha: .12),
+                                borderRadius: BorderRadius.circular(11),
+                              ),
+                              child: IconTheme(
+                                data: IconThemeData(
+                                    color: active
+                                        ? AtlasTheme.accent
+                                        : c.textSecondary),
+                                child: Center(child: iconOf(choice)),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(titleOf(choice),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                            color: enabled
+                                                ? c.textPrimary
+                                                : c.textMuted,
+                                            fontWeight: FontWeight.w700)),
+                                    const SizedBox(height: 3),
+                                    Text(subtitleOf(choice),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                            color: c.textMuted, fontSize: 12)),
+                                  ]),
+                            ),
+                            const SizedBox(width: 10),
+                            Icon(
+                                active
+                                    ? Icons.check_circle_rounded
+                                    : Icons.chevron_right_rounded,
+                                color:
+                                    active ? AtlasTheme.accent : c.textMuted),
+                          ]),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ]),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -882,40 +1064,83 @@ class _RouteSelector extends StatelessWidget {
     final c = ThemeColors.of(context);
     final s = AppStrings.of(context);
     return Material(
-        color: group.disabled ? c.bgBase : c.bgCard,
+      color: group.disabled ? c.bgBase : c.bgCard,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: group.disabled ? null : onTap,
         borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          onTap: group.disabled ? null : onTap,
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Row(children: [
-                _groupIcon(group.icon),
-                const SizedBox(width: 12),
-                Expanded(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                      Text('${s.t('routes')}: ${group.title}',
-                          style: TextStyle(
-                              color:
-                                  group.disabled ? c.textMuted : c.textPrimary,
-                              fontWeight: FontWeight.w700)),
-                      const SizedBox(height: 2),
-                      Text(
-                          group.subtitle.isEmpty
-                              ? s.t('route_picker_hint')
-                              : group.disabled &&
-                                      group.disabledReason.isNotEmpty
-                                  ? group.disabledReason
-                                  : group.subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: c.textMuted, fontSize: 12)),
-                    ])),
-                const Icon(Icons.expand_more_rounded),
-              ])),
-        ));
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: group.disabled
+                  ? c.border
+                  : AtlasTheme.accent.withValues(alpha: .38),
+            ),
+          ),
+          child: Row(children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: AtlasTheme.accent.withValues(alpha: .12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(child: _groupIcon(group.icon)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('ТЕКУЩИЙ МАРШРУТ',
+                        style: TextStyle(
+                            color: c.textMuted,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 10,
+                            letterSpacing: .9)),
+                    const SizedBox(height: 3),
+                    Text(group.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: group.disabled ? c.textMuted : c.textPrimary,
+                            fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text(
+                        group.subtitle.isEmpty
+                            ? s.t('route_picker_hint')
+                            : group.disabled && group.disabledReason.isNotEmpty
+                                ? group.disabledReason
+                                : group.subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: c.textMuted, fontSize: 12)),
+                  ]),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+              decoration: BoxDecoration(
+                color: c.bgElevated,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: c.border),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text('Выбрать',
+                    style: TextStyle(
+                        color: AtlasTheme.accent,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700)),
+                const SizedBox(width: 3),
+                Icon(Icons.tune_rounded, color: AtlasTheme.accent, size: 15),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    );
   }
 }
 

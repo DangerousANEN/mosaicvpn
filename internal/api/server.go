@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -1310,6 +1311,18 @@ func (s *Server) refresh(ctx context.Context, sub proto.Subscription) error {
 	if err != nil {
 		return fmt.Errorf("parse: %w", err)
 	}
+	isMosaicSource := isMosaicURLSubscription(sub) || sub.ID == "mosaic-direct"
+	if isMosaicSource {
+		candidates, candidateErr := subs.FetchClientCandidates(ctx, sub.URL, sub.ID)
+		if candidateErr != nil {
+			// The one public direct profile remains usable if the bounded
+			// candidate feed is temporarily unavailable. Do not turn a pool
+			// outage into a failure to refresh the subscription itself.
+			log.Printf("candidate feed unavailable for subscription %s: %v", sub.ID, candidateErr)
+		} else {
+			res.Servers = append(res.Servers, candidates...)
+		}
+	}
 
 	manifestBytes := body
 	if provManifest, err := subs.FetchProviderManifest(ctx, sub.URL); err == nil && provManifest != nil {
@@ -1319,7 +1332,6 @@ func (s *Server) refresh(ctx context.Context, sub proto.Subscription) error {
 	}
 
 	manifest, finalServers := subs.ParseManifestOrSynthesize(manifestBytes, sub.ID, res.Servers)
-	isMosaicSource := isMosaicURLSubscription(sub) || sub.ID == "mosaic-direct"
 	if isMosaicSource {
 		// A provider manifest defines the complete user-visible route catalog.
 		// If an older Mosaic feed has no manifest yet, synthesize only its virtual
@@ -1360,7 +1372,14 @@ func (s *Server) refresh(ctx context.Context, sub proto.Subscription) error {
 	}
 
 	sub.Format = res.Format
-	sub.ServerCount = len(finalServers)
+	if isMosaicSource && manifest.HasRoutes() {
+		// Keep the source summary aligned with user-visible routes. The daemon
+		// may hold many hidden client-side candidates, but they are not rows in
+		// this subscription and must not be presented as ordinary servers.
+		sub.ServerCount = len(manifest.Routes())
+	} else {
+		sub.ServerCount = len(finalServers)
+	}
 	sub.LastFetched = time.Now().UTC()
 	sub.LastError = ""
 	if _, err := s.store.AddOrUpdateSubscription(sub); err != nil {
