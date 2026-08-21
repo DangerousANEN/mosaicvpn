@@ -168,6 +168,15 @@ Production-файл `cabinet.html` опубликован с совпадающ�
 - Пройдены `go test ./...`, весь Flutter suite (73 теста), Flutter analysis и локальная Linux portable+DEB сборка. GitHub release v0.3.29 содержит Windows Setup/Portable, Linux DEB/Portable и signed Android APK; все три release jobs завершились успешно.
 - Production backend и landing page опубликованы. Live landing page содержит все пять v0.3.29 asset links, а каждый GitHub download URL вернул HTTP 200. Временный SSH-ключ удалён после проверки.
 
+#### Android incident and Release v0.3.30 — опубликован и проверен 2026-08-21
+
+- Санитизированный production inventory подтвердил: scoped candidate endpoint возвращает 74 свежих proxy-проверенных candidates с явными opaque group memberships; обычная subscription link остаётся с одним `/direct` VLESS route. Логи sing-box показывают регулярные URLTest/proxy attempts и удаление недоступных upstream candidates из eligible set по `proxy_ok`/freshness policy.
+- Скриншот Android локализовал две client-side причины: `_scopeManifest()` не переносил `direct_routes`, а Android Smart Group connect ошибочно загружал обычную xHTTP direct subscription вместо scoped candidate feed. Поэтому телефон показывал только Smart Groups, а runtime получал неподдерживаемый `xhttp` transport.
+- Android теперь сохраняет direct routes при subscription scoping; direct row соединяется только с единственным public profile, тогда как Smart Group скачивает отдельный `/api/client-candidates/{opaque-id}` payload и выбирает только кандидатов своей opaque group membership.
+- Android builder нормализует legacy XHTTP label в sing-box HTTP transport и удаляет xHTTP-only fields перед передачей config в libbox. Это предотвращает observed `unknown transport type: xhttp` без включения кандидатов в user-visible subscription response.
+- Добавлены targeted xHTTP/direct and scoped-candidate regression tests. Пройдены `go test ./...`, Flutter suite (75 тестов), Flutter analysis, локальная Linux portable+DEB сборка и три GitHub release jobs. GitHub release v0.3.30 содержит Windows Setup/Portable, Linux DEB/Portable и signed Android APK.
+- Backend и download page обновлены live: candidate feed имеет explicit group IDs, manifest содержит direct route, а landing page и все пять v0.3.30 asset URLs проверены. SSH-ключ сохранён по явному указанию владельца для дальнейшей диагностики.
+
 ## Результаты визуальной проверки
 
 Локальный desktop- и mobile-рендер страницы входа подтвердил, что обновлённая пара шрифтов сохраняет действующий Atlas-стиль: тёплая сетка, засечковые заголовки, моноширинные служебные метки и терракотовый акцент остаются без изменений. На ширине 390 px заголовок, описание, поля и кнопка не выходят за границы экрана. Карточки профиля и пополнения остаются скрытыми до авторизации; их DOM-идентификаторы и встроенный JavaScript дополнительно прошли синтаксическую проверку.
