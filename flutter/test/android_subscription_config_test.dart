@@ -26,7 +26,8 @@ void main() {
     expect(vless['uuid'], 'e619d9bd-2950-4098-bcf2-e943fd6b5647');
     // VLESS URI `encryption=none` is not a sing-box 1.13 outbound field.
     expect(vless.containsKey('encryption'), isFalse);
-    expect(vless['transport']['type'], 'xhttp');
+    expect(vless['transport']['type'], 'http');
+    expect(vless['transport'].containsKey('mode'), isFalse);
     expect(vless['tls']['reality']['enabled'], isTrue);
     expect(config['route']['final'], 'mosaic-selected-route');
     expect(config['route']['default_domain_resolver'], 'mosaic-doh-bootstrap');

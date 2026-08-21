@@ -4023,6 +4023,10 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                 outbound["tag"] = f"mosaic-candidate-{str(fingerprint)[:12]}"
                 outbound["mosaic_client_candidate"] = True
                 outbound["mosaic_candidate_groups"] = list(group_ids or [])
+                # Android and desktop select the daemon-only candidates only
+                # through these opaque group memberships. They are stripped
+                # before the sing-box config reaches the runtime.
+                outbound["mosaic_group_ids"] = list(group_ids or [])
                 outbound["mosaic_stable"] = "stable" in (group_ids or [])
                 outbound["mosaic_speed_eligible"] = "max_speed" in (group_ids or [])
                 if country_code:

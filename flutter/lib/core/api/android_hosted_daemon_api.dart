@@ -87,7 +87,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   Future<void> connectGroup(String groupID) async {
     final resolved = await _resolveMosaicGroup(groupID);
     final manifest = await getProviderManifest(subscriptionId: resolved.$1.id);
-    final group = manifest.groups.cast<ManifestGroup?>().firstWhere(
+    final group = manifest.routes.cast<ManifestGroup?>().firstWhere(
           (value) => value?.id == groupID,
           orElse: () => null,
         );
@@ -100,10 +100,14 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
           ? 'Этот маршрут пока недоступен.'
           : group.disabledReason);
     }
-    final config = await _account.buildNativeTunConfigFromSubscriptionUrl(
-      resolved.$1.url,
-      groupId: resolved.$2,
-    );
+    final config = group.routeType == 'direct'
+        ? await _account.buildNativeTunConfigFromSubscriptionUrl(
+            resolved.$1.url,
+          )
+        : await _account.buildNativeTunConfigFromScopedCandidates(
+            resolved.$1.url,
+            groupId: resolved.$2,
+          );
     await _startNativeRoute(
       config: config,
       route: Server(
@@ -203,31 +207,34 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   ProviderManifest _scopeManifest(
       ProviderManifest manifest, String subscriptionID) {
     if (subscriptionID.isEmpty) return manifest;
+    ManifestGroup scopedRoute(ManifestGroup route) => ManifestGroup(
+          id: _scopedGroupID(subscriptionID, route.id),
+          title: route.title,
+          routeType: route.routeType,
+          type: route.type,
+          poolId: route.poolId,
+          countryCode: route.countryCode,
+          protocol: route.protocol,
+          userTier: route.userTier,
+          badge: route.badge,
+          category: route.category,
+          icon: route.icon,
+          description: route.description,
+          disabled: route.disabled,
+          disabledReason: route.disabledReason,
+          clientPolicy: route.clientPolicy,
+          nodes: route.nodes,
+          pingInterval: route.pingInterval,
+          maxRetries: route.maxRetries,
+          failoverDelay: route.failoverDelay,
+        );
     return ProviderManifest(
       providerName: manifest.providerName,
       userTier: manifest.userTier,
       profile: manifest.profile,
-      groups: manifest.groups
-          .map((group) => ManifestGroup(
-                id: _scopedGroupID(subscriptionID, group.id),
-                title: group.title,
-                routeType: group.routeType,
-                type: group.type,
-                poolId: group.poolId,
-                userTier: group.userTier,
-                badge: group.badge,
-                category: group.category,
-                icon: group.icon,
-                description: group.description,
-                disabled: group.disabled,
-                disabledReason: group.disabledReason,
-                clientPolicy: group.clientPolicy,
-                nodes: group.nodes,
-                pingInterval: group.pingInterval,
-                maxRetries: group.maxRetries,
-                failoverDelay: group.failoverDelay,
-              ))
-          .toList(growable: false),
+      groups: manifest.groups.map(scopedRoute).toList(growable: false),
+      directRoutes:
+          manifest.directRoutes.map(scopedRoute).toList(growable: false),
     );
   }
 

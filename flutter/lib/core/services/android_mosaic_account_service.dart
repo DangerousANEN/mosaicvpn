@@ -611,6 +611,35 @@ class AndroidMosaicAccountService {
         groupId: groupId);
   }
 
+  /// Smart Groups never parse the ordinary direct subscription row. The
+  /// selected route resolves from a separate capability-scoped candidate feed,
+  /// so the private candidates remain hidden from the subscription UI.
+  Future<String> buildNativeTunConfigFromScopedCandidates(
+    String subscriptionUrl, {
+    required String groupId,
+  }) async {
+    final uri = Uri.tryParse(subscriptionUrl.trim());
+    if (uri == null || !uri.isScheme('https') || uri.pathSegments.length != 1) {
+      throw const FormatException('Не удалось определить ссылку MosaicVPN.');
+    }
+    final candidateUri = uri.replace(
+      path:
+          '/api/client-candidates/${Uri.encodeComponent(uri.pathSegments.single)}',
+      query: null,
+    );
+    final response = await _dio.getUri<Object>(
+      candidateUri,
+      options: Options(responseType: ResponseType.plain),
+    );
+    final payload = response.data?.toString().trim() ?? '';
+    if (payload.isEmpty) {
+      throw StateError(
+          'Сервис не вернул кандидатов для выбранной Smart Group.');
+    }
+    return buildNativeTunConfigFromSubscriptionPayload(payload,
+        groupId: groupId);
+  }
+
   /// Downloads the authenticated opaque feed only for the legacy account
   /// fallback. New URL-backed subscriptions use
   /// [buildNativeTunConfigFromSubscriptionUrl] and connect without a cabinet
@@ -726,11 +755,13 @@ class AndroidMosaicAccountService {
       // The provider sends generic group memberships as `mosaic_group_ids`.
       // The Android client must not infer membership from hard-coded Mosaic IDs
       // or country/special-purpose hints.
-      final rawGroupIDs = outbound.remove('mosaic_group_ids');
+      final rawGroupIDs = outbound.remove('mosaic_group_ids') ??
+          outbound.remove('mosaic_candidate_groups');
       final groupIDs = rawGroupIDs is List
           ? rawGroupIDs.map((value) => value.toString()).toSet()
           : <String>{};
       outbound.removeWhere((key, _) => key.toString().startsWith('mosaic_'));
+      _normalizeAndroidTransport(outbound);
       final tag = outbound['tag']?.toString() ?? '';
       final type = outbound['type']?.toString() ?? '';
       if (tag.isEmpty ||
@@ -797,6 +828,24 @@ class AndroidMosaicAccountService {
     return _buildTunConfig(cleanOutbounds, existingConfig: config);
   }
 
+  /// libbox intentionally rejects the Xray-only `xhttp` transport label. The
+  /// desktop runtime already maps the legacy value to sing-box's standard HTTP
+  /// transport. Apply the same narrow, schema-preserving normalization here.
+  static void _normalizeAndroidTransport(Map<String, dynamic> outbound) {
+    final value = outbound['transport'];
+    if (value is! Map) return;
+    final transport = Map<String, dynamic>.from(value);
+    if (transport['type']?.toString().toLowerCase() != 'xhttp') return;
+    transport['type'] = 'http';
+    transport.remove('mode');
+    transport.remove('extra');
+    final host = transport['host'];
+    if (host is String && host.isNotEmpty) {
+      transport['host'] = <String>[host];
+    }
+    outbound['transport'] = transport;
+  }
+
   static String _decodeSubscriptionPayload(String value) {
     final compact = value.trim();
     if (compact.startsWith('{')) return compact;
@@ -861,10 +910,13 @@ class AndroidMosaicAccountService {
         final transportType = query['type'] ?? 'tcp';
         if (transportType != 'tcp') {
           outbound['transport'] = {
-            'type': transportType,
+            'type':
+                transportType.toLowerCase() == 'xhttp' ? 'http' : transportType,
             if ((query['path'] ?? '').isNotEmpty) 'path': query['path'],
             if ((query['host'] ?? '').isNotEmpty) 'host': query['host'],
-            if ((query['mode'] ?? '').isNotEmpty) 'mode': query['mode'],
+            if (transportType.toLowerCase() != 'xhttp' &&
+                (query['mode'] ?? '').isNotEmpty)
+              'mode': query['mode'],
             if ((query['serviceName'] ?? '').isNotEmpty)
               'service_name': query['serviceName'],
           };
