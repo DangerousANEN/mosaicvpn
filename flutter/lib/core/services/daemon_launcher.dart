@@ -25,7 +25,10 @@ class DaemonLauncher {
     if (Platform.isWindows) {
       paths.add('$appDir\\mosaicd.exe');
       paths.add('$appDir\\bin\\mosaicd.exe');
-      paths.add(r'C:\Users\ANEN\mosaicvpn\bin\mosaicd.exe');
+      // Dynamic path: sibling to the Flutter executable
+      final exeDir = File(Platform.resolvedExecutable).parent.path;
+      paths.add('$exeDir\\mosaicd.exe');
+      paths.add('$exeDir\\bin\\mosaicd.exe');
       paths.add(r'C:\Program Files\MosaicVPN\bin\mosaicd.exe');
       paths.add(r'C:\Program Files\MosaicVPN\mosaicd.exe');
     } else {
@@ -64,12 +67,14 @@ class DaemonLauncher {
     }
 
     try {
-      // 3. Start daemon process in detached mode
-      _spawnedProcess = await Process.start(
-        exePath,
-        [],
-        mode: ProcessStartMode.detached,
-      );
+      // 3. Start daemon process in detached mode (desktop only)
+      if (!Platform.isAndroid && !Platform.isIOS) {
+        _spawnedProcess = await Process.start(
+          exePath,
+          [],
+          mode: ProcessStartMode.detached,
+        );
+      }
 
       // 4. Poll checkIsRunning for up to 3 seconds
       final stopwatch = Stopwatch()..start();

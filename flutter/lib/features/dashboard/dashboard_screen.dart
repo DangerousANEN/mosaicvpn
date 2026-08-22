@@ -1949,24 +1949,30 @@ class _StationsPanelState extends ConsumerState<_StationsPanel> {
 
 void _checkTunElevation(
     BuildContext context, FutureOr<void> Function() onAllow) async {
-  // Check if we're already running with admin privileges
-  try {
-    final result = await Process.run(
-      'powershell',
-      [
-        '-Command',
-        '([Security.Principal.WindowsPrincipal] '
-            '[Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole('
-            '[Security.Principal.WindowsBuiltInRole]::Administrator)'
-      ],
-    );
-    if (result.exitCode == 0 && result.stdout.trim().toLowerCase() == 'true') {
-      // Already elevated — skip UAC prompt
-      onAllow();
-      return;
+  // Check if we're already running with admin privileges (Windows only)
+  if (Platform.isWindows) {
+    try {
+      final result = await Process.run(
+        'powershell',
+        [
+          '-Command',
+          '([Security.Principal.WindowsPrincipal] '
+              '[Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole('
+              '[Security.Principal.WindowsBuiltInRole]::Administrator)'
+        ],
+      );
+      if (result.exitCode == 0 && result.stdout.trim().toLowerCase() == 'true') {
+        // Already elevated — skip UAC prompt
+        onAllow();
+        return;
+      }
+    } catch (_) {
+      // If check fails, fall through to normal UAC dialog
     }
-  } catch (_) {
-    // If check fails, fall through to normal UAC dialog
+  } else {
+    // Non-Windows: no elevation check needed, proceed directly
+    await onAllow();
+    return;
   }
 
   if (!context.mounted) return;

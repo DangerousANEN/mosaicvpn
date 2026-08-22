@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pupspochta-cpu/mosaicvpn/internal/logx"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
 )
 
@@ -964,4 +965,45 @@ func uuid() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// SeedDefaultGroups ensures that a minimal set of manifest groups exist in
+// the active manifest so a fresh install has something to connect to before
+// the user has added any subscriptions.
+func (s *Store) SeedDefaultGroups() {
+	snap := s.Snapshot()
+	needed := map[string]proto.ManifestGroup{
+		"pool-auto": {
+			ID:    "pool-auto",
+			Title: "⚡ Auto (Best Node)",
+			Type:  "urltest",
+		},
+		"emergency": {
+			ID:    "emergency",
+			Title: "🚨 Emergency Fallback",
+			Type:  "fallback",
+		},
+	}
+	manifest := snap.ActiveManifest
+	for id, g := range needed {
+		found := false
+		if manifest != nil {
+			for _, eg := range manifest.Groups {
+				if eg.ID == id {
+					found = true
+					break
+				}
+			}
+		}
+		if !found {
+			logx.Info("seeding default group", "id", id)
+			if manifest == nil {
+				manifest = &proto.SubscriptionManifest{}
+			}
+			manifest.Groups = append(manifest.Groups, g)
+		}
+	}
+	if manifest != nil {
+		_ = s.SaveManifest(manifest)
+	}
 }

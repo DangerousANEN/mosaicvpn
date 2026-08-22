@@ -345,10 +345,11 @@ type Rule struct {
 type State string
 
 const (
-	StateDisconnected State = "disconnected"
-	StateConnecting   State = "connecting"
-	StateConnected    State = "connected"
-	StateError        State = "error"
+	StateDisconnected  State = "disconnected"
+	StateConnecting    State = "connecting"
+	StateConnected     State = "connected"
+	StateError         State = "error"
+	StateReconnecting  State = "reconnecting"
 )
 
 // Status is the aggregate runtime state exposed by the daemon API.

@@ -40,6 +40,9 @@ dependencies:
   zxing_lib: ^1.1.4
   image: ^4.2.0
 
+  # Deep-link handling (Android/iOS custom URL schemes)
+  app_links: ^6.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

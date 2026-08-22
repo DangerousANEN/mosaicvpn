@@ -56,32 +56,50 @@ if not ADMIN_IDS:
     # Owner is always an admin unless explicitly overridden.
     ADMIN_IDS = {831992162}
 
-# Pricing Packages (1 RUB = 1 day)
-# Min 10 days = 10 RUB (0.10 USDT), Max 90 days = 90 RUB (0.90 USDT)
-PACKAGES = {
-    10: {"months": 0.3, "price_usdt": 0.10, "ru": "10 дней подписки — 0.10 USDT (10 руб)", "en": "10 subscription days — 0.10 USDT (10 RUB)"},
-    30: {"months": 1.0, "price_usdt": 0.30, "ru": "30 дней подписки — 0.30 USDT (30 руб)", "en": "30 subscription days — 0.30 USDT (30 RUB)"},
-    90: {"months": 3.0, "price_usdt": 0.90, "ru": "90 дней подписки (3 мес) — 0.90 USDT (90 руб)", "en": "90 subscription days (3 months) — 0.90 USDT (90 RUB)"}
-}
+# Pricing — 1 RUB = 1 day. Users can top up any amount (min 10 RUB).
+# Quick-pick buttons shown alongside a free-input option.
+RUB_PER_DAY = 1.0          # 1 ruble per day
+USDT_RATE = 0.01           # 1 RUB ≈ 0.01 USDT (100 RUB = 1 USDT)
+MIN_DAYS = 10              # minimum top-up (10 RUB = 0.10 USDT)
+MAX_DAYS = 365             # maximum top-up (1 year)
+# Preset buttons shown in the buy menu (days → label).
+QUICK_PACKAGES = [10, 30, 90, 180]
+
+def _rub_to_usdt(rub: float) -> float:
+    """Convert rubles to USDT for the CryptoPay invoice."""
+    return round(rub * USDT_RATE, 2)
+
+def _package_label(days: int, lang: str, discount: float = 0.0) -> str:
+    """Human-readable label for a top-up button or invoice."""
+    rub = days * RUB_PER_DAY
+    usdt = _rub_to_usdt(rub)
+    if discount > 0:
+        usdt_final = round(usdt * (1 - discount), 2)
+        if lang == "ru":
+            return f"🏷 {days} дней — {usdt_final:.2f} USDT (вместо {usdt:.2f})"
+        return f"🏷 {days} days — {usdt_final:.2f} USDT (was {usdt:.2f})"
+    if lang == "ru":
+        return f"{days} дней подписки — {usdt:.2f} USDT ({int(rub)} руб)"
+    return f"{days} subscription days — {usdt:.2f} USDT ({int(rub)} RUB)"
 
 # Bot Messages Dictionary
 MESSAGES = {
     "ru": {
         "welcome": (
-            "🛡 **Mosaic vpn.** — Атлас свободных маршрутов\n\n"
+            "🛡 **MosaicVPN** — Атлас свободных маршрутов\n\n"
             "Никаких блокировок YouTube, Instagram и любимых сайтов. "
             "Протокол **VLESS xHTTP** маскирует трафик под обычные веб-страницы — заблокировать невозможно.\n\n"
             "✅ Ваш маршрут открыт: **3 дня тест-драйва** зачислены, подписка активна.\n\n"
             "```\n"
-            " TARIFF · 1 RUB = 1 DAY\n"
-            " DEVICES · 5 (HWID CONTROL)\n"
-            " LATENCY · LOW · SPEED · HIGH\n"
-            "```\n"
-            "\n"
+            " ТАРИФ   · 1 РУБ = 1 ДЕНЬ\n"
+            " ОТ 10 РУБ · ДО 365 ДНЕЙ\n"
+            " УСТРОЙСТВ · 5 (HWID)\n"
+            " ЗАДЕРЖКА · НИЗКАЯ · СКОРОСТЬ · ВЫСОКАЯ\n"
+            "```\n\n"
             "Перейдите в **📖 Инструкция** для установки за 1 минуту."
         ),
-        "menu_buy": "🛒 Купить подписку",
-        "menu_profile": "👤 Мой профиль",
+        "menu_buy": "🛒 Пополнить",
+        "menu_profile": "👤 Профиль",
         "menu_tariffs": "💎 Тарифы",
         "menu_instructions": "📖 Инструкция",
         "menu_lang": "🌐 Язык / Language",
@@ -494,6 +512,19 @@ def _link_code_normalise(raw):
     return "".join(ch for ch in raw.upper() if ch in LINK_CODE_ALPHABET)
 
 
+def _parse_iso_utc(ts):
+    """Safely parse an ISO datetime string into a timezone-aware UTC datetime."""
+    if not ts:
+        return None
+    try:
+        dt = dateutil.parser.isoparse(str(ts))
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=datetime.timezone.utc)
+        return dt.astimezone(datetime.timezone.utc)
+    except Exception:
+        return None
+
+
 def issue_link_code(telegram_id, username, session_token=None):
     """Mint a single-use pairing code, invalidating any earlier unused one.
 
@@ -810,11 +841,7 @@ def api_extend_user(username, days):
         
     current_expire_str = user.get("expireAt")
     now = datetime.datetime.now(datetime.timezone.utc)
-    
-    try:
-        current_expire = dateutil.parser.isoparse(current_expire_str)
-    except Exception as e:
-        current_expire = now
+    current_expire = _parse_iso_utc(current_expire_str) or now
         
     if current_expire < now:
         new_expire = now + datetime.timedelta(days=days)
@@ -1452,14 +1479,14 @@ def send_welcome(message):
     user_data = api_get_user(username)
     if user_data:
         expire_at_raw = user_data.get("expireAt")
-        try:
-            expire_dt = dateutil.parser.isoparse(expire_at_raw)
+        expire_dt = _parse_iso_utc(expire_at_raw)
+        if expire_dt:
             expire_date = expire_dt.strftime("%Y-%m-%d")
             now = datetime.datetime.now(datetime.timezone.utc)
             days_left = (expire_dt - now).days
             if days_left < 0: days_left = 0
-        except Exception:
-            expire_date = expire_at_raw
+        else:
+            expire_date = expire_at_raw or "-"
             days_left = 0
             
         sub_url = f"https://sub.zxc1x1.ru/{short_uuid}"
@@ -1578,14 +1605,14 @@ def show_profile(message):
         user_data = api_get_user(username)
         if user_data:
             expire_at_raw = user_data.get("expireAt")
-            try:
-                expire_dt = dateutil.parser.isoparse(expire_at_raw)
+            expire_dt = _parse_iso_utc(expire_at_raw)
+            if expire_dt:
                 expire_date = expire_dt.strftime("%Y-%m-%d")
                 now = datetime.datetime.now(datetime.timezone.utc)
                 days_left = (expire_dt - now).days
                 if days_left < 0: days_left = 0
-            except Exception:
-                expire_date = expire_at_raw
+            else:
+                expire_date = expire_at_raw or "-"
                 days_left = 0
                 
             sub_url = f"https://sub.zxc1x1.ru/{short_uuid}"
@@ -2615,12 +2642,10 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             expire_at_raw = user_data.get("expireAt")
             if expire_at_raw:
                 profile["expires_at"] = expire_at_raw
-                try:
-                    expire_dt = dateutil.parser.isoparse(expire_at_raw)
+                expire_dt = _parse_iso_utc(expire_at_raw)
+                if expire_dt:
                     now = datetime.datetime.now(datetime.timezone.utc)
                     profile["days_left"] = max(0, (expire_dt - now).days)
-                except Exception:
-                    pass
             traffic_used = user_data.get("usedTrafficBytes", 0) or 0
             traffic_limit = user_data.get("trafficLimitBytes", 0) or 0
             profile["traffic_used"] = traffic_used
@@ -3213,6 +3238,8 @@ def run_notifications_check():
                 continue
             
             created_dt = dateutil.parser.isoparse(created_at_str)
+            if created_dt.tzinfo is None:
+                created_dt = created_dt.replace(tzinfo=datetime.timezone.utc)
             time_since_creation = now - created_dt
             
             user_traffic = user_data.get("userTraffic", {}) or {}
@@ -3235,6 +3262,9 @@ def run_notifications_check():
                 else:
                     first_connected_dt = created_dt
                 
+                if first_connected_dt.tzinfo is None:
+                    first_connected_dt = first_connected_dt.replace(tzinfo=datetime.timezone.utc)
+                
                 time_since_traffic = now - first_connected_dt
                 
                 # traffic_6h: 6 hours after traffic start
@@ -3255,24 +3285,21 @@ def run_notifications_check():
                 elif time_since_traffic >= datetime.timedelta(hours=3*24) and "rating_request" not in sent_notifications and "pre_expire_3d_renew" not in sent_notifications:
                     # Check actual expiry — if subscription is 3 days from ending
                     expire_at_raw = user_data.get("expireAt")
-                    if expire_at_raw:
-                        try:
-                            expire_dt = dateutil.parser.isoparse(expire_at_raw)
-                            days_until_expire = (expire_dt - now).days
-                            if 2 <= days_until_expire <= 4:
-                                text = (
-                                    f"⏰ Ваша подписка заканчивается через {days_until_expire} дн.\n\n"
-                                    f"Продлите сейчас в один клик — настройки сохранятся, VPN не прервётся."
-                                    if lang == "ru" else
-                                    f"⏰ Your subscription expires in {days_until_expire} days.\n\n"
-                                    f"Renew with one tap — settings stay, VPN won't interrupt."
-                                )
-                                markup = types.InlineKeyboardMarkup(row_width=1)
-                                markup.add(types.InlineKeyboardButton("🔁 Продлить 30 дней" if lang == "ru" else "🔁 Renew 30 days", callback_data="renew_30"))
-                                markup.add(types.InlineKeyboardButton("🔁 Продлить 90 дней" if lang == "ru" else "🔁 Renew 90 days", callback_data="renew_90"))
-                                send_funnel_notification(telegram_id, "pre_expire_3d_renew", text, markup)
-                        except Exception:
-                            pass
+                    expire_dt = _parse_iso_utc(expire_at_raw)
+                    if expire_dt:
+                        days_until_expire = (expire_dt - now).days
+                        if 2 <= days_until_expire <= 4:
+                            text = (
+                                f"⏰ Ваша подписка заканчивается через {days_until_expire} дн.\n\n"
+                                f"Продлите сейчас в один клик — настройки сохранятся, VPN не прервётся."
+                                if lang == "ru" else
+                                f"⏰ Your subscription expires in {days_until_expire} days.\n\n"
+                                f"Renew with one tap — settings stay, VPN won't interrupt."
+                            )
+                            markup = types.InlineKeyboardMarkup(row_width=1)
+                            markup.add(types.InlineKeyboardButton("🔁 Продлить 30 дней" if lang == "ru" else "🔁 Renew 30 days", callback_data="renew_30"))
+                            markup.add(types.InlineKeyboardButton("🔁 Продлить 90 дней" if lang == "ru" else "🔁 Renew 90 days", callback_data="renew_90"))
+                            send_funnel_notification(telegram_id, "pre_expire_3d_renew", text, markup)
 
                 # #12: Rating request — 3 days after first connection
                 elif time_since_traffic >= datetime.timedelta(hours=3*24) and "rating_request" not in sent_notifications and "pre_expire_3d_renew" in sent_notifications:
@@ -3330,10 +3357,8 @@ def run_notifications_check():
                 # trial_expired: 72h after signup
                 elif time_since_creation >= datetime.timedelta(hours=72) and "trial_expired" not in sent_notifications:
                     expire_at_raw = user_data.get("expireAt")
-                    is_expired = False
-                    if expire_at_raw:
-                        expire_dt = dateutil.parser.isoparse(expire_at_raw)
-                        is_expired = (expire_dt < now) or (user_data.get("status") == "EXPIRED")
+                    expire_dt = _parse_iso_utc(expire_at_raw)
+                    is_expired = (expire_dt is not None and expire_dt < now) or (user_data.get("status") == "EXPIRED")
                     
                     if is_expired:
                         text = (
@@ -3420,8 +3445,8 @@ def run_notifications_check():
 
             # --- PAID SUBSCRIPTIONS EXPIRY / UPSELLS (after trial) ---
             expire_at_raw = user_data.get("expireAt")
-            if expire_at_raw:
-                expire_dt = dateutil.parser.isoparse(expire_at_raw)
+            expire_dt = _parse_iso_utc(expire_at_raw)
+            if expire_dt:
                 if time_since_creation > datetime.timedelta(days=3):
                     is_active = (user_data.get("status") == "ACTIVE") and (expire_dt >= now)
                     
@@ -3445,10 +3470,10 @@ def run_notifications_check():
                         # Family upsell: 30 days active
                         if time_since_creation >= datetime.timedelta(days=30) and "family_upsell" not in sent_notifications:
                             text = (
-                                "👨‍👩‍👧‍👦 Подключите близких — семейный тариф на 6 устройств!\n\n"
+                                "👨👩👧👦 Подключите близких — семейный тариф на 6 устройств!\n\n"
                                 "Одна подписка на всю семью. Это намного выгоднее и удобнее, чем платить за каждого отдельно."
                                 if lang == "ru" else
-                                "👨‍👩‍👧‍👦 Connect your family members — Family Plan supports 6 devices!\n\n"
+                                "👨👩👧👦 Connect your family members — Family Plan supports 6 devices!\n\n"
                                 "Share a single subscription. Much more economical and easier than paying for everyone separately."
                             )
                             markup = types.InlineKeyboardMarkup()
@@ -3520,8 +3545,8 @@ def run_notifications_check():
                 if not last_ref_promo:
                     send_promo = True
                 else:
-                    last_promo_dt = dateutil.parser.isoparse(last_ref_promo[0])
-                    if now - last_promo_dt >= datetime.timedelta(days=7):
+                    last_promo_dt = _parse_iso_utc(last_ref_promo[0])
+                    if last_promo_dt and (now - last_promo_dt >= datetime.timedelta(days=7)):
                         send_promo = True
                 
                 if send_promo:
@@ -3570,7 +3595,9 @@ def run_notifications_check():
             cursor.execute("SELECT invoice_id, amount, days, created_at, status FROM invoices WHERE telegram_id = ? AND status = 'pending'", (telegram_id,))
             pending_invoices = cursor.fetchall()
             for invoice_id, amount, days, inv_created_str, inv_status in pending_invoices:
-                inv_created_dt = dateutil.parser.isoparse(inv_created_str)
+                inv_created_dt = _parse_iso_utc(inv_created_str)
+                if not inv_created_dt:
+                    continue
                 time_since_invoice = now - inv_created_dt
                 
                 # 30 minutes without payment

@@ -32,7 +32,7 @@ func newSetup(t *testing.T) (*store.Store, *state.MockBackend, *state.Manager, p
 	srv.SubscriptionID = sub.ID
 
 	mb := state.NewMockBackend()
-	mgr := state.New(s, mb, "test")
+	mgr := state.New(s, mb, "test", nil)
 	return s, mb, mgr, srv
 }
 

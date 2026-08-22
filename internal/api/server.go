@@ -223,6 +223,7 @@ func (s *Server) routes() {
 	// Import
 	s.mux.HandleFunc("POST /v1/import/clipboard", s.handleImportClipboard)
 	s.mux.HandleFunc("POST /v1/import/link", s.handleImportLink)
+	s.mux.HandleFunc("POST /v1/import/subscription-link", s.handleImportSubscriptionLink)
 
 	s.mux.HandleFunc("GET /v1/diag", s.handleDiag)
 	s.mux.HandleFunc("GET /v1/events", s.handleEvents)
@@ -990,6 +991,50 @@ func (s *Server) handleImportLink(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, imp)
 }
 
+// handleImportSubscriptionLink adds a subscription feed by URL and immediately
+// fetches and parses it so the response contains live server data.
+func (s *Server) handleImportSubscriptionLink(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		URL  string `json:"url"`
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.URL == "" {
+		writeError(w, http.StatusBadRequest, "url is required")
+		return
+	}
+	if req.Name == "" {
+		req.Name = "Imported Feed"
+	}
+	sub, err := s.store.AddOrUpdateSubscription(proto.Subscription{
+		URL:                    req.URL,
+		Name:                   req.Name,
+		AutoRefresh:            true,
+		RefreshIntervalSeconds: 3600,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	if err := s.refresh(ctx, sub); err != nil {
+		logx.Warn("refresh after import failed", "err", err, "url", req.URL)
+		_ = s.store.MarkSubscriptionError(sub.ID, err.Error())
+	}
+	// Re-read from store so the response reflects any servers that were parsed.
+	for _, su := range s.store.Snapshot().Subscriptions {
+		if su.ID == sub.ID {
+			sub = su
+			break
+		}
+	}
+	writeJSON(w, http.StatusOK, sub)
+}
+
 // parseImport attempts to identify the protocol of a raw share link.
 func (s *Server) parseImport(raw string) proto.ClipboardImport {
 	imp := proto.ClipboardImport{Raw: raw}
@@ -1123,7 +1168,35 @@ func (s *Server) refresh(ctx context.Context, sub proto.Subscription) error {
 	if _, err := s.store.AddOrUpdateSubscription(sub); err != nil {
 		return err
 	}
-	return s.store.ReplaceServersFor(sub.ID, finalServers)
+	if err := s.store.ReplaceServersFor(sub.ID, finalServers); err != nil {
+		return err
+	}
+
+	// Merge the provider's daemon-only candidate feed (smart-group pool).
+	// Candidates are additive: they never replace user servers, and a feed
+	// failure is silent because candidates are an enhancement.
+	return s.refreshCandidates(ctx, sub.URL)
+}
+
+// refreshCandidates downloads the provider candidate feed and stores the
+// parsed nodes under the synthetic CandidateSubID subscription.
+func (s *Server) refreshCandidates(ctx context.Context, subURL string) error {
+	feed, err := subs.FetchCandidateFeed(ctx, subURL)
+	if err != nil || feed == nil {
+		if err != nil {
+			logx.Debug("candidate feed unavailable", "err", err.Error())
+		}
+		return nil
+	}
+	candidates := subs.CandidatesToServers(feed)
+	if len(candidates) == 0 {
+		return nil
+	}
+	if err := s.store.ReplaceServersFor(subs.CandidateSubID, candidates); err != nil {
+		return err
+	}
+	logx.Info("candidate pool refreshed", "nodes", len(candidates))
+	return nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

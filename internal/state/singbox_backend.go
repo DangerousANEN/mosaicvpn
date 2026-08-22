@@ -26,6 +26,7 @@ import (
 	"github.com/pupspochta-cpu/mosaicvpn/internal/logx"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/store"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/subs"
 )
 
 // SingBoxBackend drives a bundled sing-box executable as a child
@@ -54,6 +55,9 @@ type SingBoxBackend struct {
 	seriesMu   sync.Mutex
 	series     []proto.TrafficPoint
 	peakConns  atomic.Int32
+
+	// Crash callback — called when sing-box exits unexpectedly (not via Stop).
+	onCrash func(error)
 }
 
 // NewSingBoxBackend constructs a backend rooted at dataDir (where the
@@ -62,6 +66,21 @@ type SingBoxBackend struct {
 // CLI flag or env var) to override.
 func NewSingBoxBackend(binary, dataDir string, s *store.Store) *SingBoxBackend {
 	return &SingBoxBackend{binary: binary, dataDir: dataDir, store: s}
+}
+
+// SetCrashHandler registers a callback that is called when sing-box exits
+// unexpectedly (i.e. not as a result of Stop). fn receives the exit error.
+func (b *SingBoxBackend) SetCrashHandler(fn func(error)) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.onCrash = fn
+}
+
+// DoneCh returns a channel that is closed when the sing-box process exits.
+func (b *SingBoxBackend) DoneCh() <-chan struct{} {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.doneCh
 }
 
 // LocateSingBox returns the first sing-box executable found next to
@@ -207,6 +226,12 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, prefs s
 		}
 		if err != nil && cctx.Err() == nil {
 			logx.Warn("sing-box exited", "err", err)
+			b.mu.Lock()
+			cb := b.onCrash
+			b.mu.Unlock()
+			if cb != nil {
+				cb(err)
+			}
 		}
 		close(doneCh)
 	}()
@@ -364,6 +389,57 @@ func readTail(path string, n int) string {
 // document with a SOCKS and HTTP inbound on loopback, a single proxy
 // outbound, optional DNS section, and routing rules derived from the
 // Mosaic ruleset. Exposed for tests.
+// dnsServerEntry converts a user-facing DNS address ("udp://77.88.8.8",
+// "https://1.1.1.1/dns-query", "tls://8.8.8.8", bare IP/host) into a
+// sing-box 1.13+ DNS server object. The scheme determines the server type;
+// bare addresses default to plain UDP. Only the host (and port, if any) is
+// passed through — never the scheme — because sing-box treats the "server"
+// field as a resolvable address, not a URL.
+func dnsServerEntry(tag, addr string) map[string]any {
+	typ := "udp"
+	host := addr
+	switch {
+	case strings.HasPrefix(addr, "udp://"):
+		host = strings.TrimPrefix(addr, "udp://")
+	case strings.HasPrefix(addr, "https://"):
+		typ = "https"
+		host = strings.TrimPrefix(addr, "https://")
+	case strings.HasPrefix(addr, "h3://"):
+		typ = "h3"
+		host = strings.TrimPrefix(addr, "h3://")
+	case strings.HasPrefix(addr, "quic://"):
+		typ = "quic"
+		host = strings.TrimPrefix(addr, "quic://")
+	case strings.HasPrefix(addr, "tls://"):
+		typ = "tls"
+		host = strings.TrimPrefix(addr, "tls://")
+	case strings.HasPrefix(addr, "tcp://"):
+		typ = "tcp"
+		host = strings.TrimPrefix(addr, "tcp://")
+	case strings.HasPrefix(addr, "system://"):
+		typ = "local"
+		host = ""
+	case strings.HasPrefix(addr, "dhcp://"):
+		typ = "dhcp"
+		host = ""
+	case strings.HasPrefix(addr, "rcode://"):
+		typ = "rcode"
+		host = ""
+	}
+	// Strip path remnants from DoH URLs (https://1.1.1.1/dns-query).
+	if i := strings.Index(host, "/"); i >= 0 {
+		host = host[:i]
+	}
+	entry := map[string]any{
+		"type": typ,
+		"tag":  tag,
+	}
+	if host != "" {
+		entry["server"] = host
+	}
+	return entry
+}
+
 func BuildSingBoxConfig(server proto.Server, socksPort, httpPort int, prefs store.Prefs, rules []proto.Rule, dns proto.DNSConfig, clashPort int, clashSecret string) ([]byte, error) {
 	return BuildSingBoxConfigWithServers(server, socksPort, httpPort, prefs, rules, dns, clashPort, clashSecret, nil, nil)
 }
@@ -373,51 +449,50 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 
 	if server.IsVirtualGroup {
 		targetURL := "https://cp.cloudflare.com/generate_204"
-		if server.Category == "whitelist" || server.GroupTag == "auto-whitelist" || server.Country == "RU" {
+		if server.Category == "whitelist" || server.GroupTag == "auto-whitelist" ||
+			server.GroupTag == "auto-lte" || server.Country == "RU" {
 			targetURL = "https://yandex.ru/generate_204"
 		}
 
 		var childNodes []proto.Server
 		targetCountry := server.Country
 		if targetCountry == "" {
-			gt := strings.ToLower(server.GroupTag + " " + server.ID)
-			switch {
-			case strings.Contains(gt, "de"):
-				targetCountry = "DE"
-			case strings.Contains(gt, "nl"):
-				targetCountry = "NL"
-			case strings.Contains(gt, "us"):
-				targetCountry = "US"
-			case strings.Contains(gt, "ca"):
-				targetCountry = "CA"
-			case strings.Contains(gt, "fr"):
-				targetCountry = "FR"
-			case strings.Contains(gt, "sg"):
-				targetCountry = "SG"
-			case strings.Contains(gt, "gb") || strings.Contains(gt, "uk"):
-				targetCountry = "GB"
-			case strings.Contains(gt, "fi"):
-				targetCountry = "FI"
-			case strings.Contains(gt, "ru"):
-				targetCountry = "RU"
-			}
+			targetCountry = subs.GroupCountry(server.GroupTag)
 		}
 
 		for _, sv := range allServers {
 			if sv.IsVirtualGroup {
 				continue
 			}
-			if server.SubscriptionID != "" && sv.SubscriptionID != server.SubscriptionID {
+			// Candidate nodes live in a separate synthetic subscription but
+			// must be reachable from every provider smart group.
+			if sv.SubscriptionID != server.SubscriptionID && sv.Category != "candidate" {
 				continue
 			}
-			if server.GroupTag == "rg-all" || server.GroupTag == "" {
+			switch {
+			case server.GroupTag == "rg-all" || server.GroupTag == "":
 				childNodes = append(childNodes, sv)
-			} else if server.GroupTag == "auto-whitelist" || server.Category == "whitelist" {
-				nameLower := strings.ToLower(sv.Name + " " + sv.Tag)
-				if strings.Contains(nameLower, "whitelist") || strings.Contains(nameLower, "4g") || strings.Contains(nameLower, "tspu") || sv.Protocol == "vless" {
+			case sv.Category == "candidate" && subs.CandidateInGroup(sv, server.GroupTag):
+				// Provider-annotated membership wins for every named group
+				// (germany, canada, netherlands, free-lte, ...).
+				childNodes = append(childNodes, sv)
+			case server.GroupTag == "auto-whitelist" || (server.Category == "whitelist" && server.GroupTag != "auto-lte"):
+				if subs.MatchWhitelistHeuristic(sv) {
 					childNodes = append(childNodes, sv)
 				}
-			} else if targetCountry != "" && matchServerCountry(sv, targetCountry) {
+			case server.GroupTag == "auto-lte":
+				if subs.MatchLTEHeuristic(sv) {
+					childNodes = append(childNodes, sv)
+				}
+			case server.GroupTag == "auto-stable":
+				if sv.Category != "candidate" || subs.BoolFlag(sv.Raw, "mosaic_stable") || subs.BoolFlag(sv.Raw, "mosaic_speed_eligible") {
+					childNodes = append(childNodes, sv)
+				}
+			case server.GroupTag == "auto-speed":
+				if sv.Category != "candidate" || subs.BoolFlag(sv.Raw, "mosaic_speed_eligible") {
+					childNodes = append(childNodes, sv)
+				}
+			case targetCountry != "" && matchServerCountry(sv, targetCountry):
 				childNodes = append(childNodes, sv)
 			}
 		}
@@ -622,11 +697,7 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 		// Primary resolver (direct / real DNS)
 		primaryTag := "dns-primary"
 		if dns.Direct != "" {
-			servers = append(servers, map[string]any{
-				"type":   "udp",
-				"tag":    primaryTag,
-				"server": dns.Direct,
-			})
+			servers = append(servers, dnsServerEntry(primaryTag, dns.Direct))
 		} else {
 			servers = append(servers, map[string]any{
 				"type":   "udp",
@@ -636,11 +707,7 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 		}
 		// Proxied resolver (used for domains going through proxy)
 		if dns.Proxied != "" {
-			servers = append(servers, map[string]any{
-				"type":   "udp",
-				"tag":    "dns-proxied",
-				"server": dns.Proxied,
-			})
+			servers = append(servers, dnsServerEntry("dns-proxied", dns.Proxied))
 		}
 		// FakeIP server (new format: standalone server object)
 		if dns.Mode == "fake-ip" {
@@ -1050,6 +1117,15 @@ func outboundForWithTag(s proto.Server, tag string) (map[string]any, error) {
 
 func matchServerCountry(sv proto.Server, targetCountry string) bool {
 	if targetCountry == "" {
+		return false
+	}
+	// Candidate nodes carry authoritative GeoIP from the provider collector
+	// (Raw.mosaic_country). Never guess their country from the synthetic
+	// "mosaic-candidate-*" name — its "ca" substring would match everything.
+	if sv.Category == "candidate" {
+		if cc, _ := sv.Raw["mosaic_country"].(string); cc != "" {
+			return strings.EqualFold(cc, targetCountry)
+		}
 		return false
 	}
 	if sv.Country != "" && strings.EqualFold(sv.Country, targetCountry) {

@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -109,7 +110,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                 group: group,
                 isExpanded: _expandedGroups.contains(group.id),
                 isConnecting: _connectingId == 'group:${group.id}',
-                isActive: _isGroupActive(group.id, activeId),
+                isActive: _isGroupActive(group.id, activeId, servers),
                 onToggle: () => _toggleGroup(group.id),
                 onConnect: () => _connectGroup(group.id),
               ),
@@ -193,9 +194,9 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     return rows;
   }
 
-  bool _isGroupActive(String groupId, String? activeId) {
+  bool _isGroupActive(
+      String groupId, String? activeId, List<Server> servers) {
     if (activeId == null) return false;
-    final servers = ref.read(serversProvider).valueOrNull ?? const [];
     for (final s in servers) {
       if (s.id == activeId && s.groupId == groupId) return true;
     }
@@ -214,11 +215,20 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     setState(() => _connectingId = 'group:$groupId');
     try {
       final api = ref.read(daemonApiProvider);
-      final server = await api.selectNodeFromGroup(groupId);
+      late final dynamic server;
+      try {
+        server = await api.selectNodeFromGroup(groupId);
+      } catch (e) {
+        _showMessage('В группе нет доступных серверов: $e', AtlasTheme.error);
+        return;
+      }
       await api.connect(server.id);
-      if (mounted) {
-        _showMessage('Подключено через $groupId → ${server.name}',
-            AtlasTheme.success);
+      _showMessage('Подключено через $groupId → ${server.name}', AtlasTheme.success);
+    } on DioException catch (e) {
+      if (e.type == DioExceptionType.connectionTimeout) {
+        _showMessage('Демон не запущен или не отвечает', AtlasTheme.error);
+      } else {
+        _showMessage('Не удалось подключиться: ${e.message}', AtlasTheme.error);
       }
     } catch (e) {
       _showMessage('Не удалось подключиться: $e', AtlasTheme.error);

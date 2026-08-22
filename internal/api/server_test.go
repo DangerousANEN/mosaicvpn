@@ -25,7 +25,7 @@ func newTestServer(t *testing.T, fetcher api.Fetcher) (*api.Server, *apiclient.C
 		t.Fatal(err)
 	}
 	mb := state.NewMockBackend()
-	mgr := state.New(s, mb, "test")
+	mgr := state.New(s, mb, "test", nil)
 	srv := api.NewServer(s, mgr, fetcher)
 
 	hs := httptest.NewServer(srv.Handler())

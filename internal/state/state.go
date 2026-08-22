@@ -17,10 +17,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"sync"
 	"time"
 
+	"github.com/pupspochta-cpu/mosaicvpn/internal/killswitch"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/logx"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/store"
@@ -67,27 +69,36 @@ type ProxyListener interface {
 	Proxies() (socks, http string)
 }
 
+// WatchableBackend is an optional interface a Backend can implement to
+// expose a channel that is closed when the backend process exits.
+type WatchableBackend interface {
+	DoneCh() <-chan struct{}
+}
+
 // Manager owns the connection state and is safe for concurrent use.
 type Manager struct {
-	mu       sync.Mutex
-	st       proto.Status
-	store    *store.Store
-	backend  Backend
-	cancel   context.CancelFunc
-	subs     []chan proto.Status
-	version  string
-	pid      int
-	started  time.Time
+	mu             sync.Mutex
+	st             proto.Status
+	store          *store.Store
+	backend        Backend
+	cancel         context.CancelFunc
+	subs           []chan proto.Status
+	version        string
+	pid            int
+	started        time.Time
+	userDisconnect bool // set true when the user initiates Disconnect
+	ks             killswitch.KillSwitch
 }
 
 // New constructs a Manager around an existing store and backend.
-func New(s *store.Store, backend Backend, version string) *Manager {
+func New(s *store.Store, backend Backend, version string, ks killswitch.KillSwitch) *Manager {
 	m := &Manager{
 		store:   s,
 		backend: backend,
 		version: version,
 		pid:     osPID(),
 		started: time.Now().UTC(),
+		ks:      ks,
 	}
 	prefs := s.Snapshot().Prefs
 	m.st = proto.Status{
@@ -158,6 +169,9 @@ func (m *Manager) Connect(ctx context.Context, serverID string) error {
 		m.mu.Lock()
 	}
 
+	// Reset the user-disconnect flag for this new connection attempt.
+	m.userDisconnect = false
+
 	m.transitionLocked(proto.Status{
 		State:         proto.StateConnecting,
 		Server:        &server,
@@ -201,6 +215,18 @@ func (m *Manager) Connect(ctx context.Context, serverID string) error {
 	})
 	m.mu.Unlock()
 
+	// Start the watchdog so we can auto-reconnect if the backend crashes.
+	go m.watchdog(server)
+
+	if m.ks != nil && m.st.KillSwitch {
+		serverIP := net.ParseIP(server.Address)
+		if serverIP != nil {
+			if err := m.ks.Enable("", serverIP, nil); err != nil {
+				logx.Warn("kill switch enable failed", "err", err)
+			}
+		}
+	}
+
 	if err := m.store.SetLastServer(serverID); err != nil {
 		logx.Warn("could not persist last server", "err", err)
 	}
@@ -214,11 +240,19 @@ func (m *Manager) Disconnect(ctx context.Context) error {
 		m.mu.Unlock()
 		return nil
 	}
+	// Signal the watchdog not to auto-reconnect.
+	m.userDisconnect = true
 	if m.cancel != nil {
 		m.cancel()
 		m.cancel = nil
 	}
 	m.mu.Unlock()
+
+	if m.ks != nil {
+		if err := m.ks.Disable(); err != nil {
+			logx.Warn("kill switch disable failed", "err", err)
+		}
+	}
 
 	if err := m.backend.Stop(ctx); err != nil {
 		return err
@@ -375,6 +409,121 @@ func (m *Manager) transitionLocked(next proto.Status) {
 			// drop if subscriber is slow; subscribers should be fast.
 		}
 	}
+}
+
+// watchdog waits for the WatchableBackend's done channel to close, then
+// triggers auto-reconnect if the disconnect was not user-initiated.
+func (m *Manager) watchdog(server proto.Server) {
+	wb, ok := m.backend.(WatchableBackend)
+	if !ok {
+		return
+	}
+	doneCh := wb.DoneCh()
+	if doneCh == nil {
+		return
+	}
+	<-doneCh
+
+	m.mu.Lock()
+	disconnected := m.userDisconnect
+	stillConnected := m.st.State == proto.StateConnected
+	m.mu.Unlock()
+
+	if disconnected || !stillConnected {
+		// User called Disconnect() or state already moved on — do nothing.
+		return
+	}
+
+	// Transition to reconnecting and begin auto-reconnect loop.
+	m.mu.Lock()
+	m.transitionLocked(proto.Status{
+		State:         proto.StateReconnecting,
+		Server:        &server,
+		Since:         time.Now().UTC(),
+		TunnelMode:    m.st.TunnelMode,
+		KillSwitch:    m.st.KillSwitch,
+		DaemonVersion: m.st.DaemonVersion,
+		DaemonPID:     m.st.DaemonPID,
+	})
+	m.mu.Unlock()
+
+	m.autoReconnect(server)
+}
+
+// autoReconnect tries to reconnect with exponential backoff.
+// Delays: 1s, 2s, 4s, 8s, 16s, then cap at 30s. Max 10 attempts.
+func (m *Manager) autoReconnect(server proto.Server) {
+	delays := []time.Duration{
+		1 * time.Second,
+		2 * time.Second,
+		4 * time.Second,
+		8 * time.Second,
+		16 * time.Second,
+		30 * time.Second,
+	}
+
+	ctx := context.Background()
+	maxAttempts := 10
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		// If the user disconnected during the backoff sleep, bail out.
+		m.mu.Lock()
+		if m.userDisconnect {
+			m.mu.Unlock()
+			return
+		}
+		m.mu.Unlock()
+
+		delay := delays[attempt-1]
+		if attempt-1 >= len(delays) {
+			delay = delays[len(delays)-1]
+		}
+
+		logx.Info("auto-reconnect: waiting before attempt",
+			"attempt", attempt,
+			"delay", delay,
+			"server", server.ID,
+		)
+		time.Sleep(delay)
+
+		// Check again after sleep.
+		m.mu.Lock()
+		if m.userDisconnect {
+			m.mu.Unlock()
+			return
+		}
+		m.mu.Unlock()
+
+		logx.Info("auto-reconnect: attempting", "attempt", attempt, "server", server.ID)
+
+		// Try with the original server ID first.
+		if err := m.Connect(ctx, server.ID); err == nil {
+			logx.Info("auto-reconnect: succeeded", "attempt", attempt, "server", server.ID)
+			return
+		}
+		// If that fails, try with a blank server ID to let the API layer pick via resolve.
+		if err := m.Connect(ctx, ""); err == nil {
+			logx.Info("auto-reconnect: succeeded via resolve", "attempt", attempt)
+			return
+		}
+
+		logx.Warn("auto-reconnect: attempt failed", "attempt", attempt, "server", server.ID)
+	}
+
+	// All attempts exhausted — transition to error.
+	m.mu.Lock()
+	m.transitionLocked(proto.Status{
+		State:         proto.StateError,
+		Server:        &server,
+		LastError:     "все узлы недоступны после 10 попыток",
+		Since:         time.Now().UTC(),
+		TunnelMode:    m.st.TunnelMode,
+		KillSwitch:    m.st.KillSwitch,
+		DaemonVersion: m.st.DaemonVersion,
+		DaemonPID:     m.st.DaemonPID,
+	})
+	m.mu.Unlock()
+	logx.Error("auto-reconnect: all attempts exhausted", "server", server.ID)
 }
 
 // osPID returns the daemon's PID. Wrapped so tests can override.

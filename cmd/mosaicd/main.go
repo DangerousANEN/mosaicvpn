@@ -79,7 +79,7 @@ func run(dataDirOverride string) error {
 		logx.Warn("sing-box not found next to mosaicd or on PATH; falling back to mock backend (Connect will pretend to work but no proxy is opened)")
 		backend = state.NewMockBackend()
 	}
-	mgr := state.New(store, backend, Version)
+	mgr := state.New(store, backend, Version, nil)
 
 	apiSrv := api.NewServer(store, mgr, nil)
 

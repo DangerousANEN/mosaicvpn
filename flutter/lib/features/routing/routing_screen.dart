@@ -60,7 +60,14 @@ class RoutingScreen extends ConsumerWidget {
                     await ref.read(daemonApiProvider).setPrefs(updated.toJson());
                     ref.invalidate(prefsProvider);
                   } catch (e) {
-                    debugPrint('routing mode switch failed: $e');
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Ошибка: $e'),
+                          backgroundColor: AtlasTheme.error,
+                        ),
+                      );
+                    }
                   }
                 },
               ),
@@ -85,7 +92,14 @@ class RoutingScreen extends ConsumerWidget {
                           reordered.map((r) => r.id).toList());
                       ref.invalidate(rulesProvider);
                     } catch (e) {
-                      debugPrint('reorderRules failed: $e');
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Ошибка: $e'),
+                            backgroundColor: AtlasTheme.error,
+                          ),
+                        );
+                      }
                       ref.invalidate(rulesProvider);
                     }
                   },

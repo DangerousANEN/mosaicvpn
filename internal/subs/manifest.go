@@ -35,6 +35,34 @@ func resolveGroupNodes(group proto.ManifestGroup, rawServers []proto.Server) []p
 }
 
 func matchGroupFilter(group proto.ManifestGroup, srv proto.Server) bool {
+	// Explicit membership wins first: candidate nodes carry their group ids
+	// in Raw (mosaic_candidate_groups) resolved at merge time into GroupTag.
+	if srv.Category == "candidate" {
+		groups := CandidateGroups(srv.Raw)
+		if len(groups) > 0 {
+			for _, g := range groups {
+				if strings.EqualFold(g, group.ID) {
+					return true
+				}
+			}
+			// rg-all / auto groups with no country still take every candidate
+			// whose membership list is non-empty.
+			switch group.ID {
+			case "rg-all":
+				return true
+			case "auto-stable", "auto-speed", "auto-lte", "auto-whitelist":
+				return containsFold(groups, group.ID) || candidateFlagMatches(group.ID, srv.Raw)
+			}
+			// Named country groups (germany, canada, ...) match the
+			// candidate's mosaic_country annotation.
+			if cc := groupCountryFromID(group.ID); cc != "" {
+				if mcc, _ := srv.Raw["mosaic_country"].(string); strings.EqualFold(mcc, cc) {
+					return true
+				}
+			}
+		}
+	}
+
 	// Category-based matching as fallback
 	switch group.Category {
 	case "whitelist":
@@ -46,12 +74,110 @@ func matchGroupFilter(group proto.ManifestGroup, srv proto.Server) bool {
 		if cc == "" {
 			return true
 		} // rg-all → all nodes
-		return strings.EqualFold(srv.Country, cc)
+		return strings.EqualFold(srv.Country, cc) || matchServerCountryTag(srv, cc)
 	}
 	return true
 }
 
+// containsFold reports whether list contains s, case-insensitive.
+func containsFold(list []string, s string) bool {
+	for _, v := range list {
+		if strings.EqualFold(v, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// boolFlag reads a boolean annotation from a candidate's Raw outbound map.
+func boolFlag(raw map[string]any, key string) bool {
+	if raw == nil {
+		return false
+	}
+	b, _ := raw[key].(bool)
+	return b
+}
+
+// BoolFlag is the exported form of boolFlag for backends that need to read
+// candidate annotations without reaching into internals.
+func BoolFlag(raw map[string]any, key string) bool { return boolFlag(raw, key) }
+
+// MatchWhitelistHeuristic reports whether a server qualifies for the
+// whitelist/ТСПУ bypass group: Reality VLESS, or explicit whitelist/4g/tspu
+// markers in its name or tag.
+func MatchWhitelistHeuristic(srv proto.Server) bool {
+	nameLower := strings.ToLower(srv.Name + " " + srv.Tag)
+	return strings.Contains(nameLower, "whitelist") || strings.Contains(nameLower, "4g") ||
+		strings.Contains(nameLower, "tspu") || srv.Protocol == proto.ProtoVLESS
+}
+
+// MatchLTEHeuristic reports whether a server fits the Free LTE (mobile
+// carrier whitelist bypass) group.
+func MatchLTEHeuristic(srv proto.Server) bool {
+	if boolFlag(srv.Raw, "mosaic_lte") {
+		return true
+	}
+	return containsAnyFold(srv.Name+" "+srv.Tag+" "+srv.GroupTag, "lte", "4g", "mobile", "tspu")
+}
+
+// containsAnyFold reports whether s contains any of the tokens.
+func containsAnyFold(s string, tokens ...string) bool {
+	lower := strings.ToLower(s)
+	for _, t := range tokens {
+		if strings.Contains(lower, t) {
+			return true
+		}
+	}
+	return false
+}
+
+// candidateFlagMatches honours the provider's boolean annotations for the
+// quality-based smart groups.
+func candidateFlagMatches(groupID string, raw map[string]any) bool {
+	switch groupID {
+	case "auto-stable":
+		b, _ := raw["mosaic_stable"].(bool)
+		return b
+	case "auto-speed":
+		b, _ := raw["mosaic_speed_eligible"].(bool)
+		return b
+	case "auto-lte":
+		s, _ := raw["mosaic_lte"].(bool)
+		return s
+	case "auto-whitelist":
+		_, ok := raw["mosaic_whitelist"]
+		if !ok {
+			return false
+		}
+		b, _ := raw["mosaic_whitelist"].(bool)
+		return b
+	}
+	return false
+}
+
+// matchServerCountryTag checks a server's name/tag for an explicit country
+// token like [DE] or de- so candidates without GeoIP still land correctly.
+func matchServerCountryTag(srv proto.Server, cc string) bool {
+	nameLower := strings.ToLower(srv.Name + " " + srv.Tag + " " + srv.GroupTag)
+	tok := strings.ToLower(cc)
+	for _, part := range strings.FieldsFunc(nameLower, func(r rune) bool {
+		return r == ' ' || r == '-' || r == '_' || r == '[' || r == ']' || r == '|' || r == ':'
+	}) {
+		if part == tok {
+			return true
+		}
+	}
+	return false
+}
+
 func groupCountryFromID(id string) string {
+	lower := strings.ToLower(id)
+	// Named country groups from the provider manifest (germany, canada, ...)
+	for name, cc := range namedCountryGroups {
+		if strings.Contains(lower, name) {
+			return cc
+		}
+	}
 	// extract 2-letter country from group ID like "auto-de", "auto-nl"
 	if len(id) >= 2 {
 		suffix := id[len(id)-2:]
@@ -62,6 +188,29 @@ func groupCountryFromID(id string) string {
 	}
 	return ""
 }
+
+// namedCountryGroups maps provider group-id fragments to ISO countries.
+var namedCountryGroups = map[string]string{
+	"germany":     "DE",
+	"deutschland": "DE",
+	"netherlands": "NL",
+	"holland":     "NL",
+	"usa":         "US",
+	"united-states": "US",
+	"america":     "US",
+	"canada":      "CA",
+	"france":      "FR",
+	"britain":     "GB",
+	"uk-":         "GB",
+	"england":     "GB",
+	"russia":      "RU",
+	"singapore":   "SG",
+	"finland":     "FI",
+}
+
+// GroupCountry is the exported form of groupCountryFromID for backends that
+// resolve a manifest group's target country without reaching into internals.
+func GroupCountry(id string) string { return groupCountryFromID(id) }
 
 // deriveManifestURL converts a subscription URL to its manifest endpoint.
 // e.g. https://sub.zxc1x1.ru/api/sub/{token} → https://sub.zxc1x1.ru/api/manifest.json
@@ -172,6 +321,21 @@ func SynthesizeManifest(subID string, rawServers []proto.Server) proto.Subscript
 		whitelistNodes = allNodes
 	}
 
+	// Quality-based smart groups operate on candidate nodes only: they rank
+	// provider-verified free-pool entries by stability/speed/mobile traits.
+	var stableNodes, speedNodes, lteNodes []proto.ManifestNode
+	for _, srv := range rawServers {
+		node := proto.ManifestNode{ID: srv.ID}
+		switch {
+		case srv.Category == "candidate" && boolFlag(srv.Raw, "mosaic_stable"):
+			stableNodes = append(stableNodes, node)
+		case srv.Category == "candidate" && boolFlag(srv.Raw, "mosaic_speed_eligible"):
+			speedNodes = append(speedNodes, node)
+		case boolFlag(srv.Raw, "mosaic_lte") || containsAnyFold(srv.Name+" "+srv.Tag, "lte", "4g", "mobile"):
+			lteNodes = append(lteNodes, node)
+		}
+	}
+
 	groups := []proto.ManifestGroup{
 		{
 			ID:          "rg-all",
@@ -195,6 +359,45 @@ func SynthesizeManifest(subID string, rawServers []proto.Server) proto.Subscript
 			Icon:        "shield",
 			Description: "Специальный маршрут VLESS Reality через SNI разрешённых гос-сервисов и банков РФ",
 		},
+	}
+	if len(stableNodes) > 0 {
+		groups = append(groups, proto.ManifestGroup{
+			ID:          "auto-stable",
+			Title:       "🛡 Стабильность",
+			Type:        "urltest",
+			Nodes:       stableNodes,
+			UserTier:    proto.TierFree,
+			Badge:       "Рекомендуется",
+			Category:    "smart",
+			Icon:        "verified",
+			Description: "Узлы с высоким показателем успешных подключений",
+		})
+	}
+	if len(speedNodes) > 0 {
+		groups = append(groups, proto.ManifestGroup{
+			ID:          "auto-speed",
+			Title:       "🚀 Максимальная скорость",
+			Type:        "urltest",
+			Nodes:       speedNodes,
+			UserTier:    proto.TierFree,
+			Badge:       "Турбо",
+			Category:    "smart",
+			Icon:        "speed",
+			Description: "Узлы с измеренной высокой пропускной способностью",
+		})
+	}
+	if len(lteNodes) > 0 {
+		groups = append(groups, proto.ManifestGroup{
+			ID:          "auto-lte",
+			Title:       "📱 Free LTE (обход цензуры)",
+			Type:        "urltest",
+			Nodes:       lteNodes,
+			UserTier:    proto.TierFree,
+			Badge:       "4G",
+			Category:    "whitelist",
+			Icon:        "signal_cellular_alt",
+			Description: "Маршруты для мобильных операторов с белыми списками",
+		})
 	}
 
 	if len(deNodes) > 0 {
@@ -330,25 +533,8 @@ func BuildVirtualServersFromManifest(manifest proto.SubscriptionManifest, subID 
 			OutboundTag:    g.ID,
 			Tag:            g.Badge,
 		}
-		switch {
-		case strings.Contains(g.ID, "de"):
-			srv.Country = "DE"
-		case strings.Contains(g.ID, "nl"):
-			srv.Country = "NL"
-		case strings.Contains(g.ID, "us"):
-			srv.Country = "US"
-		case strings.Contains(g.ID, "ca"):
-			srv.Country = "CA"
-		case strings.Contains(g.ID, "fr"):
-			srv.Country = "FR"
-		case strings.Contains(g.ID, "sg"):
-			srv.Country = "SG"
-		case strings.Contains(g.ID, "gb"):
-			srv.Country = "GB"
-		case strings.Contains(g.ID, "fi"):
-			srv.Country = "FI"
-		case strings.Contains(g.ID, "ru"):
-			srv.Country = "RU"
+		if cc := groupCountryFromID(g.ID); cc != "" {
+			srv.Country = cc
 		}
 		list = append(list, srv)
 	}

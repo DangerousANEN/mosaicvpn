@@ -24,7 +24,7 @@ func newAccountServer(t *testing.T) (*store.Store, *httptest.Server, string) {
 		t.Fatal(err)
 	}
 	mb := state.NewMockBackend()
-	mgr := state.New(s, mb, "test")
+	mgr := state.New(s, mb, "test", nil)
 	srv := api.NewServer(s, mgr, nil)
 	hs := httptest.NewServer(srv.Handler())
 	t.Cleanup(hs.Close)
