@@ -605,7 +605,7 @@ class AndroidMosaicAccountService {
     final data = response.data;
     // A JSON feed decoded by dio (Map/List) must never be stringified into a
     // fake share-URI line; re-encode it so the JSON branch below parses it.
-    final Object payload;
+    final String payload;
     if (data is Map || data is List) {
       payload = jsonEncode(data);
     } else {
@@ -643,7 +643,7 @@ class AndroidMosaicAccountService {
     // The feed is a sing-box style JSON document. Depending on the announced
     // content-type dio may hand over a String or an already decoded Map; only
     // primitives are stringified so a Map survives as structured data.
-    final Object payload;
+    final String payload;
     if (data is Map || data is List) {
       payload = jsonEncode(data);
     } else {
