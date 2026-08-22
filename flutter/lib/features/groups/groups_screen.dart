@@ -221,6 +221,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                           onOpenCabinet: _openSubscriptionCabinet,
                           onEdit: _editSubscription,
                           onDelete: _deleteSubscription,
+                          onTestAllRoutes: _testAllRoutesForSource,
                         ),
                         const SizedBox(height: 18),
                       ],
@@ -501,6 +502,81 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       MaterialPageRoute<void>(
         builder: (_) => SubscriptionCabinetScreen(subscription: source),
       ),
+    );
+  }
+
+  /// Runs the latency test for every route of one subscription: physical
+  /// servers through [DaemonApiBase.testServer], Smart Groups through the
+  /// shared group latency runner. Results stream into the same ping column
+  /// used by per-route tests.
+  Future<void> _testAllRoutesForSource(Subscription source) async {
+    if (_activeGroupLatencyTest != null) {
+      _showMessage(
+        'Сначала завершите или остановите активную проверку задержки.',
+        ThemeColors.of(context).warning,
+      );
+      return;
+    }
+    final api = ref.read(daemonApiProvider);
+    final allServers =
+        ref.read(serversProvider).valueOrNull ?? const <Server>[];
+    final scoped = allServers
+        .where((server) => server.subscriptionID == source.id)
+        .toList(growable: false);
+    var done = 0;
+    var reachable = 0;
+    final total = scoped.length;
+    if (!mounted) return;
+    final progressColor = ThemeColors.of(context).textSecondary;
+    _showMessage(
+        total == 0
+            ? 'Нет маршрутов для проверки.'
+            : 'Проверка маршрутов: 0/$total…',
+        progressColor);
+
+    for (final server in scoped) {
+      try {
+        final result = await api.testServer(server.id);
+        if (!result.failed) reachable++;
+      } catch (_) {
+        // A single unreachable route must not stop the sweep.
+      }
+      done++;
+      if (mounted) {
+        setState(() {});
+      }
+      _showMessage('Проверка маршрутов: $done/$total…', progressColor);
+    }
+
+    // Smart Groups of this source (if any) run after the plain servers.
+    ProviderManifest? manifestAsync;
+    if (_isMosaicSubscription(source) && source.id.isNotEmpty) {
+      try {
+        manifestAsync = await ref
+            .read(providerManifestForSubscriptionProvider(source.id).future);
+      } catch (_) {
+        // Manifest failure must not cancel the server sweep results.
+      }
+    }
+    final groups = (manifestAsync?.routes ?? const <ManifestGroup>[])
+        .where((group) => group.category != 'raw' && !group.disabled)
+        .toList(growable: false);
+    for (final group in groups) {
+      try {
+        await _runGroupLatencyTest(group);
+      } catch (_) {
+        // Group failures are already reported by the runner itself.
+      }
+    }
+
+    ref.invalidate(serversProvider);
+    if (!mounted) return;
+    final successColor = ThemeColors.of(context).success;
+    final warningColor = ThemeColors.of(context).warning;
+    _showMessage(
+      'Готово: отвечают $reachable из $total серверов.'
+          '${groups.isEmpty ? '' : ' Группы проверены отдельно.'}',
+      reachable > 0 ? successColor : warningColor,
     );
   }
 
@@ -1245,6 +1321,7 @@ enum _SourceTabAction {
   delete,
   share,
   openCabinet,
+  testAllRoutes,
 }
 
 class _SourceTabs extends StatefulWidget {
@@ -1257,6 +1334,7 @@ class _SourceTabs extends StatefulWidget {
     required this.onOpenCabinet,
     required this.onEdit,
     required this.onDelete,
+    required this.onTestAllRoutes,
   });
 
   final List<Subscription> sources;
@@ -1267,6 +1345,7 @@ class _SourceTabs extends StatefulWidget {
   final ValueChanged<Subscription> onOpenCabinet;
   final Future<void> Function(Subscription source) onEdit;
   final Future<void> Function(Subscription source) onDelete;
+  final Future<void> Function(Subscription source) onTestAllRoutes;
 
   @override
   State<_SourceTabs> createState() => _SourceTabsState();
@@ -1366,6 +1445,9 @@ class _SourceTabsState extends State<_SourceTabs> {
       items: [
         _menuItem(_SourceTabAction.refresh, Icons.refresh_rounded, 'Обновить'),
         _menuItem(
+            _SourceTabAction.testAllRoutes, Icons.network_ping_rounded,
+            'Тест всех маршрутов'),
+        _menuItem(
             _SourceTabAction.copyLink, Icons.link_rounded, 'Копировать ссылку',
             enabled: hasUrl),
         _menuItem(_SourceTabAction.openInBrowser, Icons.open_in_browser_rounded,
@@ -1389,6 +1471,8 @@ class _SourceTabsState extends State<_SourceTabs> {
     switch (action) {
       case _SourceTabAction.refresh:
         await widget.onRefreshSource(source);
+      case _SourceTabAction.testAllRoutes:
+        await widget.onTestAllRoutes(source);
       case _SourceTabAction.copyLink:
         await _copyLink(source);
       case _SourceTabAction.openInBrowser:

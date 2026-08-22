@@ -108,14 +108,23 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             // state right after this call returns. An async startService round
             // trip raced the status check and surfaced as
             // "не удалось изменить подключение" although the VPN did stop.
+            //
+            // ACTION_STOP must use plain startService: the service is already
+            // in the foreground state, and on Android 12+ a background
+            // startForegroundService() call is rejected, which left the old
+            // runtime state visible and produced "runtime не подтвердил
+            // остановку" even though nothing was running anymore.
+            if (runtimeState == "disconnected") return
             val intent = Intent(context, MosaicVpnService::class.java)
                 .setAction(ACTION_STOP)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
+            runCatching { context.startService(intent) }
+                .onFailure { Log.w(TAG, "Unable to deliver stop intent", it) }
+            // A dead service cannot process the intent; tear the state down
+            // locally so callers never observe a stale "connected".
             MosaicVpnService.stopLatch(context)
+            if (runtimeState != "connected") return
+            runtimeState = "disconnected"
+            runtimeError = null
         }
 
         fun validate(context: Context, config: String) {

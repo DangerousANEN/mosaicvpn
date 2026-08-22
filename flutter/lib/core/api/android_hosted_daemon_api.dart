@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -25,6 +27,11 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   static const _localSubscriptionID = 'local-default';
   final _account = AndroidMosaicAccountService.instance;
   Server? _activeRoute;
+
+  /// Candidates of the most recent [getCandidateShard] call, keyed by opaque
+  /// tag. Kept in-memory only: probe results must never outlive the feed that
+  /// defined them, and credentials stay inside the process boundary.
+  Map<String, Map<String, dynamic>> _candidateCache = const {};
 
   /// Reads the per-app split-tunneling lists from stored preferences. Applied
   /// at connect time so preset/profile changes take effect on the next
@@ -182,13 +189,166 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
 
   @override
   Future<void> disconnect() async {
-    final state = await AndroidVpnService.instance.stop();
-    if (state.state != 'disconnected') {
-      throw StateError(state.error?.trim().isNotEmpty == true
-          ? state.error!
-          : 'Android VPN runtime не подтвердил остановку.');
+    // Stopping is best-effort: the native runtime may already be gone (system
+    // killed the foreground service, another VPN took over). Demanding a
+    // confirmed `disconnected` state here surfaced as
+    // "runtime не подтвердил остановку" even though the tunnel was down and
+    // the UI only needed to reflect reality. Poll briefly, then always accept.
+    final vpn = AndroidVpnService.instance;
+    var state = await vpn.stop();
+    final deadline = DateTime.now().add(const Duration(seconds: 3));
+    while (state.state != 'disconnected' &&
+        state.state != 'error' &&
+        DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      state = await vpn.status();
     }
     _activeRoute = null;
+  }
+
+  /// Measures TCP reachability and round-trip time to a server endpoint.
+  /// Android has no loopback mosaicd to run a full sing-box urlTest, so the
+  /// hosted facade probes the real server address directly. A successful
+  /// handshake is genuine evidence the endpoint answers; it cannot validate
+  /// protocol credentials, but it is exactly what a "ping" column promises.
+  Future<int?> _probeTcpLatency(String host, int port) async {
+    if (host.isEmpty || port <= 0 || port > 65535) return null;
+    List<InternetAddress> target = const [];
+    final address = InternetAddress.tryParse(host);
+    if (address != null) {
+      target = [address];
+    } else {
+      try {
+        target = await InternetAddress.lookup(
+          host,
+          type: InternetAddressType.any,
+        );
+      } on SocketException {
+        return null;
+      }
+    }
+    for (final candidate in target) {
+      final watch = Stopwatch()..start();
+      try {
+        final socket = await Socket.connect(
+          candidate,
+          port,
+          timeout: const Duration(seconds: 4),
+        );
+        watch.stop();
+        socket.destroy();
+        return watch.elapsedMilliseconds;
+      } on SocketException {
+        watch.stop();
+      } on TimeoutException {
+        watch.stop();
+      }
+    }
+    return null;
+  }
+
+  (String, int)? _endpointOfShareUri(String importUri) {
+    final uri = Uri.tryParse(importUri.trim());
+    if (uri == null || uri.host.isEmpty) return null;
+    final port = uri.hasPort ? uri.port : 443;
+    return (uri.host, port <= 0 ? 443 : port);
+  }
+
+  @override
+  Future<TestResult> testServer(String id) async {
+    final server = (await listServers()).cast<Server?>().firstWhere(
+          (value) => value?.id == id,
+          orElse: () => null,
+        );
+    if (server == null) {
+      throw StateError('Маршрут не найден. Обновите подписку и повторите.');
+    }
+    final endpoint = _endpointOfShareUri(server.importUri);
+    final latency = endpoint == null
+        ? null
+        : await _probeTcpLatency(endpoint.$1, endpoint.$2);
+    return TestResult(
+      serverID: server.id,
+      serverName: server.name,
+      latencyMS: latency ?? -1,
+      error: latency == null ? 'Сервер не отвечает' : '',
+    );
+  }
+
+  @override
+  Future<List<TestResult>> testAllServers() async {
+    final servers = await listServers();
+    final results = <TestResult>[];
+    for (final server in servers) {
+      final endpoint = _endpointOfShareUri(server.importUri);
+      final latency = endpoint == null
+          ? null
+          : await _probeTcpLatency(endpoint.$1, endpoint.$2);
+      results.add(TestResult(
+        serverID: server.id,
+        serverName: server.name,
+        latencyMS: latency ?? -1,
+        error: latency == null ? 'Сервер не отвечает' : '',
+      ));
+    }
+    return results;
+  }
+
+  /// Downloads the group-scoped candidate feed and exposes its members as
+  /// opaque candidate IDs. Desktop asks a local daemon for this shard; on
+  /// Android the hosted authority serves the same candidates over HTTPS and
+  /// the facade performs the identical membership filtering in-process.
+  @override
+  Future<SmartGroupCandidateShard> getCandidateShard(
+      String groupID, String installationID) async {
+    final resolved = await _resolveMosaicGroup(groupID);
+    final outbounds = await _account.fetchGroupCandidates(
+      resolved.$1.url,
+      groupId: resolved.$2,
+    );
+    if (outbounds.isEmpty) {
+      throw StateError('Для этой Smart Group нет доступных кандидатов.');
+    }
+    _candidateCache = {
+      for (final outbound in outbounds)
+        if (outbound['tag']?.toString().isNotEmpty == true)
+          outbound['tag'].toString(): outbound,
+    };
+    return SmartGroupCandidateShard(
+      groupId: groupID,
+      version: DateTime.now().millisecondsSinceEpoch.toString(),
+      expiresAt: DateTime.now().add(const Duration(minutes: 30)),
+      candidateIds: _candidateCache.keys.toList(growable: false),
+    );
+  }
+
+  /// Probes one opaque candidate by opening a real TCP connection to its
+  /// endpoint. The candidate tag never leaves the device; only aggregate
+  /// quality metrics flow back to the caller, matching the desktop contract.
+  @override
+  Future<SmartGroupProbeResult> probeGroupCandidate(
+      String groupID, String candidateID) async {
+    final outbound = _candidateCache[candidateID];
+    if (outbound == null) {
+      throw StateError(
+          'Кандидат устарел. Запустите проверку задержки ещё раз.');
+    }
+    final host = outbound['server']?.toString() ?? '';
+    final port = int.tryParse(outbound['server_port']?.toString() ?? '') ?? 443;
+    final latency = await _probeTcpLatency(host, port);
+    return SmartGroupProbeResult(
+      groupId: groupID,
+      candidateId: candidateID,
+      successful: latency != null,
+      samples: 1,
+      successes: latency != null ? 1 : 0,
+      lossPercent: latency != null ? 0 : 100,
+      medianLatencyMs: latency ?? 0,
+      p95LatencyMs: latency ?? 0,
+      jitterMs: 0,
+      checkedAt: DateTime.now().toUtc(),
+      probeKind: 'tcp-handshake',
+    );
   }
 
   bool _isMosaicSubscriptionUrl(String value) {

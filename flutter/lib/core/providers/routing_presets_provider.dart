@@ -57,5 +57,25 @@ Future<Preferences> applyRoutingPreset(WidgetRef ref, RoutingPreset preset) asyn
   // setPrefs merges on top of stored JSON and returns the normalized value.
   await api.setPrefs(updated.toJson());
   ref.invalidate(prefsProvider);
+  // The new per-app lists and routing mode live inside the sing-box config:
+  // an active tunnel must rebuild it now, otherwise the preset silently
+  // waits for the user's next manual reconnect.
+  try {
+    final status = await api.getStatus();
+    final routeID = status.server?.id;
+    if (routeID != null && routeID.isNotEmpty) {
+      final wasGroup = status.activeGroupId.isNotEmpty;
+      await api.disconnect();
+      if (wasGroup) {
+        await api.connectGroup(routeID);
+      } else {
+        await api.connect(routeID);
+      }
+      ref.invalidate(vpnStatusProvider);
+    }
+  } catch (_) {
+    // Reconnect failures surface through the normal status polling; the
+    // preset itself is already saved and applies on the next connect.
+  }
   return updated;
 }

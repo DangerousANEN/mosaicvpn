@@ -9,7 +9,6 @@ import '../../core/platform/app_platform.dart';
 import '../../core/services/smart_group_selector.dart';
 import '../../core/i18n/app_strings.dart';
 import '../../core/theme/atlas_theme.dart';
-import 'dashboard_tips.dart';
 
 /// The first screen of MosaicVPN: one calm connection decision, with smart
 /// groups rather than an overwhelming inventory of physical nodes.
@@ -150,35 +149,95 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     List<_RouteChoice> groups,
     _RouteChoice selected,
   ) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _DashboardHeader(
-            onRefresh: () => ref.invalidate(vpnStatusProvider),
-          ),
-          const DashboardTips(),
-          const SizedBox(height: 14),
-          _SubscriptionSelector(
-            subscriptions: subscriptions,
-            selected: selectedSubscription,
-            onChanged: _selectSubscription,
-          ),
-          const SizedBox(height: 18),
-          _ConnectionVisual(status: status, animation: _pulse),
-          const SizedBox(height: 16),
-          _RouteSelector(
-            group: selected,
-            onTap: () => _pickGroup(context, groups, selected),
-          ),
-          const SizedBox(height: 12),
-          _connectionButton(c, status, selected, expand: true),
-          const SizedBox(height: 12),
-          _ProtectionRow(status: status),
-          const SizedBox(height: 22),
-          _HowItWorksCard(compact: true),
-        ],
+    final s = AppStrings.of(context);
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _DashboardHeader(onRefresh: () => ref.invalidate(vpnStatusProvider)),
+            const SizedBox(height: 10),
+            Expanded(
+              child: _ConnectionHeroCard(
+                status: status,
+                animation: _pulse,
+                routeTitle: selected.title,
+                routeSubtitle: selected.subtitle.isEmpty
+                    ? s.t('route_picker_hint')
+                    : selected.subtitle,
+                onPickRoute:
+                    groups.length > 1 ? () => _pickGroup(context, groups, selected) : null,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (groups.length > 1) ...[
+              SizedBox(
+                height: 40,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: groups.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, index) {
+                    final group = groups[index];
+                    final active = group.id == selected.id;
+                    return Semantics(
+                      button: true,
+                      label: 'Выбрать маршрут ${group.title}',
+                      child: Material(
+                        color: active
+                            ? AtlasTheme.accent
+                            : c.bgCard,
+                        borderRadius: BorderRadius.circular(20),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(20),
+                          onTap: group.disabled ? null : () {
+                            setState(() => _selectedGroupId = group.id);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 13),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: active
+                                    ? AtlasTheme.accent
+                                    : c.border,
+                              ),
+                            ),
+                            alignment: Alignment.center,
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(_chipIcon(group.icon),
+                                  size: 15,
+                                  color: active
+                                      ? AtlasTheme.onAccent
+                                      : c.textSecondary),
+                              const SizedBox(width: 6),
+                              Text(group.title,
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: active
+                                        ? AtlasTheme.onAccent
+                                        : group.disabled
+                                            ? c.textMuted
+                                            : c.textPrimary,
+                                  )),
+                            ]),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            _connectionButton(c, status, selected, expand: true),
+            const SizedBox(height: 10),
+            _ProtectionRow(status: status),
+          ],
+        ),
       ),
     );
   }
@@ -890,8 +949,7 @@ class _SectionTitle extends StatelessWidget {
 }
 
 class _HowItWorksCard extends StatelessWidget {
-  final bool compact;
-  const _HowItWorksCard({this.compact = false});
+  const _HowItWorksCard();
 
   @override
   Widget build(BuildContext context) {
@@ -899,12 +957,12 @@ class _HowItWorksCard extends StatelessWidget {
     final s = AppStrings.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: c.bgElevated.withValues(alpha: compact ? .52 : .72),
+        color: c.bgElevated.withValues(alpha: .72),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: c.border.withValues(alpha: .75)),
       ),
       child: Padding(
-        padding: EdgeInsets.all(compact ? 16 : 18),
+        padding: const EdgeInsets.all(18),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1024,6 +1082,228 @@ class _ConnectionVisual extends StatelessWidget {
   }
 }
 
+/// The dashboard's main surface: a large status ring with the connected
+/// route, a device→shield→globe mini-diagram and the primary action. It is
+/// deliberately the only tall element so everything fits without scrolling.
+class _ConnectionHeroCard extends StatelessWidget {
+  final VpnStatus status;
+  final Animation<double> animation;
+  final String routeTitle;
+  final String routeSubtitle;
+  final VoidCallback? onPickRoute;
+
+  const _ConnectionHeroCard({
+    required this.status,
+    required this.animation,
+    required this.routeTitle,
+    required this.routeSubtitle,
+    this.onPickRoute,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeColors.of(context);
+    final s = AppStrings.of(context);
+    final connected = status.isConnected;
+    final connecting = status.isConnecting;
+    final tint = connected
+        ? c.success
+        : connecting
+            ? AtlasTheme.accent
+            : c.textMuted;
+    final title = connected
+        ? s.t('connected')
+        : connecting
+            ? s.t('status_connecting')
+            : s.t('status_disconnected');
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, _) => DecoratedBox(
+        decoration: BoxDecoration(
+          color: c.bgCard,
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(color: tint.withValues(alpha: .35)),
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Positioned.fill(
+              child: CustomPaint(
+                painter: _TunnelDiagramPainter(
+                  progress: animation.value,
+                  color: tint,
+                  active: connected || connecting,
+                ),
+              ),
+            ),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 148,
+                  height: 148,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      SizedBox(
+                        width: 148,
+                        height: 148,
+                        child: CustomPaint(
+                          painter: _StatusRingPainter(
+                            progress: animation.value,
+                            color: tint,
+                            active: connected || connecting,
+                          ),
+                        ),
+                      ),
+                      Icon(
+                        connected
+                            ? Icons.lock_outline_rounded
+                            : connecting
+                                ? Icons.route_outlined
+                                : Icons.power_settings_new_rounded,
+                        color: tint,
+                        size: 46,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(title,
+                    style: TextStyle(
+                        color: c.textPrimary,
+                        fontFamily: AtlasTheme.serifFamily,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700)),
+                const SizedBox(height: 4),
+                Text(connected || connecting ? routeTitle : routeSubtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style:
+                        TextStyle(color: c.textSecondary, fontSize: 12.5)),
+                if (connected && (status.latencyMS > 0)) ...[
+                  const SizedBox(height: 2),
+                  Text('${status.latencyMS} мс',
+                      style:
+                          TextStyle(color: tint, fontSize: 11.5)),
+                ],
+                if (onPickRoute != null && !connecting) ...[
+                  const SizedBox(height: 10),
+                  TextButton.icon(
+                    onPressed: onPickRoute,
+                    icon: Icon(Icons.tune_rounded,
+                        size: 16, color: AtlasTheme.accent),
+                    label: Text(s.t('route_picker'),
+                        style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: AtlasTheme.accent)),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Device → tunnel shield → globe diagram. When connected, animated packets
+/// travel along the path; when disconnected the same path renders dimmed.
+class _TunnelDiagramPainter extends CustomPainter {
+  final double progress;
+  final Color color;
+  final bool active;
+  _TunnelDiagramPainter({
+    required this.progress,
+    required this.color,
+    required this.active,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final startY = Offset(size.width * .12, size.height * .78);
+    final shieldY = Offset(size.width * .5, size.height * .30);
+    final endY = Offset(size.width * .88, size.height * .78);
+    final path = Path()
+      ..moveTo(startY.dx, startY.dy)
+      ..quadraticBezierTo(shieldY.dx, shieldY.dy - 40, endY.dx, endY.dy);
+    // Tunnel body
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color.withValues(alpha: active ? .30 : .12)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3
+        ..strokeCap = StrokeCap.round,
+    );
+    // Endpoints
+    final nodePaint = Paint()..color = color.withValues(alpha: .55);
+    canvas.drawCircle(startY, 5, nodePaint);
+    canvas.drawCircle(endY, 5, nodePaint);
+    canvas.drawCircle(shieldY, 6, Paint()..color = color.withValues(alpha: .8));
+    // Travelling packets while active
+    if (!active) return;
+    for (var i = 0; i < 3; i++) {
+      final phase = (progress + i / 3) % 1;
+      final metric = path.computeMetrics().first;
+      final point = metric.getTangentForOffset(metric.length * phase)!.position;
+      canvas.drawCircle(point, 3,
+          Paint()..color = color.withValues(alpha: (1 - phase) * .9));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _TunnelDiagramPainter old) =>
+      old.progress != progress ||
+      old.color != color ||
+      old.active != active;
+}
+
+/// Expanding pulse ring around the hero status icon.
+class _StatusRingPainter extends CustomPainter {
+  final double progress;
+  final Color color;
+  final bool active;
+  _StatusRingPainter({
+    required this.progress,
+    required this.color,
+    required this.active,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final base = Paint()
+      ..color = color.withValues(alpha: active ? .75 : .35)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3;
+    canvas.drawCircle(center, size.width / 2 - 6, base);
+    if (!active) return;
+    for (var i = 0; i < 2; i++) {
+      final phase = (progress + i / 2) % 1;
+      final radius = (size.width / 2 - 6) + phase * 16;
+      canvas.drawCircle(
+        center,
+        radius,
+        Paint()
+          ..color = color.withValues(alpha: (1 - phase) * .28)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _StatusRingPainter old) =>
+      old.progress != progress ||
+      old.color != color ||
+      old.active != active;
+}
+
+/// Expanding pulse ring behind the desktop `_ConnectionVisual` icon.
 class _RoutePulsePainter extends CustomPainter {
   final double progress;
   final Color color;
@@ -1067,6 +1347,14 @@ class _RoutePulsePainter extends CustomPainter {
   bool shouldRepaint(covariant _RoutePulsePainter old) =>
       old.progress != progress || old.color != color || old.active != active;
 }
+
+IconData _chipIcon(String raw) => switch (raw) {
+      'lightning' => Icons.bolt_rounded,
+      'speed' => Icons.speed_rounded,
+      'shield' => Icons.shield_outlined,
+      'node' => Icons.dns_outlined,
+      _ => Icons.public_rounded,
+    };
 
 class _RouteSelector extends StatelessWidget {
   final _RouteChoice group;

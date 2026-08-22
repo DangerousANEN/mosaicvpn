@@ -1486,6 +1486,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       final api = ref.read(daemonApiProvider);
       await api.setPrefs(updated.toJson());
       ref.invalidate(prefsProvider);
+      // Settings that shape the sing-box config (split tunneling, MTU, DNS,
+      // engine…) only take effect when the runtime rebuilds its config. When
+      // a tunnel is up, reconnect automatically so the change is really
+      // applied instead of silently waiting for the next manual connect.
+      if (_requiresRuntimeRestart(prefs, updated) &&
+          updated.autoReconnectOnSettings) {
+        await _reconnectActiveRoute();
+      }
     } catch (e) {
       // A setting that the runtime rejected must not remain visually enabled.
       // Revert to the last confirmed daemon preferences and explain the cause.
@@ -1507,6 +1515,56 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   // ── Phase 2.5: Backup / Restore handlers ───────────────────────────
+  /// True when at least one changed preference participates in the sing-box
+  /// config build and therefore needs a tunnel restart to take effect.
+  bool _requiresRuntimeRestart(Preferences before, Preferences after) {
+    bool listChanged(List<String> a, List<String> b) =>
+        a.length != b.length || !{for (final v in a) v: true}.keys
+            .toSet()
+            .containsAll(b.toSet());
+    return before.tunnelMode != after.tunnelMode ||
+        before.tunStack != after.tunStack ||
+        before.mtu != after.mtu ||
+        before.killSwitch != after.killSwitch ||
+        before.allowLAN != after.allowLAN ||
+        before.blockIPv6 != after.blockIPv6 ||
+        before.dnsMode != after.dnsMode ||
+        before.dnsProxied != after.dnsProxied ||
+        before.dnsProvider != after.dnsProvider ||
+        before.coreEngine != after.coreEngine ||
+        before.routingMode != after.routingMode ||
+        before.splitTunnelMode != after.splitTunnelMode ||
+        before.mixedPort != after.mixedPort ||
+        before.fragmentationDefense != after.fragmentationDefense ||
+        before.proxyPackages.length != after.proxyPackages.length ||
+        before.bypassProcesses.length != after.bypassProcesses.length ||
+        listChanged(before.splitTunnelApps, after.splitTunnelApps) ||
+        listChanged(before.splitTunnelDomains, after.splitTunnelDomains);
+  }
+
+  /// Restarts the active tunnel so freshly saved preferences apply at once.
+  Future<void> _reconnectActiveRoute() async {
+    final api = ref.read(daemonApiProvider);
+    try {
+      final status = await api.getStatus();
+      final routeID = status.server?.id;
+      if (routeID == null || routeID.isEmpty) return;
+      final wasGroup = status.activeGroupId.isNotEmpty;
+      await api.disconnect();
+      if (wasGroup) {
+        await api.connectGroup(routeID);
+      } else {
+        await api.connect(routeID);
+      }
+      ref.invalidate(vpnStatusProvider);
+      if (!mounted) return;
+      _showSnack('Настройки применены: подключение перезапущено.');
+    } catch (_) {
+      // A failed reconnect must not roll the just-saved settings back; the
+      // user sees the tunnel state on the dashboard and can retry manually.
+    }
+  }
+
   Future<void> _exportConfig(Preferences prefs) async {
     final s = AppStrings.of(context);
     final api = ref.read(daemonApiProvider);

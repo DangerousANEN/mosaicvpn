@@ -72,6 +72,10 @@ class Preferences {
   final bool
       includeSubscriptions; // include subscription URLs in export (sensitive)
 
+  /// When true (default) an active tunnel restarts itself after saving a
+  /// preference that shapes the sing-box config, so the change applies at once.
+  final bool autoReconnectOnSettings;
+
   Preferences({
     this.tunnelMode = 'tun',
     this.tunStack = 'system',
@@ -136,6 +140,7 @@ class Preferences {
     this.backupPath = '',
     this.autoBackupInterval = 0,
     this.includeSubscriptions = true,
+    this.autoReconnectOnSettings = true,
   });
 
   factory Preferences.fromJson(Map<String, dynamic> j) => Preferences(
@@ -203,6 +208,7 @@ class Preferences {
         backupPath: j['backup_path'] ?? '',
         autoBackupInterval: j['auto_backup_interval'] ?? 0,
         includeSubscriptions: j['include_subscriptions'] ?? true,
+        autoReconnectOnSettings: j['auto_reconnect_on_settings'] ?? true,
       );
 
   Map<String, dynamic> toJson() => {
@@ -267,6 +273,7 @@ class Preferences {
         'backup_path': backupPath,
         'auto_backup_interval': autoBackupInterval,
         'include_subscriptions': includeSubscriptions,
+        'auto_reconnect_on_settings': autoReconnectOnSettings,
       };
 
   Preferences copyWith({
@@ -331,6 +338,7 @@ class Preferences {
     String? backupPath,
     int? autoBackupInterval,
     bool? includeSubscriptions,
+    bool? autoReconnectOnSettings,
   }) =>
       Preferences(
         tunnelMode: tunnelMode ?? this.tunnelMode,
@@ -394,6 +402,8 @@ class Preferences {
         backupPath: backupPath ?? this.backupPath,
         autoBackupInterval: autoBackupInterval ?? this.autoBackupInterval,
         includeSubscriptions: includeSubscriptions ?? this.includeSubscriptions,
+        autoReconnectOnSettings:
+            autoReconnectOnSettings ?? this.autoReconnectOnSettings,
       );
 }
 

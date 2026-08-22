@@ -38,9 +38,7 @@ class DaemonLauncher {
   }) {
     final paths = <String>[];
     final configured = environment['MOSAIC_DAEMON_PATH'];
-    if (configured != null &&
-        configured.isNotEmpty &&
-        File(configured).isAbsolute) {
+    if (configured != null && configured.isNotEmpty && _isAbsolutePath(configured)) {
       paths.add(configured);
     }
 
@@ -60,6 +58,19 @@ class DaemonLauncher {
     }
 
     return paths.toSet().toList(growable: false);
+  }
+
+  /// POSIX and Windows absolute paths are both accepted regardless of the
+  /// host OS: a deployment override written for the target platform must not
+  /// be dropped just because tests or the launcher run on another one.
+  static bool _isAbsolutePath(String value) {
+    if (value.startsWith('/')) return true;
+    if (value.length >= 3 && value.codeUnitAt(1) == 58 /* : */) {
+      final drive = value[0].toLowerCase();
+      return drive.codeUnitAt(0) >= 0x61 && drive.codeUnitAt(0) <= 0x7A;
+    }
+    if (value.startsWith(r'\\')) return true;
+    return false;
   }
 
   /// Returns the portable data directory when this executable is a portable

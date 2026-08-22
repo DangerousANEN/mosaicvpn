@@ -632,6 +632,27 @@ class AndroidMosaicAccountService {
     List<String> bypassPackages = const [],
     List<String> proxyPackages = const [],
   }) async {
+    final outbounds =
+        await fetchGroupCandidates(subscriptionUrl, groupId: groupId);
+    if (outbounds.isEmpty) {
+      throw StateError(
+          'Сервис не вернул кандидатов для выбранной Smart Group.');
+    }
+    return _buildTunConfig(
+      outbounds,
+      bypassPackages: bypassPackages,
+      proxyPackages: proxyPackages,
+    );
+  }
+
+  /// Fetches the candidate feed of [subscriptionUrl] and returns the outbound
+  /// entries belonging to [groupId] (normalized `mosaic_group_ids` matching).
+  /// Shared by the TUN config builder and the Android latency-test facade so
+  /// both always agree on what a Smart Group contains.
+  Future<List<Map<String, dynamic>>> fetchGroupCandidates(
+    String subscriptionUrl, {
+    required String groupId,
+  }) async {
     final uri = Uri.tryParse(subscriptionUrl.trim());
     if (uri == null || !uri.isScheme('https') || uri.pathSegments.length != 1) {
       throw const FormatException('Не удалось определить ссылку MosaicVPN.');
@@ -656,11 +677,78 @@ class AndroidMosaicAccountService {
       payload = data?.toString().trim() ?? '';
     }
     if (payload.isEmpty) {
-      throw StateError(
-          'Сервис не вернул кандидатов для выбранной Smart Group.');
+      return const [];
     }
-    return buildNativeTunConfigFromSubscriptionPayload(payload,
-        groupId: groupId);
+    final decodedConfig = _decodeCandidateDocument(payload);
+    final rawOutbounds = decodedConfig?['outbounds'];
+    if (rawOutbounds is! List) return const [];
+    String normalize(String value) =>
+        value.toLowerCase().replaceAll('_', '-');
+    final wanted = normalize(groupId);
+    final hasMembershipMetadata = <bool>[];
+    final members = <Map<String, dynamic>>[];
+    for (final value in rawOutbounds) {
+      if (value is! Map) continue;
+      final outbound = Map<String, dynamic>.from(value);
+      final rawGroupIDs = outbound.remove('mosaic_group_ids') ??
+          outbound.remove('mosaic_candidate_groups');
+      final groupIDs = rawGroupIDs is List
+          ? rawGroupIDs.map((value) => value.toString()).toSet()
+          : <String>{};
+      outbound.removeWhere((key, _) => key.toString().startsWith('mosaic_'));
+      final tag = outbound['tag']?.toString() ?? '';
+      final type = outbound['type']?.toString() ?? '';
+      if (tag.isEmpty ||
+          type.isEmpty ||
+          type == 'direct' ||
+          type == 'block' ||
+          type == 'dns' ||
+          type == 'urltest' ||
+          type == 'selector') {
+        continue;
+      }
+      final matches = groupIDs.any((id) => normalize(id) == wanted);
+      hasMembershipMetadata.add(groupIDs.isNotEmpty);
+      if (matches) members.add(outbound);
+    }
+    // Compatibility with older Remnawave feeds that cannot carry custom
+    // membership metadata: every usable outbound becomes a group candidate.
+    if (members.isEmpty && !hasMembershipMetadata.any((value) => value)) {
+      return rawOutbounds
+          .whereType<Map>()
+          .map((value) => Map<String, dynamic>.from(value))
+          .where((outbound) =>
+              (outbound['tag']?.toString().isNotEmpty == true) &&
+              !const ['direct', 'block', 'dns', 'urltest', 'selector']
+                  .contains(outbound['type']?.toString()))
+          .toList(growable: false);
+    }
+    return members;
+  }
+
+  /// Decodes a candidate document: raw sing-box JSON or base64 share lines
+  /// wrapped into a synthetic config. Returns null when nothing parses.
+  static Map<String, dynamic>? _decodeCandidateDocument(String payload) {
+    final compact = payload.trim();
+    if (compact.startsWith('{')) {
+      try {
+        final decoded = jsonDecode(compact);
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      } on FormatException {
+        return null;
+      }
+    }
+    try {
+      final normalized = base64.normalize(compact.replaceAll(RegExp(r'\s+'), ''));
+      final text = utf8.decode(base64Decode(normalized), allowMalformed: false);
+      if (text.trim().startsWith('{')) {
+        final decoded = jsonDecode(text);
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      }
+    } on FormatException {
+      // Not a base64 JSON document; treat as unsupported legacy feed.
+    }
+    return null;
   }
 
   /// Downloads the authenticated opaque feed only for the legacy account
