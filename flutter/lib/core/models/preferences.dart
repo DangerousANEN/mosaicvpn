@@ -10,6 +10,10 @@ class Preferences {
   final bool killSwitch;
   final bool allowLAN;
   final List<String> bypassProcesses;
+
+  /// Android packages forced THROUGH the tunnel in rule mode (Exclave-style
+  /// per-app split tunneling). Empty means "no per-package proxy rules".
+  final List<String> proxyPackages;
   final bool blockIPv6;
   final String dnsMode; // "fake-ip" | "real-ip"
   final String dnsProxied;
@@ -78,6 +82,7 @@ class Preferences {
     this.killSwitch = true,
     this.allowLAN = true,
     this.bypassProcesses = const [],
+    this.proxyPackages = const [],
     this.blockIPv6 = false,
     this.dnsMode = 'fake-ip',
     this.dnsProxied = 'https://1.1.1.1/dns-query',
@@ -143,6 +148,7 @@ class Preferences {
         killSwitch: j['kill_switch'] ?? true,
         allowLAN: j['allow_lan'] ?? true,
         bypassProcesses: (j['bypass_processes'] as List?)?.cast<String>() ?? [],
+        proxyPackages: (j['proxy_packages'] as List?)?.cast<String>() ?? [],
         blockIPv6: j['block_ipv6'] ?? false,
         dnsMode: j['dns_mode'] ?? 'fake-ip',
         dnsProxied: j['dns_proxied'] ?? 'https://1.1.1.1/dns-query',
@@ -209,6 +215,7 @@ class Preferences {
         'kill_switch': killSwitch,
         'allow_lan': allowLAN,
         'bypass_processes': bypassProcesses,
+        'proxy_packages': proxyPackages,
         'block_ipv6': blockIPv6,
         'dns_mode': dnsMode,
         'dns_proxied': dnsProxied,
@@ -272,6 +279,7 @@ class Preferences {
     bool? killSwitch,
     bool? allowLAN,
     List<String>? bypassProcesses,
+    List<String>? proxyPackages,
     bool? blockIPv6,
     String? dnsMode,
     String? dnsProxied,
@@ -334,6 +342,7 @@ class Preferences {
         killSwitch: killSwitch ?? this.killSwitch,
         allowLAN: allowLAN ?? this.allowLAN,
         bypassProcesses: bypassProcesses ?? this.bypassProcesses,
+        proxyPackages: proxyPackages ?? this.proxyPackages,
         blockIPv6: blockIPv6 ?? this.blockIPv6,
         dnsMode: dnsMode ?? this.dnsMode,
         dnsProxied: dnsProxied ?? this.dnsProxied,

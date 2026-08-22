@@ -62,6 +62,10 @@ class MainActivity : FlutterActivity() {
                 result.success(MosaicVpnService.status())
             }
             "status" -> result.success(MosaicVpnService.status())
+            "readNativeLogs" -> {
+                val after = (call.argument<Any>("afterSeq") as? Number)?.toLong() ?: 0L
+                result.success(MosaicVpnService.snapshotNativeLogs(after))
+            }
             "consumeAuthCallback" -> {
                 val callback = pendingAuthCallback
                 pendingAuthCallback = null

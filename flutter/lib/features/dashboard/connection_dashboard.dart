@@ -9,6 +9,7 @@ import '../../core/platform/app_platform.dart';
 import '../../core/services/smart_group_selector.dart';
 import '../../core/i18n/app_strings.dart';
 import '../../core/theme/atlas_theme.dart';
+import 'dashboard_tips.dart';
 
 /// The first screen of MosaicVPN: one calm connection decision, with smart
 /// groups rather than an overwhelming inventory of physical nodes.
@@ -85,10 +86,21 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
         !groups.any((group) => group.id == _selectedGroupId)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && groups.isNotEmpty) {
+          // A connected route always wins the initial selection so the
+          // dashboard reflects the route actually chosen on the Routes screen
+          // instead of defaulting to the first row.
+          final status = ref.read(vpnStatusProvider).valueOrNull;
+          final activeId = status?.server?.id;
+          final connected =
+              activeId != null ? groups.where((g) => g.id == activeId) : null;
           final firstEnabled = groups.where((group) => !group.disabled);
-          setState(() => _selectedGroupId = firstEnabled.isNotEmpty
-              ? firstEnabled.first.id
-              : groups.first.id);
+          setState(() {
+            _selectedGroupId = connected?.isNotEmpty == true
+                ? connected!.first.id
+                : firstEnabled.isNotEmpty
+                    ? firstEnabled.first.id
+                    : groups.first.id;
+          });
         }
       });
     }
@@ -146,6 +158,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
           _DashboardHeader(
             onRefresh: () => ref.invalidate(vpnStatusProvider),
           ),
+          const DashboardTips(),
           const SizedBox(height: 14),
           _SubscriptionSelector(
             subscriptions: subscriptions,

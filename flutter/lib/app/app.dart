@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/theme/atlas_theme.dart';
 import '../core/providers/vpn_providers.dart';
+import '../features/onboarding/onboarding_wizard.dart';
 import 'app_shell.dart';
 
 /// Root app widget.
@@ -17,6 +19,7 @@ class MosaicApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeProvider);
     final language = ref.watch(languageProvider);
+    final onboarding = ref.watch(onboardingProvider);
 
     final ThemeMode mode;
     switch (themeMode) {
@@ -55,7 +58,22 @@ class MosaicApp extends ConsumerWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      home: const AppShell(),
+      home: onboarding.when(
+        data: (needed) => needed
+            ? OnboardingWizard(
+                onDone: () => ref.invalidate(onboardingProvider),
+              )
+            : const AppShell(),
+        loading: () => const AppShell(),
+        error: (_, __) => const AppShell(),
+      ),
     );
   }
 }
+
+/// Whether the first-launch setup wizard should run. Android-only for now:
+/// desktop builds already target power users.
+final onboardingProvider = FutureProvider<bool>((ref) async {
+  final storage = await SharedPreferences.getInstance();
+  return !(storage.getBool('mosaic.onboarding_done.v1') ?? false);
+});

@@ -26,6 +26,27 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   final _account = AndroidMosaicAccountService.instance;
   Server? _activeRoute;
 
+  /// Reads the per-app split-tunneling lists from stored preferences. Applied
+  /// at connect time so preset/profile changes take effect on the next
+  /// connection without a daemon restart.
+  Future<({List<String> bypassPackages, List<String> proxyPackages})>
+      _readPerAppLists() async {
+    try {
+      final prefs = await getPrefs();
+      return (
+        bypassPackages: prefs.bypassProcesses,
+        proxyPackages: prefs.proxyPackages,
+      );
+    } catch (_) {
+      return (bypassPackages: const <String>[], proxyPackages: const <String>[]);
+    }
+  }
+
+  /// The route the native runtime is currently connected to, or `null`.
+  /// Exposed for the status poller so the dashboard and the Routes screen
+  /// highlight the same, actually connected row.
+  Server? get activeRoute => _activeRoute;
+
   /// Starts Android's native TUN runtime and commits a connected route only
   /// after the service reports its terminal `connected` state. This must never
   /// call desktop-only daemon methods: Android has no loopback mosaicd.
@@ -51,6 +72,34 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     _activeRoute = route;
   }
 
+  /// Streams native runtime log lines into the shared logs screen. The libbox
+  /// event stream is not wired on the hosted Android facade, so the screen is
+  /// fed from the incremental native log buffer keyed by sequence numbers.
+  @override
+  Stream<(String, Map<String, dynamic>)> events() async* {
+    final vpn = AndroidVpnService.instance;
+    var afterSeq = 0;
+    while (true) {
+      try {
+        final batch = await vpn.readNativeLogs(afterSeq: afterSeq);
+        afterSeq = batch.lastSeq;
+        for (final (seq, line) in batch.lines) {
+          final level = line.startsWith('error:') ? 'ERROR' : 'INFO';
+          yield ('log', {'level': level, 'msg': line, 'seq': seq});
+        }
+      } catch (_) {
+        yield (
+          'log',
+          {
+            'level': 'WARNING',
+            'msg': 'Нативный журнал недоступен (runtime не запущен).'
+          }
+        );
+        await Future<void>.delayed(const Duration(seconds: 2));
+      }
+    }
+  }
+
   @override
   Future<VpnStatus> getStatus() async {
     final state = await AndroidVpnService.instance.status();
@@ -66,6 +115,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
 
   @override
   Future<void> connect(String serverID) async {
+    final perApp = await _readPerAppLists();
     final server = (await listServers()).cast<Server?>().firstWhere(
           (value) => value?.id == serverID,
           orElse: () => null,
@@ -79,12 +129,17 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       throw StateError('Этот маршрут не содержит конфигурации для Android.');
     }
     final config =
-        AndroidMosaicAccountService.buildNativeTunConfigFromShareUri(importUri);
+        AndroidMosaicAccountService.buildNativeTunConfigFromShareUri(
+      importUri,
+      bypassPackages: perApp.bypassPackages,
+      proxyPackages: perApp.proxyPackages,
+    );
     await _startNativeRoute(config: config, route: server);
   }
 
   @override
   Future<void> connectGroup(String groupID) async {
+    final perApp = await _readPerAppLists();
     final resolved = await _resolveMosaicGroup(groupID);
     final manifest = await getProviderManifest(subscriptionId: resolved.$1.id);
     final group = manifest.routes.cast<ManifestGroup?>().firstWhere(
@@ -103,10 +158,14 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     final config = group.routeType == 'direct'
         ? await _account.buildNativeTunConfigFromSubscriptionUrl(
             resolved.$1.url,
+            bypassPackages: perApp.bypassPackages,
+            proxyPackages: perApp.proxyPackages,
           )
         : await _account.buildNativeTunConfigFromScopedCandidates(
             resolved.$1.url,
             groupId: resolved.$2,
+            bypassPackages: perApp.bypassPackages,
+            proxyPackages: perApp.proxyPackages,
           );
     await _startNativeRoute(
       config: config,
@@ -495,7 +554,49 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       (value) => value.id == id,
       orElse: () => throw StateError('Подписка не найдена.'),
     );
+    // Mosaic sources expose their route count through the capability manifest;
+    // physical feed rows are intentionally hidden, so the stored counter must
+    // come from the manifest instead of the (never parsed) share-URI list.
+    if (_isMosaicSubscription(current)) {
+      try {
+        final manifest = await _account.getProviderManifest();
+        final visible =
+            manifest.routes.where((group) => group.category != 'raw').length;
+        if (visible != current.serverCount) {
+          final updated = Subscription(
+            id: current.id,
+            name: current.name,
+            url: current.url,
+            autoRefresh: current.autoRefresh,
+            refreshIntervalSeconds: current.refreshIntervalSeconds,
+            serverCount: visible,
+            lastFetched: DateTime.now(),
+            hasError: current.hasError,
+            lastError: current.lastError,
+            source: current.source,
+            providerId: current.providerId,
+            providerAccountId: current.providerAccountId,
+            hidePhysicalNodes: current.hidePhysicalNodes,
+          );
+          return _updateStoredSubscription(current, (_) => updated);
+        }
+      } catch (_) {
+        // Keep the previous counter on a transient manifest failure.
+      }
+    }
     return current;
+  }
+
+  Future<Subscription> _updateStoredSubscription(
+      Subscription current, Subscription Function(Subscription) transform) async {
+    final updated = transform(current);
+    final stored = await _readLocalSubscriptions();
+    final index = stored.indexWhere((value) => value.id == current.id);
+    if (index >= 0) {
+      stored[index] = updated;
+      await _writeLocalSubscriptions(stored);
+    }
+    return updated;
   }
 
   @override

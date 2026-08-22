@@ -114,6 +114,28 @@ class AndroidVpnService {
     return AndroidVpnRuntimeState.fromMap(raw ?? const {});
   }
 
+  /// Returns native runtime log lines newer than [afterSeq] together with the
+  /// current high-water mark. The libbox event stream is not wired on the
+  /// Android hosted facade, so this incremental snapshot is what the in-app
+  /// logs screen renders on Android.
+  Future<({List<(int, String)> lines, int lastSeq})> readNativeLogs(
+      {int afterSeq = 0}) async {
+    _ensureSupported();
+    final raw = await _channel
+        .invokeListMethod<Map<Object?, Object?>>('readNativeLogs', {
+      'afterSeq': afterSeq,
+    });
+    final lines = <(int, String)>[];
+    var last = afterSeq;
+    for (final entry in raw ?? const <Map<Object?, Object?>>[]) {
+      final seq = (entry['seq'] as num?)?.toInt() ?? 0;
+      final line = entry['line']?.toString() ?? '';
+      lines.add((seq, line));
+      if (seq > last) last = seq;
+    }
+    return (lines: lines, lastSeq: last);
+  }
+
   Future<void> validateConfig(String singBoxConfig) async {
     _ensureSupported();
     await _channel

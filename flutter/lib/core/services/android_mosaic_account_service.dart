@@ -593,6 +593,8 @@ class AndroidMosaicAccountService {
   Future<String> buildNativeTunConfigFromSubscriptionUrl(
     String subscriptionUrl, {
     String? groupId,
+    List<String> bypassPackages = const [],
+    List<String> proxyPackages = const [],
   }) async {
     final uri = Uri.tryParse(subscriptionUrl.trim());
     if (uri == null || !uri.hasScheme || !uri.isScheme('https')) {
@@ -616,7 +618,9 @@ class AndroidMosaicAccountService {
           'Подписка не вернула конфигурацию для этого устройства.');
     }
     return buildNativeTunConfigFromSubscriptionPayload(payload,
-        groupId: groupId);
+        groupId: groupId,
+        bypassPackages: bypassPackages,
+        proxyPackages: proxyPackages);
   }
 
   /// Smart Groups never parse the ordinary direct subscription row. The
@@ -625,6 +629,8 @@ class AndroidMosaicAccountService {
   Future<String> buildNativeTunConfigFromScopedCandidates(
     String subscriptionUrl, {
     required String groupId,
+    List<String> bypassPackages = const [],
+    List<String> proxyPackages = const [],
   }) async {
     final uri = Uri.tryParse(subscriptionUrl.trim());
     if (uri == null || !uri.isScheme('https') || uri.pathSegments.length != 1) {
@@ -722,9 +728,17 @@ class AndroidMosaicAccountService {
   /// Builds a TUN config from a single user-imported share URI. This path is
   /// used only for local/user subscriptions; Mosaic direct routes retain the
   /// generic automatic selection and never reveal private pool members.
-  static String buildNativeTunConfigFromShareUri(String shareUri) {
+  static String buildNativeTunConfigFromShareUri(
+    String shareUri, {
+    List<String> bypassPackages = const [],
+    List<String> proxyPackages = const [],
+  }) {
     final outbound = _outboundFromShareUri(shareUri);
-    return _buildTunConfig(<Map<String, dynamic>>[outbound]);
+    return _buildTunConfig(
+      <Map<String, dynamic>>[outbound],
+      bypassPackages: bypassPackages,
+      proxyPackages: proxyPackages,
+    );
   }
 
   /// Converts a downloaded subscription payload into a complete native TUN
@@ -733,10 +747,22 @@ class AndroidMosaicAccountService {
   static String buildNativeTunConfigFromSubscriptionPayload(
     String payload, {
     String? groupId,
+    List<String> bypassPackages = const [],
+    List<String> proxyPackages = const [],
   }) =>
-      _withAndroidTunInbound(payload, groupId: groupId);
+      _withAndroidTunInbound(
+        payload,
+        groupId: groupId,
+        bypassPackages: bypassPackages,
+        proxyPackages: proxyPackages,
+      );
 
-  static String _withAndroidTunInbound(String payload, {String? groupId}) {
+  static String _withAndroidTunInbound(
+    String payload, {
+    String? groupId,
+    List<String> bypassPackages = const [],
+    List<String> proxyPackages = const [],
+  }) {
     final normalized = _decodeSubscriptionPayload(payload);
     Map<String, dynamic>? config;
     try {
@@ -756,7 +782,11 @@ class AndroidMosaicAccountService {
         throw const FormatException(
             'Подписка не содержит поддерживаемых серверов.');
       }
-      return _buildTunConfig(outbounds);
+      return _buildTunConfig(
+        outbounds,
+        bypassPackages: bypassPackages,
+        proxyPackages: proxyPackages,
+      );
     }
     final rawOutbounds = config['outbounds'];
     if (rawOutbounds is! List || rawOutbounds.isEmpty) {
@@ -848,7 +878,12 @@ class AndroidMosaicAccountService {
       cleanOutbounds.add(clean);
     }
 
-    return _buildTunConfig(cleanOutbounds, existingConfig: config);
+    return _buildTunConfig(
+      cleanOutbounds,
+      existingConfig: config,
+      bypassPackages: bypassPackages,
+      proxyPackages: proxyPackages,
+    );
   }
 
   /// libbox intentionally rejects the Xray-only `xhttp` transport label. The
@@ -1097,7 +1132,9 @@ class AndroidMosaicAccountService {
   }
 
   static String _buildTunConfig(List<Map<String, dynamic>> outbounds,
-      {Map<String, dynamic>? existingConfig}) {
+      {Map<String, dynamic>? existingConfig,
+      List<String> bypassPackages = const [],
+      List<String> proxyPackages = const []}) {
     if (outbounds.isEmpty) {
       throw const FormatException(
           'Подписка не содержит поддерживаемых серверов.');
@@ -1118,6 +1155,11 @@ class AndroidMosaicAccountService {
         'strict_route': false,
         'stack': 'system',
         'endpoint_independent_nat': true,
+        // Exclave-style per-app split tunneling. include/exclude are mutually
+        // exclusive in sing-box; exclude (bypass) wins when both are supplied.
+        if (bypassPackages.isNotEmpty) 'exclude_package': bypassPackages,
+        if (bypassPackages.isEmpty && proxyPackages.isNotEmpty)
+          'include_package': proxyPackages,
       },
     ];
     config['outbounds'] = [

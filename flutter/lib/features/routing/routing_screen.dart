@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/atlas_theme.dart';
 import '../../core/providers/vpn_providers.dart';
+import '../../core/providers/routing_presets_provider.dart';
 import '../../core/models/models.dart';
+import '../../core/models/routing_preset.dart';
 import '../../shared/widgets/atlas_widgets.dart';
 import '../../shared/widgets/skeleton_loader.dart';
 
@@ -66,6 +68,8 @@ class RoutingScreen extends ConsumerWidget {
               ),
             ],
           ),
+          const SizedBox(height: 16),
+          _RoutingPresetsSection(ref: ref),
           const SizedBox(height: 16),
           Expanded(
             child: rulesAsync.when(
@@ -423,6 +427,202 @@ class _RuleTile extends StatelessWidget {
                 debugPrint('deleteRule failed: $e');
               }
             },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Presets section: one-tap routing profiles (built-in RF set + user-defined),
+/// with JSON import/export so users can share their setups.
+class _RoutingPresetsSection extends ConsumerWidget {
+  const _RoutingPresetsSection({required this.ref});
+
+  final WidgetRef ref;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = ThemeColors.of(context);
+    final presetsAsync = ref.watch(routingPresetsProvider);
+
+    return presetsAsync.when(
+      data: (presets) => Card(
+        color: c.bgCard,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Пресеты роутинга',
+                      style: TextStyle(
+                        fontFamily: AtlasTheme.serifFamily,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: c.textPrimary,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Импорт пресета из файла/текста',
+                    icon: const Icon(Icons.file_open, size: 20),
+                    onPressed: () => _importPreset(context, ref),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              ...presets.map(
+                (preset) => _PresetTile(preset: preset),
+              ),
+            ],
+          ),
+        ),
+      ),
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+
+  Future<void> _importPreset(BuildContext context, WidgetRef ref) async {
+    final c = ThemeColors.of(context);
+    final ctrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: c.bgCard,
+        title: const Text('Импорт пресета'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+                'Вставьте JSON пресета. Формат: {"name": ..., "routingMode": "global|rule|direct", "proxyPackages": [...], "bypassPackages": [...]}'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              maxLines: 6,
+              decoration: const InputDecoration(
+                hintText: '{"name": "Мой пресет", ...}',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Импортировать'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || ctrl.text.trim().isEmpty) return;
+    try {
+      final preset = RoutingPreset.decode(ctrl.text.trim());
+      final custom = RoutingPreset(
+        id: 'user-${DateTime.now().millisecondsSinceEpoch}',
+        name: preset.name,
+        description: preset.description,
+        builtIn: false,
+        routingMode: preset.routingMode,
+        proxyPackages: preset.proxyPackages,
+        bypassPackages: preset.bypassPackages,
+      );
+      final current = await ref.read(routingPresetsProvider.future);
+      await saveUserPresets(ref, [...current, custom]);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Пресет «${custom.name}» добавлен')),
+        );
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Не удалось разобрать пресет: проверьте JSON')),
+        );
+      }
+    }
+  }
+}
+
+class _PresetTile extends ConsumerWidget {
+  const _PresetTile({required this.preset});
+
+  final RoutingPreset preset;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = ThemeColors.of(context);
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      dense: true,
+      leading: Icon(
+        preset.builtIn ? Icons.star_outline : Icons.person_outline,
+        size: 22,
+        color: c.accent,
+      ),
+      title: Text(
+        preset.name,
+        style: TextStyle(fontSize: 14, color: c.textPrimary),
+      ),
+      subtitle: Text(
+        preset.description,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(fontSize: 11.5, color: c.textSecondary),
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: 'Экспорт (скопировать JSON)',
+            icon: const Icon(Icons.ios_share, size: 18),
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: preset.encode()));
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('JSON пресета скопирован')),
+                );
+              }
+            },
+          ),
+          if (!preset.builtIn)
+            IconButton(
+              tooltip: 'Удалить пресет',
+              icon: const Icon(Icons.delete_outline, size: 18),
+              onPressed: () async {
+                final current = await ref.read(routingPresetsProvider.future);
+                await saveUserPresets(ref, [
+                  for (final p in current) if (p.id != preset.id) p,
+                ]);
+              },
+            ),
+          TextButton(
+            onPressed: () async {
+              try {
+                await applyRoutingPreset(ref, preset);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content:
+                            Text('Пресет «${preset.name}» применён. Переподключитесь.')),
+                  );
+                }
+              } catch (_) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Не удалось применить пресет')),
+                  );
+                }
+              }
+            },
+            child: const Text('Применить'),
           ),
         ],
       ),

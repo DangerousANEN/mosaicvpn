@@ -538,11 +538,20 @@ final vpnStatusProvider = StreamProvider.autoDispose<VpnStatus>((ref) async* {
 });
 
 Future<VpnStatus> _androidVpnStatus() async {
+  final api = AndroidHostedDaemonApi.instance;
   final native = await AndroidVpnService.instance.status();
+  // The active route is tracked in-memory by the hosted facade; without it
+  // the Routes screen could not highlight the connected row and the
+  // dashboard showed a different route than the one actually selected.
+  final active = api.activeRoute;
   return VpnStatus(
     agentConnected: true,
     state: native.state,
     tunnelMode: 'tun',
+    server: native.isConnected ? active : null,
+    activeGroupId: native.isConnected
+        ? (active?.tag.isNotEmpty == true ? active!.tag : active?.id ?? '')
+        : '',
     lastError: native.error ?? '',
   );
 }

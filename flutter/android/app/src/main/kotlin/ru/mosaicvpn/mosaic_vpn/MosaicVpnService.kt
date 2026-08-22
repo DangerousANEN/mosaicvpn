@@ -50,6 +50,38 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         private const val TAG = "MosaicVpnService"
 
         @Volatile private var runtimeState: String = "disconnected"
+
+        /// Recent native runtime log lines with monotonic sequence numbers,
+        /// newest last. The Flutter logs screen reads this because the libbox
+        /// event stream is not wired on Android; without it the screen stayed
+        /// empty.
+        private const val NATIVE_LOG_LIMIT = 400
+        private val recentLogs = ArrayDeque<Pair<Long, String>>()
+        private val logSeqCounter = java.util.concurrent.atomic.AtomicLong(0)
+
+        fun appendNativeLog(line: String) {
+            synchronized(recentLogs) {
+                recentLogs.addLast(logSeqCounter.incrementAndGet() to line)
+                while (recentLogs.size > NATIVE_LOG_LIMIT) recentLogs.removeFirst()
+            }
+        }
+
+        fun snapshotNativeLogs(afterSeq: Long): List<Map<String, Any?>> =
+            synchronized(recentLogs) {
+                recentLogs.filter { it.first > afterSeq }
+                    .map { mapOf("seq" to it.first, "line" to it.second) }
+            }
+
+        /// Blocks until the runtime reports a terminal state or times out.
+        private fun stopLatch(context: Context) {
+            val deadline = System.currentTimeMillis() + 4_000
+            while (System.currentTimeMillis() < deadline) {
+                val state = runtimeState
+                if (state == "disconnected" || state == "error") return
+                Thread.sleep(60)
+            }
+        }
+
         @Volatile private var runtimeError: String? = null
         @Volatile private var libboxReady = false
 
@@ -72,9 +104,18 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         }
 
         fun stop(context: Context) {
-            context.startService(
-                Intent(context, MosaicVpnService::class.java).setAction(ACTION_STOP),
-            )
+            // Stop synchronously: the Flutter side validates the resulting
+            // state right after this call returns. An async startService round
+            // trip raced the status check and surfaced as
+            // "не удалось изменить подключение" although the VPN did stop.
+            val intent = Intent(context, MosaicVpnService::class.java)
+                .setAction(ACTION_STOP)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+            MosaicVpnService.stopLatch(context)
         }
 
         fun validate(context: Context, config: String) {
@@ -117,6 +158,7 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                     activeConfig = config
                     runtimeState = "connecting"
                     runtimeError = null
+                    appendNativeLog("start: accepted config (${config.length} bytes)")
                     startForeground(NOTIFICATION_ID, makeNotification("Подключение…"))
                     Thread({ startOrReloadRuntime(config) }, "MosaicVpnRuntime").start()
                 }
@@ -155,11 +197,13 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 // TUN with auto_route already captures all device traffic.
                 autoRedirect = false
             })
+            appendNativeLog("runtime: sing-box service started")
             runtimeState = "connected"
             runtimeError = null
             updateNotification("Подключено")
         } catch (error: Exception) {
             Log.e(TAG, "Unable to start sing-box runtime", error)
+            appendNativeLog("error: ${error.message ?: "Unable to start VPN runtime"}")
             publishError(error.message ?: "Unable to start VPN runtime")
             stopRuntime(preserveError = true)
         }
@@ -245,6 +289,7 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     // --- libbox CommandServerHandler -------------------------------------
 
     override fun serviceStop() {
+        appendNativeLog("runtime: stop requested")
         stopRuntime()
     }
 
@@ -281,7 +326,9 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             .setSession("MosaicVPN")
             .setMtu(options.mtu.coerceIn(1280, 9000))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) builder.setMetered(false)
-        builder.allowBypass()
+        // NOTE: allowBypass() intentionally omitted. It lets apps escape the
+        // tunnel by binding to a concrete network, which surfaced as "IP did
+        // not change" reports while the UI showed a connected state.
 
         addAddresses(builder, options.inet4Address)
         addAddresses(builder, options.inet6Address)
@@ -297,6 +344,10 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
         val descriptor = builder.establish()
             ?: error("Android failed to establish MosaicVPN TUN interface")
+        appendNativeLog(
+            "tun: established (mtu=${options.mtu}, " +
+                "autoRoute=${options.autoRoute})"
+        )
         try {
             tunDescriptor?.close()
         } catch (_: Exception) {
