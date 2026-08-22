@@ -148,7 +148,12 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 commandServer = it
             }
             server.startOrReloadService(config, OverrideOptions().apply {
-                autoRedirect = true
+                // NOTE: autoRedirect must stay disabled on Android. It installs
+                // iptables/nftables rules and demands root (`/system/bin/su`),
+                // which unprivileged devices report as
+                // "root permission is required for auto redirect". The VpnService
+                // TUN with auto_route already captures all device traffic.
+                autoRedirect = false
             })
             runtimeState = "connected"
             runtimeError = null

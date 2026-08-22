@@ -602,7 +602,15 @@ class AndroidMosaicAccountService {
       uri,
       options: Options(responseType: ResponseType.plain),
     );
-    final payload = response.data?.toString().trim() ?? '';
+    final data = response.data;
+    // A JSON feed decoded by dio (Map/List) must never be stringified into a
+    // fake share-URI line; re-encode it so the JSON branch below parses it.
+    final Object payload;
+    if (data is Map || data is List) {
+      payload = jsonEncode(data);
+    } else {
+      payload = data?.toString().trim() ?? '';
+    }
     if (payload.isEmpty) {
       throw StateError(
           'Подписка не вернула конфигурацию для этого устройства.');
@@ -631,7 +639,16 @@ class AndroidMosaicAccountService {
       candidateUri,
       options: Options(responseType: ResponseType.plain),
     );
-    final payload = response.data?.toString().trim() ?? '';
+    final data = response.data;
+    // The feed is a sing-box style JSON document. Depending on the announced
+    // content-type dio may hand over a String or an already decoded Map; only
+    // primitives are stringified so a Map survives as structured data.
+    final Object payload;
+    if (data is Map || data is List) {
+      payload = jsonEncode(data);
+    } else {
+      payload = data?.toString().trim() ?? '';
+    }
     if (payload.isEmpty) {
       throw StateError(
           'Сервис не вернул кандидатов для выбранной Smart Group.');
@@ -789,7 +806,13 @@ class AndroidMosaicAccountService {
         return true;
       }
       final memberships = outbound['_mosaic_group_ids'];
-      return memberships is Set<String> && memberships.contains(groupId);
+      if (memberships is! Set<String>) return false;
+      // The collector publishes snake_case ids (`min_latency`, `max_speed`)
+      // while the manifest uses hyphenated ids (`min-latency`, `max-speed`);
+      // compare on a normalized form so both spellings match.
+      String normalize(String value) => value.toLowerCase().replaceAll('_', '-');
+      final wanted = normalize(groupId);
+      return memberships.any((id) => normalize(id) == wanted);
     }
 
     final hasMembershipMetadata = candidates.any((outbound) {

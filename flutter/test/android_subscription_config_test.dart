@@ -100,4 +100,66 @@ void main() {
     expect(vmess['transport']['type'], 'ws');
     expect(vmess['tls']['enabled'], isTrue);
   });
+
+  test('parses a candidate JSON feed delivered as a decoded dio Map', () {
+    // Regression: when dio hands the /api/client-candidates document over as
+    // an already decoded Map, stringifying it produced a fake share-URI line
+    // and the connection failed with
+    // "FormatException: Некорректная ссылка сервера: {outbounds: [...".
+    const feed = '''{"outbounds":[
+      {"tag":"mosaic-candidate-9d4f5933f54c","type":"vless",
+       "uuid":"7e85ed3f-3829-45b1-8b1c-6a2e45ebc967",
+       "server":"164.68.127.108","server_port":24144,
+       "mosaic_client_candidate":true,
+       "mosaic_candidate_groups":["auto-fr","max_speed","min_latency"],
+       "mosaic_group_ids":["auto-fr","max_speed","min_latency"],
+       "mosaic_stable":false,"mosaic_speed_eligible":true,
+       "mosaic_country":"FR","mosaic_speed_mbps":0.03}
+    ]}''';
+    final decoded = jsonDecode(feed) as Map<String, dynamic>;
+    final config = jsonDecode(
+      AndroidMosaicAccountService.buildNativeTunConfigFromSubscriptionPayload(
+        jsonEncode(decoded),
+        groupId: 'min-latency',
+      ),
+    ) as Map<String, dynamic>;
+    final outbounds = config['outbounds'] as List<dynamic>;
+    final vless = outbounds.cast<Map<String, dynamic>>().firstWhere(
+          (outbound) => outbound['type'] == 'vless',
+        );
+
+    expect(vless['tag'], 'mosaic-candidate-9d4f5933f54c');
+    expect(vless['server'], '164.68.127.108');
+    // mosaic_* selection hints must not leak into the sing-box schema.
+    expect(vless.containsKey('mosaic_group_ids'), isFalse);
+    expect(vless.containsKey('mosaic_client_candidate'), isFalse);
+  });
+
+  test('matches snake_case collector group ids against hyphenated manifest ids',
+      () {
+    const feed = '''{"outbounds":[
+      {"tag":"mosaic-candidate-aa","type":"vless",
+       "uuid":"7e85ed3f-3829-45b1-8b1c-6a2e45ebc967",
+       "server":"164.68.127.108","server_port":24144,
+       "mosaic_group_ids":["min_latency","max_speed"]},
+      {"tag":"mosaic-candidate-bb","type":"vless",
+       "uuid":"7e85ed3f-3829-45b1-8b1c-6a2e45ebc967",
+       "server":"198.51.100.9","server_port":24144,
+       "mosaic_group_ids":["auto-fr"]}
+    ]}''';
+    final config = jsonDecode(
+      AndroidMosaicAccountService.buildNativeTunConfigFromSubscriptionPayload(
+        feed,
+        groupId: 'min-latency',
+      ),
+    ) as Map<String, dynamic>;
+    final tags = (config['outbounds'] as List<dynamic>)
+        .cast<Map<String, dynamic>>()
+        .where((outbound) => outbound['type'] != 'urltest')
+        .where((outbound) => outbound['type'] != 'direct')
+        .map((outbound) => outbound['tag'])
+        .toList();
+
+    expect(tags, ['mosaic-candidate-aa']);
+  });
 }
