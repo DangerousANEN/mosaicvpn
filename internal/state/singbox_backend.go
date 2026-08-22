@@ -538,6 +538,19 @@ func virtualGroupAllowsCandidate(group proto.Server, candidate proto.Server, tar
 		return strings.Contains(nameLower, "whitelist") || strings.Contains(nameLower, "4g") || strings.Contains(nameLower, "tspu") || candidate.Protocol == proto.ProtoVLESS
 	}
 
+	// Provider-annotated membership wins before GeoIP heuristics. The synthetic
+	// candidate names contain "ca" ("mosaic-candidate-*"), so a name-substring
+	// country match would put every candidate into the Canada group.
+	for _, key := range []string{"mosaic_group_ids", "mosaic_candidate_groups"} {
+		if list, ok := candidate.Raw[key].([]any); ok {
+			for _, raw := range list {
+				if gid, _ := raw.(string); gid != "" && gid == group.GroupTag {
+					return true
+				}
+			}
+		}
+	}
+
 	return targetCountry != "" && matchServerCountry(candidate, targetCountry)
 }
 
@@ -1235,6 +1248,16 @@ func matchServerCountry(sv proto.Server, targetCountry string) bool {
 	}
 	if sv.Country != "" && strings.EqualFold(sv.Country, targetCountry) {
 		return true
+	}
+	// Candidate nodes carry authoritative GeoIP from the provider collector
+	// (mosaic_country → Server.Country). Never guess their country from the
+	// synthetic name "mosaic-candidate-*": its "ca" substring would match the
+	// whole pool into the Canada group.
+	if _, isCandidate := sv.Raw["mosaic_client_candidate"]; isCandidate {
+		return false
+	}
+	if _, hasGroups := sv.Raw["mosaic_group_ids"]; hasGroups {
+		return false
 	}
 	tc := strings.ToLower(targetCountry)
 	haystack := strings.ToLower(sv.Name + " " + sv.Tag + " " + sv.Address + " " + sv.City)

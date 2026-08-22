@@ -79,6 +79,15 @@ func matchGroupFilter(group proto.ManifestGroup, srv proto.Server) bool {
 			return allowed
 		}
 	}
+	// Provider-annotated membership (mosaic_group_ids / mosaic_candidate_groups)
+	// wins for every named smart group before heuristics are consulted. The
+	// collector publishes ids like "germany", "canada", "netherlands" and the
+	// local manifest uses the same names, so an exact match is sufficient.
+	if ids := candidateGroupMemberships(srv); ids != nil {
+		if _, ok := ids[group.ID]; ok {
+			return true
+		}
+	}
 
 	// Category-based matching as fallback.
 	switch group.Category {
@@ -116,6 +125,29 @@ func matchGroupFilter(group proto.ManifestGroup, srv proto.Server) bool {
 func boolRaw(srv proto.Server, key string) bool {
 	value, _ := srv.Raw[key].(bool)
 	return value
+}
+
+// candidateGroupMemberships returns the provider-published group id set for a
+// candidate node (Raw.mosaic_group_ids or the legacy mosaic_candidate_groups).
+// Returns nil when the node carries no membership annotations.
+func candidateGroupMemberships(srv proto.Server) map[string]struct{} {
+	for _, key := range []string{"mosaic_group_ids", "mosaic_candidate_groups"} {
+		list, ok := srv.Raw[key].([]any)
+		if !ok || len(list) == 0 {
+			continue
+		}
+		ids := make(map[string]struct{}, len(list))
+		for _, raw := range list {
+			s, _ := raw.(string)
+			if s != "" {
+				ids[s] = struct{}{}
+			}
+		}
+		if len(ids) > 0 {
+			return ids
+		}
+	}
+	return nil
 }
 
 func boolHint(srv proto.Server, key string) (bool, bool) {
