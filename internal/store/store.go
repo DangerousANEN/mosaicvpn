@@ -527,12 +527,23 @@ func (s *Store) MarkSubscriptionError(subID, errMsg string) error {
 	})
 }
 
+// countServers counts user-visible servers of one subscription. Physical
+// profiles marked as mosaic_client_candidate belong to the hidden Smart
+// Group pool and must not inflate the route counter (84-vs-13 bug).
 func countServers(all []proto.Server, subID string) int {
 	n := 0
 	for _, s := range all {
-		if s.SubscriptionID == subID {
-			n++
+		if s.SubscriptionID != subID {
+			continue
 		}
+		if s.IsVirtualGroup {
+			n++ // virtual manifest rows are the user-facing routes
+			continue
+		}
+		if _, hidden := s.Raw["mosaic_client_candidate"]; hidden {
+			continue
+		}
+		n++
 	}
 	return n
 }

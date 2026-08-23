@@ -67,7 +67,9 @@ class ElevationService {
           '-Command',
           'Start-Process -FilePath "$exePath"$argumentList -Verb RunAs',
         ],
-        runInShell: true,
+        // No runInShell: cmd.exe mangles quoting for install paths with
+        // spaces and swallows PowerShell's real exit code, so a dismissed
+        // UAC prompt could be reported as success.
       );
       // Start-Process exits 0 once UAC accepted the launch request; a
       // dismissed prompt surfaces as a non-zero exit code.

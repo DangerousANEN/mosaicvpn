@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -394,7 +396,11 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
               id: server.id,
               type: server.protocol.displayName,
               name: server.name.isEmpty ? 'Безымянный сервер' : server.name,
-              ping: server.hasLatency ? server.lastTestMS : null,
+              ping: !server.hasLatency && !server.latencyFailed
+                  ? null
+                  : server.latencyFailed
+                      ? -1
+                      : server.lastTestMS,
               traffic: '—',
               // Jitter and loss stay null until the live probe records them;
               // download speed can already be supplied by a completed speed test.
@@ -519,64 +525,152 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       return;
     }
     final api = ref.read(daemonApiProvider);
-    final allServers =
-        ref.read(serversProvider).valueOrNull ?? const <Server>[];
-    final scoped = allServers
-        .where((server) => server.subscriptionID == source.id)
-        .toList(growable: false);
-    var done = 0;
-    var reachable = 0;
-    final total = scoped.length;
-    if (!mounted) return;
-    final progressColor = ThemeColors.of(context).textSecondary;
-    _showMessage(
-        total == 0
-            ? 'Нет маршрутов для проверки.'
-            : 'Проверка маршрутов: 0/$total…',
-        progressColor);
 
-    for (final server in scoped) {
-      try {
-        final result = await api.testServer(server.id);
-        if (!result.failed) reachable++;
-      } catch (_) {
-        // A single unreachable route must not stop the sweep.
-      }
-      done++;
-      if (mounted) {
-        setState(() {});
-      }
-      _showMessage('Проверка маршрутов: $done/$total…', progressColor);
-    }
-
-    // Smart Groups of this source (if any) run after the plain servers.
-    ProviderManifest? manifestAsync;
+    // Only user-visible routes take part in "test all": manifest routes for a
+    // Mosaic source, plain servers otherwise. Hidden Smart Group pool
+    // candidates are probed by their group runner, never one-by-one here.
+    List<Server> scoped = const <Server>[];
+    List<ManifestGroup> groups = const <ManifestGroup>[];
     if (_isMosaicSubscription(source) && source.id.isNotEmpty) {
       try {
-        manifestAsync = await ref
+        final manifest = await ref
             .read(providerManifestForSubscriptionProvider(source.id).future);
+        groups = manifest.routes
+            .where((group) => group.category != 'raw' && !group.disabled)
+            .toList(growable: false);
       } catch (_) {
-        // Manifest failure must not cancel the server sweep results.
+        // Manifest failure falls back to the visible server list below.
       }
     }
-    final groups = (manifestAsync?.routes ?? const <ManifestGroup>[])
-        .where((group) => group.category != 'raw' && !group.disabled)
-        .toList(growable: false);
-    for (final group in groups) {
-      try {
-        await _runGroupLatencyTest(group);
-      } catch (_) {
-        // Group failures are already reported by the runner itself.
-      }
+    if (!mounted) return;
+    if (groups.isEmpty) {
+      final allServers =
+          ref.read(serversProvider).valueOrNull ?? const <Server>[];
+      scoped = allServers
+          .where((server) => server.subscriptionID == source.id)
+          .toList(growable: false);
     }
 
+    final total = scoped.length + groups.length;
+    if (total == 0) {
+      _showMessage('Нет маршрутов для проверки.',
+          ThemeColors.of(context).textSecondary);
+      return;
+    }
+
+    final progress =
+        ValueNotifier<ProgressValue>(ProgressValue(done: 0, total: total));
+
+    // Parallel sweep with cancellation. Four workers keep the burst modest
+    // while finishing an order of magnitude faster than the old serial loop.
+    var done = 0;
+    var reachable = 0;
+    var nextTask = 0;
+    final tasks = <Future<bool> Function()>[
+      for (final server in scoped)
+        () async {
+          try {
+            final result = await api.testServer(server.id);
+            return !result.failed;
+          } catch (_) {
+            return false; // unreachable route must not stop the sweep
+          }
+        },
+      for (final group in groups)
+        () async {
+          try {
+            final result = await api.testDirectRoute(group.id);
+            return !result.failed && result.latencyMS >= 0;
+          } catch (_) {
+            // Smart Groups fall back to their own bounded runner.
+            try {
+              await _runGroupLatencyTest(group);
+              return true;
+            } catch (_) {
+              return false;
+            }
+          }
+        },
+    ];
+
+    if (!mounted) return;
+    final progressColor = ThemeColors.of(context).textSecondary;
+
+    // Non-dismissable progress dialog with a stop button. Popping it sets
+    // the cancel flag; workers finish their current probe and exit the loop.
+    var cancelled = false;
+    unawaited(showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            title: const Text('Проверка маршрутов'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ValueListenableBuilder<ProgressValue>(
+                  valueListenable: progress,
+                  builder: (_, value, __) => Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('${value.done}/${value.total}',
+                          style: TextStyle(color: progressColor)),
+                      const SizedBox(height: 8),
+                      LinearProgressIndicator(
+                        value: value.total == 0
+                            ? null
+                            : value.done / value.total,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  cancelled = true;
+                  Navigator.of(dialogContext).pop();
+                },
+                child: const Text('Остановить'),
+              ),
+            ],
+          ),
+        );
+      },
+    ));
+
+    Future<bool> worker() async {
+      while (!cancelled && nextTask < tasks.length) {
+        final task = tasks[nextTask++];
+        final ok = await task();
+        done++;
+        if (ok) reachable++;
+        progress.value =
+            ProgressValue(done: done, total: total);
+      }
+      return true;
+    }
+
+    await Future.wait(<Future<bool>>[
+      worker(),
+      worker(),
+      worker(),
+      worker(),
+    ]);
+
+    if (mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
     ref.invalidate(serversProvider);
     if (!mounted) return;
     final successColor = ThemeColors.of(context).success;
     final warningColor = ThemeColors.of(context).warning;
     _showMessage(
-      'Готово: отвечают $reachable из $total серверов.'
-          '${groups.isEmpty ? '' : ' Группы проверены отдельно.'}',
+      cancelled
+          ? 'Остановлено: отвечают $reachable из $total.'
+          : 'Готово: отвечают $reachable из $total маршрутов.',
       reachable > 0 ? successColor : warningColor,
     );
   }
@@ -2083,6 +2177,41 @@ class _RouteTable extends StatelessWidget {
     );
   }
 
+  /// Ping cell with user-specified colour coding: green ≤150 ms, yellow
+  /// ≤300 ms, red above, and a bold red "Недоступен" for failed probes.
+  Widget _pingCell(BuildContext context, _RouteRow row) {
+    final colors = ThemeColors.of(context);
+    final width = _effectiveWidth(_RouteColumn.ping);
+    if (row.ping == null) {
+      return SizedBox(
+          width: width,
+          child: Text('—',
+              maxLines: 1, style: TextStyle(color: colors.textSecondary)));
+    }
+    final pingValue = row.ping!;
+    if (pingValue < 0) {
+      return SizedBox(
+        width: width,
+        child: Text('Недоступен',
+            maxLines: 1,
+            style: TextStyle(
+                color: AtlasTheme.error, fontWeight: FontWeight.w700)),
+      );
+    }
+    final ping = pingValue;
+    final color = ping <= 150
+        ? AtlasTheme.success
+        : ping <= 300
+            ? AtlasTheme.warning
+            : AtlasTheme.error;
+    return SizedBox(
+        width: width,
+        child: Text('$ping мс',
+            maxLines: 1,
+            style:
+                TextStyle(color: color, fontWeight: FontWeight.w700)));
+  }
+
   Widget _cell(BuildContext context, _RouteRow row, _RouteColumn column,
       bool connected, bool connecting, Map<_RouteColumn, double> widths) {
     final colors = ThemeColors.of(context);
@@ -2134,7 +2263,7 @@ class _RouteTable extends StatelessWidget {
           ]),
         ),
       _RouteColumn.country => text(_countryLabel(row.country)),
-      _RouteColumn.ping => text(row.ping == null ? '—' : '${row.ping} мс'),
+      _RouteColumn.ping => _pingCell(context, row),
       _RouteColumn.jitter =>
         text(row.jitter == null ? '—' : '${row.jitter} мс'),
       _RouteColumn.loss =>
@@ -2443,4 +2572,12 @@ IconData _groupIcon(String icon) {
     'flag_de' || 'flag_ca' || 'flag_us' => Icons.flag_outlined,
     _ => Icons.route_outlined,
   };
+}
+
+/// Immutable progress snapshot for the "test all routes" sweep dialog.
+class ProgressValue {
+  const ProgressValue({required this.done, required this.total});
+
+  final int done;
+  final int total;
 }

@@ -19,6 +19,10 @@ class VpnStatus {
   final int bytesOut;
   final String lastError;
   final DateTime? connectedSince;
+  /// True when the daemon process carries an administrator token. Only the
+  /// daemon's token decides whether TUN can start: a GUI launched as admin
+  /// can still be attached to an older non-elevated daemon.
+  final bool daemonElevated;
 
   VpnStatus({
     this.agentConnected = false,
@@ -35,6 +39,7 @@ class VpnStatus {
     this.bytesOut = 0,
     this.lastError = '',
     this.connectedSince,
+    this.daemonElevated = false,
   });
 
   factory VpnStatus.fromJson(Map<String, dynamic> j) => VpnStatus(
@@ -54,6 +59,7 @@ class VpnStatus {
         connectedSince: j['connected_since'] != null
             ? DateTime.tryParse(j['connected_since'])
             : null,
+        daemonElevated: j['daemon_elevated'] ?? false,
       );
 
   bool get isConnected => state == 'connected';

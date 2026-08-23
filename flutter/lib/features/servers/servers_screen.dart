@@ -789,7 +789,7 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
           borderRadius: BorderRadius.circular(4),
         ),
         child: const Text(
-          'Timeout',
+          'Недоступен',
           style: TextStyle(
               fontSize: 10,
               color: AtlasTheme.error,
@@ -797,9 +797,10 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
         ),
       );
     }
-    final color = latency < 80
+    // User-specified thresholds: green <150 ms, yellow <300 ms, red above.
+    final color = latency <= 150
         ? AtlasTheme.success
-        : latency < 200
+        : latency <= 300
             ? AtlasTheme.warning
             : AtlasTheme.error;
     return Container(

@@ -602,6 +602,12 @@ type Status struct {
 	AgentConnected bool      `json:"agent_connected"`
 	DaemonVersion  string    `json:"daemon_version"`
 	DaemonPID      int       `json:"daemon_pid"`
+	// DaemonElevated reports whether the daemon process itself carries an
+	// administrator token. The GUI must trust this instead of its own
+	// token: a GUI started as admin can still attach to an older
+	// non-elevated daemon, and only the daemon's token decides whether TUN
+	// can be created.
+	DaemonElevated bool `json:"daemon_elevated"`
 	// ProxySOCKS / ProxyHTTP are the loopback listeners exposed by the
 	// active backend (e.g. "127.0.0.1:2080" / "127.0.0.1:2081"). Empty
 	// when the backend is the mock or no proxy listener is active.

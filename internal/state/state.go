@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pupspochta-cpu/mosaicvpn/internal/elevate"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/logx"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/store"
@@ -103,11 +104,12 @@ func New(s *store.Store, backend Backend, version string) *Manager {
 	}
 	prefs := s.Snapshot().Prefs
 	m.st = proto.Status{
-		State:         proto.StateDisconnected,
-		TunnelMode:    prefs.TunnelMode,
-		KillSwitch:    prefs.KillSwitch,
-		DaemonVersion: version,
-		DaemonPID:     m.pid,
+		State:          proto.StateDisconnected,
+		TunnelMode:     prefs.TunnelMode,
+		KillSwitch:     prefs.KillSwitch,
+		DaemonVersion:  version,
+		DaemonPID:      m.pid,
+		DaemonElevated: elevate.IsElevated(),
 	}
 	return m
 }

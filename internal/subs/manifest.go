@@ -256,6 +256,15 @@ func FetchClientCandidates(ctx context.Context, subURL, subID string) ([]proto.S
 	if err != nil {
 		return nil, fmt.Errorf("candidate feed: %w", err)
 	}
+	// Mark every physical profile from the hidden candidate feed so the store
+	// counter and the UI route lists can exclude them from user-visible
+	// counts. Smart Group resolution still reads them via Raw.
+	for i := range parsed.Servers {
+		if parsed.Servers[i].Raw == nil {
+			parsed.Servers[i].Raw = map[string]any{}
+		}
+		parsed.Servers[i].Raw["mosaic_client_candidate"] = true
+	}
 	return parsed.Servers, nil
 }
 

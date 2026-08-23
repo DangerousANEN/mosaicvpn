@@ -12,6 +12,7 @@ import '../../core/i18n/app_strings.dart';
 import '../../core/models/models.dart';
 import '../../core/services/android_mosaic_account_service.dart';
 import '../../core/services/android_vpn_service.dart';
+import '../../core/services/elevation_service.dart';
 import '../../core/services/tray_service.dart';
 import '../../core/services/autostart_service.dart';
 import '../../core/config/app_config.dart';
@@ -1716,6 +1717,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       return;
     }
     final c = ThemeColors.of(context);
+    // The daemon's token decides whether TUN can start, not the GUI's: a GUI
+    // launched as admin can still be attached to an older non-elevated
+    // daemon, and vice versa. Ask the live status first.
+    try {
+      final api = ref.read(daemonApiProvider);
+      final status = await api.getStatus();
+      if (status.daemonElevated) {
+        onAllow();
+        return;
+      }
+    } catch (_) {
+      // Status unavailable — fall through to the local token probe.
+    }
     // Check if we're already running with admin privileges
     try {
       final result = await Process.run(
@@ -1763,20 +1777,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     );
     if (confirm == true) {
-      // Save prefs first, then restart with elevation
+      // Save prefs first, then restart with elevation. The app exits only
+      // after PowerShell confirms the UAC-elevated launch (exit code 0);
+      // a dismissed prompt or a failed spawn must keep this instance alive.
       try {
         await onAllow();
         // Small delay to let the API call reach the daemon
         await Future.delayed(const Duration(milliseconds: 300));
-        final exePath = Platform.resolvedExecutable;
-        await Process.start(
-          'powershell',
-          ['-Command', 'Start-Process -FilePath "$exePath" -Verb RunAs'],
-          runInShell: true,
+        final launched = await ElevationService.instance.relaunchElevated(
+          connectOnStart: false,
         );
-        exit(0);
+        if (launched) {
+          // Give the elevated process a moment to take over, then yield.
+          await Future<void>.delayed(const Duration(milliseconds: 300));
+          exit(0);
+        }
       } catch (_) {
-        // Fallback
+        // Fallback: stay running; the user can retry or connect via proxy.
       }
     }
   }
