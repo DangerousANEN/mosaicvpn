@@ -39,9 +39,25 @@ jobs:
         shell: pwsh
         env:
           SINGBOX_VERSION: 1.13.18
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $release = Invoke-RestMethod "https://api.github.com/repos/SagerNet/sing-box/releases/tags/v$env:SINGBOX_VERSION"
+          # api.github.com is rate-limited per runner IP (60 req/h unauthenticated)
+          # and shared Azure ranges burn through it fast. Retry, then fall back
+          # to the authenticated API using the CI token (5000 req/h).
+          $release = $null
+          foreach ($attempt in 1..5) {
+            try {
+              $headers = @{}
+              if ($env:GITHUB_TOKEN) { $headers['Authorization'] = "Bearer $env:GITHUB_TOKEN" }
+              $release = Invoke-RestMethod -Headers $headers "https://api.github.com/repos/SagerNet/sing-box/releases/tags/v$env:SINGBOX_VERSION"
+              break
+            } catch {
+              Write-Warning "GitHub API attempt $attempt failed: $_"
+              Start-Sleep -Seconds ([math]::Pow(3, $attempt))
+            }
+          }
+          if (-not $release) { throw 'Could not fetch sing-box release metadata from GitHub API.' }
           $asset = $release.assets | Where-Object { $_.name -eq "sing-box-$env:SINGBOX_VERSION-windows-amd64.zip" } | Select-Object -First 1
           if (-not $asset) { throw 'Official Windows amd64 sing-box asset was not found.' }
           $archive = Join-Path $env:RUNNER_TEMP $asset.name
@@ -114,11 +130,15 @@ jobs:
       - name: Download and verify official sing-box
         env:
           SINGBOX_VERSION: 1.13.18
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           api="https://api.github.com/repos/SagerNet/sing-box/releases/tags/v${SINGBOX_VERSION}"
           user_agent="MosaicVPN-release-ci"
-          release_json="$(curl --retry 4 --retry-all-errors -fsSL -H "User-Agent: $user_agent" "$api")"
+          # Authenticated API call avoids the 60 req/h unauthenticated IP limit.
+          auth_args=()
+          if [ -n "${GITHUB_TOKEN:-}" ]; then auth_args=(-H "Authorization: Bearer ${GITHUB_TOKEN}"); fi
+          release_json="$(curl --retry 5 --retry-all-errors -fsSL -H "User-Agent: $user_agent" "${auth_args[@]}" "$api")"
           url="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "sing-box-'"${SINGBOX_VERSION}"'-linux-amd64-glibc.tar.gz") | .browser_download_url')"
           digest="$(printf '%s' "$release_json" | jq -r '.assets[] | select(.name == "sing-box-'"${SINGBOX_VERSION}"'-linux-amd64-glibc.tar.gz") | .digest' | sed 's/^sha256://')"
           test -n "$url" && test -n "$digest"
