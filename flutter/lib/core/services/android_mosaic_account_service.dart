@@ -822,6 +822,11 @@ class AndroidMosaicAccountService {
     List<String> proxyPackages = const [],
   }) {
     final outbound = _outboundFromShareUri(shareUri);
+    if (outbound == null) {
+      throw const FormatException(
+          'Транспорт XHTTP (Xray) не поддерживается этим клиентом. '
+          'Выберите сервер с поддерживаемым транспортом (ws/grpc/reality).');
+    }
     return _buildTunConfig(
       <Map<String, dynamic>>[outbound],
       bypassPackages: bypassPackages,
@@ -865,6 +870,7 @@ class AndroidMosaicAccountService {
           .map((line) => line.trim())
           .where((line) => line.isNotEmpty)
           .map(_outboundFromShareUri)
+          .whereType<Map<String, dynamic>>()
           .toList(growable: false);
       if (outbounds.isEmpty) {
         throw const FormatException(
@@ -897,6 +903,12 @@ class AndroidMosaicAccountService {
           : <String>{};
       outbound.removeWhere((key, _) => key.toString().startsWith('mosaic_'));
       _normalizeAndroidTransport(outbound);
+      // Outbounds marked by the normalizer speak a wire protocol libbox cannot
+      // serve (Xray XHTTP). Dropping them keeps the TUN config valid instead of
+      // producing routes that connect but never carry traffic.
+      if (outbound.containsKey('_mosaic_unsupported_transport')) {
+        continue;
+      }
       final tag = outbound['tag']?.toString() ?? '';
       final type = outbound['type']?.toString() ?? '';
       if (tag.isEmpty ||
@@ -974,20 +986,32 @@ class AndroidMosaicAccountService {
     );
   }
 
-  /// libbox intentionally rejects the Xray-only `xhttp` transport label. The
-  /// desktop runtime already maps the legacy value to sing-box's standard HTTP
-  /// transport. Apply the same narrow, schema-preserving normalization here.
+  /// Marks outbounds whose transport this runtime cannot speak. Xray's XHTTP
+  /// is a distinct wire protocol: relabelling it as sing-box `http` yields a
+  /// config that connects but never carries data. The caller removes marked
+  /// entries so the feed only offers usable routes.
   static void _normalizeAndroidTransport(Map<String, dynamic> outbound) {
     final value = outbound['transport'];
     if (value is! Map) return;
     final transport = Map<String, dynamic>.from(value);
-    if (transport['type']?.toString().toLowerCase() != 'xhttp') return;
-    transport['type'] = 'http';
-    transport.remove('mode');
-    transport.remove('extra');
-    final host = transport['host'];
-    if (host is String && host.isNotEmpty) {
-      transport['host'] = <String>[host];
+    final type = transport['type']?.toString().toLowerCase();
+    if (type == 'xhttp') {
+      outbound['_mosaic_unsupported_transport'] = 'xhttp';
+      return;
+    }
+    // sing-box rejects an unknown `host` field on ws/grpc/httpupgrade; the
+    // WebSocket/HTTP-Upgrade Host belongs in `headers`.
+    if (type == 'ws' || type == 'httpupgrade') {
+      final host = transport.remove('host');
+      if (host is String && host.isNotEmpty) {
+        transport['headers'] = <String, dynamic>{
+          'Host': host.split(',').first.trim(),
+        };
+      } else if (host is List && host.isNotEmpty) {
+        transport['headers'] = <String, dynamic>{'Host': host.first};
+      }
+    } else if (type == 'grpc') {
+      transport.remove('host');
     }
     outbound['transport'] = transport;
   }
@@ -1007,7 +1031,10 @@ class AndroidMosaicAccountService {
     return compact;
   }
 
-  static Map<String, dynamic> _outboundFromShareUri(String raw) {
+  /// Returns `null` for servers whose wire protocol this runtime cannot speak
+  /// (currently Xray's XHTTP transport). Callers must filter nulls instead of
+  /// treating them as failures: one unsupported link must not poison the feed.
+  static Map<String, dynamic>? _outboundFromShareUri(String raw) {
     final uri = Uri.tryParse(raw.trim());
     if (uri == null || uri.scheme.isEmpty) {
       throw FormatException(
@@ -1053,18 +1080,32 @@ class AndroidMosaicAccountService {
           }
           outbound['tls'] = tls;
         }
-        final transportType = query['type'] ?? 'tcp';
+        final transportType = (query['type'] ?? 'tcp').toLowerCase();
+        // Xray's XHTTP transport is a distinct wire protocol, not HTTP. sing-box
+        // cannot speak it; silently relabelling it as `http` produces configs
+        // that connect but never carry data. Skip such servers entirely so the
+        // feed only offers routes this runtime can actually use.
+        if (transportType == 'xhttp') {
+          return null;
+        }
         if (transportType != 'tcp') {
+          final hostParam = query['host'] ?? '';
           outbound['transport'] = {
-            'type':
-                transportType.toLowerCase() == 'xhttp' ? 'http' : transportType,
+            'type': transportType,
             if ((query['path'] ?? '').isNotEmpty) 'path': query['path'],
-            if ((query['host'] ?? '').isNotEmpty) 'host': query['host'],
-            if (transportType.toLowerCase() != 'xhttp' &&
-                (query['mode'] ?? '').isNotEmpty)
-              'mode': query['mode'],
             if ((query['serviceName'] ?? '').isNotEmpty)
               'service_name': query['serviceName'],
+            if (transportType == 'ws' || transportType == 'httpupgrade')
+              ...<String, dynamic>{
+                // sing-box has no `host` transport field; the WebSocket and
+                // HTTP-Upgrade Host header lives under `headers`.
+                if (hostParam.isNotEmpty)
+                  'headers': {'Host': hostParam.split(',').first.trim()},
+              }
+            else if (transportType == 'http' && hostParam.isNotEmpty)
+              'host': <String>[
+                ...hostParam.split(',').map((h) => h.trim()).where((h) => h.isNotEmpty),
+              ],
           };
         }
         return outbound;

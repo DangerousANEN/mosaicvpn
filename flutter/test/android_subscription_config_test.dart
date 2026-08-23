@@ -4,35 +4,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mosaic_vpn/core/services/android_mosaic_account_service.dart';
 
 void main() {
-  test('builds a native TUN sing-box config from a VLESS subscription URI', () {
+  test('rejects an XHTTP VLESS URI with a clear error', () {
     const shareUri =
         'vless://e619d9bd-2950-4098-bcf2-e943fd6b5647@5.175.188.152:443'
         '?encryption=none&security=reality&sni=cdn.zxc1x1.ru'
         '&pbk=test-public-key&sid=abcd&type=xhttp&path=%2Fcdn-direct'
         '&host=cdn.zxc1x1.ru&mode=auto#Mosaic%20test';
 
-    final config = jsonDecode(
-      AndroidMosaicAccountService.buildNativeTunConfigFromShareUri(shareUri),
-    ) as Map<String, dynamic>;
-    final inbounds = config['inbounds'] as List<dynamic>;
-    final outbounds = config['outbounds'] as List<dynamic>;
-    final vless = outbounds.cast<Map<String, dynamic>>().firstWhere(
-          (outbound) => outbound['type'] == 'vless',
-        );
-
-    expect(inbounds.single['type'], 'tun');
-    expect(vless['server'], '5.175.188.152');
-    expect(vless['server_port'], 443);
-    expect(vless['uuid'], 'e619d9bd-2950-4098-bcf2-e943fd6b5647');
-    // VLESS URI `encryption=none` is not a sing-box 1.13 outbound field.
-    expect(vless.containsKey('encryption'), isFalse);
-    expect(vless['transport']['type'], 'http');
-    expect(vless['transport'].containsKey('mode'), isFalse);
-    expect(vless['tls']['reality']['enabled'], isTrue);
-    expect(config['route']['final'], 'mosaic-selected-route');
-    expect(config['route']['default_domain_resolver'], 'mosaic-doh-bootstrap');
-    expect((config['route']['rules'] as List).first['action'], 'hijack-dns');
-    expect((config['dns']['servers'] as List).single['type'], 'https');
+    // sing-box (libbox) cannot speak Xray's XHTTP wire protocol. Relabelling
+    // it as `http` used to yield a config that connected but never carried
+    // data; the parser must refuse instead.
+    expect(
+      () => AndroidMosaicAccountService.buildNativeTunConfigFromShareUri(
+          shareUri),
+      throwsA(isA<FormatException>()),
+    );
   });
 
   test(
@@ -161,5 +147,37 @@ void main() {
         .toList();
 
     expect(tags, ['mosaic-candidate-aa']);
+  });
+
+  test('drops XHTTP candidates from a JSON feed and keeps usable ones', () {
+    const feed = '''{"outbounds":[
+      {"tag":"xhttp-node","type":"vless",
+       "uuid":"7e85ed3f-3829-45b1-8b1c-6a2e45ebc967",
+       "server":"198.51.100.10","server_port":443,
+       "tls":{"enabled":true,"server_name":"vk.com"},
+       "transport":{"type":"xhttp","path":"/direct","mode":"auto"}},
+      {"tag":"ws-node","type":"vless",
+       "uuid":"7e85ed3f-3829-45b1-8b1c-6a2e45ebc967",
+       "server":"198.51.100.11","server_port":443,
+       "tls":{"enabled":true,"server_name":"sub.zxc1x1.ru"},
+       "transport":{"type":"ws","path":"/mosaicws","host":"sub.zxc1x1.ru"}}
+    ]}''';
+    final config = jsonDecode(
+      AndroidMosaicAccountService.buildNativeTunConfigFromSubscriptionPayload(
+        feed,
+      ),
+    ) as Map<String, dynamic>;
+    final vless = (config['outbounds'] as List<dynamic>)
+        .cast<Map<String, dynamic>>()
+        .where((outbound) => outbound['type'] == 'vless')
+        .toList();
+
+    // Only the ws node survives; xhttp cannot be spoken by libbox.
+    expect(vless.single['tag'], 'ws-node');
+    final transport = vless.single['transport'] as Map<String, dynamic>;
+    // sing-box rejects an unknown `host` field on the ws transport: the value
+    // belongs in headers.
+    expect(transport.containsKey('host'), isFalse);
+    expect(transport['headers']['Host'], 'sub.zxc1x1.ru');
   });
 }
