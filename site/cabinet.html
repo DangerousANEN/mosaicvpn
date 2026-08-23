@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <link rel="icon" type="image/png" href="/assets/logo-96.png">
 <title>Личный кабинет — MosaicVPN</title>
 <meta name="description" content="Личный кабинет MosaicVPN: статус доступа, баланс, история платежей и пополнение. Единый аккаунт для Telegram, приложения и веб-кабинета." />
 <link rel="canonical" href="https://sub.zxc1x1.ru/cabinet.html" />
@@ -397,12 +398,18 @@
 
   function submitCode(code) {
     codeError.textContent = '';
+    var submitButton = codeForm.querySelector('button[type="submit"]');
     if (!/^[A-Z0-9]{8}$/.test(code)) { codeError.textContent = 'Введите 8 символов из кода /link.'; return; }
+    // Guard against rapid double-submit burning the one-time code attempts.
+    if (submitButton.disabled) return;
+    submitButton.disabled = true; submitButton.textContent = 'Проверяем код…';
+    var finish = function () { submitButton.disabled = false; submitButton.textContent = 'Войти в кабинет'; };
     requestJSON(API_SESSION, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code})}).then(function (result) {
-      if (result.status !== 200 || !result.body.token) { var labels = {not_found:'Код не найден',expired:'Код истёк',used:'Код уже использован',attempts:'Слишком много попыток. Получите новый код.'}; codeError.textContent = labels[result.body.error] || 'Не удалось войти. Попробуйте новый код.'; return; }
+      finish();
+      if (result.status !== 200 || !result.body.token) { var labels = {not_found:'Код не найден. Проверьте код в боте @mosaicvpnbot (/link).',expired:'Код истёк. Запросите новый в боте @mosaicvpnbot — команда /link.',used:'Код уже использован. Запросите новый в боте @mosaicvpnbot — команда /link.',attempts:'Слишком много попыток. Получите новый код в боте @mosaicvpnbot (/link).'}; codeError.textContent = labels[result.body.error] || 'Не удалось войти. Попробуйте новый код.'; return; }
       localStorage.setItem(TOKEN_KEY, result.body.token); savedToken = result.body.token;
       if (!completeAppReturn()) loadProfile(savedToken);
-    }).catch(function () { codeError.textContent = 'Не удалось подключиться к сервису.'; });
+    }).catch(function () { finish(); codeError.textContent = 'Не удалось подключиться к сервису.'; });
   }
 
   function acceptPasswordSession(result) {

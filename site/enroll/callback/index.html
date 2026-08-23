@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/png" href="/assets/logo-96.png">
   <meta name="robots" content="noindex,nofollow">
   <meta name="theme-color" content="#F4EFE6">
   <title>Добавление в MosaicVPN</title>
@@ -36,6 +37,10 @@
         return;
       }
       link.href = 'mosaicvpn://enroll/callback?code=' + encodeURIComponent(code) + '&state=' + encodeURIComponent(state);
+      // Auto-hand-off: most users expect one click on the site to be enough.
+      // Launch the protocol after a short beat; if nothing handled it, the
+      // visible button and the note below remain as the manual fallback.
+      window.setTimeout(function () { window.location.assign(link.href); }, 1200);
     })();
   </script>
 </body>

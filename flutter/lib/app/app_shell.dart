@@ -198,7 +198,27 @@ class _AppShellState extends ConsumerState<AppShell>
   Future<void> _completeWebsiteEnrollment() async {
     if (!AppPlatform.isAndroid || _enrollmentCompleting) return;
     final api = ref.read(daemonApiProvider);
-    if (api is! AndroidHostedDaemonApi) return;
+    if (api is! AndroidHostedDaemonApi) {
+      // Cold start: the daemon API provider may not be initialised yet when
+      // the first frame runs. Without a retry the pending browser enrollment
+      // is silently dropped and the subscription never appears - the exact
+      // "app opened but nothing was added" report. Retry briefly.
+      for (var attempt = 0; attempt < 5; attempt++) {
+        await Future<void>.delayed(Duration(milliseconds: 300 * (attempt + 1)));
+        if (!mounted || _enrollmentCompleting) return;
+        final retryApi = ref.read(daemonApiProvider);
+        if (retryApi is AndroidHostedDaemonApi) {
+          await _completeEnrollmentWith(retryApi);
+          return;
+        }
+      }
+      return;
+    }
+    await _completeEnrollmentWith(api);
+  }
+
+  Future<void> _completeEnrollmentWith(
+      AndroidHostedDaemonApi api) async {
     try {
       _enrollmentCompleting = true;
       final subscription = await api.completeWebsiteEnrollmentIfPresent();
