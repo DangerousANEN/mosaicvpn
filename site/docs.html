@@ -40,7 +40,7 @@
     backdrop-filter:blur(8px); border-bottom:1px solid var(--border);
   }
   .hd{display:flex; align-items:center; justify-content:space-between; padding:14px 0; gap:16px}
-  .logo{font-family:var(--serif); font-size:20px; font-weight:700; text-decoration:none; color:var(--text); white-space:nowrap}
+  .logo{font-family:var(--serif); font-size:20px; font-weight:700; text-decoration:none; color:var(--text); white-space:nowrap display:inline-flex; align-items:center; gap:10px; }
   .logo .dot{color:var(--accent)}
   .nav-links{display:flex; gap:20px; flex-wrap:wrap}
   .nav-links a{color:var(--text-2); text-decoration:none; font-size:13.5px}
@@ -113,7 +113,7 @@
 
 <header>
   <div class="wrap hd">
-    <a class="logo" href="/">MosaicVPN<span class="dot">.</span></a>
+    <a class="logo" href="/"><img src="/assets/logo-96.png" alt="" width="24" height="24" style="display:block" loading="eager">MosaicVPN<span class="dot">.</span></a>
     <nav class="nav-links">
       <a href="#quickstart">Быстрый старт</a>
       <a href="#manifest">Манифест</a>

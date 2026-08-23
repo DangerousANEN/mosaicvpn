@@ -118,7 +118,7 @@
 <header>
   <div class="wrap nav">
     <a class="brand" href="/" aria-label="MosaicVPN — на главную">
-      <svg width="25" height="25" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="#B85C38" stroke-width="1.6"/><path d="M16 5 L19 16 L16 27 L13 16 Z" fill="#B85C38"/></svg>
+      <img src="/assets/logo-96.png" alt="" width="24" height="24" style="display:block" loading="eager">
       MosaicVPN<span class="dot">.</span>
     </a>
     <nav class="nav-links" aria-label="Основная навигация">
@@ -276,6 +276,7 @@
   var API_UNFREEZE = '/api/account/unfreeze';
   var API_ROTATE_LINK = '/api/subscription/link/rotate';
   var TOKEN_KEY = 'mv_session_token';
+  var PROFILE_CACHE_KEY = 'mv_profile_cache_v1';
   var savedToken = localStorage.getItem(TOKEN_KEY);
   var requestedReturn = new URLSearchParams(window.location.search).get('return_to') || '';
   var requestedState = new URLSearchParams(window.location.search).get('state') || '';
@@ -386,8 +387,9 @@
   function loadProfile(token) {
     Promise.all([requestJSON(API_PROFILE + '?token=' + encodeURIComponent(token)), requestJSON(API_PAYMENTS + '?token=' + encodeURIComponent(token))]).then(function (result) {
       var profile = result[0], payments = result[1];
-      if (profile.status === 401 || profile.body.error) { localStorage.removeItem(TOKEN_KEY); showGate('Сессия закончилась. Получите новый код в боте.'); return; }
+      if (profile.status === 401 || profile.body.error) { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(PROFILE_CACHE_KEY); showGate('Сессия закончилась. Получите новый код в боте.'); return; }
       if (profile.status !== 200) { showGate('Не удалось загрузить кабинет. Попробуйте ещё раз.'); return; }
+      try { localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(profile.body)); } catch (error) { /* quota - ignore */ }
       showAccount(profile.body); showPayments(payments.status === 200 ? payments.body.payments || [] : []);
       prepareAppEnrollment();
     }).catch(function () { showGate('Не удалось подключиться к сервису. Проверьте сеть и повторите попытку.'); });
@@ -608,12 +610,23 @@
   document.getElementById('copy-subscription-link').addEventListener('click', function () { var url = String(document.getElementById('subscription-link').textContent || ''); if (!/^https:\/\//.test(url)) return; var done = function () { setSubscriptionMessage('Ссылка подписки скопирована.', 'success'); }; if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(url).then(done).catch(function () { window.prompt('Скопируйте ссылку подписки:', url); }); } else { window.prompt('Скопируйте ссылку подписки:', url); } });
   document.querySelectorAll('.lava-pay').forEach(function (button) { button.addEventListener('click', function () { startLavaPayment(button.getAttribute('data-amount')); }); });
   document.getElementById('custom-payment-form').addEventListener('submit', function (event) { event.preventDefault(); startLavaPayment(document.getElementById('custom-amount').value); });
-  document.getElementById('logout-button').addEventListener('click', function () { localStorage.removeItem(TOKEN_KEY); savedToken = null; profileState = null; preparedEnrollment = null; enrollmentPreparation = null; codeInput.value = ''; codeError.textContent = ''; showGate(); window.scrollTo({top:0,behavior:'smooth'}); });
+  document.getElementById('logout-button').addEventListener('click', function () { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(PROFILE_CACHE_KEY); savedToken = null; profileState = null; preparedEnrollment = null; enrollmentPreparation = null; codeInput.value = ''; codeError.textContent = ''; showGate(); window.scrollTo({top:0,behavior:'smooth'}); });
   document.getElementById('copy-account-id').addEventListener('click', function () { var id = profileState && profileState.telegram_id ? String(profileState.telegram_id) : ''; if (!id) return; var done = function () { setMessage('ID аккаунта скопирован.'); }; if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(id).then(done).catch(function () { window.prompt('Скопируйте ID аккаунта:', id); }); } else { window.prompt('Скопируйте ID аккаунта:', id); } });
   if (appReturn && !savedToken) {
     showGate('Войдите в кабинет, чтобы продолжить вход в приложении MosaicVPN.');
   } else if (savedToken) {
-    if (!completeAppReturn()) loadProfile(savedToken);
+    // Instant render from the cached profile snapshot, then refresh silently.
+    // Returning users never see the login gate flash before the cabinet.
+    var cachedProfile = null;
+    try { cachedProfile = JSON.parse(localStorage.getItem(PROFILE_CACHE_KEY) || 'null'); } catch (error) { cachedProfile = null; }
+    if (!completeAppReturn()) {
+      if (cachedProfile && cachedProfile.telegram_id !== undefined) {
+        showAccount(cachedProfile);
+        loadProfile(savedToken);
+      } else {
+        loadProfile(savedToken);
+      }
+    }
   }
 })();
 </script>
