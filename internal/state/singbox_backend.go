@@ -24,6 +24,7 @@ import (
 
 	"golang.org/x/net/proxy"
 
+	"github.com/pupspochta-cpu/mosaicvpn/internal/elevate"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/logx"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/store"
@@ -144,6 +145,13 @@ func preferredListenerPort(address string, fallback int) int {
 
 // Start implements Backend.
 func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, prefs store.Prefs, rules []proto.Rule) error {
+	// A TUN adapter cannot be created from a non-elevated process: sing-box
+	// would fail inside the wintun driver long after the UI reported
+	// "connecting". Refuse deterministically so clients can offer a UAC
+	// restart (mirrors Throne's admin check before enabling VPN mode).
+	if err := elevate.Ensure(prefs.TunnelMode); err != nil {
+		return err
+	}
 	b.mu.Lock()
 	if b.cmd != nil {
 		b.mu.Unlock()

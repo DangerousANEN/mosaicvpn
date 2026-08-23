@@ -15,6 +15,7 @@ import '../core/i18n/app_strings.dart';
 import '../core/services/android_mosaic_account_service.dart';
 import '../core/services/android_vpn_service.dart';
 import '../core/services/desktop_instance_lock.dart';
+import '../core/services/elevation_service.dart';
 import '../core/services/mosaic_enrollment_exchange.dart';
 import '../core/services/tray_service.dart';
 import '../core/services/smart_group_selector.dart';
@@ -697,10 +698,16 @@ class _AppShellState extends ConsumerState<AppShell>
       try {
         final api = ref.read(daemonApiProvider);
 
+        // An elevated relaunch (--connect-on-start) resumes the interrupted
+        // TUN connection regardless of the autoConnect preference: the user
+        // explicitly asked for this tunnel moments before the restart.
+        final resumeAfterElevation =
+            ElevationService.instance.shouldConnectOnStart;
+
         // Early exit: if auto-connect is off, skip server list fetches entirely.
         final prefs = await api.getPrefs();
         if (!mounted) return;
-        if (!prefs.autoConnect) return;
+        if (!prefs.autoConnect && !resumeAfterElevation) return;
 
         final status = await api.getStatus();
         if (!mounted) return;

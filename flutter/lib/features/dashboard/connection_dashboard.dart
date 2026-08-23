@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/models.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/platform/app_platform.dart';
+import '../../core/services/elevation_prompt.dart';
 import '../../core/services/smart_group_selector.dart';
 import '../../core/i18n/app_strings.dart';
 import '../../core/theme/atlas_theme.dart';
@@ -387,6 +388,18 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
       }
       ref.invalidate(vpnStatusProvider);
     } catch (error) {
+      // TUN without an administrator token is fully recoverable: offer the
+      // UAC restart instead of a dead-end error notice (Throne behaviour).
+      if (isElevationRequiredError(error) && mounted) {
+        final accepted = await handleElevationRequired(context);
+        if (!accepted) {
+          _notice(
+            'Подключение в режиме TUN требует прав администратора.',
+            error: true,
+          );
+        }
+        return;
+      }
       if (mounted) {
         final detail = _connectionErrorDetail(error);
         _notice(

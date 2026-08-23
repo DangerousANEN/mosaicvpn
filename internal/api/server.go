@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/pupspochta-cpu/mosaicvpn/internal/billing"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/elevate"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/geoip"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/logx"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/mcp"
@@ -337,6 +338,13 @@ func writeConnectFailure(w http.ResponseWriter, status int, code, message string
 }
 
 func classifyConnectFailure(err error) (code, message string, retryable bool) {
+	// The elevation sentinel must win over string matching: it is the one
+	// failure the client can fully resolve by restarting with UAC.
+	if errors.Is(err, elevate.ErrElevationRequired) {
+		return "elevation_required",
+			"TUN-режим требует права администратора. Перезапустите MosaicVPN с повышением прав.",
+			false
+	}
 	lower := strings.ToLower(err.Error())
 	switch {
 	case strings.Contains(lower, "server") && strings.Contains(lower, "not found"):

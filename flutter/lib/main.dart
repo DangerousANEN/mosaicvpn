@@ -5,10 +5,22 @@ import 'package:window_manager/window_manager.dart';
 import 'app/app.dart';
 import 'core/platform/app_platform.dart';
 import 'core/services/desktop_instance_lock.dart';
+import 'core/services/elevation_service.dart';
 import 'core/services/tray_service.dart';
 
-void main() async {
+/// Set once main() has run: the elevated-restart flow needs to know whether
+/// this instance should resume the interrupted TUN connection. AppShell reads
+/// it after the first frame, when providers are ready.
+final connectOnStartProvider = Provider<bool>((ref) {
+  return ElevationService.instance.shouldConnectOnStart;
+});
+
+void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Throne-style resume flag from an elevated relaunch must be consumed
+  // before any async work can lose it.
+  ElevationService.instance.consumeLaunchArguments(args);
 
   if (AppPlatform.isDesktop) {
     final acquired = await DesktopInstanceLock.instance

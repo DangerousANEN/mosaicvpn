@@ -9,6 +9,7 @@ import '../../core/i18n/app_strings.dart';
 import '../../core/models/models.dart';
 import '../../core/platform/app_platform.dart';
 import '../../core/providers/vpn_providers.dart';
+import '../../core/services/elevation_prompt.dart';
 import '../../core/services/smart_group_latency_test.dart';
 import '../../core/services/smart_group_selector.dart';
 import '../../core/theme/atlas_theme.dart';
@@ -796,6 +797,19 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
             'Подключение установлено.', ThemeColors.of(context).success);
       }
     } catch (error) {
+      // TUN without an administrator token is fully recoverable: offer the
+      // UAC restart instead of a dead-end error notice (Throne behaviour).
+      if (isElevationRequiredError(error) && mounted) {
+        final accepted = await handleElevationRequired(context);
+        if (!mounted) return;
+        if (!accepted) {
+          _showMessage(
+            'Подключение в режиме TUN требует прав администратора.',
+            ThemeColors.of(context).danger,
+          );
+        }
+        return;
+      }
       if (mounted) {
         final detail = error.toString().replaceFirst('Bad state: ', '');
         _showMessage(
