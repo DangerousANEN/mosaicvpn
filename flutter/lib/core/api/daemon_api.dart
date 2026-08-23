@@ -239,6 +239,12 @@ class DaemonApi implements DaemonApiBase {
     return (r.data as List).map((j) => TestResult.fromJson(j)).toList();
   }
 
+  @override
+  Future<TestResult> testDirectRoute(String groupID) async {
+    final r = await _dio.post('/v1/routes/$groupID/test');
+    return TestResult.fromJson(r.data);
+  }
+
   // ─── Speed Tests ────────────────────────────────────────────────────
   // group speed test (multi-server) endpoint. Single-server speed test
   // is exposed via the existing `speedTest({String? serverID})` below.

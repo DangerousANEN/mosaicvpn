@@ -69,6 +69,11 @@ abstract class DaemonApiBase {
   Future<TestResult> testServer(String id);
   Future<List<TestResult>> testAllServers();
 
+  /// Latency probe for a manifest direct route (single server). Only the
+  /// Android hosted facade implements it; desktop daemons reject it.
+  Future<TestResult> testDirectRoute(String groupID) =>
+      Future.error(UnimplementedError());
+
   // Mock-only server CRUD (real daemon throws UnimplementedError)
   Future<void> addServer(Server s);
   Future<void> deleteServer(String id);

@@ -291,6 +291,9 @@ class _ResolvedDaemonApi implements DaemonApiBase {
   Future<TestResult> testServer(String id) async =>
       (await _backend()).testServer(id);
   @override
+  Future<TestResult> testDirectRoute(String groupID) async =>
+      (await _backend()).testDirectRoute(groupID);
+  @override
   Future<List<TestResult>> testAllServers() async =>
       (await _backend()).testAllServers();
   @override

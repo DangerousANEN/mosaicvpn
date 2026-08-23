@@ -893,6 +893,16 @@ class MockDaemonApi implements DaemonApiBase {
   }
 
   @override
+  Future<TestResult> testDirectRoute(String groupID) async {
+    await _delayVoid();
+    return TestResult(
+      serverID: groupID,
+      serverName: groupID,
+      latencyMS: 15 + _rand.nextInt(185),
+    );
+  }
+
+  @override
   Future<void> deleteServer(String id) async {
     await _delayVoid();
     _servers.removeWhere((s) => s.id == id);

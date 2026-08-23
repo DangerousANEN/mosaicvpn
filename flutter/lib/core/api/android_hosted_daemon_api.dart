@@ -275,6 +275,43 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     );
   }
 
+  /// Probes a manifest direct route ("Mosaic Direct") with a plain TCP
+  /// handshake, exactly like an ordinary server row. Direct routes carry no
+  /// candidate feed, so routing this through the Smart Group runner used to
+  /// surface misleading "candidate is stale / Smart Group not found" errors
+  /// on a single server.
+  @override
+  Future<TestResult> testDirectRoute(String groupID) async {
+    final resolved = await _resolveMosaicGroup(groupID);
+    final manifest = await getProviderManifest(subscriptionId: resolved.$1.id);
+    final group = manifest.routes.cast<ManifestGroup?>().firstWhere(
+          (value) => value?.id == groupID,
+          orElse: () => null,
+        );
+    if (group == null) {
+      throw StateError('Маршрут не найден. Обновите подписку и повторите.');
+    }
+    if (group.routeType == 'smart_group') {
+      throw StateError(
+          'Это Smart Group. Используйте проверку задержки для групп.');
+    }
+    final uris = await _account.fetchSubscriptionShareUris(resolved.$1.url);
+    (String, int)? endpoint;
+    for (final uriText in uris) {
+      endpoint = _endpointOfShareUri(uriText);
+      if (endpoint != null) break;
+    }
+    final latency = endpoint == null
+        ? null
+        : await _probeTcpLatency(endpoint.$1, endpoint.$2);
+    return TestResult(
+      serverID: group.id,
+      serverName: group.title.isEmpty ? group.id : group.title,
+      latencyMS: latency ?? -1,
+      error: latency == null ? 'Сервер не отвечает' : '',
+    );
+  }
+
   @override
   Future<List<TestResult>> testAllServers() async {
     final servers = await listServers();

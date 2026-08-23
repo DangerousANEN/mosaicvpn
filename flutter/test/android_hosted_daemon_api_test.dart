@@ -125,4 +125,14 @@ void main() {
     expect(servers.single.groupId, isEmpty);
     expect(servers.single.tag, isEmpty);
   });
+
+  test('testDirectRoute refuses Smart Group IDs instead of probing them',
+      () async {
+    final api = AndroidHostedDaemonApi.instance;
+    // A scoped Smart Group id must never be probed as a single server.
+    expect(
+      () => api.testDirectRoute('provider-sub-1:min-latency'),
+      throwsA(isA<StateError>()),
+    );
+  });
 }

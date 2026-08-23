@@ -966,7 +966,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
               .read(providerManifestForSubscriptionProvider(sourceID!).future)
           : await ref.read(mosaicManifestProvider.future);
       if (!mounted) return;
-      final group = manifest.groups.cast<ManifestGroup?>().firstWhere(
+      final group = manifest.routes.cast<ManifestGroup?>().firstWhere(
             (value) => value?.id == row.id,
             orElse: () => null,
           );
@@ -975,6 +975,31 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
           'Smart Group не найдена. Обновите подписку и повторите попытку.',
           ThemeColors.of(context).warning,
         );
+        return;
+      }
+      // A single-server direct route has no candidate feed: probing it with
+      // the Smart Group runner used to report misleading group errors.
+      if (!row.isSmartGroup) {
+        try {
+          final result =
+              await ref.read(daemonApiProvider).testDirectRoute(group.id);
+          ref.invalidate(serversProvider);
+          if (!mounted) return;
+          final ok = !result.failed && result.latencyMS >= 0;
+          _showMessage(
+            ok
+                ? '${group.title.isEmpty ? group.id : group.title}: '
+                    '${result.latencyMS} мс.'
+                : 'Сервер не отвечает.',
+            ok ? ThemeColors.of(context).success : ThemeColors.of(context).danger,
+          );
+        } catch (_) {
+          if (!mounted) return;
+          _showMessage(
+            'Не удалось проверить маршрут. Повторите после обновления источника.',
+            ThemeColors.of(context).danger,
+          );
+        }
         return;
       }
       await _runGroupLatencyTest(group);
