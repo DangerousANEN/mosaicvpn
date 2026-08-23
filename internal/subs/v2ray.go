@@ -127,6 +127,11 @@ func parseVLESS(subID, raw string) (proto.Server, error) {
 			"network":    q.Get("type"),
 			"path":       q.Get("path"),
 			"host":       q.Get("host"),
+			// Camouflage deployments commonly serve a certificate for the
+			// fronting domain while the URI carries sni=<mask>. The link
+			// explicitly opts out of verification with allowInsecure=1;
+			// dropping it makes every handshake fail x509 verification.
+			"allow_insecure": q.Get("allowInsecure"),
 		},
 	}
 	return s, nil

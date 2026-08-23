@@ -880,7 +880,13 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 	}
 
 	// ---- Route rules ----
+	// The sniff action must run first: without it, DNS packets arriving on the
+	// TUN inbound are not classified as "protocol: dns" so hijack-dns never
+	// matches (queries leak as raw UDP), and domain connections keep only a
+	// resolved IP — which camouflage servers reject. Sniffing recovers both
+	// the DNS classification and the SNI/Host for every TCP stream.
 	routeRules := []any{
+		map[string]any{"action": "sniff"},
 		map[string]any{"protocol": "dns", "action": "hijack-dns"},
 	}
 	if len(prefs.BypassProcesses) > 0 {
@@ -1049,6 +1055,12 @@ func outboundForWithTag(s proto.Server, tag string) (map[string]any, error) {
 					"short_id":   rs("short_id"),
 				}
 			}
+			// allowInsecure=1 in the source link must survive into the
+			// generated config, or camouflage SNI (cert for a fronting
+			// domain) fails x509 verification and the tunnel never comes up.
+			if rs("insecure") == "true" || rs("allow_insecure") == "1" || rs("skip-cert-verify") == "true" {
+				tlsBlock["insecure"] = true
+			}
 		}
 		if len(tlsBlock) > 0 {
 			out["tls"] = tlsBlock
@@ -1195,7 +1207,7 @@ func outboundForWithTag(s proto.Server, tag string) (map[string]any, error) {
 				"fingerprint": fp,
 			}
 		}
-		if rs("insecure") == "true" || rs("skip-cert-verify") == "true" {
+		if rs("insecure") == "true" || rs("allow_insecure") == "1" || rs("skip-cert-verify") == "true" {
 			tlsBlock["insecure"] = true
 		}
 		out["tls"] = tlsBlock
