@@ -316,13 +316,17 @@ func (b *SingBoxBackend) Start(ctx context.Context, server proto.Server, prefs s
 
 // HotReload updates the sing-box config file in place without restarting the process or dropping TUN.
 func (b *SingBoxBackend) HotReload(ctx context.Context, server proto.Server, prefs store.Prefs, rules []proto.Rule) error {
+	// Snapshot the mutable fields we need under the lock, then release it:
+	// reloadClashConfig below re-acquires b.mu, and sync.Mutex is not
+	// reentrant — holding it across that call deadlocked every hot-reload
+	// on a connected tunnel (prefs PUT hung forever and took down Stop,
+	// Stats and the health loop with it).
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	if b.cmd == nil || b.cmd.Process == nil {
+		b.mu.Unlock()
 		return errors.New("sing-box process is not running")
 	}
-
+	clashSecret := b.clashSecret
 	socksPort := 2080
 	httpPort := 2081
 	clashPort := 9090
@@ -331,6 +335,17 @@ func (b *SingBoxBackend) HotReload(ctx context.Context, server proto.Server, pre
 			socksPort, _ = strconv.Atoi(p)
 		}
 	}
+	if b.http != "" {
+		if _, p, err := net.SplitHostPort(b.http); err == nil {
+			httpPort, _ = strconv.Atoi(p)
+		}
+	}
+	if b.clashApi != "" {
+		if _, p, err := net.SplitHostPort(b.clashApi); err == nil {
+			clashPort, _ = strconv.Atoi(p)
+		}
+	}
+	b.mu.Unlock()
 
 	dns := proto.DNSConfig{
 		Mode:    prefs.DNSMode,
@@ -345,7 +360,7 @@ func (b *SingBoxBackend) HotReload(ctx context.Context, server proto.Server, pre
 		egresses = b.store.Snapshot().Egresses
 	}
 
-	cfg, err := BuildSingBoxConfigWithServers(server, socksPort, httpPort, prefs, rules, dns, clashPort, b.clashSecret, allServers, egresses)
+	cfg, err := BuildSingBoxConfigWithServers(server, socksPort, httpPort, prefs, rules, dns, clashPort, clashSecret, allServers, egresses)
 	if err != nil {
 		return fmt.Errorf("build sing-box config for hot reload: %w", err)
 	}
@@ -697,14 +712,27 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 	}
 
 	if prefs.TunnelMode == "tun" || prefs.TunnelMode == "" {
-		inbounds = append(inbounds, map[string]any{
+		// Honor the user-selected TUN stack. Empty/unknown values keep the
+		// historical default (gvisor) so existing installs behave the same.
+		stack := "gvisor"
+		switch prefs.TunStack {
+		case "system", "mixed":
+			stack = prefs.TunStack
+		}
+		tunIn := map[string]any{
 			"type":         "tun",
 			"tag":          "tun-in",
 			"address":      []string{"172.19.0.1/30"},
 			"auto_route":   true,
 			"strict_route": true,
-			"stack":        "gvisor",
-		})
+			"stack":        stack,
+		}
+		// The settings screen exposes MTU; without this mapping the value was
+		// silently ignored and sing-box used its own default.
+		if prefs.MTU > 0 {
+			tunIn["mtu"] = prefs.MTU
+		}
+		inbounds = append(inbounds, tunIn)
 	}
 
 	allOutbounds := append(proxyOutbounds,
