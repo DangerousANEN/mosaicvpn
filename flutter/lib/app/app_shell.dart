@@ -197,24 +197,13 @@ class _AppShellState extends ConsumerState<AppShell>
   /// pending callback simply returns without changing the selected screen.
   Future<void> _completeWebsiteEnrollment() async {
     if (!AppPlatform.isAndroid || _enrollmentCompleting) return;
-    final api = ref.read(daemonApiProvider);
-    if (api is! AndroidHostedDaemonApi) {
-      // Cold start: the daemon API provider may not be initialised yet when
-      // the first frame runs. Without a retry the pending browser enrollment
-      // is silently dropped and the subscription never appears - the exact
-      // "app opened but nothing was added" report. Retry briefly.
-      for (var attempt = 0; attempt < 5; attempt++) {
-        await Future<void>.delayed(Duration(milliseconds: 300 * (attempt + 1)));
-        if (!mounted || _enrollmentCompleting) return;
-        final retryApi = ref.read(daemonApiProvider);
-        if (retryApi is AndroidHostedDaemonApi) {
-          await _completeEnrollmentWith(retryApi);
-          return;
-        }
-      }
-      return;
-    }
-    await _completeEnrollmentWith(api);
+    // daemonApiProvider returns a lazy delegating wrapper (_ResolvedDaemonApi),
+    // so `is AndroidHostedDaemonApi` NEVER matched here and every browser
+    // enrollment was silently dropped before any exchange request left the
+    // device. The hosted facade is an explicit singleton on Android: use it
+    // directly and let its own pending-callback check decide whether there is
+    // anything to exchange.
+    await _completeEnrollmentWith(AndroidHostedDaemonApi.instance);
   }
 
   Future<void> _completeEnrollmentWith(
