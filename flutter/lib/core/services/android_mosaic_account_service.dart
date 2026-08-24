@@ -1070,6 +1070,14 @@ class AndroidMosaicAccountService {
             if ((query['sni'] ?? '').isNotEmpty) 'server_name': query['sni'],
             if ((query['fp'] ?? '').isNotEmpty)
               'utls': {'enabled': true, 'fingerprint': query['fp']},
+            // allowInsecure=1 / insecure=1 in the share link must survive into
+            // the sing-box TLS block, exactly like the desktop generator does.
+            // Mosaic nodes present a sub.zxc1x1.ru certificate while masquerading
+            // as sni=vk.com; without this flag the Android TLS handshake fails
+            // hostname verification and the tunnel never carries traffic.
+            if (_shareFlag(query, const ['allowInsecure', 'allow_insecure', 'insecure']) ||
+                (query['skip-cert-verify'] ?? '').toLowerCase() == 'true')
+              'insecure': true,
           };
           if (security == 'reality') {
             tls['reality'] = {
@@ -1152,12 +1160,28 @@ class AndroidMosaicAccountService {
           'tls': {
             'enabled': true,
             if ((query['sni'] ?? '').isNotEmpty) 'server_name': query['sni'],
+            // See the VLESS branch: share links carrying allowInsecure must
+            // produce tls.insecure, or hostname verification kills the tunnel.
+            if (_shareFlag(query, const ['allowInsecure', 'allow_insecure', 'insecure']) ||
+                (query['skip-cert-verify'] ?? '').toLowerCase() == 'true')
+              'insecure': true,
           },
         };
       default:
         throw FormatException(
             'Протокол ${uri.scheme.toUpperCase()} пока не поддержан Android direct runtime.');
     }
+  }
+
+  /// True when any of [names] appears in the share-URI query with a truthy
+  /// value (1/true). Share links spell this flag inconsistently across
+  /// exporters: `allowInsecure=1`, `allow_insecure=1`, `insecure=1`.
+  static bool _shareFlag(Map<String, String> query, List<String> names) {
+    for (final name in names) {
+      final raw = query[name]?.toLowerCase();
+      if (raw == '1' || raw == 'true') return true;
+    }
+    return false;
   }
 
   static (String, String)? _decodeShadowsocksCredentials(String value) {
