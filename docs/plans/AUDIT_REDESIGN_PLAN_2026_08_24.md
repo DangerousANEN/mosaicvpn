@@ -27,6 +27,12 @@
   URI долетает до `_completeDesktopWebsiteEnrollment` (app_links), подписка появляется без рестарта GUI.
 
 ### 0.3 Телефон: приложение открывается, но подписка не добавляется
+- **✅ НАЙДЕНА И ДОКАЗАНА (2026-08-24, логи сервера + код)**: в `_completeWebsiteEnrollment`
+  стоял guard `ref.read(daemonApiProvider) is! AndroidHostedDaemonApi`. Но `daemonApiProvider`
+  ВСЕГДА возвращает обёртку `_ResolvedDaemonApi` (ленивый делегат) — проверка не проходила
+  НИКОГДА, ни cold-, ни warm-start. Колбэк не потреблялся, `/api/app-auth/exchange` не вызывался.
+  Логи: Aug 23 12:25–12:34 `issue`=200 ×11, `exchange`=0. Фикс: коммит 0003347 — прямой вызов
+  `AndroidHostedDaemonApi.instance`. Релиз с фиксом: v0.3.40 (сборка CI 32693127808).
 - Механика App Link корректна: manifest `autoVerify=true` + `assetlinks.json` на проде (отдаётся, отпечаток совпадает).
 - Нативная передача: MainActivity кладёт URI в `pendingEnrollmentCallback` + шлёт
   `enrollmentCallbackReceived` в Dart; cold-start добивается через `consumeEnrollmentCallback` в postFrameCallback.
