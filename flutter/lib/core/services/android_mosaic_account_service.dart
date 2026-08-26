@@ -1298,6 +1298,10 @@ class AndroidMosaicAccountService {
     final config = existingConfig == null
         ? <String, dynamic>{}
         : Map<String, dynamic>.from(existingConfig);
+    // Debug builds ship a verbose runtime log; libbox forwards these lines to
+    // the CommandServerHandler.writeDebugMessage callback, which persists them
+    // to files/singbox.log for post-mortem analysis.
+    config['log'] = {'level': 'debug'};
     config['inbounds'] = [
       {
         'type': 'tun',
@@ -1315,19 +1319,28 @@ class AndroidMosaicAccountService {
           'include_package': proxyPackages,
       },
     ];
+    // A single-candidate config means the user picked a concrete physical
+    // route (e.g. Mosaic Direct). Routing through a urltest group there adds
+    // a health-check dependency loop: the checker needs working outbound
+    // connectivity to gstatic before any traffic is forwarded, and on a
+    // freshly raised TUN that first probe can stall, leaving every client
+    // connection reset. Route straight to the selected outbound instead.
+    final directSelection = outbounds.length == 1;
     config['outbounds'] = [
       ...outbounds,
-      {
-        'type': 'urltest',
-        'tag': routeTag,
-        'outbounds': tags,
-        'url': 'https://www.gstatic.com/generate_204',
-        'interval': '15s',
-        'tolerance': 50,
-        'interrupt_exist_connections': true,
-      },
+      if (!directSelection)
+        {
+          'type': 'urltest',
+          'tag': routeTag,
+          'outbounds': tags,
+          'url': 'https://www.gstatic.com/generate_204',
+          'interval': '15s',
+          'tolerance': 50,
+          'interrupt_exist_connections': true,
+        },
       {'type': 'direct', 'tag': 'direct'},
     ];
+    final effectiveFinal = directSelection ? tags.first : routeTag;
     // A TUN config needs an explicit resolver and DNS hijack. Without this,
     // Android may send domain lookups to an outbound that does not carry UDP,
     // leaving otherwise valid server connections apparently frozen.
@@ -1355,7 +1368,7 @@ class AndroidMosaicAccountService {
     ];
     route['auto_detect_interface'] = true;
     route['default_domain_resolver'] = dnsTag;
-    route['final'] = routeTag;
+    route['final'] = effectiveFinal;
     config['route'] = route;
     return jsonEncode(config);
   }

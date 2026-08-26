@@ -49,6 +49,9 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         const val EXTRA_CONFIG = "singbox_config"
         private const val TAG = "MosaicVpnService"
 
+        private val simpleDateFormat =
+            java.text.SimpleDateFormat("MM-dd HH:mm:ss.SSS", java.util.Locale.US)
+
         @Volatile private var runtimeState: String = "disconnected"
 
         /// Recent native runtime log lines with monotonic sequence numbers,
@@ -164,12 +167,54 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                     publishError("VPN configuration is empty")
                     stopRuntime()
                 } else {
-                    activeConfig = config
-                    runtimeState = "connecting"
-                    runtimeError = null
-                    appendNativeLog("start: accepted config (${config.length} bytes)")
-                    startForeground(NOTIFICATION_ID, makeNotification("Подключение…"))
-                    Thread({ startOrReloadRuntime(config) }, "MosaicVpnRuntime").start()
+                        activeConfig = config
+                        runtimeState = "connecting"
+                        runtimeError = null
+                        appendNativeLog("start: accepted config (${config.length} bytes)")
+                        // Pin the outbound dialer to the current default network.
+                        // route.auto_detect_interface relies on the platform dialer
+                        // control path (ProtectFunc), which libbox only wires when
+                        // its NetworkManager sees a non-nil platform interface; in
+                        // this build the dialers were still looping back into tun0,
+                        // so every client TCP got reset. An explicit bind_interface
+                        // takes the guaranteed `options.BindInterface` branch in
+                        // common/dialer and binds sockets to wlan0/rmnet directly.
+                        val pinnedConfig = runCatching {
+                            val cm = getSystemService(Context.CONNECTIVITY_SERVICE)
+                                as android.net.ConnectivityManager
+                            val active = cm.activeNetwork ?: return@runCatching config
+                            val iface = cm.getLinkProperties(active)?.interfaceName
+                                ?: return@runCatching config
+                            Log.i(TAG, "pinning route.default_interface = $iface")
+                            org.json.JSONObject(config).apply {
+                                val route = optJSONObject("route") ?: put(
+                                    "route", org.json.JSONObject()).let { getJSONObject("route") }
+                                route.put("default_interface", iface)
+                                // bind_interface and auto_detect_interface are
+                                // mutually exclusive; explicit bind wins.
+                                route.remove("auto_detect_interface")
+                                put("route", route)
+                            }.toString()
+                        }.getOrDefault(config)
+                        activeConfig = pinnedConfig
+                        runCatching {
+                            java.io.File(filesDir, "last-config.json").writeText(pinnedConfig)
+                        }
+                    // Android 14+ (targetSDK 34+) requires the FGS type to be
+                    // declared both in the manifest AND passed explicitly to
+                    // startForeground(); the one-arg overload crashes with
+                    // MissingForegroundServiceTypeException on API 35/36/37
+                    // even when foregroundServiceType="specialUse" is set.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                        startForeground(
+                            NOTIFICATION_ID,
+                            makeNotification("Подключение…"),
+                            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+                        )
+                    } else {
+                        startForeground(NOTIFICATION_ID, makeNotification("Подключение…"))
+                    }
+                    Thread({ startOrReloadRuntime(pinnedConfig) }, "MosaicVpnRuntime").start()
                 }
             }
         }
@@ -316,7 +361,11 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     override fun setSystemProxyEnabled(isEnabled: Boolean) = Unit
 
     override fun writeDebugMessage(message: String) {
-        Log.d(TAG, message)
+        Log.i(TAG, message)
+        try {
+            java.io.File(filesDir, "singbox.log")
+                .appendText(simpleDateFormat.format(java.util.Date()) + " " + message + "\n")
+        } catch (_: Exception) {}
     }
 
     // --- libbox PlatformInterface ----------------------------------------
@@ -324,7 +373,9 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     override fun usePlatformAutoDetectInterfaceControl(): Boolean = true
 
     override fun autoDetectInterfaceControl(fd: Int) {
-        protect(fd)
+        Log.i(TAG, "protect(fd=$fd) requested by libbox")
+        val ok = protect(fd)
+        Log.i(TAG, "protect(fd=$fd) -> $ok")
     }
 
     override fun openTun(options: TunOptions): Int {
@@ -342,8 +393,23 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         addAddresses(builder, options.inet4Address)
         addAddresses(builder, options.inet6Address)
         if (options.autoRoute) {
-            addRoutes(builder, options.inet4RouteAddress)
-            addRoutes(builder, options.inet6RouteAddress)
+            // libbox leaves inet4/6RouteAddress empty when the sing-box config
+            // relies on auto_route defaults. Upstream sing-box-for-android falls
+            // back to a default route in that case; without it the VPN interface
+            // is established with Routes: [] and ALL app traffic bypasses the
+            // tunnel while the UI still reports "Connected" (the "IP did not
+            // change" bug). Mirror upstream: explicit prefixes first, then the
+            // 0.0.0.0/0 + ::/0 fallback, then route ranges, then exclusions.
+            var addedInet4 = addRoutes(builder, options.inet4RouteAddress)
+            if (!addedInet4) {
+                builder.addRoute("0.0.0.0", 0)
+            }
+            var addedInet6 = addRoutes(builder, options.inet6RouteAddress)
+            if (!addedInet6) {
+                builder.addRoute("::", 0)
+            }
+            addRouteRanges(builder, options.inet4RouteRange)
+            addRouteRanges(builder, options.inet6RouteRange)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 addExcludedRoutes(builder, options.inet4RouteExcludeAddress)
                 addExcludedRoutes(builder, options.inet6RouteExcludeAddress)
@@ -372,7 +438,17 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         }
     }
 
-    private fun addRoutes(builder: Builder, routes: io.nekohasekai.libbox.RoutePrefixIterator) {
+    private fun addRoutes(builder: Builder, routes: io.nekohasekai.libbox.RoutePrefixIterator): Boolean {
+        var added = false
+        while (routes.hasNext()) {
+            val route = routes.next()
+            builder.addRoute(route.address(), route.prefix())
+            added = true
+        }
+        return added
+    }
+
+    private fun addRouteRanges(builder: Builder, routes: io.nekohasekai.libbox.RoutePrefixIterator) {
         while (routes.hasNext()) {
             val route = routes.next()
             builder.addRoute(route.address(), route.prefix())
@@ -401,7 +477,74 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     override fun clearDNSCache() = Unit
 
-    override fun closeDefaultInterfaceMonitor(listener: InterfaceUpdateListener) = Unit
+    // libbox relies on the platform interface to learn the current default
+    // network. With a no-op monitor (previous behaviour) sing-box never
+    // received UpdateDefaultInterface, considered the default interface
+    // unknown and silently dropped every outbound connection: the tunnel came
+    // up, ping was answered by the TUN stack itself, but no TCP ever reached
+    // the VLESS server ("connected" UI + ERR_CONNECTION_RESET in browsers).
+    // Mirror upstream SFA: watch ConnectivityManager and forward each change
+    // with the interface name/index of the first non-loopback address.
+    private var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
+
+    override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener) {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            ?: return
+        val callback = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                notifyDefault(listener, cm, network)
+            }
+
+            override fun onLinkPropertiesChanged(
+                network: android.net.Network,
+                linkProperties: android.net.LinkProperties,
+            ) {
+                notifyDefault(listener, cm, network)
+            }
+
+            override fun onCapabilitiesChanged(
+                network: android.net.Network,
+                networkCapabilities: android.net.NetworkCapabilities,
+            ) {
+                notifyDefault(listener, cm, network)
+            }
+        }
+        networkCallback = callback
+        try {
+            cm.registerNetworkCallback(
+                android.net.NetworkRequest.Builder()
+                    .addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build(),
+                callback,
+            )
+        } catch (error: Exception) {
+            Log.w(TAG, "Failed to register default interface monitor", error)
+        }
+    }
+
+    private fun notifyDefault(
+        listener: InterfaceUpdateListener,
+        cm: android.net.ConnectivityManager,
+        network: android.net.Network,
+    ) {
+        try {
+            val props = cm.getLinkProperties(network) ?: return
+            val iface = props.interfaceName ?: return
+            val index = java.net.NetworkInterface.getByName(iface)?.index ?: return
+            Log.i(TAG, "default interface update: $iface (idx=$index)")
+            listener.updateDefaultInterface(iface, index, false, false)
+        } catch (error: Exception) {
+            Log.w(TAG, "Failed to resolve default interface", error)
+        }
+    }
+
+    override fun closeDefaultInterfaceMonitor(listener: InterfaceUpdateListener) {
+        val callback = networkCallback ?: return
+        networkCallback = null
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            ?: return
+        runCatching { cm.unregisterNetworkCallback(callback) }
+    }
 
     override fun findConnectionOwner(
         ipProtocol: Int,
@@ -413,7 +556,68 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         throw UnsupportedOperationException("Connection owner lookup is unavailable")
     }
 
-    override fun getInterfaces(): NetworkInterfaceIterator = EmptyNetworkIterator
+    // libbox calls this on every reconnect to enumerate usable networks. With
+    // the previous EmptyNetworkIterator stub UpdateInterfaces() produced an
+    // empty interface table, so InterfaceFinder.ByIndex(wlan0=16) failed and
+    // defaultInterface stayed nil — every outbound dial returned ErrNoRoute
+    // (instant RST for clients, "connected" UI, zero traffic). Mirror SFA:
+    // report each network with INTERNET capability from ConnectivityManager.
+    override fun getInterfaces(): NetworkInterfaceIterator {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            ?: return EmptyNetworkIterator
+        val result = mutableListOf<NetworkInterface>()
+        for (network in cm.allNetworks) {
+            try {
+                val caps = cm.getNetworkCapabilities(network) ?: continue
+                if (!caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)) continue
+                val props = cm.getLinkProperties(network) ?: continue
+                val iface = props.interfaceName ?: continue
+                val jni = java.net.NetworkInterface.getByName(iface) ?: continue
+                val entry = NetworkInterface().apply {
+                    index = jni.index
+                    mtu = jni.mtu
+                    name = iface
+                    val addrList = buildList {
+                        // Go side parses every entry with netip.MustParsePrefix,
+                        // which panics (SIGABRT inside libbox.so) on a bare IP.
+                        // Emit CIDR notation: interface addresses already carry
+                        // the prefix length; DNS servers get /32 or /128.
+                        for (ua in jni.interfaceAddresses) {
+                            // hostAddress of a link-local IPv6 carries an
+                            // interface zone suffix ("fe80::1%wlan0"); Go's
+                            // netip.ParsePrefix rejects zones and panics.
+                            val ip = (ua.address.hostAddress ?: continue)
+                                .substringBefore('%')
+                            add("$ip/${ua.networkPrefixLength}")
+                        }
+                        for (dns in props.dnsServers) {
+                            val dnsIp = dns.hostAddress ?: continue
+                            add(if (dnsIp.contains(':')) "$dnsIp/128" else "$dnsIp/32")
+                        }
+                    }
+                    addresses = SimpleStringIterator(addrList)
+                    flags = 0
+                    type = when {
+                        caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> 1
+                        caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> 2
+                        else -> 0
+                    }
+                    dnsServer = SimpleStringIterator(props.dnsServers.mapNotNull { it.hostAddress })
+                    metered = !caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+                }
+                result.add(entry)
+            } catch (error: Exception) {
+                Log.w(TAG, "getInterfaces: skip $network", error)
+            }
+        }
+        Log.i(TAG, "getInterfaces: ${result.size} networks reported")
+        if (result.isEmpty()) return EmptyNetworkIterator
+        return object : NetworkInterfaceIterator {
+            private val it = result.iterator()
+            override fun hasNext(): Boolean = it.hasNext()
+            override fun next(): NetworkInterface = it.next()
+        }
+    }
 
     override fun includeAllNetworks(): Boolean = false
 
@@ -426,8 +630,6 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         if (text.isNotBlank()) updateNotification(text)
     }
 
-    override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener) = Unit
-
     override fun systemCertificates(): StringIterator = EmptyStringIterator
 
     override fun underNetworkExtension(): Boolean = false
@@ -438,6 +640,15 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         override fun hasNext(): Boolean = false
         override fun len(): Int = 0
         override fun next(): String = throw NoSuchElementException()
+    }
+
+    private class SimpleStringIterator(
+        private val items: List<String>,
+    ) : StringIterator {
+        private val iterator = items.iterator()
+        override fun hasNext(): Boolean = iterator.hasNext()
+        override fun len(): Int = items.size
+        override fun next(): String = iterator.next()
     }
 
     private object EmptyNetworkIterator : NetworkInterfaceIterator {
