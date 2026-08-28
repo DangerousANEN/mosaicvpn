@@ -23,17 +23,26 @@ class ConnectionDashboard extends ConsumerStatefulWidget {
 
 class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 2600),
-  )..repeat();
+  late final AnimationController _pulse;
   String? _selectedSubscriptionId;
   String? _selectedGroupId;
-  bool _busy = false;
   final SmartGroupSelector _smartGroupSelector = SmartGroupSelector();
+  bool _busy = false;
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2600),
+    )..repeat();
+  }
 
   @override
   void dispose() {
+    // Stop first so no tick can attempt to recreate/use a ticker while Flutter
+    // is unmounting this state. Calling _pulse.stop() is safe even if the
+    // controller was never attached in a test harness.
+    _pulse.stop();
     _pulse.dispose();
     super.dispose();
   }
@@ -158,7 +167,8 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _DashboardHeader(onRefresh: () => ref.invalidate(vpnStatusProvider)),
+            _DashboardHeader(
+                onRefresh: () => ref.invalidate(vpnStatusProvider)),
             const SizedBox(height: 10),
             Expanded(
               child: _ConnectionHeroCard(
@@ -168,8 +178,9 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                 routeSubtitle: selected.subtitle.isEmpty
                     ? s.t('route_picker_hint')
                     : selected.subtitle,
-                onPickRoute:
-                    groups.length > 1 ? () => _pickGroup(context, groups, selected) : null,
+                onPickRoute: groups.length > 1
+                    ? () => _pickGroup(context, groups, selected)
+                    : null,
               ),
             ),
             const SizedBox(height: 12),
@@ -187,27 +198,26 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                       button: true,
                       label: 'Выбрать маршрут ${group.title}',
                       child: Material(
-                        color: active
-                            ? AtlasTheme.accent
-                            : c.bgCard,
+                        color: active ? AtlasTheme.accent : c.bgCard,
                         borderRadius: BorderRadius.circular(20),
                         child: InkWell(
                           borderRadius: BorderRadius.circular(20),
-                          onTap: group.disabled ? null : () {
-                            setState(() => _selectedGroupId = group.id);
-                          },
+                          onTap: group.disabled
+                              ? null
+                              : () {
+                                  setState(() => _selectedGroupId = group.id);
+                                },
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 13),
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: active
-                                    ? AtlasTheme.accent
-                                    : c.border,
+                                color: active ? AtlasTheme.accent : c.border,
                               ),
                             ),
                             alignment: Alignment.center,
-                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            child:
+                                Row(mainAxisSize: MainAxisSize.min, children: [
                               Icon(_chipIcon(group.icon),
                                   size: 15,
                                   color: active
@@ -1193,13 +1203,11 @@ class _ConnectionHeroCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
-                    style:
-                        TextStyle(color: c.textSecondary, fontSize: 12.5)),
+                    style: TextStyle(color: c.textSecondary, fontSize: 12.5)),
                 if (connected && (status.latencyMS > 0)) ...[
                   const SizedBox(height: 2),
                   Text('${status.latencyMS} мс',
-                      style:
-                          TextStyle(color: tint, fontSize: 11.5)),
+                      style: TextStyle(color: tint, fontSize: 11.5)),
                 ],
                 if (onPickRoute != null && !connecting) ...[
                   const SizedBox(height: 10),
@@ -1263,16 +1271,14 @@ class _TunnelDiagramPainter extends CustomPainter {
       final phase = (progress + i / 3) % 1;
       final metric = path.computeMetrics().first;
       final point = metric.getTangentForOffset(metric.length * phase)!.position;
-      canvas.drawCircle(point, 3,
-          Paint()..color = color.withValues(alpha: (1 - phase) * .9));
+      canvas.drawCircle(
+          point, 3, Paint()..color = color.withValues(alpha: (1 - phase) * .9));
     }
   }
 
   @override
   bool shouldRepaint(covariant _TunnelDiagramPainter old) =>
-      old.progress != progress ||
-      old.color != color ||
-      old.active != active;
+      old.progress != progress || old.color != color || old.active != active;
 }
 
 /// Expanding pulse ring around the hero status icon.
@@ -1311,9 +1317,7 @@ class _StatusRingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _StatusRingPainter old) =>
-      old.progress != progress ||
-      old.color != color ||
-      old.active != active;
+      old.progress != progress || old.color != color || old.active != active;
 }
 
 /// Expanding pulse ring behind the desktop `_ConnectionVisual` icon.
@@ -1499,6 +1503,8 @@ Widget _groupIcon(String raw) {
     'lightning' => Icons.bolt_rounded,
     'speed' => Icons.speed_rounded,
     'shield' => Icons.shield_outlined,
+    'wrench' => Icons.build_rounded,
+    'hourglass' => Icons.hourglass_top_rounded,
     'flag_de' => Icons.flag_outlined,
     'flag_us' => Icons.flag_outlined,
     'flag_ca' => Icons.flag_outlined,

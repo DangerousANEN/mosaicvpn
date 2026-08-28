@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/billing_profile.dart';
 import '../models/payment_entry.dart';
@@ -73,6 +74,8 @@ class AndroidMosaicAccountService {
   static const _sessionTokenKey = 'mosaic_android_session_token';
   static const _usernameKey = 'mosaic_android_username';
   static const _appAuthStateKey = 'mosaic_android_app_auth_state';
+  static const _cachedAccountKey = 'mosaic_android_cached_account.v1';
+  static const _cachedManifestKey = 'mosaic_android_cached_manifest.v1';
   // Secure JSON map: local subscription ID -> AndroidMosaicSession fields.
   // A binding grants optional cabinet access only; VPN connection continues
   // through the subscription URL and never reads this map.
@@ -89,6 +92,65 @@ class AndroidMosaicAccountService {
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
   );
+  Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
+
+  Future<UnifiedAccount?> readCachedUnifiedAccount() async {
+    final raw = (await _prefs).getString(_cachedAccountKey);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return UnifiedAccount.fromJson(
+          Map<String, dynamic>.from(jsonDecode(raw) as Map));
+    } catch (_) {
+      await (await _prefs).remove(_cachedAccountKey);
+      return null;
+    }
+  }
+
+  Future<void> _cacheUnifiedAccount(UnifiedAccount account) async {
+    // Cache contains display metadata only; credentials remain in Keystore.
+    await (await _prefs).setString(
+        _cachedAccountKey,
+        jsonEncode({
+          'account_id': account.accountId,
+          'status': account.status,
+          'tier': account.tier,
+          'balance_kopecks': account.balanceKopecks,
+          'currency': account.currency,
+          'trial_ends_at': account.trialEndsAt?.toIso8601String(),
+          'expires_at': account.expiresAt?.toIso8601String(),
+          'next_charge_estimate_at':
+              account.nextChargeEstimateAt?.toIso8601String(),
+          'short_uuid': account.shortUuid,
+          'sub_url': account.subscriptionUrl,
+          'billing': {
+            'price_per_day_rub': account.pricePerDayRub,
+            'timezone': account.timezone,
+            'checkout_discount_percent': account.checkoutDiscountPercent,
+          },
+          'days_left': account.daysLeft,
+          'traffic_used_bytes': account.trafficUsedBytes,
+          'traffic_limit_bytes': account.trafficLimitBytes,
+          'lifetime_traffic_bytes': account.lifetimeTrafficBytes,
+          'device_limit': account.deviceLimit,
+        }));
+  }
+
+  Future<void> _cacheProviderManifest(Map<String, dynamic> payload) async {
+    await (await _prefs).setString(_cachedManifestKey, jsonEncode(payload));
+  }
+
+  Future<ProviderManifest?> readCachedProviderManifest() async {
+    final raw = (await _prefs).getString(_cachedManifestKey);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      return ProviderManifest.fromJson(Map<String, dynamic>.from(decoded));
+    } catch (_) {
+      await (await _prefs).remove(_cachedManifestKey);
+      return null;
+    }
+  }
 
   Future<AndroidMosaicSession?> restoreSession() async {
     final directToken = await _secureStorage.read(key: _directTokenKey);
@@ -207,17 +269,28 @@ class AndroidMosaicAccountService {
     return Map<String, dynamic>.from(response.data ?? const {});
   }
 
-  bool _sameMosaicSubscriptionUrl(String left, String right) {
+  /// Compares opaque subscription identities while tolerating a cosmetic
+  /// trailing slash. Dart represents `/ABC/` as `['ABC', '']`; using
+  /// `pathSegments.last` directly would reject an otherwise identical URL
+  /// returned canonically by the server after the one-time code is redeemed.
+  static bool sameSubscriptionUrlForTesting(String left, String right) {
     final leftUri = Uri.tryParse(left.trim());
     final rightUri = Uri.tryParse(right.trim());
     if (leftUri == null || rightUri == null) return false;
+    final leftSegments = leftUri.pathSegments.where((s) => s.isNotEmpty);
+    final rightSegments = rightUri.pathSegments.where((s) => s.isNotEmpty);
+    final leftIdentity = leftSegments.isEmpty ? null : leftSegments.last;
+    final rightIdentity = rightSegments.isEmpty ? null : rightSegments.last;
     return leftUri.isScheme('https') &&
         rightUri.isScheme('https') &&
         leftUri.host.toLowerCase() == rightUri.host.toLowerCase() &&
-        leftUri.pathSegments.isNotEmpty &&
-        rightUri.pathSegments.isNotEmpty &&
-        leftUri.pathSegments.last == rightUri.pathSegments.last;
+        leftIdentity != null &&
+        rightIdentity != null &&
+        leftIdentity == rightIdentity;
   }
+
+  bool _sameMosaicSubscriptionUrl(String left, String right) =>
+      sameSubscriptionUrlForTesting(left, right);
 
   Future<AndroidMosaicSession> loginWithEmail(
       String email, String password) async {
@@ -399,14 +472,21 @@ class AndroidMosaicAccountService {
         ? await restoreBinding(subscriptionID!)
         : await restoreSession();
     if (session == null) return null;
-    final payload = await _getAccountJson(
-      '/api/billing/profile',
-      subscriptionID: subscriptionID,
-    );
-    if (payload['linked'] == false) return null;
-    return UnifiedAccount.fromJson(payload['account'] is Map
-        ? Map<String, dynamic>.from(payload['account'] as Map)
-        : payload);
+    try {
+      final payload = await _getAccountJson(
+        '/api/billing/profile',
+        subscriptionID: subscriptionID,
+      );
+      if (payload['linked'] == false) return null;
+      final account = UnifiedAccount.fromJson(payload['account'] is Map
+          ? Map<String, dynamic>.from(payload['account'] as Map)
+          : payload);
+      await _cacheUnifiedAccount(account);
+      return account;
+    } on DioException {
+      // Offline mode may show the last verified display snapshot, never tokens.
+      return readCachedUnifiedAccount();
+    }
   }
 
   Future<UnifiedAccount> setFrozen(
@@ -472,13 +552,24 @@ class AndroidMosaicAccountService {
   /// It contains route metadata only, never a physical node pool, source URLs,
   /// or account information. Android resolves the selected group locally from
   /// the authenticated opaque direct feed.
-  Future<ProviderManifest> getProviderManifest() async {
-    final response = await _dio.get<Map<String, dynamic>>('/api/manifest.json');
-    final payload = Map<String, dynamic>.from(response.data ?? const {});
-    if (payload.isEmpty) {
-      throw StateError('Сервис не вернул список маршрутов.');
+  Future<ProviderManifest> getProviderManifest({String? subscriptionId}) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/api/manifest.json',
+        queryParameters:
+            subscriptionId == null ? null : {'subscription_id': subscriptionId},
+      );
+      final payload = Map<String, dynamic>.from(response.data ?? const {});
+      if (payload.isEmpty) {
+        throw StateError('Сервис не вернул список маршрутов.');
+      }
+      await _cacheProviderManifest(payload);
+      return ProviderManifest.fromJson(payload);
+    } on DioException {
+      final cached = await readCachedProviderManifest();
+      if (cached != null) return cached;
+      rethrow;
     }
-    return ProviderManifest.fromJson(payload);
   }
 
   /// Returns the Android account cabinet through the hosted authority. A brief
@@ -682,8 +773,7 @@ class AndroidMosaicAccountService {
     final decodedConfig = _decodeCandidateDocument(payload);
     final rawOutbounds = decodedConfig?['outbounds'];
     if (rawOutbounds is! List) return const [];
-    String normalize(String value) =>
-        value.toLowerCase().replaceAll('_', '-');
+    String normalize(String value) => value.toLowerCase().replaceAll('_', '-');
     final wanted = normalize(groupId);
     final hasMembershipMetadata = <bool>[];
     final members = <Map<String, dynamic>>[];
@@ -739,7 +829,8 @@ class AndroidMosaicAccountService {
       }
     }
     try {
-      final normalized = base64.normalize(compact.replaceAll(RegExp(r'\s+'), ''));
+      final normalized =
+          base64.normalize(compact.replaceAll(RegExp(r'\s+'), ''));
       final text = utf8.decode(base64Decode(normalized), allowMalformed: false);
       if (text.trim().startsWith('{')) {
         final decoded = jsonDecode(text);
@@ -940,7 +1031,8 @@ class AndroidMosaicAccountService {
       // The collector publishes snake_case ids (`min_latency`, `max_speed`)
       // while the manifest uses hyphenated ids (`min-latency`, `max-speed`);
       // compare on a normalized form so both spellings match.
-      String normalize(String value) => value.toLowerCase().replaceAll('_', '-');
+      String normalize(String value) =>
+          value.toLowerCase().replaceAll('_', '-');
       final wanted = normalize(groupId);
       return memberships.any((id) => normalize(id) == wanted);
     }
@@ -1075,7 +1167,8 @@ class AndroidMosaicAccountService {
             // Mosaic nodes present a sub.zxc1x1.ru certificate while masquerading
             // as sni=vk.com; without this flag the Android TLS handshake fails
             // hostname verification and the tunnel never carries traffic.
-            if (_shareFlag(query, const ['allowInsecure', 'allow_insecure', 'insecure']) ||
+            if (_shareFlag(query,
+                    const ['allowInsecure', 'allow_insecure', 'insecure']) ||
                 (query['skip-cert-verify'] ?? '').toLowerCase() == 'true')
               'insecure': true,
           };
@@ -1103,16 +1196,18 @@ class AndroidMosaicAccountService {
             if ((query['path'] ?? '').isNotEmpty) 'path': query['path'],
             if ((query['serviceName'] ?? '').isNotEmpty)
               'service_name': query['serviceName'],
-            if (transportType == 'ws' || transportType == 'httpupgrade')
-              ...<String, dynamic>{
-                // sing-box has no `host` transport field; the WebSocket and
-                // HTTP-Upgrade Host header lives under `headers`.
-                if (hostParam.isNotEmpty)
-                  'headers': {'Host': hostParam.split(',').first.trim()},
-              }
-            else if (transportType == 'http' && hostParam.isNotEmpty)
+            if (transportType == 'ws' ||
+                transportType == 'httpupgrade') ...<String, dynamic>{
+              // sing-box has no `host` transport field; the WebSocket and
+              // HTTP-Upgrade Host header lives under `headers`.
+              if (hostParam.isNotEmpty)
+                'headers': {'Host': hostParam.split(',').first.trim()},
+            } else if (transportType == 'http' && hostParam.isNotEmpty)
               'host': <String>[
-                ...hostParam.split(',').map((h) => h.trim()).where((h) => h.isNotEmpty),
+                ...hostParam
+                    .split(',')
+                    .map((h) => h.trim())
+                    .where((h) => h.isNotEmpty),
               ],
           };
         }
@@ -1162,7 +1257,8 @@ class AndroidMosaicAccountService {
             if ((query['sni'] ?? '').isNotEmpty) 'server_name': query['sni'],
             // See the VLESS branch: share links carrying allowInsecure must
             // produce tls.insecure, or hostname verification kills the tunnel.
-            if (_shareFlag(query, const ['allowInsecure', 'allow_insecure', 'insecure']) ||
+            if (_shareFlag(query,
+                    const ['allowInsecure', 'allow_insecure', 'insecure']) ||
                 (query['skip-cert-verify'] ?? '').toLowerCase() == 'true')
               'insecure': true,
           },
@@ -1363,6 +1459,10 @@ class AndroidMosaicAccountService {
         : <String, dynamic>{};
     final existingRules = route['rules'];
     route['rules'] = [
+      // Classify DNS and TCP streams before hijack-dns. Without sniffing,
+      // Android TUN DNS packets are not marked as protocol=dns and domain
+      // connections lose their SNI/Host before reaching camouflage servers.
+      {'action': 'sniff'},
       {'protocol': 'dns', 'action': 'hijack-dns'},
       if (existingRules is List) ...existingRules,
     ];

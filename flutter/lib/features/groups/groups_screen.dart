@@ -2569,6 +2569,8 @@ IconData _groupIcon(String icon) {
     'lightning' => Icons.bolt_rounded,
     'speed' => Icons.speed_rounded,
     'shield' => Icons.shield_outlined,
+    'wrench' => Icons.build_rounded,
+    'hourglass' => Icons.hourglass_top_rounded,
     'flag_de' || 'flag_ca' || 'flag_us' => Icons.flag_outlined,
     _ => Icons.route_outlined,
   };

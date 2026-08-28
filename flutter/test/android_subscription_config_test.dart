@@ -4,6 +4,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mosaic_vpn/core/services/android_mosaic_account_service.dart';
 
 void main() {
+  test('accepts cosmetic trailing slash in subscription identity', () {
+    expect(
+      AndroidMosaicAccountService.sameSubscriptionUrlForTesting(
+        'https://sub.zxc1x1.ru/ABC12345/',
+        'https://sub.zxc1x1.ru/ABC12345',
+      ),
+      isTrue,
+    );
+    expect(
+      AndroidMosaicAccountService.sameSubscriptionUrlForTesting(
+        'https://sub.zxc1x1.ru/ABC12345',
+        'https://sub.zxc1x1.ru/other',
+      ),
+      isFalse,
+    );
+  });
+
   test('rejects an XHTTP VLESS URI with a clear error', () {
     const shareUri =
         'vless://e619d9bd-2950-4098-bcf2-e943fd6b5647@5.175.188.152:443'
@@ -38,6 +55,10 @@ void main() {
 
     expect(vless['server'], '198.51.100.44');
     expect(config['inbounds'], isNotEmpty);
+    final route = config['route'] as Map<String, dynamic>;
+    final rules = route['rules'] as List<dynamic>;
+    expect(rules.first, {'action': 'sniff'});
+    expect(rules[1], {'protocol': 'dns', 'action': 'hijack-dns'});
   });
 
   test('builds a native TUN sing-box config from a SIP002 Shadowsocks URI', () {

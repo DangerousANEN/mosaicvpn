@@ -724,7 +724,7 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 			"tag":          "tun-in",
 			"address":      []string{"172.19.0.1/30"},
 			"auto_route":   true,
-			"strict_route": true,
+			"strict_route": prefs.KillSwitch,
 			"stack":        stack,
 		}
 		// The settings screen exposes MTU; without this mapping the value was

@@ -174,6 +174,36 @@ func TestGeneratedTunConfigPassesBundledSingBoxCheck(t *testing.T) {
 	}
 }
 
+func TestBuildConfigFollowsKillSwitchPreference(t *testing.T) {
+	server := proto.Server{ID: "node", Name: "Node", Protocol: proto.ProtoVLESS, Address: "198.51.100.10", Port: 443, Raw: map[string]any{"uuid": "00000000-0000-0000-0000-000000000001"}}
+	for _, tc := range []struct {
+		name    string
+		enabled bool
+	}{{"enabled", true}, {"disabled", false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			config, err := BuildSingBoxConfigWithServers(server, 1080, 1081, store.Prefs{TunnelMode: "tun", KillSwitch: tc.enabled}, nil, proto.DNSConfig{Mode: "disabled"}, 0, "", []proto.Server{server}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var decoded struct {
+				Inbounds []map[string]any `json:"inbounds"`
+			}
+			if err := json.Unmarshal(config, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			for _, inbound := range decoded.Inbounds {
+				if inbound["tag"] == "tun-in" {
+					if got, ok := inbound["strict_route"].(bool); !ok || got != tc.enabled {
+						t.Fatalf("strict_route=%v, want %v", inbound["strict_route"], tc.enabled)
+					}
+					return
+				}
+			}
+			t.Fatal("tun-in inbound not found")
+		})
+	}
+}
+
 func TestTunConfigDetectsPhysicalDefaultInterface(t *testing.T) {
 	server := proto.Server{
 		ID:       "node",

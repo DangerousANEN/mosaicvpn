@@ -588,6 +588,22 @@ def init_db():
         updated_by INTEGER NOT NULL
     )
     """)
+    # Route availability / maintenance overrides.  Admins can disable a named
+    # Smart Group or Direct route (by its manifest ID) with a reason and an
+    # optional icon.  The manifest handler applies these overrides before
+    # serving the JSON, so disabled routes stay in the catalog (for "soon"
+    # display) but are not connectable.
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS route_policies (
+        route_id    TEXT PRIMARY KEY,
+        disabled    INTEGER NOT NULL DEFAULT 0,
+        reason      TEXT NOT NULL DEFAULT '',
+        icon        TEXT NOT NULL DEFAULT '',
+        min_eligible INTEGER NOT NULL DEFAULT 0,
+        updated_at  TEXT NOT NULL,
+        updated_by  INTEGER NOT NULL
+    )
+    """)
     conn.commit()
     conn.close()
 
@@ -1256,6 +1272,163 @@ def get_admin_balance_credit_history(limit=50):
         }
         for row in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# Route availability / maintenance control
+# ---------------------------------------------------------------------------
+
+# Known manifest route IDs.  Kept in sync with _handle_provider_manifest.
+KNOWN_ROUTE_IDS = frozenset({
+    "min-latency", "stable", "max-speed", "germany", "canada", "direct",
+})
+ROUTE_DB_GROUP_IDS = {
+    "min-latency": "min_latency", "stable": "stable",
+    "max-speed": "max_speed", "germany": "germany", "canada": "canada",
+}
+DEFAULT_ROUTE_MIN_ELIGIBLE = {
+    "min-latency": 12, "stable": 12, "max-speed": 12,
+    "germany": 6, "canada": 6,
+}
+
+
+def get_route_policies():
+    """Return all stored route-policy overrides as a list of dicts."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT route_id, disabled, reason, icon, min_eligible, updated_at, updated_by "
+            "FROM route_policies ORDER BY route_id"
+        )
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+    return [
+        {
+            "route_id": row[0],
+            "disabled": bool(row[1]),
+            "reason": row[2],
+            "icon": row[3],
+            "min_eligible": row[4],
+            "updated_at": row[5],
+            "updated_by": row[6],
+        }
+        for row in rows
+    ]
+
+
+def get_route_policy(route_id):
+    """Return the stored policy for *route_id*, or None if not overridden."""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT route_id, disabled, reason, icon, min_eligible, updated_at, updated_by "
+            "FROM route_policies WHERE route_id = ?",
+            (route_id,),
+        )
+        row = cursor.fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return None
+    return {
+        "route_id": row[0],
+        "disabled": bool(row[1]),
+        "reason": row[2],
+        "icon": row[3],
+        "min_eligible": row[4],
+        "updated_at": row[5],
+        "updated_by": row[6],
+    }
+
+
+def set_route_policy(route_id, disabled, reason, icon, min_eligible, admin_telegram_id):
+    """Upsert a route-policy override and return the stored record."""
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO route_policies (route_id, disabled, reason, icon, min_eligible, updated_at, updated_by) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(route_id) DO UPDATE SET "
+            "  disabled = excluded.disabled, "
+            "  reason = excluded.reason, "
+            "  icon = excluded.icon, "
+            "  min_eligible = excluded.min_eligible, "
+            "  updated_at = excluded.updated_at, "
+            "  updated_by = excluded.updated_by",
+            (route_id, int(bool(disabled)), reason, icon, int(min_eligible), now, admin_telegram_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return get_route_policy(route_id)
+
+
+def get_route_eligible_counts():
+    """Count recently proxy-verified members for published Smart Groups."""
+    conn = psycopg2.connect(host="127.0.0.1", port=6767, user="postgres",
+                            password="postgres", database="postgres")
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT gn.group_id, count(DISTINCT mn.id)
+            FROM mosaic_group_nodes gn
+            JOIN mosaic_nodes mn ON mn.id = gn.node_id
+            WHERE mn.enabled IS TRUE AND mn.proxy_ok IS TRUE
+              AND mn.last_checked_at >= now() - interval '6 hours'
+            GROUP BY gn.group_id
+        """)
+        return {str(group_id): int(count) for group_id, count in cursor.fetchall()}
+    finally:
+        conn.close()
+
+
+def apply_route_policies(groups, eligible_counts=None):
+    """Return a new list with admin overrides applied to each manifest group.
+
+    Disabled overrides take precedence over candidate-count quality gates.
+    min_eligible == 0 means «no automatic quality gate».  The returned list
+    always contains every group (disabled ones are kept for «soon» display).
+    """
+    policies_by_id = {p["route_id"]: p for p in get_route_policies()}
+    result = []
+    for group in groups:
+        g = dict(group)  # shallow copy so we don't mutate the original
+        route_id = g.get("id") or ""
+        policy = policies_by_id.get(route_id)
+        if eligible_counts is not None and route_id in ROUTE_DB_GROUP_IDS:
+            minimum = int((policy or {}).get("min_eligible") or DEFAULT_ROUTE_MIN_ELIGIBLE[route_id])
+            eligible = int(eligible_counts.get(ROUTE_DB_GROUP_IDS[route_id], 0))
+            g["eligible_count"] = eligible
+            g["minimum_eligible"] = minimum
+            if eligible < minimum:
+                g["disabled"] = True
+                g["disabled_reason"] = "Пока недостаточно качественных серверов. Маршрут вскоре станет доступен."
+                g["badge"] = "Скоро доступно"
+                g["icon"] = "hourglass"
+        if policy:
+            if policy["disabled"]:
+                g["disabled"] = True
+                if policy["reason"]:
+                    g["disabled_reason"] = policy["reason"]
+                if policy["icon"]:
+                    g["icon"] = policy["icon"]
+            else:
+                # Manual enable clears a baseline/manual disabled flag. It may
+                # not bypass a failed automatic quality gate.
+                if eligible_counts is None or route_id not in ROUTE_DB_GROUP_IDS:
+                    g["disabled"] = False
+                    g["disabled_reason"] = ""
+                elif int(eligible_counts.get(ROUTE_DB_GROUP_IDS[route_id], 0)) >= int(
+                        policy.get("min_eligible") or DEFAULT_ROUTE_MIN_ELIGIBLE[route_id]):
+                    g["disabled"] = False
+                    g["disabled_reason"] = ""
+        result.append(g)
+    return result
 
 
 def get_user(telegram_id):
@@ -3445,7 +3618,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
 
     def _cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "https://sub.zxc1x1.ru")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
     def do_OPTIONS(self):
@@ -3961,6 +4134,28 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                 "client_policy": {**policy, "mode": "latency"},
             },
         ]
+        direct_routes = [
+            {
+                "id": "direct", "title": "Mosaic Direct", "route_type": "direct",
+                "type": "direct_node", "pool_id": "public-direct", "direct_path": "/direct",
+                "protocol": "vless", "category": "direct", "icon": "node", "badge": "Прямой",
+                "description": "Единственный прямой маршрут из публичной подписки.",
+            },
+        ]
+
+        # Apply persistent admin route-policy overrides after the baseline
+        # catalog is assembled.  Overrides travel in the same JSON fields the
+        # client already understands (disabled/disabled_reason/icon), so no
+        # client change is needed.
+        try:
+            eligible_counts = get_route_eligible_counts()
+            all_routes = groups + direct_routes
+            after = apply_route_policies(all_routes, eligible_counts)
+            split = len(groups)
+            groups = after[:split]
+            direct_routes = after[split:]
+        except Exception as exc:
+            logger.warning("apply_route_policies failed (manifest served without overrides): %s", exc)
         self._send_json(200, {
             "provider_name": "MosaicVPN",
             "user_tier": "standard",
@@ -3968,14 +4163,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             # A direct route is deliberately separate from Smart Groups. Its
             # physical configuration is fetched by the local daemon from the
             # ordinary subscription feed and never appears in the UI list.
-            "direct_routes": [
-                {
-                    "id": "direct", "title": "Mosaic Direct", "route_type": "direct",
-                    "type": "direct_node", "pool_id": "public-direct", "direct_path": "/direct",
-                    "protocol": "vless", "category": "direct", "icon": "node", "badge": "Прямой",
-                    "description": "Единственный прямой маршрут из публичной подписки.",
-                },
-            ],
+            "direct_routes": direct_routes,
         })
 
     def _handle_client_candidates(self, opaque_id):
@@ -4365,7 +4553,21 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         # Administrative journal, authorization is performed inside the handler.
         if path == "/api/admin/balance-credits":
             return self._handle_admin_balance_credit_history(query)
+        # Route availability / maintenance controls.
+        if path == "/api/admin/routes":
+            return self._handle_admin_routes_get(query)
 
+        self.send_response(404)
+        self._cors_headers()
+        self.end_headers()
+
+    def do_PUT(self):
+        """Handle PUT requests (route-policy overrides only)."""
+        path = self.path.split("?")[0].rstrip("/")
+        # PUT /api/admin/routes/<route_id>
+        if path.startswith("/api/admin/routes/"):
+            route_id = urllib.parse.unquote(path[len("/api/admin/routes/"):])
+            return self._handle_admin_route_put(route_id)
         self.send_response(404)
         self._cors_headers()
         self.end_headers()
@@ -4444,6 +4646,81 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         except (TypeError, ValueError):
             limit = 50
         self._send_json(200, {"credits": get_admin_balance_credit_history(limit)})
+
+    def _handle_admin_routes_get(self, query):
+        """GET /api/admin/routes — list all route policies (admin only)."""
+        session = self._get_admin_session(query.get("token", [""])[0])
+        if not session:
+            return
+        policies = get_route_policies()
+        # Merge with the known route catalog so the UI can display every route
+        # even before an admin has set an explicit policy for it.
+        known = {rid: {"route_id": rid, "disabled": False, "reason": "", "icon": "", "min_eligible": 0,
+                        "updated_at": None, "updated_by": None}
+                 for rid in KNOWN_ROUTE_IDS}
+        for p in policies:
+            known[p["route_id"]] = p
+        self._send_json(200, {"routes": sorted(known.values(), key=lambda r: r["route_id"])})
+
+    def _handle_admin_route_put(self, route_id):
+        """PUT /api/admin/routes/<route_id> — set or clear a route-policy override."""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length <= 0 or length > 4096:
+                raise ValueError("invalid body")
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+            self._send_json(400, {"error": "invalid body"})
+            return
+
+        session = self._get_admin_session(str(payload.get("token") or ""))
+        if not session:
+            return
+
+        # Validate route_id: must be a known manifest route id and safe characters.
+        if not re.fullmatch(r"[a-z0-9_-]{1,64}", route_id or ""):
+            self._send_json(400, {"error": "invalid route_id"})
+            return
+        if route_id not in KNOWN_ROUTE_IDS:
+            self._send_json(400, {"error": f"unknown route_id; known: {sorted(KNOWN_ROUTE_IDS)}"})
+            return
+
+        disabled = bool(payload.get("disabled", False))
+        reason = str(payload.get("reason") or "").strip()
+        icon = str(payload.get("icon") or "").strip()
+        try:
+            min_eligible = int(payload.get("min_eligible") or 0)
+        except (TypeError, ValueError):
+            self._send_json(400, {"error": "min_eligible must be an integer"})
+            return
+
+        # Validation
+        if len(reason) > 280:
+            self._send_json(400, {"error": "reason must not exceed 280 characters"})
+            return
+        if len(icon) > 64:
+            self._send_json(400, {"error": "icon must not exceed 64 characters"})
+            return
+        if not 0 <= min_eligible <= 1000:
+            self._send_json(400, {"error": "min_eligible must be 0..1000"})
+            return
+        if disabled and not reason:
+            self._send_json(400, {"error": "reason is required when disabling a route"})
+            return
+
+        try:
+            policy = set_route_policy(route_id, disabled, reason, icon, min_eligible,
+                                       session["telegram_id"])
+        except Exception as exc:
+            logger.error("set_route_policy failed for %s: %s", route_id, exc)
+            self._send_json(503, {"error": "could not save route policy"})
+            return
+
+        logger.info(
+            "admin route policy updated: route=%s disabled=%s reason=%r admin=%s",
+            route_id, disabled, reason, session["telegram_id"],
+        )
+        self._send_json(200, {"ok": True, "policy": policy})
 
     def _handle_billing_payments(self, query):
         token = query.get("token", [""])[0]
