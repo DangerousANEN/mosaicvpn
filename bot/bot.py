@@ -1401,7 +1401,12 @@ def apply_route_policies(groups, eligible_counts=None):
         route_id = g.get("id") or ""
         policy = policies_by_id.get(route_id)
         if eligible_counts is not None and route_id in ROUTE_DB_GROUP_IDS:
-            minimum = int((policy or {}).get("min_eligible") or DEFAULT_ROUTE_MIN_ELIGIBLE[route_id])
+            configured_minimum = (policy or {}).get("min_eligible")
+            minimum = int(
+                DEFAULT_ROUTE_MIN_ELIGIBLE[route_id]
+                if configured_minimum is None
+                else configured_minimum
+            )
             eligible = int(eligible_counts.get(ROUTE_DB_GROUP_IDS[route_id], 0))
             g["eligible_count"] = eligible
             g["minimum_eligible"] = minimum

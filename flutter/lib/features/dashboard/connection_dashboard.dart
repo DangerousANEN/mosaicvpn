@@ -198,7 +198,11 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                       button: true,
                       label: 'Выбрать маршрут ${group.title}',
                       child: Material(
-                        color: active ? AtlasTheme.accent : c.bgCard,
+                        color: group.disabled
+                            ? AtlasTheme.error.withValues(alpha: .10)
+                            : active
+                                ? AtlasTheme.accent
+                                : c.bgCard,
                         borderRadius: BorderRadius.circular(20),
                         child: InkWell(
                           borderRadius: BorderRadius.circular(20),
@@ -212,7 +216,11 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: active ? AtlasTheme.accent : c.border,
+                                color: group.disabled
+                                    ? AtlasTheme.error
+                                    : active
+                                        ? AtlasTheme.accent
+                                        : c.border,
                               ),
                             ),
                             alignment: Alignment.center,
@@ -220,18 +228,20 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                                 Row(mainAxisSize: MainAxisSize.min, children: [
                               Icon(_chipIcon(group.icon),
                                   size: 15,
-                                  color: active
-                                      ? AtlasTheme.onAccent
-                                      : c.textSecondary),
+                                  color: group.disabled
+                                      ? AtlasTheme.error
+                                      : active
+                                          ? AtlasTheme.onAccent
+                                          : c.textSecondary),
                               const SizedBox(width: 6),
                               Text(group.title,
                                   style: TextStyle(
                                     fontSize: 12.5,
                                     fontWeight: FontWeight.w600,
-                                    color: active
-                                        ? AtlasTheme.onAccent
-                                        : group.disabled
-                                            ? c.textMuted
+                                    color: group.disabled
+                                        ? AtlasTheme.error
+                                        : active
+                                            ? AtlasTheme.onAccent
                                             : c.textPrimary,
                                   )),
                             ]),

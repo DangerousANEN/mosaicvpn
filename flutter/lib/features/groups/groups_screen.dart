@@ -553,8 +553,8 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
 
     final total = scoped.length + groups.length;
     if (total == 0) {
-      _showMessage('Нет маршрутов для проверки.',
-          ThemeColors.of(context).textSecondary);
+      _showMessage(
+          'Нет маршрутов для проверки.', ThemeColors.of(context).textSecondary);
       return;
     }
 
@@ -618,9 +618,8 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                           style: TextStyle(color: progressColor)),
                       const SizedBox(height: 8),
                       LinearProgressIndicator(
-                        value: value.total == 0
-                            ? null
-                            : value.done / value.total,
+                        value:
+                            value.total == 0 ? null : value.done / value.total,
                       ),
                     ],
                   ),
@@ -647,8 +646,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
         final ok = await task();
         done++;
         if (ok) reachable++;
-        progress.value =
-            ProgressValue(done: done, total: total);
+        progress.value = ProgressValue(done: done, total: total);
       }
       return true;
     }
@@ -919,12 +917,32 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   }
 
   void _handleRoutePrimaryAction(_RouteRow row) {
-    if (row.disabled || _connectingId != null) return;
+    if (_connectingId != null) return;
+    final status = ref.read(vpnStatusProvider).valueOrNull;
+    final activeRouteID = status?.activeGroupId.isNotEmpty == true
+        ? status!.activeGroupId
+        : status?.server?.id;
+    if (status?.isConnected == true && activeRouteID == row.id) {
+      unawaited(_disconnectActiveRoute());
+      return;
+    }
+    if (row.disabled) return;
     if (_selectedRouteId == row.id) {
       _connect(row);
       return;
     }
     setState(() => _selectedRouteId = row.id);
+  }
+
+  Future<void> _disconnectActiveRoute() async {
+    try {
+      await ref.read(daemonApiProvider).disconnect();
+      ref.invalidate(vpnStatusProvider);
+    } catch (_) {
+      if (mounted) {
+        _showMessage('Не удалось отключиться.', ThemeColors.of(context).danger);
+      }
+    }
   }
 
   Future<void> _showRouteMenu(_RouteRow row, Offset globalPosition) async {
@@ -937,6 +955,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
         : status?.server?.id;
     final isActiveRoute =
         status?.isConnected == true && activeRouteID == row.id;
+    final canDisconnect = status?.isConnected == true;
     final action = await showMenu<_RouteAction>(
       context: context,
       position: RelativeRect.fromRect(
@@ -945,13 +964,17 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       ),
       items: [
         PopupMenuItem(
-          value: isActiveRoute ? _RouteAction.disconnect : _RouteAction.connect,
-          enabled: !row.disabled,
+          value: canDisconnect ? _RouteAction.disconnect : _RouteAction.connect,
+          enabled: canDisconnect || !row.disabled,
           child: ListTile(
-            leading: Icon(isActiveRoute
+            leading: Icon(canDisconnect
                 ? Icons.stop_circle_outlined
                 : Icons.play_circle_outline_rounded),
-            title: Text(isActiveRoute ? 'Остановить маршрут' : 'Подключиться'),
+            title: Text(canDisconnect
+                ? isActiveRoute
+                    ? 'Отключиться'
+                    : 'Отключить активный маршрут'
+                : 'Подключиться'),
             contentPadding: EdgeInsets.zero,
           ),
         ),
@@ -1099,7 +1122,9 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                 ? '${group.title.isEmpty ? group.id : group.title}: '
                     '${result.latencyMS} мс.'
                 : 'Сервер не отвечает.',
-            ok ? ThemeColors.of(context).success : ThemeColors.of(context).danger,
+            ok
+                ? ThemeColors.of(context).success
+                : ThemeColors.of(context).danger,
           );
         } catch (_) {
           if (!mounted) return;
@@ -1577,8 +1602,7 @@ class _SourceTabsState extends State<_SourceTabs> {
       ),
       items: [
         _menuItem(_SourceTabAction.refresh, Icons.refresh_rounded, 'Обновить'),
-        _menuItem(
-            _SourceTabAction.testAllRoutes, Icons.network_ping_rounded,
+        _menuItem(_SourceTabAction.testAllRoutes, Icons.network_ping_rounded,
             'Тест всех маршрутов'),
         _menuItem(
             _SourceTabAction.copyLink, Icons.link_rounded, 'Копировать ссылку',
@@ -2149,6 +2173,7 @@ class _RouteTable extends StatelessWidget {
           row.disabled || connecting ? null : (_) => onPrimaryAction(row),
       color: WidgetStateProperty.resolveWith((states) {
         if (connected) return AtlasTheme.success.withValues(alpha: .12);
+        if (row.disabled) return AtlasTheme.error.withValues(alpha: .08);
         if (selected || states.contains(WidgetState.selected)) {
           return AtlasTheme.accent.withValues(alpha: .14);
         }
@@ -2208,16 +2233,16 @@ class _RouteTable extends StatelessWidget {
         width: width,
         child: Text('$ping мс',
             maxLines: 1,
-            style:
-                TextStyle(color: color, fontWeight: FontWeight.w700)));
+            style: TextStyle(color: color, fontWeight: FontWeight.w700)));
   }
 
   Widget _cell(BuildContext context, _RouteRow row, _RouteColumn column,
       bool connected, bool connecting, Map<_RouteColumn, double> widths) {
     final colors = ThemeColors.of(context);
     final width = widths[column] ?? _effectiveWidth(column);
-    final muted = row.disabled ? colors.textMuted : colors.textSecondary;
-    final primary = row.disabled ? colors.textMuted : colors.textPrimary;
+    final disabledColor = AtlasTheme.error;
+    final muted = row.disabled ? disabledColor : colors.textSecondary;
+    final primary = row.disabled ? disabledColor : colors.textPrimary;
     Widget text(String value, {bool strong = false}) => SizedBox(
           width: width,
           child: Text(value,

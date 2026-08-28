@@ -107,27 +107,18 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         }
 
         fun stop(context: Context) {
-            // Stop synchronously: the Flutter side validates the resulting
-            // state right after this call returns. An async startService round
-            // trip raced the status check and surfaced as
-            // "не удалось изменить подключение" although the VPN did stop.
-            //
-            // ACTION_STOP must use plain startService: the service is already
-            // in the foreground state, and on Android 12+ a background
-            // startForegroundService() call is rejected, which left the old
-            // runtime state visible and produced "runtime не подтвердил
-            // остановку" even though nothing was running anymore.
+            // Mark the state down immediately so Flutter/tray controls cannot
+            // remain stuck on Connected while native cleanup finishes.
             if (runtimeState == "disconnected") return
+            runtimeState = "disconnected"
+            runtimeError = null
             val intent = Intent(context, MosaicVpnService::class.java)
                 .setAction(ACTION_STOP)
             runCatching { context.startService(intent) }
-                .onFailure { Log.w(TAG, "Unable to deliver stop intent", it) }
-            // A dead service cannot process the intent; tear the state down
-            // locally so callers never observe a stale "connected".
-            MosaicVpnService.stopLatch(context)
-            if (runtimeState != "connected") return
-            runtimeState = "disconnected"
-            runtimeError = null
+                .onFailure {
+                    Log.w(TAG, "Unable to deliver stop intent", it)
+                    context.stopService(Intent(context, MosaicVpnService::class.java))
+                }
         }
 
         fun validate(context: Context, config: String) {

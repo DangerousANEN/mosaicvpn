@@ -45,7 +45,10 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         proxyPackages: prefs.proxyPackages,
       );
     } catch (_) {
-      return (bypassPackages: const <String>[], proxyPackages: const <String>[]);
+      return (
+        bypassPackages: const <String>[],
+        proxyPackages: const <String>[]
+      );
     }
   }
 
@@ -135,8 +138,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     if (importUri.isEmpty) {
       throw StateError('Этот маршрут не содержит конфигурации для Android.');
     }
-    final config =
-        AndroidMosaicAccountService.buildNativeTunConfigFromShareUri(
+    final config = AndroidMosaicAccountService.buildNativeTunConfigFromShareUri(
       importUri,
       bypassPackages: perApp.bypassPackages,
       proxyPackages: perApp.proxyPackages,
@@ -189,21 +191,22 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
 
   @override
   Future<void> disconnect() async {
-    // Stopping is best-effort: the native runtime may already be gone (system
-    // killed the foreground service, another VPN took over). Demanding a
-    // confirmed `disconnected` state here surfaced as
-    // "runtime не подтвердил остановку" even though the tunnel was down and
-    // the UI only needed to reflect reality. Poll briefly, then always accept.
-    final vpn = AndroidVpnService.instance;
-    var state = await vpn.stop();
-    final deadline = DateTime.now().add(const Duration(seconds: 3));
-    while (state.state != 'disconnected' &&
-        state.state != 'error' &&
-        DateTime.now().isBefore(deadline)) {
-      await Future<void>.delayed(const Duration(milliseconds: 150));
-      state = await vpn.status();
+    // Stopping is best-effort: the native runtime may already be gone.
+    try {
+      final vpn = AndroidVpnService.instance;
+      var state = await vpn.stop();
+      final deadline = DateTime.now().add(const Duration(seconds: 3));
+      while (state.state != 'disconnected' &&
+          state.state != 'error' &&
+          DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        state = await vpn.status();
+      }
+    } finally {
+      // Never leave a phantom active route if the platform channel or service
+      // disappeared while stopping.
+      _activeRoute = null;
     }
-    _activeRoute = null;
   }
 
   /// Measures TCP reachability and round-trip time to a server endpoint.
@@ -784,8 +787,8 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     return current;
   }
 
-  Future<Subscription> _updateStoredSubscription(
-      Subscription current, Subscription Function(Subscription) transform) async {
+  Future<Subscription> _updateStoredSubscription(Subscription current,
+      Subscription Function(Subscription) transform) async {
     final updated = transform(current);
     final stored = await _readLocalSubscriptions();
     final index = stored.indexWhere((value) => value.id == current.id);
