@@ -151,8 +151,10 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     final perApp = await _readPerAppLists();
     final resolved = await _resolveMosaicGroup(groupID);
     final manifest = await getProviderManifest(subscriptionId: resolved.$1.id);
+    final scoped = _parseScopedGroupID(groupID);
+    final manifestGroupID = scoped?.manifestGroupID ?? resolved.$2;
     final group = manifest.routes.cast<ManifestGroup?>().firstWhere(
-          (value) => value?.id == groupID,
+          (value) => value?.id == groupID || value?.id == manifestGroupID,
           orElse: () => null,
         );
     if (group == null) {
