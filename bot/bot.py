@@ -1660,6 +1660,20 @@ def is_admin(telegram_id):
         return False
 
 # Remnawave API helper functions
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+_api_session = requests.Session()
+_retry_strategy = Retry(
+    total=3,
+    backoff_factor=0.5,
+    status_forcelist=[429, 500, 502, 503, 504],
+    raise_on_status=False
+)
+_adapter = HTTPAdapter(max_retries=_retry_strategy, pool_connections=25, pool_maxsize=25)
+_api_session.mount("http://", _adapter)
+_api_session.mount("https://", _adapter)
+
 def api_get_headers():
     return {
         "Authorization": f"Bearer {API_TOKEN}",
@@ -1671,7 +1685,7 @@ def api_get_headers():
 def api_get_user(username):
     url = f"{BASE_URL}/api/users/by-username/{username}"
     try:
-        res = requests.get(url, headers=api_get_headers(), timeout=15)
+        res = _api_session.get(url, headers=api_get_headers(), timeout=15)
         if res.status_code == 200:
             return res.json().get("response")
     except Exception as e:
@@ -1692,7 +1706,7 @@ def api_create_user(username, days, telegram_id):
         "telegramId": int(telegram_id)
     }
     try:
-        res = requests.post(url, headers=api_get_headers(), json=payload, timeout=15)
+        res = _api_session.post(url, headers=api_get_headers(), json=payload, timeout=15)
         if res.status_code in [200, 201]:
             return res.json().get("response")
         else:
