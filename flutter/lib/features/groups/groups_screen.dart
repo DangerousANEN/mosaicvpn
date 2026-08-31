@@ -109,7 +109,6 @@ class GroupsScreen extends ConsumerStatefulWidget {
 
 class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   String? _selectedSubscriptionId;
-  String? _selectedRouteId;
   String? _connectingId;
   _RouteSort _sort = _RouteSort.name;
   bool _ascending = true;
@@ -938,11 +937,12 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       return;
     }
     if (row.disabled) return;
-    if (_selectedRouteId == row.id) {
+    final currentSelectedId = ref.read(selectedRouteIdProvider);
+    if (currentSelectedId == row.id) {
       _connect(row);
       return;
     }
-    setState(() => _selectedRouteId = row.id);
+    ref.read(selectedRouteIdProvider.notifier).set(row.id);
   }
 
   Future<void> _disconnectActiveRoute() async {
