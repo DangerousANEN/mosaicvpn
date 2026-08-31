@@ -163,27 +163,38 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                         runtimeError = null
                         appendNativeLog("start: accepted config (${config.length} bytes)")
                         // Pin the outbound dialer to the current default network.
-                        // route.auto_detect_interface relies on the platform dialer
-                        // control path (ProtectFunc), which libbox only wires when
-                        // its NetworkManager sees a non-nil platform interface; in
-                        // this build the dialers were still looping back into tun0,
-                        // so every client TCP got reset. An explicit bind_interface
-                        // takes the guaranteed `options.BindInterface` branch in
-                        // common/dialer and binds sockets to wlan0/rmnet directly.
+                        // route.auto_detect_interface lets libbox call
+                        // PlatformInterface.autoDetectInterfaceControl(fd) which
+                        // maps to VpnService.protect(fd) — the only reliable way
+                        // to keep outbound sockets off the VPN TUN on Android.
+                        // Android VPN relies on VpnService.protect(fd) to keep
+                        // outbound sockets off the TUN adapter. libbox calls
+                        // PlatformInterface.autoDetectInterfaceControl(fd) which
+                        // invokes protect(fd). This ONLY works when the config
+                        // sets auto_detect_interface=true. The previous approach
+                        // of pinning route.default_interface removed
+                        // auto_detect_interface, forcing sing-box into a
+                        // bind(SO_BINDTODEVICE) path that silently looped
+                        // traffic back into tun0 — "Connected" UI but no
+                        // internet. Keep auto_detect_interface and let libbox
+                        // drive the protect() calls.
                         val pinnedConfig = runCatching {
                             val cm = getSystemService(Context.CONNECTIVITY_SERVICE)
                                 as android.net.ConnectivityManager
                             val active = cm.activeNetwork ?: return@runCatching config
                             val iface = cm.getLinkProperties(active)?.interfaceName
                                 ?: return@runCatching config
-                            Log.i(TAG, "pinning route.default_interface = $iface")
+                            Log.i(TAG, "default physical interface = $iface (auto_detect_interface stays enabled)")
                             org.json.JSONObject(config).apply {
                                 val route = optJSONObject("route") ?: put(
                                     "route", org.json.JSONObject()).let { getJSONObject("route") }
-                                route.put("default_interface", iface)
-                                // bind_interface and auto_detect_interface are
-                                // mutually exclusive; explicit bind wins.
-                                route.remove("auto_detect_interface")
+                                // Ensure auto_detect_interface is present — this
+                                // is what makes libbox call protect(fd) on every
+                                // outbound socket.
+                                route.put("auto_detect_interface", true)
+                                // Remove any leftover default_interface that would
+                                // conflict and bypass the protect() path.
+                                route.remove("default_interface")
                                 put("route", route)
                             }.toString()
                         }.getOrDefault(config)
