@@ -14,6 +14,7 @@ import '../../core/providers/vpn_providers.dart';
 import '../../core/services/elevation_prompt.dart';
 import '../../core/services/smart_group_latency_test.dart';
 import '../../core/services/smart_group_selector.dart';
+import '../../core/services/ui_preferences_service.dart';
 import '../../core/theme/atlas_theme.dart';
 import '../subscriptions/subscriptions_screen.dart';
 import '../servers/add_server_dialog.dart';
@@ -161,8 +162,10 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     }
 
     final sources = _sourcesFor(legacyManifestAsync.valueOrNull, subscriptions);
+    final sharedSubId = ref.watch(selectedSubscriptionIdProvider);
+    final sharedRouteId = ref.watch(selectedRouteIdProvider);
     final selectedSource = sources.firstWhere(
-      (source) => source.id == _selectedSubscriptionId,
+      (source) => source.id == sharedSubId,
       orElse: () => sources.isNotEmpty ? sources.first : Subscription(),
     );
     final selectedManifestAsync = _isMosaicSubscription(selectedSource) &&
@@ -176,10 +179,12 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       localGroups: localGroups,
     )..sort(_compareRows);
 
-    if (sources.isNotEmpty && selectedSource.id != _selectedSubscriptionId) {
+    if (sources.isNotEmpty && selectedSource.id != sharedSubId) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          setState(() => _selectedSubscriptionId = selectedSource.id);
+          ref
+              .read(selectedSubscriptionIdProvider.notifier)
+              .set(selectedSource.id);
         }
       });
     }
@@ -256,7 +261,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                                   ? status.activeGroupId
                                   : status.server?.id)
                               : null,
-                          selectedId: _selectedRouteId,
+                          selectedId: sharedRouteId,
                           connectingId: _connectingId,
                           sort: _sort,
                           ascending: _ascending,
@@ -455,8 +460,8 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   }
 
   void _selectSource(String sourceId) {
-    if (sourceId == _selectedSubscriptionId) return;
-    setState(() => _selectedSubscriptionId = sourceId);
+    if (sourceId == ref.read(selectedSubscriptionIdProvider)) return;
+    ref.read(selectedSubscriptionIdProvider.notifier).set(sourceId);
   }
 
   Future<void> _reorderSubscriptions(List<String> orderedIDs) async {
@@ -858,9 +863,10 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       return;
     }
     setState(() => _connectingId = row.id);
+    ref.read(selectedRouteIdProvider.notifier).set(row.id);
     try {
       final api = ref.read(daemonApiProvider);
-      final selectedSourceID = _selectedSubscriptionId;
+      final selectedSourceID = ref.read(selectedSubscriptionIdProvider);
       final selectedManifest = selectedSourceID?.isNotEmpty == true
           ? ref
               .read(providerManifestForSubscriptionProvider(selectedSourceID!))
@@ -882,6 +888,11 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
         await api.connectGroup(row.id);
       } else {
         await api.connect(row.id);
+      }
+      final uiPrefs = UiPreferencesService();
+      await uiPrefs.writeLastConnectedRouteId(row.id);
+      if (selectedSourceID != null && selectedSourceID.isNotEmpty) {
+        await uiPrefs.writeLastConnectedSubscriptionId(selectedSourceID);
       }
       ref.invalidate(vpnStatusProvider);
       if (mounted) {

@@ -896,3 +896,65 @@ final clientLocationProvider =
     }
   }
 });
+
+// ─── Selected Route & Subscription Synchronization ─────────────────
+
+final selectedSubscriptionIdProvider =
+    StateNotifierProvider<SelectedSubscriptionNotifier, String?>((ref) {
+  return SelectedSubscriptionNotifier(UiPreferencesService());
+});
+
+class SelectedSubscriptionNotifier extends StateNotifier<String?> {
+  final UiPreferencesService _preferences;
+  bool _loaded = false;
+
+  SelectedSubscriptionNotifier(this._preferences) : super(null) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final id = await _preferences.readSelectedSubscriptionId();
+    if (!_loaded && mounted && id != null && id.isNotEmpty) {
+      state = id;
+    }
+    _loaded = true;
+  }
+
+  Future<void> set(String? subscriptionId) async {
+    if (state == subscriptionId) return;
+    state = subscriptionId;
+    if (subscriptionId != null && subscriptionId.isNotEmpty) {
+      await _preferences.writeSelectedSubscriptionId(subscriptionId);
+    }
+  }
+}
+
+final selectedRouteIdProvider =
+    StateNotifierProvider<SelectedRouteNotifier, String?>((ref) {
+  return SelectedRouteNotifier(UiPreferencesService());
+});
+
+class SelectedRouteNotifier extends StateNotifier<String?> {
+  final UiPreferencesService _preferences;
+  bool _loaded = false;
+
+  SelectedRouteNotifier(this._preferences) : super(null) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final id = await _preferences.readSelectedRouteId();
+    if (!_loaded && mounted && id != null && id.isNotEmpty) {
+      state = id;
+    }
+    _loaded = true;
+  }
+
+  Future<void> set(String? routeId) async {
+    if (state == routeId) return;
+    state = routeId;
+    if (routeId != null && routeId.isNotEmpty) {
+      await _preferences.writeSelectedRouteId(routeId);
+    }
+  }
+}

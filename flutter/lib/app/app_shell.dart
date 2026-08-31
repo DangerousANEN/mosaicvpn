@@ -8,6 +8,7 @@ import 'package:window_manager/window_manager.dart';
 
 import '../core/theme/atlas_theme.dart';
 import '../core/platform/app_platform.dart';
+import '../core/api/daemon_api_base.dart';
 import '../core/api/android_hosted_daemon_api.dart';
 import '../core/models/subscription.dart';
 import '../core/providers/vpn_providers.dart';
@@ -19,6 +20,7 @@ import '../core/services/elevation_service.dart';
 import '../core/services/mosaic_enrollment_exchange.dart';
 import '../core/services/tray_service.dart';
 import '../core/services/smart_group_selector.dart';
+import '../core/services/ui_preferences_service.dart';
 import '../shared/widgets/mosaic_tray_quick_panel.dart';
 import '../features/dashboard/connection_dashboard.dart';
 import '../features/connections/connections_screen.dart';
@@ -722,15 +724,28 @@ class _AppShellState extends ConsumerState<AppShell>
         if (!mounted) return;
         if (status.state != 'disconnected') return;
 
-        // Try reconnecting to the last active server, or prompt to add one.
+        final uiPrefs = UiPreferencesService();
+        final lastSavedRouteId = await uiPrefs.readLastConnectedRouteId();
+        final lastSavedSubId = await uiPrefs.readLastConnectedSubscriptionId();
+        if (lastSavedSubId != null && lastSavedSubId.isNotEmpty) {
+          ref.read(selectedSubscriptionIdProvider.notifier).set(lastSavedSubId);
+        }
+
+        // Try reconnecting to the last active server/route, or prompt to add one.
         if (status.server != null) {
-          await api.connect(status.server!.id);
+          await _connectTargetRoute(api, status.server!.id);
+          if (!mounted) return;
+          ref.invalidate(vpnStatusProvider);
+        } else if (lastSavedRouteId != null && lastSavedRouteId.isNotEmpty) {
+          ref.read(selectedRouteIdProvider.notifier).set(lastSavedRouteId);
+          await _connectTargetRoute(api, lastSavedRouteId);
           if (!mounted) return;
           ref.invalidate(vpnStatusProvider);
         } else {
           final lastID = prefs.lastServerID;
           if (lastID.isNotEmpty) {
-            await api.connect(lastID);
+            ref.read(selectedRouteIdProvider.notifier).set(lastID);
+            await _connectTargetRoute(api, lastID);
             if (!mounted) return;
             ref.invalidate(vpnStatusProvider);
           } else if (showLegacySetupPrompt) {
@@ -750,6 +765,25 @@ class _AppShellState extends ConsumerState<AppShell>
         debugPrint('auto-connect failed: $e');
       }
     });
+  }
+
+  Future<void> _connectTargetRoute(DaemonApiBase api, String routeId) async {
+    // If target route ID is a group (direct, min-latency, stable, or scoped),
+    // connectGroup resolves it safely with fallback to plain connect.
+    try {
+      if (routeId.startsWith('mosaic:') ||
+          routeId == 'direct' ||
+          routeId == 'min-latency' ||
+          routeId == 'stable' ||
+          routeId == 'max-speed') {
+        await api.connectGroup(routeId);
+      } else {
+        await api.connect(routeId);
+      }
+    } catch (_) {
+      // Fallback attempt with connect
+      await api.connect(routeId);
+    }
   }
 
   void _showNoServersDialog() {

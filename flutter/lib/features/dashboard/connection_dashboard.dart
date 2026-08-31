@@ -8,6 +8,7 @@ import '../../core/providers/vpn_providers.dart';
 import '../../core/platform/app_platform.dart';
 import '../../core/services/elevation_prompt.dart';
 import '../../core/services/smart_group_selector.dart';
+import '../../core/services/ui_preferences_service.dart';
 import '../../core/i18n/app_strings.dart';
 import '../../core/theme/atlas_theme.dart';
 
@@ -24,9 +25,8 @@ class ConnectionDashboard extends ConsumerStatefulWidget {
 class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulse;
-  String? _selectedSubscriptionId;
-  String? _selectedGroupId;
   final SmartGroupSelector _smartGroupSelector = SmartGroupSelector();
+  final UiPreferencesService _uiPrefs = UiPreferencesService();
   bool _busy = false;
   @override
   void initState() {
@@ -51,6 +51,8 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
   Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
     final status = ref.watch(vpnStatusProvider).valueOrNull ?? VpnStatus();
+    final sharedSubId = ref.watch(selectedSubscriptionIdProvider);
+    final sharedRouteId = ref.watch(selectedRouteIdProvider);
     // Dashboard and Routes must start from the same persisted sources. A
     // synthetic global Mosaic row made the Dashboard show a different number
     // of subscriptions and used unscoped group IDs that the daemon cannot
@@ -58,7 +60,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     final subscriptions =
         ref.watch(subscriptionsProvider).valueOrNull ?? <Subscription>[];
     final selectedSubscription = subscriptions.firstWhere(
-      (subscription) => subscription.id == _selectedSubscriptionId,
+      (subscription) => subscription.id == sharedSubId,
       orElse: () =>
           subscriptions.isNotEmpty ? subscriptions.first : Subscription(),
     );
@@ -80,36 +82,36 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
             .map<_RouteChoice>(_serverAsRouteChoice)
             .toList();
 
-    if (_selectedSubscriptionId != selectedSubscription.id &&
+    if (sharedSubId != selectedSubscription.id &&
         selectedSubscription.id.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          setState(() {
-            _selectedSubscriptionId = selectedSubscription.id;
-            _selectedGroupId = null;
-          });
+          ref
+              .read(selectedSubscriptionIdProvider.notifier)
+              .set(selectedSubscription.id);
         }
       });
     }
     if (groups.isNotEmpty &&
-        !groups.any((group) => group.id == _selectedGroupId)) {
+        !groups.any((group) => group.id == sharedRouteId)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && groups.isNotEmpty) {
           // A connected route always wins the initial selection so the
           // dashboard reflects the route actually chosen on the Routes screen
           // instead of defaulting to the first row.
           final status = ref.read(vpnStatusProvider).valueOrNull;
-          final activeId = status?.server?.id;
+          final activeId = status?.activeGroupId.isNotEmpty == true
+              ? status!.activeGroupId
+              : status?.server?.id;
           final connected =
               activeId != null ? groups.where((g) => g.id == activeId) : null;
           final firstEnabled = groups.where((group) => !group.disabled);
-          setState(() {
-            _selectedGroupId = connected?.isNotEmpty == true
-                ? connected!.first.id
-                : firstEnabled.isNotEmpty
-                    ? firstEnabled.first.id
-                    : groups.first.id;
-          });
+          final targetId = connected?.isNotEmpty == true
+              ? connected!.first.id
+              : firstEnabled.isNotEmpty
+                  ? firstEnabled.first.id
+                  : groups.first.id;
+          ref.read(selectedRouteIdProvider.notifier).set(targetId);
         }
       });
     }
@@ -126,7 +128,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
             : LayoutBuilder(
                 builder: (context, constraints) {
                   final selected = groups.firstWhere(
-                    (group) => group.id == _selectedGroupId,
+                    (group) => group.id == sharedRouteId,
                     orElse: () => groups.first,
                   );
                   final isDesktop = constraints.maxWidth >= 760;
@@ -209,7 +211,9 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                           onTap: group.disabled
                               ? null
                               : () {
-                                  setState(() => _selectedGroupId = group.id);
+                                  ref
+                                      .read(selectedRouteIdProvider.notifier)
+                                      .set(group.id);
                                 },
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 13),
@@ -399,12 +403,28 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
             error: true);
       } else if (AppPlatform.isAndroid) {
         await _toggleAndroidRuntime(status, selected);
+        await _uiPrefs.writeLastConnectedRouteId(selected.id);
+        if (_selectedSubscriptionId(ref) case final subId? when subId.isNotEmpty) {
+          await _uiPrefs.writeLastConnectedSubscriptionId(subId);
+        }
       } else if (selected.isSmartGroup && selected.manifestGroup != null) {
         await _smartGroupSelector.connect(api, selected.manifestGroup!);
+        await _uiPrefs.writeLastConnectedRouteId(selected.id);
+        if (_selectedSubscriptionId(ref) case final subId? when subId.isNotEmpty) {
+          await _uiPrefs.writeLastConnectedSubscriptionId(subId);
+        }
       } else if (selected.isGroup) {
         await api.connectGroup(selected.id);
+        await _uiPrefs.writeLastConnectedRouteId(selected.id);
+        if (_selectedSubscriptionId(ref) case final subId? when subId.isNotEmpty) {
+          await _uiPrefs.writeLastConnectedSubscriptionId(subId);
+        }
       } else {
         await api.connect(selected.id);
+        await _uiPrefs.writeLastConnectedRouteId(selected.id);
+        if (_selectedSubscriptionId(ref) case final subId? when subId.isNotEmpty) {
+          await _uiPrefs.writeLastConnectedSubscriptionId(subId);
+        }
       }
       ref.invalidate(vpnStatusProvider);
     } catch (error) {
@@ -461,6 +481,9 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     return AppStrings.of(context).t('connection_try_other_route');
   }
 
+  String? _selectedSubscriptionId(WidgetRef ref) =>
+      ref.read(selectedSubscriptionIdProvider);
+
   Future<void> _pickGroup(BuildContext context, List<_RouteChoice> groups,
       _RouteChoice current) async {
     final selected = await showDialog<_RouteChoice>(
@@ -480,16 +503,14 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
       ),
     );
     if (selected != null && mounted) {
-      setState(() => _selectedGroupId = selected.id);
+      ref.read(selectedRouteIdProvider.notifier).set(selected.id);
     }
   }
 
   void _selectSubscription(Subscription subscription) {
-    if (subscription.id == _selectedSubscriptionId) return;
-    setState(() {
-      _selectedSubscriptionId = subscription.id;
-      _selectedGroupId = null;
-    });
+    if (subscription.id == ref.read(selectedSubscriptionIdProvider)) return;
+    ref.read(selectedSubscriptionIdProvider.notifier).set(subscription.id);
+    ref.read(selectedRouteIdProvider.notifier).set(null);
   }
 
   _RouteChoice _manifestAsRouteChoice(ManifestGroup group) {

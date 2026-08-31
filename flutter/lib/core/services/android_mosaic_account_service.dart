@@ -1406,7 +1406,7 @@ class AndroidMosaicAccountService {
         'mtu': 1400,
         'auto_route': true,
         'strict_route': false,
-        'stack': 'system',
+        'stack': 'gvisor',
         'endpoint_independent_nat': true,
         // Exclave-style per-app split tunneling. include/exclude are mutually
         // exclusive in sing-box; exclude (bypass) wins when both are supplied.
@@ -1437,9 +1437,8 @@ class AndroidMosaicAccountService {
       {'type': 'direct', 'tag': 'direct'},
     ];
     final effectiveFinal = directSelection ? tags.first : routeTag;
-    // A TUN config needs an explicit resolver and DNS hijack. Without this,
-    // Android may send domain lookups to an outbound that does not carry UDP,
-    // leaving otherwise valid server connections apparently frozen.
+    // A TUN config needs explicit resolvers and DNS hijack. Provide both
+    // secure remote DNS and direct/fallback resolvers with IPv4 preference.
     const dnsTag = 'mosaic-doh-bootstrap';
     config['dns'] = {
       'servers': [
@@ -1450,8 +1449,23 @@ class AndroidMosaicAccountService {
           'server_port': 443,
           'path': '/dns-query',
         },
+        {
+          'type': 'udp',
+          'tag': 'dns-direct',
+          'server': '77.88.8.8',
+          'server_port': 53,
+          'detour': 'direct',
+        },
+        {
+          'type': 'udp',
+          'tag': 'dns-fallback',
+          'server': '8.8.8.8',
+          'server_port': 53,
+          'detour': 'direct',
+        },
       ],
       'final': dnsTag,
+      'strategy': 'prefer_ipv4',
     };
     final existingRoute = config['route'];
     final route = existingRoute is Map
