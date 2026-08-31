@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 import dateutil.parser
 import logging
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from socketserver import ThreadingMixIn
 import json
 import urllib.parse
 import socks
@@ -1371,7 +1372,7 @@ def set_route_policy(route_id, disabled, reason, icon, min_eligible, admin_teleg
 def get_route_eligible_counts():
     """Count recently proxy-verified members for published Smart Groups."""
     conn = psycopg2.connect(host="127.0.0.1", port=6767, user="postgres",
-                            password="postgres", database="postgres")
+                            password=os.environ.get("MOSAIC_PG_PASSWORD", "postgres"), database=os.environ.get("MOSAIC_PG_DATABASE", "postgres"))
     try:
         cursor = conn.cursor()
         cursor.execute("""
@@ -1545,7 +1546,7 @@ def process_lava_paid_invoice(invoice):
 def get_pending_invoices():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT invoice_id, telegram_id, days FROM invoices WHERE status = 'pending'")
+    cursor.execute("SELECT invoice_id, telegram_id, days FROM invoices WHERE status = 'pending' AND payment_provider = 'cryptobot'")
     rows = cursor.fetchall()
     conn.close()
     return rows
@@ -3611,6 +3612,9 @@ def setup_bot_branding():
         logger.error(f"Failed to setup bot commands/branding: {e}")
 
 # Web API server serving Stats
+class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+    daemon_threads = True
+
 class StatsRequestHandler(BaseHTTPRequestHandler):
     def _send_json(self, status, payload):
         body = json.dumps(payload).encode("utf-8")
@@ -4189,7 +4193,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         try:
             pg_conn = psycopg2.connect(
                 host="127.0.0.1", port=6767, user="postgres",
-                password="postgres", database="postgres"
+                password=os.environ.get("MOSAIC_PG_PASSWORD", "postgres"), database=os.environ.get("MOSAIC_PG_DATABASE", "postgres")
             )
             cursor = pg_conn.cursor()
             cursor.execute("""
@@ -4748,7 +4752,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         try:
             pg_conn = psycopg2.connect(
                 host="127.0.0.1", port=6767, user="postgres",
-                password="postgres", database="postgres"
+                password=os.environ.get("MOSAIC_PG_PASSWORD", "postgres"), database=os.environ.get("MOSAIC_PG_DATABASE", "postgres")
             )
             cursor = pg_conn.cursor()
             cursor.execute(
@@ -5344,6 +5348,29 @@ def send_funnel_notification(telegram_id, notification_type, text, markup=None):
         else:
             logger.error(f"Failed to send funnel notification '{notification_type}' to {telegram_id}: {e}")
 
+def safe_to_utc(dt_or_str):
+    if not dt_or_str:
+        return None
+    if isinstance(dt_or_str, str):
+        try:
+            dt = dateutil.parser.isoparse(dt_or_str)
+        except Exception:
+            try:
+                dt = dateutil.parser.parse(dt_or_str)
+            except Exception:
+                return None
+    elif isinstance(dt_or_str, datetime.datetime):
+        dt = dt_or_str
+    elif isinstance(dt_or_str, datetime.date):
+        dt = datetime.datetime.combine(dt_or_str, datetime.time.min)
+    else:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    else:
+        dt = dt.astimezone(datetime.timezone.utc)
+    return dt
+
 def run_notifications_check():
     now = datetime.datetime.now(datetime.timezone.utc)
     
@@ -5366,7 +5393,7 @@ def run_notifications_check():
             if not created_at_str:
                 continue
             
-            created_dt = dateutil.parser.isoparse(created_at_str)
+            created_dt = safe_to_utc(created_at_str)
             time_since_creation = now - created_dt
             
             user_traffic = user_data.get("userTraffic", {}) or {}
@@ -5385,7 +5412,7 @@ def run_notifications_check():
             
             if has_traffic:
                 if first_connected_raw:
-                    first_connected_dt = dateutil.parser.isoparse(first_connected_raw)
+                    first_connected_dt = safe_to_utc(first_connected_raw)
                 else:
                     first_connected_dt = created_dt
                 
@@ -5411,7 +5438,7 @@ def run_notifications_check():
                     expire_at_raw = user_data.get("expireAt")
                     if expire_at_raw:
                         try:
-                            expire_dt = dateutil.parser.isoparse(expire_at_raw)
+                            expire_dt = safe_to_utc(expire_at_raw)
                             days_until_expire = (expire_dt - now).days
                             if 2 <= days_until_expire <= 4:
                                 text = (
@@ -5428,6 +5455,7 @@ def run_notifications_check():
                         except Exception:
                             pass
 
+                    db_user = get_user(telegram_id)
                 # #12: Rating request — 3 days after first connection
                 elif time_since_traffic >= datetime.timedelta(hours=3*24) and "rating_request" not in sent_notifications and "pre_expire_3d_renew" in sent_notifications:
                     if not db_user.get("rating_given", 0):
@@ -5486,7 +5514,7 @@ def run_notifications_check():
                     expire_at_raw = user_data.get("expireAt")
                     is_expired = False
                     if expire_at_raw:
-                        expire_dt = dateutil.parser.isoparse(expire_at_raw)
+                        expire_dt = safe_to_utc(expire_at_raw)
                         is_expired = (expire_dt < now) or (user_data.get("status") == "EXPIRED")
                     
                     if is_expired:
@@ -5575,7 +5603,7 @@ def run_notifications_check():
             # --- PAID SUBSCRIPTIONS EXPIRY / UPSELLS (after trial) ---
             expire_at_raw = user_data.get("expireAt")
             if expire_at_raw:
-                expire_dt = dateutil.parser.isoparse(expire_at_raw)
+                expire_dt = safe_to_utc(expire_at_raw)
                 if time_since_creation > datetime.timedelta(days=3):
                     is_active = (user_data.get("status") == "ACTIVE") and (expire_dt >= now)
                     
@@ -5674,7 +5702,7 @@ def run_notifications_check():
                 if not last_ref_promo:
                     send_promo = True
                 else:
-                    last_promo_dt = dateutil.parser.isoparse(last_ref_promo[0])
+                    last_promo_dt = safe_to_utc(last_ref_promo[0])
                     if now - last_promo_dt >= datetime.timedelta(days=7):
                         send_promo = True
                 
@@ -5710,7 +5738,7 @@ def run_notifications_check():
             cursor.execute("SELECT invoice_id, amount, days, created_at, status FROM invoices WHERE telegram_id = ? AND status = 'pending'", (telegram_id,))
             pending_invoices = cursor.fetchall()
             for invoice_id, amount, days, inv_created_str, inv_status in pending_invoices:
-                inv_created_dt = dateutil.parser.isoparse(inv_created_str)
+                inv_created_dt = safe_to_utc(inv_created_str)
                 time_since_invoice = now - inv_created_dt
                 
                 # 30 minutes without payment
@@ -5779,7 +5807,7 @@ def uptime_monitor_loop():
 
 def start_web_server():
     server_address = ("0.0.0.0", 12223)
-    httpd = HTTPServer(server_address, StatsRequestHandler)
+    httpd = ThreadedHTTPServer(server_address, StatsRequestHandler)
     logger.info("Web API server listening on 0.0.0.0:12223")
     httpd.serve_forever()
 
