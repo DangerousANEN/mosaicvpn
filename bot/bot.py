@@ -2991,26 +2991,16 @@ def _send_add_to_app_code(telegram_id):
         minutes=LINK_CODE_TTL_MINUTES,
     )
     markup = types.InlineKeyboardMarkup(row_width=1)
-    # Show the download link only if we can fetch the bot username; ignore errors gracefully
     try:
         bot_username = bot.get_me().username
         dl_url = f"https://t.me/{bot_username}?start=getapp"
     except Exception:
         dl_url = None
-    if dl_url:
-        markup.add(types.InlineKeyboardButton(
-            "⬇️ Скачать MosaicVPN" if lang == "ru" else "⬇️ Download MosaicVPN",
-            url=dl_url,
-            style="primary",
-        ))
-    else:
-        markup.add(types.InlineKeyboardButton(
-            "⬇️ Скачать MosaicVPN" if lang == "ru" else "⬇️ Download MosaicVPN",
-            url="https://github.com/DangerousANEN/mosaicvpn/releases/latest",
-            style="primary",
-        ))
-    # Newer clients may render semantic button styles; the link itself is
-    # kept compatible with older clients.
+    markup.add(types.InlineKeyboardButton(
+        "⬇️ Скачать MosaicVPN" if lang == "ru" else "⬇️ Download MosaicVPN",
+        url=dl_url or "https://sub.zxc1x1.ru/#downloads",
+        style="primary",
+    ))
     markup.add(types.InlineKeyboardButton(
         "✅ Добавить в MosaicVPN" if lang == "ru" else "✅ Add to MosaicVPN",
         url=f"mosaic://enroll/callback?code={urllib.parse.quote(code)}",
@@ -3020,6 +3010,7 @@ def _send_add_to_app_code(telegram_id):
         "🔄 Новый код" if lang == "ru" else "🔄 New code",
         callback_data="home_add_app",
     ))
+    markup.add(types.InlineKeyboardButton(t["back_home"], callback_data="home_main"))
     bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
 
 def _claim_telegram_profile_link(message, raw_code):

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { Marginalia } from "./components/Marginalia";
 import { useStatus } from "./hooks/useStatus";
 import { Main } from "./screens/Main";
@@ -24,6 +25,13 @@ const SCREENS: { id: Screen; label: string }[] = [
 export function App(): JSX.Element {
   const { status, load, error } = useStatus();
   const [screen, setScreen] = useState<Screen>("main");
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<{ code: string; state?: string }>("enrollment-link", (event) => {
+      window.dispatchEvent(new CustomEvent("mosaic-enrollment", { detail: event.payload }));
+    }).then((dispose) => { unlisten = dispose; });
+    return () => { unlisten?.(); };
+  }, []);
 
   if (load === "loading") {
     return (

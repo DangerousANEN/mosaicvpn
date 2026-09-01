@@ -162,6 +162,16 @@ func (s *Server) handleMethod(method string, params json.RawMessage) map[string]
 						"required": []string{"mode"},
 					},
 				},
+				map[string]any{
+					"name":        "mosaic_test_url",
+					"description": "Measure a URL through the active VPN proxy",
+					"inputSchema": map[string]any{"type": "object", "properties": map[string]any{"url": map[string]any{"type": "string"}}, "required": []string{"url"}},
+				},
+				map[string]any{
+					"name":        "mosaic_test_speed",
+					"description": "Run the bounded speed test through the active VPN proxy",
+					"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
+				},
 			},
 		}
 
@@ -287,6 +297,28 @@ func (s *Server) callTool(name string, args json.RawMessage) (string, error) {
 			return "", err
 		}
 		return fmt.Sprintf("Tunnel mode updated to %s", arg.Mode), nil
+
+	case "mosaic_test_url":
+		var arg struct {
+			URL string `json:"url"`
+		}
+		if err := json.Unmarshal(args, &arg); err != nil || arg.URL == "" {
+			return "", fmt.Errorf("url is required")
+		}
+		result, err := s.state.TestURL(ctx, arg.URL)
+		if err != nil {
+			return "", err
+		}
+		b, _ := json.MarshalIndent(result, "", "  ")
+		return string(b), nil
+
+	case "mosaic_test_speed":
+		result, err := s.state.SpeedTest(ctx)
+		if err != nil {
+			return "", err
+		}
+		b, _ := json.MarshalIndent(result, "", "  ")
+		return string(b), nil
 
 	default:
 		return "", fmt.Errorf("unknown tool: %s", name)
