@@ -4733,9 +4733,15 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         if not session:
             self._send_json(401, {"error": "invalid or expired session"})
             return
+        try:
+            methods = available_lava_payment_methods("site")
+        except (RuntimeError, requests.RequestException) as exc:
+            logger.warning("Could not load Lava site payment methods: %s", exc)
+            methods = []
         self._send_json(200, {"providers": [{
             "id": "lava", "title": "СБП и банковские карты", "currency": "RUB",
-            "available": True, "min_amount_rub": 10, "max_amount_rub": 100000,
+            "available": bool(methods), "methods": methods,
+            "min_amount_rub": 1, "max_amount_rub": 50000,
         }]})
 
     def _handle_admin_balance_credit_history(self, query):
