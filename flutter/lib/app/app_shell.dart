@@ -20,6 +20,7 @@ import '../core/services/elevation_service.dart';
 import '../core/services/mosaic_enrollment_exchange.dart';
 import '../core/services/tray_service.dart';
 import '../core/services/smart_group_selector.dart';
+import '../core/services/smart_group_runtime_controller.dart';
 import '../core/services/ui_preferences_service.dart';
 import '../shared/widgets/mosaic_tray_quick_panel.dart';
 import '../features/dashboard/connection_dashboard.dart';
@@ -173,6 +174,7 @@ class _AppShellState extends ConsumerState<AppShell>
 
   @override
   void dispose() {
+    SmartGroupRuntimeController.instance.stop();
     _enrollmentCallbackSubscription?.cancel();
     _desktopEnrollmentCallbackSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
@@ -208,8 +210,7 @@ class _AppShellState extends ConsumerState<AppShell>
     await _completeEnrollmentWith(AndroidHostedDaemonApi.instance);
   }
 
-  Future<void> _completeEnrollmentWith(
-      AndroidHostedDaemonApi api) async {
+  Future<void> _completeEnrollmentWith(AndroidHostedDaemonApi api) async {
     try {
       _enrollmentCompleting = true;
       final subscription = await api.completeWebsiteEnrollmentIfPresent();
@@ -638,7 +639,14 @@ class _AppShellState extends ConsumerState<AppShell>
       final firstEnabledGroup =
           manifest.groups.where((group) => !group.disabled);
       if (firstEnabledGroup.isNotEmpty) {
-        await _smartGroupSelector.connect(api, firstEnabledGroup.first);
+        final group = firstEnabledGroup.first;
+        final selection = await _smartGroupSelector.connect(api, group);
+        SmartGroupRuntimeController.instance.start(
+          api: api,
+          selector: _smartGroupSelector,
+          group: group,
+          candidateId: selection.candidateId,
+        );
       } else {
         final servers = await api.listServers();
         if (servers.isEmpty) {
@@ -661,6 +669,7 @@ class _AppShellState extends ConsumerState<AppShell>
   }
 
   Future<void> _disconnectFromTray() async {
+    SmartGroupRuntimeController.instance.stop();
     try {
       await ref.read(daemonApiProvider).disconnect();
       ref.invalidate(vpnStatusProvider);
@@ -682,6 +691,7 @@ class _AppShellState extends ConsumerState<AppShell>
 
   Future<void> _quitApplication() async {
     if (_quitting) return;
+    SmartGroupRuntimeController.instance.stop();
     _quitting = true;
     try {
       // This asks mosaicd to disconnect the active runtime first. Its own

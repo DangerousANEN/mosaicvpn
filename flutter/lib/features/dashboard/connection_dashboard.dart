@@ -8,6 +8,7 @@ import '../../core/providers/vpn_providers.dart';
 import '../../core/platform/app_platform.dart';
 import '../../core/services/elevation_prompt.dart';
 import '../../core/services/smart_group_selector.dart';
+import '../../core/services/smart_group_runtime_controller.dart';
 import '../../core/services/ui_preferences_service.dart';
 import '../../core/i18n/app_strings.dart';
 import '../../core/theme/atlas_theme.dart';
@@ -394,6 +395,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     try {
       setState(() => _busy = true);
       if (status.isConnected || status.isConnecting) {
+        SmartGroupRuntimeController.instance.stop();
         await api.disconnect();
       } else if (selected.disabled) {
         _notice(
@@ -404,25 +406,36 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
       } else if (AppPlatform.isAndroid) {
         await _toggleAndroidRuntime(status, selected);
         await _uiPrefs.writeLastConnectedRouteId(selected.id);
-        if (_selectedSubscriptionId(ref) case final subId? when subId.isNotEmpty) {
+        if (_selectedSubscriptionId(ref) case final subId?
+            when subId.isNotEmpty) {
           await _uiPrefs.writeLastConnectedSubscriptionId(subId);
         }
       } else if (selected.isSmartGroup && selected.manifestGroup != null) {
-        await _smartGroupSelector.connect(api, selected.manifestGroup!);
+        final group = selected.manifestGroup!;
+        final selection = await _smartGroupSelector.connect(api, group);
+        SmartGroupRuntimeController.instance.start(
+          api: api,
+          selector: _smartGroupSelector,
+          group: group,
+          candidateId: selection.candidateId,
+        );
         await _uiPrefs.writeLastConnectedRouteId(selected.id);
-        if (_selectedSubscriptionId(ref) case final subId? when subId.isNotEmpty) {
+        if (_selectedSubscriptionId(ref) case final subId?
+            when subId.isNotEmpty) {
           await _uiPrefs.writeLastConnectedSubscriptionId(subId);
         }
       } else if (selected.isGroup) {
         await api.connectGroup(selected.id);
         await _uiPrefs.writeLastConnectedRouteId(selected.id);
-        if (_selectedSubscriptionId(ref) case final subId? when subId.isNotEmpty) {
+        if (_selectedSubscriptionId(ref) case final subId?
+            when subId.isNotEmpty) {
           await _uiPrefs.writeLastConnectedSubscriptionId(subId);
         }
       } else {
         await api.connect(selected.id);
         await _uiPrefs.writeLastConnectedRouteId(selected.id);
-        if (_selectedSubscriptionId(ref) case final subId? when subId.isNotEmpty) {
+        if (_selectedSubscriptionId(ref) case final subId?
+            when subId.isNotEmpty) {
           await _uiPrefs.writeLastConnectedSubscriptionId(subId);
         }
       }

@@ -14,6 +14,7 @@ import '../../core/providers/vpn_providers.dart';
 import '../../core/services/elevation_prompt.dart';
 import '../../core/services/smart_group_latency_test.dart';
 import '../../core/services/smart_group_selector.dart';
+import '../../core/services/smart_group_runtime_controller.dart';
 import '../../core/services/ui_preferences_service.dart';
 import '../../core/theme/atlas_theme.dart';
 import '../subscriptions/subscriptions_screen.dart';
@@ -881,7 +882,13 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
           row.isSmartGroup &&
           manifestGroup != null &&
           !AppPlatform.isAndroid) {
-        await _smartGroupSelector.connect(api, manifestGroup);
+        final selection = await _smartGroupSelector.connect(api, manifestGroup);
+        SmartGroupRuntimeController.instance.start(
+          api: api,
+          selector: _smartGroupSelector,
+          group: manifestGroup,
+          candidateId: selection.candidateId,
+        );
       } else if (row.isGroup) {
         await api.connectGroup(row.id);
       } else {
@@ -945,6 +952,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   }
 
   Future<void> _disconnectActiveRoute() async {
+    SmartGroupRuntimeController.instance.stop();
     try {
       await ref.read(daemonApiProvider).disconnect();
       ref.invalidate(vpnStatusProvider);

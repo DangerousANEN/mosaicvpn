@@ -698,8 +698,9 @@ func probeServer(ctx context.Context, addr string, port int, timeout time.Durati
 	return rtt, ""
 }
 
-// probeServerMulti runs N sequential TCP probes and returns sorted latency
-// samples. Failed attempts are omitted from the slice (loss = samples - len).
+// probeServerMulti runs N sequential TCP probes in observation order.
+// Failed attempts are omitted from the slice (loss = samples - len). Keeping
+// observation order is required for meaningful inter-sample jitter.
 func probeServerMulti(ctx context.Context, addr string, port int, samples int, timeout time.Duration) []int {
 	target := fmt.Sprintf("%s:%d", addr, port)
 	latencies := make([]int, 0, samples)
@@ -718,7 +719,6 @@ func probeServerMulti(ctx context.Context, addr string, port int, samples int, t
 		}
 		latencies = append(latencies, ms)
 	}
-	sort.Ints(latencies)
 	return latencies
 }
 
@@ -753,24 +753,25 @@ func probeHTTPGet(ctx context.Context, probeURL string, samples int) []int {
 		}
 		latencies = append(latencies, ms)
 	}
-	sort.Ints(latencies)
 	return latencies
 }
 
-// computeProbeStats derives median, p95, and RFC-3550 jitter from a sorted
-// slice of latency samples. Jitter is the mean of consecutive inter-sample
-// differences, which closely approximates the RFC 3550 definition.
-func computeProbeStats(sorted []int) (median, p95, jitter int) {
-	n := len(sorted)
+// computeProbeStats derives median and p95 from a sorted copy while calculating
+// jitter from the original observation order. Jitter is the mean absolute
+// difference between consecutive successful observations.
+func computeProbeStats(observed []int) (median, p95, jitter int) {
+	n := len(observed)
 	if n == 0 {
 		return 0, 0, 0
 	}
-	median = sorted[n/2]
-	p95 = sorted[int(float64(n-1)*0.95+0.5)]
+	ordered := append([]int(nil), observed...)
+	sort.Ints(ordered)
+	median = ordered[n/2]
+	p95 = ordered[int(float64(n-1)*0.95+0.5)]
 	if n > 1 {
 		total := 0
 		for i := 1; i < n; i++ {
-			d := sorted[i] - sorted[i-1]
+			d := observed[i] - observed[i-1]
 			if d < 0 {
 				d = -d
 			}
