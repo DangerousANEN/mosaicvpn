@@ -108,7 +108,6 @@ class GroupsScreen extends ConsumerStatefulWidget {
 }
 
 class _GroupsScreenState extends ConsumerState<GroupsScreen> {
-  String? _selectedSubscriptionId;
   String? _connectingId;
   _RouteSort _sort = _RouteSort.name;
   bool _ascending = true;
@@ -750,8 +749,8 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       await ref.read(daemonApiProvider).deleteSubscription(source.id);
       if (!mounted) return;
       setState(() {
-        if (_selectedSubscriptionId == source.id) {
-          _selectedSubscriptionId = null;
+        if (ref.read(selectedSubscriptionIdProvider) == source.id) {
+          ref.read(selectedSubscriptionIdProvider.notifier).set(null);
         }
         _pendingSubscriptionOrder = null;
       });
@@ -1102,7 +1101,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       return;
     }
     if (row.isGroup) {
-      final sourceID = _selectedSubscriptionId;
+      final sourceID = ref.read(selectedSubscriptionIdProvider);
       final manifest = sourceID?.isNotEmpty == true
           ? await ref
               .read(providerManifestForSubscriptionProvider(sourceID!).future)

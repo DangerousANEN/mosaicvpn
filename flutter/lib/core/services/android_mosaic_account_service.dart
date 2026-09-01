@@ -1439,29 +1439,26 @@ class AndroidMosaicAccountService {
     final effectiveFinal = directSelection ? tags.first : routeTag;
     // A TUN config needs explicit resolvers and DNS hijack. Provide both
     // secure remote DNS and direct/fallback resolvers with IPv4 preference.
-    const dnsTag = 'mosaic-doh-bootstrap';
+    // sing-box 1.13+ removed support for {outbound: "any"} DNS rules and
+    // rejects `detour: "direct"` on an empty direct outbound. Domain
+    // resolution for outbound servers uses `route.default_domain_resolver`
+    // instead, and DNS servers without an explicit detour use
+    // auto_detect_interface to bypass the TUN.
+    const dnsTag = 'dns-direct';
     config['dns'] = {
       'servers': [
-        {
-          'type': 'https',
-          'tag': dnsTag,
-          'server': '1.1.1.1',
-          'server_port': 443,
-          'path': '/dns-query',
-        },
         {
           'type': 'udp',
           'tag': 'dns-direct',
           'server': '77.88.8.8',
           'server_port': 53,
-          'detour': 'direct',
+          // No detour — sing-box uses auto_detect_interface to bypass TUN
         },
         {
           'type': 'udp',
           'tag': 'dns-fallback',
           'server': '8.8.8.8',
           'server_port': 53,
-          'detour': 'direct',
         },
       ],
       'final': dnsTag,
