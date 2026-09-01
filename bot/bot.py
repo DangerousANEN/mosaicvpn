@@ -309,6 +309,122 @@ MESSAGES["en"]["referral_promo"] = (
 )
 MESSAGES["en"]["referral_link_text"] = "🔗 **Your referral link:**\n`{link}`\n\nShare it with a friend. When they start the bot, our system will link your accounts."
 
+# ─── UX Redesign v2: human-friendly copy additions ─────────────────────────
+# These keys are used only by the new handlers below; existing callbacks are
+# unaffected.  All strings are plain-text-safe (no stray * or _ outside bold).
+
+MESSAGES["ru"]["home_title"] = (
+    "🛡 **MosaicVPN** — ваш персональный щит в сети\n\n"
+    "Выберите раздел ниже:"
+)
+MESSAGES["ru"]["menu_account"] = "👤 Мой аккаунт"
+MESSAGES["ru"]["menu_subscribe"] = "💳 Подписка"
+MESSAGES["ru"]["menu_add_app"] = "📲 Добавить в MosaicVPN"
+MESSAGES["ru"]["menu_help"] = "🎧 Помощь"
+MESSAGES["ru"]["menu_home"] = "🏠 Главное меню"
+
+MESSAGES["ru"]["account_section"] = (
+    "👤 **Мой аккаунт**\n\n"
+    "Здесь вы найдёте всё о своём профиле, подписке и настройках."
+)
+MESSAGES["ru"]["subscribe_section"] = (
+    "💳 **Подписка**\n\n"
+    "1 ₽ = 1 день доступа.\n"
+    "Выберите пакет или введите свою сумму."
+)
+MESSAGES["ru"]["help_section"] = (
+    "🎧 **Помощь и поддержка**\n\n"
+    "Мы отвечаем 24/7. Чем можем помочь?"
+)
+MESSAGES["ru"]["add_app_prompt"] = (
+    "📲 **Добавить в MosaicVPN**\n\n"
+    "Приложение само загрузит вашу подписку — никаких ссылок копировать не нужно.\n\n"
+    "Шаги:\n"
+    "1️⃣ Откройте приложение **MosaicVPN** на устройстве\n"
+    "2️⃣ Перейдите в **Кабинет → Добавить подписку**\n"
+    "3️⃣ Нажмите **«Войти через Telegram»** и введите код ниже\n\n"
+    "Ваш одноразовый код:"
+)
+MESSAGES["ru"]["add_app_code_fmt"] = (
+    "📲 **Добавить в MosaicVPN**\n\n"
+    "Ваш одноразовый код:\n\n"
+    "🔑 `{code}`\n\n"
+    "Действует **{minutes} минут**. Введите его в приложении в разделе «Войти через Telegram».\n"
+    "_Код используется один раз и не нужно никому показывать._"
+)
+MESSAGES["ru"]["add_app_no_profile"] = (
+    "⚠️ Сначала нажмите /start — у вас ещё нет профиля.\n\n"
+    "После регистрации кнопка добавления в приложение станет доступна."
+)
+MESSAGES["ru"]["add_app_error"] = (
+    "⚠️ Не удалось создать код. Попробуйте снова через минуту.\n"
+    "Если проблема повторяется — напишите в поддержку @mosaicsup"
+)
+MESSAGES["ru"]["back_home"] = "🏠 Назад в меню"
+MESSAGES["ru"]["web_cabinet"] = "🌐 Открыть кабинет"
+MESSAGES["ru"]["renew_sub"] = "🔁 Продлить подписку"
+MESSAGES["ru"]["invite_friend"] = "🎁 Пригласить друга"
+MESSAGES["ru"]["status_btn"] = "📊 Статус сети"
+MESSAGES["ru"]["faq_btn"] = "❓ Частые вопросы"
+MESSAGES["ru"]["ticket_btn"] = "📝 Написать в поддержку"
+MESSAGES["ru"]["chat_support"] = "💬 Чат @mosaicsup"
+
+MESSAGES["en"]["home_title"] = (
+    "🛡 **MosaicVPN** — your personal shield online\n\n"
+    "Choose a section below:"
+)
+MESSAGES["en"]["menu_account"] = "👤 My Account"
+MESSAGES["en"]["menu_subscribe"] = "💳 Subscription"
+MESSAGES["en"]["menu_add_app"] = "📲 Add to MosaicVPN"
+MESSAGES["en"]["menu_help"] = "🎧 Help"
+MESSAGES["en"]["menu_home"] = "🏠 Home"
+
+MESSAGES["en"]["account_section"] = (
+    "👤 **My Account**\n\n"
+    "Everything about your profile, subscription and settings."
+)
+MESSAGES["en"]["subscribe_section"] = (
+    "💳 **Subscription**\n\n"
+    "1 RUB = 1 day of access.\n"
+    "Choose a package or enter a custom amount."
+)
+MESSAGES["en"]["help_section"] = (
+    "🎧 **Help & Support**\n\n"
+    "We're available 24/7. How can we help?"
+)
+MESSAGES["en"]["add_app_prompt"] = (
+    "📲 **Add to MosaicVPN**\n\n"
+    "The app will automatically load your subscription — no links to copy.\n\n"
+    "Steps:\n"
+    "1️⃣ Open the **MosaicVPN** app on your device\n"
+    "2️⃣ Go to **Cabinet → Add Subscription**\n"
+    "3️⃣ Tap **«Sign in via Telegram»** and enter the code below\n\n"
+    "Your single-use code:"
+)
+MESSAGES["en"]["add_app_code_fmt"] = (
+    "📲 **Add to MosaicVPN**\n\n"
+    "Your single-use code:\n\n"
+    "🔑 `{code}`\n\n"
+    "Valid for **{minutes} minutes**. Enter it in the app under «Sign in via Telegram».\n"
+    "_This code is single-use — keep it private._"
+)
+MESSAGES["en"]["add_app_no_profile"] = (
+    "⚠️ Press /start first — you don't have a profile yet.\n\n"
+    "Once registered, the 'Add to app' button will become available."
+)
+MESSAGES["en"]["add_app_error"] = (
+    "⚠️ Could not create a code. Please try again in a minute.\n"
+    "If the problem persists — contact support @mosaicsup"
+)
+MESSAGES["en"]["back_home"] = "🏠 Back to menu"
+MESSAGES["en"]["web_cabinet"] = "🌐 Open Cabinet"
+MESSAGES["en"]["renew_sub"] = "🔁 Renew subscription"
+MESSAGES["en"]["invite_friend"] = "🎁 Invite a Friend"
+MESSAGES["en"]["status_btn"] = "📊 Network Status"
+MESSAGES["en"]["faq_btn"] = "❓ FAQ"
+MESSAGES["en"]["ticket_btn"] = "📝 Write to Support"
+MESSAGES["en"]["chat_support"] = "💬 Chat @mosaicsup"
+
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # Initialize Database
@@ -1430,7 +1546,9 @@ def apply_route_policies(groups, eligible_counts=None):
                     g["disabled"] = False
                     g["disabled_reason"] = ""
                 elif int(eligible_counts.get(ROUTE_DB_GROUP_IDS[route_id], 0)) >= int(
-                        policy.get("min_eligible") or DEFAULT_ROUTE_MIN_ELIGIBLE[route_id]):
+                        DEFAULT_ROUTE_MIN_ELIGIBLE[route_id]
+                        if policy.get("min_eligible") is None
+                        else policy["min_eligible"]):
                     g["disabled"] = False
                     g["disabled_reason"] = ""
         result.append(g)
@@ -2499,8 +2617,11 @@ def admin_top_users(limit=10):
     return rows
 
 
+# ─── UX Redesign v2: home menu and section keyboards ───────────────────────
+
 # Telegram Bot Handlers
 def get_main_menu(lang):
+    """Legacy reply keyboard — kept for backward compat with existing message handlers."""
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     t = MESSAGES[lang]
     markup.row(t["menu_buy"], t["menu_profile"])
@@ -2508,6 +2629,371 @@ def get_main_menu(lang):
     markup.row(t["menu_lang"], t["menu_referral"])
     markup.row(t["menu_support"], t["menu_status"])
     return markup
+
+
+def get_home_inline_keyboard(lang):
+    """Modern 4-section home screen with inline buttons.
+
+    Sections:
+    • 👤 Мой аккаунт  — status, sub URL, settings
+    • 💳 Подписка     — buy/renew, tariffs
+    • 📲 Добавить     — one-tap link-code flow for the MosaicVPN app
+    • 🎧 Помощь       — support, FAQ, complaints
+    """
+    t = MESSAGES[lang]
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.row(
+        types.InlineKeyboardButton(t["menu_account"], callback_data="home_account"),
+        types.InlineKeyboardButton(t["menu_subscribe"], callback_data="home_subscribe"),
+    )
+    markup.row(
+        types.InlineKeyboardButton(t["menu_add_app"], callback_data="home_add_app"),
+        types.InlineKeyboardButton(t["menu_help"], callback_data="home_help"),
+    )
+    return markup
+
+
+def get_account_inline_keyboard(lang, sub_url=None):
+    """Inline keyboard for the 👤 Account section."""
+    t = MESSAGES[lang]
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    if sub_url:
+        markup.add(types.InlineKeyboardButton(t["web_cabinet"], url=sub_url))
+    markup.add(types.InlineKeyboardButton(t["renew_sub"], callback_data="home_subscribe"))
+    markup.add(types.InlineKeyboardButton(t["invite_friend"], callback_data="ref_link"))
+    markup.add(types.InlineKeyboardButton(t["menu_add_app"], callback_data="home_add_app"))
+    markup.add(types.InlineKeyboardButton(t["back_home"], callback_data="home_main"))
+    return markup
+
+
+def get_subscribe_inline_keyboard(lang):
+    """Inline keyboard for the 💳 Subscription section."""
+    t = MESSAGES[lang]
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for days, pkg in PACKAGES.items():
+        markup.add(types.InlineKeyboardButton(pkg[lang], callback_data=f"buy_{days}"))
+    markup.add(types.InlineKeyboardButton(t["custom_button"], callback_data="buy_custom"))
+    markup.add(types.InlineKeyboardButton(t["back_home"], callback_data="home_main"))
+    return markup
+
+
+def get_help_inline_keyboard(lang):
+    """Inline keyboard for the 🎧 Help section."""
+    t = MESSAGES[lang]
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(t["ticket_btn"], callback_data="ticket_new"))
+    markup.add(types.InlineKeyboardButton(t["faq_btn"], callback_data="faq"))
+    markup.add(types.InlineKeyboardButton(t["status_btn"], callback_data="home_status"))
+    markup.add(types.InlineKeyboardButton(t["chat_support"], url="https://t.me/mosaicsup"))
+    markup.add(types.InlineKeyboardButton(t["back_home"], callback_data="home_main"))
+    return markup
+
+
+# ─── Image-with-fallback helper ─────────────────────────────────────────────
+
+# Optional banner shown on the home screen.  We try to send it as a photo;
+# on any error (no file, Telegram rejects, etc.) we silently fall back to a
+# plain text message so the UX never breaks.
+HOME_BANNER_PATH = os.environ.get("MOSAIC_HOME_BANNER_PATH", "")
+
+
+def _send_home_with_banner(chat_id, text, markup, parse_mode="Markdown"):
+    """Send home screen text, optionally with a banner image.
+
+    Telegram Bot API allows `photo` + `caption` via send_photo.  If the banner
+    file is not configured or fails for any reason we fall back to send_message
+    so the bot never shows an error to the user.
+    """
+    if HOME_BANNER_PATH and os.path.isfile(HOME_BANNER_PATH):
+        try:
+            with open(HOME_BANNER_PATH, "rb") as f:
+                bot.send_photo(
+                    chat_id,
+                    f,
+                    caption=text,
+                    parse_mode=parse_mode,
+                    reply_markup=markup,
+                )
+            return
+        except Exception as exc:
+            logger.warning(
+                "_send_home_with_banner: photo send failed (%s), falling back to text", exc
+            )
+    # Fallback: plain text message
+    bot.send_message(chat_id, text, parse_mode=parse_mode, reply_markup=markup)
+
+
+# ─── New /menu command and home-screen callbacks ─────────────────────────────
+
+@bot.message_handler(commands=["menu"])
+def show_home_menu(message):
+    """Explicit /menu command — shows the redesigned home screen."""
+    telegram_id = message.chat.id
+    db_user = get_user(telegram_id)
+    lang = (db_user or {}).get("language", "ru")
+    t = MESSAGES[lang]
+    _send_home_with_banner(telegram_id, t["home_title"], get_home_inline_keyboard(lang))
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "home_main")
+def handle_home_main(call):
+    """Navigate back to home screen."""
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    lang = (db_user or {}).get("language", "ru")
+    t = MESSAGES[lang]
+    bot.answer_callback_query(call.id)
+    try:
+        bot.edit_message_text(
+            t["home_title"],
+            chat_id=telegram_id,
+            message_id=call.message.message_id,
+            parse_mode="Markdown",
+            reply_markup=get_home_inline_keyboard(lang),
+        )
+    except Exception:
+        # If we cannot edit (e.g. message too old), send a new one
+        _send_home_with_banner(telegram_id, t["home_title"], get_home_inline_keyboard(lang))
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "home_account")
+def handle_home_account(call):
+    """👤 Account section."""
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    lang = (db_user or {}).get("language", "ru")
+    t = MESSAGES[lang]
+    bot.answer_callback_query(call.id)
+
+    sub_url = None
+    text = t["account_section"]
+
+    if db_user:
+        username = db_user.get("username")
+        short_uuid = db_user.get("short_uuid")
+        if short_uuid:
+            sub_url = f"https://sub.zxc1x1.ru/{short_uuid}"
+        user_data = api_get_user(username) if username else None
+        if user_data:
+            expire_at_raw = user_data.get("expireAt")
+            try:
+                expire_dt = dateutil.parser.isoparse(expire_at_raw)
+                expire_date = expire_dt.strftime("%d.%m.%Y")
+                now_dt = datetime.datetime.now(datetime.timezone.utc)
+                days_left = max(0, (expire_dt - now_dt).days)
+            except Exception:
+                expire_date = expire_at_raw or "—"
+                days_left = 0
+
+            active = user_data.get("status") == "ACTIVE" and days_left > 0
+            status_icon = "✅" if active else "⏳"
+            status_label = ("активна" if active else "истекла") if lang == "ru" else ("active" if active else "expired")
+            if lang == "ru":
+                text = (
+                    f"👤 **Мой аккаунт**\n\n"
+                    f"{status_icon} Подписка: **{status_label}**\n"
+                    f"📅 Действует до: **{expire_date}** ({days_left} дн.)\n"
+                    f"📱 Устройств: до **5**\n"
+                )
+                if sub_url:
+                    text += f"\n🔗 Ссылка подписки:\n`{sub_url}`"
+            else:
+                text = (
+                    f"👤 **My Account**\n\n"
+                    f"{status_icon} Subscription: **{status_label}**\n"
+                    f"📅 Expires: **{expire_date}** ({days_left}d)\n"
+                    f"📱 Devices: up to **5**\n"
+                )
+                if sub_url:
+                    text += f"\n🔗 Subscription link:\n`{sub_url}`"
+    else:
+        text = t.get("profile_not_found",
+                      "⚠️ Профиль не найден. Нажмите /start для регистрации." if lang == "ru"
+                      else "⚠️ Profile not found. Press /start to register.")
+
+    markup = get_account_inline_keyboard(lang, sub_url)
+    try:
+        bot.edit_message_text(
+            text,
+            chat_id=telegram_id,
+            message_id=call.message.message_id,
+            parse_mode="Markdown",
+            reply_markup=markup,
+        )
+    except Exception:
+        bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "home_subscribe")
+def handle_home_subscribe(call):
+    """💳 Subscription section."""
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    lang = (db_user or {}).get("language", "ru")
+    t = MESSAGES[lang]
+    bot.answer_callback_query(call.id)
+    markup = get_subscribe_inline_keyboard(lang)
+    # Subscription copy includes Lava payment note
+    note = (
+        "\n\nОплата через Lava: СБП или банковская карта — быстро и безопасно."
+        if lang == "ru" else
+        "\n\nPayment via Lava: SBP or bank card — fast and secure."
+    )
+    try:
+        bot.edit_message_text(
+            t["subscribe_section"] + note,
+            chat_id=telegram_id,
+            message_id=call.message.message_id,
+            parse_mode="Markdown",
+            reply_markup=markup,
+        )
+    except Exception:
+        bot.send_message(
+            telegram_id, t["subscribe_section"] + note,
+            parse_mode="Markdown", reply_markup=markup,
+        )
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "home_help")
+def handle_home_help(call):
+    """🎧 Help section."""
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    lang = (db_user or {}).get("language", "ru")
+    t = MESSAGES[lang]
+    bot.answer_callback_query(call.id)
+    markup = get_help_inline_keyboard(lang)
+    try:
+        bot.edit_message_text(
+            t["help_section"],
+            chat_id=telegram_id,
+            message_id=call.message.message_id,
+            parse_mode="Markdown",
+            reply_markup=markup,
+        )
+    except Exception:
+        bot.send_message(telegram_id, t["help_section"], parse_mode="Markdown", reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "home_status")
+def handle_home_status(call):
+    """Status shortcut inside the Help section."""
+    bot.answer_callback_query(call.id)
+    # Re-use the existing status message logic
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    lang = (db_user or {}).get("language", "ru")
+    up_24h = uptime_get_percent(24)
+    up_7d = uptime_get_percent(168)
+    avg_rating = rating_get_average()
+    t = MESSAGES[lang]
+    if up_24h >= 99:
+        status_emoji, status_text = "🟢", ("Все системы в норме" if lang == "ru" else "All systems operational")
+    elif up_24h >= 90:
+        status_emoji, status_text = "🟡", ("Возможны перебои" if lang == "ru" else "Minor issues possible")
+    else:
+        status_emoji, status_text = "🔴", ("Сервер недоступен" if lang == "ru" else "Server down")
+
+    text = (
+        f"📊 **Статус сервиса**\n\n"
+        f"{status_emoji} **{status_text}**\n\n"
+        f"⏱ Uptime 24ч: **{up_24h}%**\n"
+        f"⏱ Uptime 7д: **{up_7d}%**\n"
+        f"⭐ Рейтинг: **{avg_rating['avg'] or '—'}** ({avg_rating['count']})\n\n"
+        f"_Обновляется каждые 5 минут_"
+    ) if lang == "ru" else (
+        f"📊 **Service Status**\n\n"
+        f"{status_emoji} **{status_text}**\n\n"
+        f"⏱ Uptime 24h: **{up_24h}%**\n"
+        f"⏱ Uptime 7d: **{up_7d}%**\n"
+        f"⭐ Rating: **{avg_rating['avg'] or '—'}** ({avg_rating['count']})\n\n"
+        f"_Updated every 5 minutes_"
+    )
+    back_markup = types.InlineKeyboardMarkup()
+    back_markup.add(types.InlineKeyboardButton(t["back_home"], callback_data="home_main"))
+    back_markup.add(types.InlineKeyboardButton(
+        "⚠️ Сообщить о проблеме" if lang == "ru" else "⚠️ Report an issue",
+        callback_data="report_issue"))
+    bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=back_markup)
+
+
+# ─── "Добавить в MosaicVPN" one-tap secure flow ─────────────────────────────
+#
+# Architecture (matches existing /link flow — no new endpoints needed):
+#   1. User taps "📲 Добавить в MosaicVPN" (button or /add command)
+#   2. Bot calls issue_link_code() — the same DB helper used by /link
+#   3. Bot shows the code in a nicely-formatted message
+#   4. User opens MosaicVPN app → Cabinet → "Войти через Telegram" → types code
+#   5. App calls POST /api/link/redeem with the code
+#   6. Bot's HTTP server (existing _handle_link_redeem) burns the code and
+#      returns the subscription credentials to the app
+#
+# No new server endpoints are needed.  The deep-link/enrollment architecture
+# (mosaicvpn://enroll/callback) is browser-initiated and requires a live
+# browser session; the link-code flow works without a browser and is the
+# correct path for a Telegram bot trigger.
+
+@bot.callback_query_handler(func=lambda call: call.data == "home_add_app")
+def handle_home_add_app(call):
+    """One-tap 'Добавить в MosaicVPN' — issues a link code inline."""
+    telegram_id = call.message.chat.id
+    bot.answer_callback_query(call.id)
+    _send_add_to_app_code(telegram_id)
+
+
+@bot.message_handler(commands=["add"])
+def handle_add_command(message):
+    """Explicit /add command — same as the 'Add to MosaicVPN' button."""
+    _send_add_to_app_code(message.chat.id)
+
+
+def _send_add_to_app_code(telegram_id):
+    """Issue a link code and display it with clear instructions.
+
+    Uses the exact same issue_link_code() helper as /link so all existing
+    security properties (single-use, 10-minute TTL, no-reuse) are inherited.
+    """
+    db_user = get_user(telegram_id)
+    lang = (db_user or {}).get("language", "ru")
+    t = MESSAGES[lang]
+
+    if not db_user:
+        bot.send_message(telegram_id, t["add_app_no_profile"], parse_mode="Markdown")
+        return
+
+    try:
+        code, expires = issue_link_code(
+            resolve_telegram_account_id(telegram_id),
+            db_user.get("username"),
+            db_user.get("short_uuid"),
+        )
+    except Exception as exc:
+        logger.error("_send_add_to_app_code: issue_link_code failed for %s: %s", telegram_id, exc)
+        bot.send_message(telegram_id, t["add_app_error"], parse_mode="Markdown")
+        return
+
+    text = t["add_app_code_fmt"].format(
+        code=code,
+        minutes=LINK_CODE_TTL_MINUTES,
+    )
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    # Show the download link only if we can fetch the bot username; ignore errors gracefully
+    try:
+        bot_username = bot.get_me().username
+        dl_url = f"https://t.me/{bot_username}?start=getapp"
+    except Exception:
+        dl_url = None
+    if dl_url:
+        markup.add(types.InlineKeyboardButton(
+            "⬇️ Скачать MosaicVPN" if lang == "ru" else "⬇️ Download MosaicVPN",
+            url=dl_url,
+        ))
+    markup.add(types.InlineKeyboardButton(
+        "🔄 Новый код" if lang == "ru" else "🔄 New code",
+        callback_data="home_add_app",
+    ))
+    markup.add(types.InlineKeyboardButton(t["back_home"], callback_data="home_main"))
+    bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
 
 def _claim_telegram_profile_link(message, raw_code):
     """Consume a cabinet-issued code in the Telegram chat that will be bound."""
@@ -2684,9 +3170,19 @@ def send_welcome(message):
         markup.add(types.InlineKeyboardButton("🗺 Web Map" if lang == 'en' else "🗺 Открыть веб-карту", url=sub_url))
 
         bot.send_message(message.chat.id, full_text, parse_mode="Markdown", reply_markup=markup)
-        bot.send_message(message.chat.id, "Вы можете управлять аккаунтом с помощью меню ниже:" if lang == "ru" else "You can manage your account using the menu below:", reply_markup=get_main_menu(lang))
+        # Show the new home menu after the welcome message
+        home_intro = ("Вы можете управлять аккаунтом через меню ниже — нажмите нужный раздел:"
+                      if lang == "ru"
+                      else "Use the menu below to manage your account — tap any section:")
+        _send_home_with_banner(message.chat.id, home_intro, get_home_inline_keyboard(lang))
     else:
         bot.send_message(message.chat.id, t["welcome"], parse_mode="Markdown", reply_markup=get_main_menu(lang))
+        # Also show home menu inline for new users
+        _send_home_with_banner(
+            message.chat.id,
+            MESSAGES[lang]["home_title"],
+            get_home_inline_keyboard(lang),
+        )
 
 @bot.message_handler(commands=["link"])
 def issue_link_code_command(message):
@@ -3649,10 +4145,12 @@ def setup_bot_branding():
         # Set commands
         commands = [
             types.BotCommand("start", "Запустить / Start"),
+            types.BotCommand("menu", "Главное меню / Home menu"),
             types.BotCommand("profile", "Мой профиль / My Profile"),
+            types.BotCommand("add", "Добавить в приложение / Add to app"),
             types.BotCommand("buy", "Купить подписку / Buy subscription"),
             types.BotCommand("instructions", "Инструкция / Setup Guide"),
-            types.BotCommand("support", "Поддержка / Support")
+            types.BotCommand("support", "Поддержка / Support"),
         ]
         bot.set_my_commands(commands)
         
@@ -3696,6 +4194,32 @@ def setup_bot_branding():
         logger.error(f"Failed to setup bot commands/branding: {e}")
 
 # Web API server serving Stats
+_urgent_collector_lock = threading.Lock()
+_last_urgent_collector_at = 0.0
+
+
+def trigger_urgent_pool_refresh(reason):
+    """Start a bounded out-of-band pool refresh, rate-limited across requests."""
+    global _last_urgent_collector_at
+    with _urgent_collector_lock:
+        now = time.monotonic()
+        if now - _last_urgent_collector_at < 300:
+            return False
+        _last_urgent_collector_at = now
+    try:
+        subprocess.Popen(
+            ["systemctl", "start", "mosaic-pool-collector.service"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        logger.warning("Urgent pool refresh triggered: %s", reason)
+        return True
+    except OSError as exc:
+        logger.error("Could not trigger urgent pool refresh: %s", exc)
+        return False
+
+
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
@@ -4325,6 +4849,8 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                 outbounds.append(outbound)
             cursor.close()
             pg_conn.close()
+            if not outbounds:
+                trigger_urgent_pool_refresh("empty client candidate feed")
         except Exception as exc:
             logger.error("Client candidate feed lookup failed: %s", exc)
             self._send_json(503, {"error": "candidate feed unavailable"})
