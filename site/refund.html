@@ -14,8 +14,9 @@
 <meta property="og:description" content="Правила возврата денежных средств, отмены подписки и заморозки баланса в сервисе MosaicVPN." />
 <meta property="og:url" content="https://sub.zxc1x1.ru/refund.html" />
 
-<link rel="icon" type="image/png" href="/assets/logo-96.png">
+<link rel="icon" type="image/png" href="/assets/logo-96.png"><link rel="preload" as="image" href="/assets/logo-96.png">
 
+<link rel="stylesheet" href="/assets/common.css">
 <style>
   :root{
     --bg:#F4EFE6; --card:#EDE5D6; --elev:#E4DAC6; --ink:#2B2620; --hover:#D9CFB8;
@@ -51,7 +52,7 @@
   .nav-links{margin-left:auto; display:flex; gap:22px; font-size:14px; color:var(--text-2)}
   .nav-links a{text-decoration:none}
   .nav-links a:hover{color:var(--accent)}
-  @media(max-width:720px){ .nav-links{display:none} }
+  @media(max-width:920px){ .nav-links{display:none} }
 
   /* content area */
   .main-content{padding:48px 0 64px}
@@ -92,26 +93,32 @@
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Перейти к содержимому</a>
 
 <header>
   <div class="wrap nav">
-    <a href="index.html" class="brand">
+    <a href="/" class="brand">
       <img src="/assets/logo-96.png" alt="" width="24" height="24" style="display:block" loading="eager">
       <span>Mosaic<span class="dot">.</span>VPN</span>
     </a>
-    <nav class="nav-links">
-      <a href="index.html">Главная</a>
-      <a href="delivery.html">Доставка</a>
-      <a href="contacts.html">Контакты</a>
-      <a href="refund.html">Возврат</a>
-      <a href="offer.html">Оферта</a>
-      <a href="privacy.html">Конфиденциальность</a>
-      <a href="terms.html">Условия</a>
-    </nav>
+    <nav class="nav-links" id="nav-links">
+      <a href="/">Главная</a>
+      <a href="/delivery.html">Доставка</a>
+      <a href="/contacts.html">Контакты</a>
+      <a href="/refund.html">Возврат</a>
+      <a href="/offer.html">Оферта</a>
+      <a href="/privacy.html">Конфиденциальность</a>
+      <a href="/terms.html">Условия</a>
+
+    <button class="nav-hamburger" id="nav-toggle" aria-label="Открыть меню" aria-expanded="false" aria-controls="nav-links">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <line x1="3" y1="7" x2="21" y2="7"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="17" x2="21" y2="17"/>
+      </svg>
+    </button>
   </div>
 </header>
 
-<div class="wrap main-content">
+<div id="main-content" class="wrap main-content">
   <div class="page-head">
     <div class="fig">Раздел / Правила сервиса</div>
     <h1>Условия возврата и отмены платежа</h1>
@@ -155,10 +162,10 @@
   <div class="content-card">
     <h2>4. Порядок и правила возврата средств</h2>
     <p>Пользователь имеет право в любой момент потребовать возврат неиспользованного остатка денежных средств с внутреннего баланса.</p>
-    
+
     <p><strong>Шаги для оформления возврата:</strong></p>
     <ul>
-      <li>Направьте обращение в службу поддержки через Telegram-бота <strong>@mosaicvpnbot</strong> или по контактам, указанным на странице <a href="contacts.html" style="color:var(--accent);">Контакты</a>.</li>
+      <li>Направьте обращение в службу поддержки через Telegram-бота <strong>@mosaicvpnbot</strong> или по контактам, указанным на странице <a href="/contacts.html" style="color:var(--accent);">Контакты</a>.</li>
       <li>В обращении укажите ваш Telegram ID (Telegram username) и причину возврата.</li>
     </ul>
 
@@ -175,14 +182,14 @@
   <div class="wrap" style="text-align:center;">
     <div style="font-family:var(--serif); font-size:16px; font-weight:600; color:var(--text); margin-bottom:12px;">MosaicVPN · Атлас приватных маршрутов</div>
     <div class="footer-links">
-      <a href="index.html">Главная</a>
-    <a href="cabinet.html">Кабинет</a> · ·
-      <a href="delivery.html">Доставка</a>
-      <a href="contacts.html">Контакты</a> ·
-      <a href="offer.html">Оферта</a> ·
-      <a href="privacy.html">Политика конфиденциальности</a> ·
-      <a href="refund.html">Условия возврата</a> ·
-      <a href="terms.html">Условия использования</a>
+      <a href="/">Главная</a>
+    <a href="/cabinet.html">Кабинет</a> · ·
+      <a href="/delivery.html">Доставка</a>
+      <a href="/contacts.html">Контакты</a> ·
+      <a href="/offer.html">Оферта</a> ·
+      <a href="/privacy.html">Политика конфиденциальности</a> ·
+      <a href="/refund.html">Условия возврата</a> ·
+      <a href="/terms.html">Условия использования</a>
     </div>
     <div style="margin-top:16px; font-family:var(--mono); font-size:12px; color:var(--muted);">
       Поддержка в Telegram: <a href="https://t.me/mosaicvpnbot" target="_blank" rel="noopener" style="color:var(--accent);">@mosaicvpnbot</a>
@@ -190,5 +197,37 @@
   </div>
 </footer>
 
+<script>
+(function(){
+  var btn = document.getElementById('nav-toggle');
+  var nav = document.getElementById('nav-links');
+  if(!btn || !nav) return;
+  btn.addEventListener('click', function(){
+    var open = nav.classList.toggle('open');
+    btn.setAttribute('aria-expanded', String(open));
+    btn.setAttribute('aria-label', open ? 'Закрыть меню' : 'Открыть меню');
+    document.body.style.overflow = open ? 'hidden' : '';
+  });
+  // Close on outside click
+  document.addEventListener('click', function(e){
+    if(!btn.contains(e.target) && !nav.contains(e.target)){
+      nav.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+      btn.setAttribute('aria-label', 'Открыть меню');
+      document.body.style.overflow = '';
+    }
+  });
+  // Close on Escape
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' && nav.classList.contains('open')){
+      nav.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+      btn.setAttribute('aria-label', 'Открыть меню');
+      document.body.style.overflow = '';
+      btn.focus();
+    }
+  });
+})();
+</script>
 </body>
 </html>

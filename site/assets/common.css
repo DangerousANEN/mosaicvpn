@@ -1,0 +1,101 @@
+/* MosaicVPN — shared design tokens & base styles
+   Loaded by all pages. Prevents duplicated :root/body blocks.
+   Safe to cache (filename-versioned if needed).
+   DO NOT add page-specific rules here. */
+
+:root{
+  --bg:#F4EFE6; --card:#EDE5D6; --elev:#E4DAC6; --ink:#2B2620; --hover:#D9CFB8;
+  --border:#C4B89E; --border-light:#D4C9B0; --border-ink:#5C4E3A;
+  --text:#2B2620; --text-2:#6B5D4A; --muted:#9A8B72; --on-ink:#F4EFE6;
+  --accent:#B85C38; --accent-hi:#D4724A; --success:#5B7A3A; --warn:#C47830;
+  --serif:'Iowan Old Style','Palatino Linotype','Book Antiqua',Georgia,serif;
+  --mono:'JetBrains Mono','SFMono-Regular',Consolas,'Liberation Mono',monospace;
+  --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg); color:var(--text); font-family:var(--sans);
+  line-height:1.6; -webkit-font-smoothing:antialiased;
+  background-image:
+    linear-gradient(rgba(196,184,158,.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(196,184,158,.14) 1px, transparent 1px);
+  background-size:32px 32px;
+}
+a{color:inherit}
+button,input,select,textarea{font:inherit}
+button{cursor:pointer}
+
+/* ─── Skip link ────────────────────────────────────────────── */
+.skip-link{
+  position:absolute; top:-100%; left:1rem; z-index:9999;
+  padding:10px 20px; background:var(--ink); color:var(--on-ink);
+  font-size:14px; font-weight:600; border-radius:0 0 8px 8px;
+  text-decoration:none; transition:top .15s ease;
+}
+.skip-link:focus{top:0}
+
+/* ─── Shared nav / header ──────────────────────────────────── */
+header{
+  position:sticky; top:0; z-index:50; backdrop-filter:blur(8px);
+  background:rgba(244,239,230,.88); border-bottom:1px solid var(--border);
+}
+.nav{display:flex; align-items:center; gap:16px; height:64px}
+.brand{
+  display:flex; align-items:center; gap:10px;
+  font-family:var(--serif); font-size:20px; font-weight:600;
+  letter-spacing:.2px; text-decoration:none;
+}
+.brand .dot{color:var(--accent)}
+.nav-links{
+  margin-left:auto; display:flex; flex-wrap:wrap; gap:18px;
+  font-size:14px; color:var(--text-2); list-style:none; padding:0;
+}
+.nav-links a{text-decoration:none; white-space:nowrap}
+.nav-links a:hover,.nav-links a[aria-current="page"]{color:var(--accent)}
+
+/* ─── Hamburger mobile nav ─────────────────────────────────── */
+.nav-hamburger{
+  display:none; margin-left:auto; align-items:center; justify-content:center;
+  width:40px; height:40px; border:1px solid var(--border); border-radius:8px;
+  background:var(--card); color:var(--text); cursor:pointer;
+  transition:border-color .15s ease;
+}
+.nav-hamburger:hover{border-color:var(--accent); color:var(--accent)}
+.nav-hamburger svg{pointer-events:none}
+
+/* When the hamburger is active, nav turns into a vertical panel */
+.nav-links.open{
+  display:flex !important; flex-direction:column; gap:0;
+  position:fixed; inset:64px 0 0; background:rgba(244,239,230,.98);
+  backdrop-filter:blur(12px); padding:16px 24px; overflow-y:auto;
+  border-top:1px solid var(--border); animation:navSlideIn .18s ease;
+}
+.nav-links.open a{
+  display:block; padding:14px 0; font-size:17px;
+  border-bottom:1px solid var(--border-light);
+}
+.nav-links.open a:last-child{border-bottom:none}
+
+@keyframes navSlideIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+
+/* ─── Shared footer ────────────────────────────────────────── */
+footer{border-top:1px solid var(--border); padding:34px 0; text-align:center; color:var(--muted); font-size:13px}
+footer a{color:var(--text-2); text-decoration:none}
+footer a:hover{color:var(--accent)}
+
+/* ─── Layout ───────────────────────────────────────────────── */
+.wrap{max-width:1120px; margin:0 auto; padding:0 24px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* ─── Responsive: hide nav-links, show hamburger ───────────── */
+@media(max-width:920px){
+  .nav-links{display:none}
+  .nav-hamburger{display:inline-flex}
+}
+@media(max-width:360px){
+  .wrap{padding:0 16px}
+  .nav{gap:8px}
+  .brand{gap:7px;font-size:18px}
+}

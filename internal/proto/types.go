@@ -244,6 +244,23 @@ type SpeedTestRequest struct {
 	Policy *SpeedProbePolicy `json:"policy,omitempty"`
 }
 
+// ProbeMode selects the transport used for latency probes.
+// "auto" (default): daemon chooses best available mode.
+// "tcp": plain TCP handshake — always available.
+// "http_get": HTTP GET, measures TTFB — more realistic, requires URL.
+// "icmp": ICMP echo — most accurate, requires privilege (Linux CAP_NET_RAW or
+// Windows elevation; not available on Android without root).
+type ProbeMode string
+
+const (
+	// ProbeModeAuto lets the daemon pick the best available mode (resolves to
+	// "tcp" unless elevated privileges enable "icmp").
+	ProbeModeAuto    ProbeMode = "auto"
+	ProbeModeTCP     ProbeMode = "tcp"
+	ProbeModeHTTPGet ProbeMode = "http_get"
+	ProbeModeICMP    ProbeMode = "icmp"
+)
+
 // ClientSelectionPolicy is a provider-defined, bounded policy executed by the
 // local client runtime. The policy contains no endpoint data: it tells the
 // client how to probe and rank the opaque candidate shard for this group.
@@ -258,6 +275,40 @@ type ClientSelectionPolicy struct {
 	StabilityWeight   float64          `json:"stability_weight,omitempty"`
 	SpeedWeight       float64          `json:"speed_weight,omitempty"`
 	SpeedProbe        SpeedProbePolicy `json:"speed_probe,omitempty"`
+	// ProbeMode selects the transport used for latency probes.
+	// Omit or set to "" / "auto" to let the daemon choose.
+	// Backwards-compatible: older daemons ignore this field and use tcp.
+	ProbeMode ProbeMode `json:"probe_mode,omitempty"`
+	// ProbeSamples is the number of samples per candidate (3–20, default 5).
+	// More samples improve jitter/loss accuracy at the cost of probe time.
+	ProbeSamples int `json:"probe_samples,omitempty"`
+	// ProbeURL is used when ProbeMode=="http_get". Must be a valid HTTPS URL.
+	// Falls back to a CloudFlare /cdn-cgi/trace endpoint when empty.
+	ProbeURL string `json:"probe_url,omitempty"`
+
+	// ── Runtime quality monitor ──────────────────────────────────────────
+	// These fields control the active-candidate degradation detector that runs
+	// on the client while a Smart Group tunnel is live. Defaults are applied by
+	// SetDefaults(); remote providers may tune within the clamped bounds.
+
+	// MonitorIntervalSeconds: probe-window period while connected.
+	// 0 = derive from ProbeTTLSeconds/10. Clamped to [15, 300].
+	MonitorIntervalSeconds int `json:"monitor_interval_seconds,omitempty"`
+	// MonitorDegradedWindows: consecutive bad windows before failover is
+	// evaluated (hysteresis). Clamped to [2, 6]. Default 3.
+	MonitorDegradedWindows int `json:"monitor_degraded_windows,omitempty"`
+	// MonitorCooldownSeconds: suppression window after each failover attempt.
+	// Clamped to [60, 600]. Default 120.
+	MonitorCooldownSeconds int `json:"monitor_cooldown_seconds,omitempty"`
+	// MonitorMinImprovement: minimum score delta (0–1) to commit a switch.
+	// Clamped to [0.05, 0.50]. Default 0.15.
+	MonitorMinImprovement float64 `json:"monitor_min_improvement,omitempty"`
+	// MonitorMaxLoss: loss fraction ceiling [0, 1] that marks a window
+	// degraded. Clamped to [0.05, 0.80]. Default 0.30.
+	MonitorMaxLoss float64 `json:"monitor_max_loss,omitempty"`
+	// MonitorMaxLatencyMs: latency ceiling in ms. 0 = 400 ms default.
+	// Clamped to [100, 3000].
+	MonitorMaxLatencyMs int `json:"monitor_max_latency_ms,omitempty"`
 }
 
 func (p *ClientSelectionPolicy) SetDefaults() {
@@ -287,7 +338,61 @@ func (p *ClientSelectionPolicy) SetDefaults() {
 		p.LossWeight = 0.30
 		p.StabilityWeight = 0.25
 	}
+	// ProbeSamples: clamp to [3, 20], default 5.
+	if p.ProbeSamples < 3 {
+		p.ProbeSamples = 5
+	}
+	if p.ProbeSamples > 20 {
+		p.ProbeSamples = 20
+	}
+	// ProbeMode: normalise empty string to Auto so callers can switch on it.
+	if p.ProbeMode == "" {
+		p.ProbeMode = ProbeModeAuto
+	}
 	p.SpeedProbe.SetDefaults()
+
+	// ── Runtime quality monitor defaults ────────────────────────────────
+	if p.MonitorIntervalSeconds <= 0 {
+		// Derive from probe TTL: probe every TTL/10, floor at 15 s.
+		derived := p.ProbeTTLSeconds / 10
+		if derived < 15 {
+			derived = 15
+		}
+		p.MonitorIntervalSeconds = derived
+	}
+	if p.MonitorIntervalSeconds > 300 {
+		p.MonitorIntervalSeconds = 300
+	}
+	if p.MonitorDegradedWindows < 2 {
+		p.MonitorDegradedWindows = 3
+	}
+	if p.MonitorDegradedWindows > 6 {
+		p.MonitorDegradedWindows = 6
+	}
+	if p.MonitorCooldownSeconds <= 0 {
+		p.MonitorCooldownSeconds = 120
+	}
+	if p.MonitorCooldownSeconds > 600 {
+		p.MonitorCooldownSeconds = 600
+	}
+	if p.MonitorMinImprovement < 0.05 {
+		p.MonitorMinImprovement = 0.15
+	}
+	if p.MonitorMinImprovement > 0.50 {
+		p.MonitorMinImprovement = 0.50
+	}
+	if p.MonitorMaxLoss <= 0 {
+		p.MonitorMaxLoss = 0.30
+	}
+	if p.MonitorMaxLoss > 0.80 {
+		p.MonitorMaxLoss = 0.80
+	}
+	if p.MonitorMaxLatencyMs <= 0 {
+		p.MonitorMaxLatencyMs = 400
+	}
+	if p.MonitorMaxLatencyMs > 3000 {
+		p.MonitorMaxLatencyMs = 3000
+	}
 }
 
 // ManifestGroup defines an admin-managed route/group in the subscription manifest.
@@ -373,6 +478,10 @@ type CandidateProbeResult struct {
 	JitterMs        int       `json:"jitter_ms"`
 	CheckedAt       time.Time `json:"checked_at"`
 	ProbeKind       string    `json:"probe_kind"`
+	// DownloadMbps and UploadMbps are populated when a per-candidate speed probe
+	// is requested (policy.SpeedProbe.Enabled). Zero when no speed test was run.
+	DownloadMbps float64 `json:"download_mbps,omitempty"`
+	UploadMbps   float64 `json:"upload_mbps,omitempty"`
 }
 
 // SubscriptionManifest is the provider-controlled routing & load-balancing manifest.
@@ -832,9 +941,15 @@ type TrafficPoint struct {
 type TestResult struct {
 	ServerID   string    `json:"server_id"`
 	ServerName string    `json:"server_name,omitempty"`
-	LatencyMS  int       `json:"latency_ms"` // -1 on failure
-	Error      string    `json:"error,omitempty"`
-	TestedAt   time.Time `json:"tested_at"`
+	LatencyMS  int       `json:"latency_ms"` // -1 on failure; median across samples when multi-sample
+	// Extended fields populated by multi-sample probes. Zero when only one
+	// sample was taken (single-server quick test on older code paths).
+	P95LatencyMS int     `json:"p95_latency_ms,omitempty"`
+	JitterMS     int     `json:"jitter_ms,omitempty"`
+	LossPercent  float64 `json:"loss_percent,omitempty"`
+	ProbeKind    string  `json:"probe_kind,omitempty"`
+	Error        string  `json:"error,omitempty"`
+	TestedAt     time.Time `json:"tested_at"`
 	// IPInfo is populated during an IP test (the apparent egress IP).
 	IPInfo *IPInfo `json:"ip_info,omitempty"`
 }

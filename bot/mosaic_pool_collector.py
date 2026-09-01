@@ -62,6 +62,20 @@ class Node:
     jitter_ms: float | None = None
     packet_loss: float | None = None
 
+    @property
+    def quality_score(self):
+        """0..100 composite quality; failed end-to-end probes score zero."""
+        if not self.proxy_ok:
+            return 0.0
+        latency_value = 2000.0 if self.latency_ms is None else float(self.latency_ms)
+        jitter_value = 500.0 if self.jitter_ms is None else float(self.jitter_ms)
+        loss_value = 1.0 if self.packet_loss is None else float(self.packet_loss)
+        latency = max(0.0, 1.0 - min(latency_value, 1000.0) / 1000.0)
+        jitter = max(0.0, 1.0 - min(jitter_value, 250.0) / 250.0)
+        loss = max(0.0, 1.0 - min(loss_value, 1.0))
+        throughput = min(float(self.speed_mbps or 0.0) / 50.0, 1.0)
+        return round(100.0 * (latency * 0.35 + jitter * 0.15 + loss * 0.20 + throughput * 0.15 + 0.15), 2)
+
 
 def pg_connect():
     password_path = os.environ.get('MOSAIC_PG_PASSWORD_FILE')
@@ -189,7 +203,8 @@ def proxy_probe(node):
                     time.sleep(0.05)
             curl = subprocess.run(
                 ['curl', '--silent', '--show-error', '--max-time', str(HTTP_TIMEOUT), '--socks5-hostname', f'127.0.0.1:{port}',
-                 '--output', '/dev/null', '--write-out', '%{http_code}|%{time_total}|%{speed_download}', 'https://www.cloudflare.com/cdn-cgi/trace'],
+                 '--output', '/dev/null', '--write-out', '%{http_code}|%{time_total}|%{speed_download}',
+                 'https://speed.cloudflare.com/__down?bytes=200000'],
                 capture_output=True, text=True, timeout=HTTP_TIMEOUT + 3,
             )
             parts = curl.stdout.strip().split('|')
@@ -215,16 +230,21 @@ def upsert_nodes(nodes):
     conn = pg_connect()
     try:
         with conn.cursor() as cur:
+            cur.execute("ALTER TABLE mosaic_nodes ADD COLUMN IF NOT EXISTS jitter_ms double precision")
+            cur.execute("ALTER TABLE mosaic_nodes ADD COLUMN IF NOT EXISTS packet_loss double precision")
+            cur.execute("ALTER TABLE mosaic_nodes ADD COLUMN IF NOT EXISTS quality_score double precision")
             for node in nodes:
                 cur.execute("""
                     INSERT INTO mosaic_nodes(source_url,source_name,fingerprint,protocol,address,port,country_code,config,
-                        tcp_ok,tls_ok,proxy_ok,latency_ms,speed_mbps,success_rate,last_checked_at,last_success_at,failure_count,enabled)
-                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,NULL,%s,%s,%s,%s,now(),CASE WHEN %s THEN now() ELSE NULL END,
+                        tcp_ok,tls_ok,proxy_ok,latency_ms,speed_mbps,jitter_ms,packet_loss,quality_score,
+                        success_rate,last_checked_at,last_success_at,failure_count,enabled)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,NULL,%s,%s,%s,%s,%s,%s,%s,now(),CASE WHEN %s THEN now() ELSE NULL END,
                         CASE WHEN %s THEN 0 ELSE 1 END,true)
                     ON CONFLICT(fingerprint) DO UPDATE SET
                       source_url=excluded.source_url,source_name=excluded.source_name,country_code=COALESCE(excluded.country_code,mosaic_nodes.country_code),
                       config=excluded.config,tcp_ok=excluded.tcp_ok,proxy_ok=excluded.proxy_ok,latency_ms=excluded.latency_ms,
-                      speed_mbps=excluded.speed_mbps,last_checked_at=now(),last_success_at=CASE WHEN excluded.proxy_ok THEN now() ELSE mosaic_nodes.last_success_at END,
+                      speed_mbps=excluded.speed_mbps,jitter_ms=excluded.jitter_ms,packet_loss=excluded.packet_loss,
+                      quality_score=excluded.quality_score,last_checked_at=now(),last_success_at=CASE WHEN excluded.proxy_ok THEN now() ELSE mosaic_nodes.last_success_at END,
                       success_rate=CASE WHEN excluded.proxy_ok
                         THEN LEAST(1.0, COALESCE(mosaic_nodes.success_rate, 0.70) * 0.80 + 0.20)
                         ELSE GREATEST(0.0, COALESCE(mosaic_nodes.success_rate, 0.70) * 0.80)
@@ -233,6 +253,7 @@ def upsert_nodes(nodes):
                       enabled=CASE WHEN excluded.proxy_ok THEN true WHEN mosaic_nodes.failure_count+1 >= %s THEN false ELSE mosaic_nodes.enabled END,updated_at=now()
                 """, (node.source_url, node.source_name, node.fingerprint, node.protocol, node.address, node.port, node.country_code,
                       Json(node.config), node.tcp_ok, node.proxy_ok, node.latency_ms, node.speed_mbps,
+                      node.jitter_ms, node.packet_loss, node.quality_score,
                       0.70 if node.proxy_ok else 0.0, bool(node.proxy_ok), bool(node.proxy_ok), FAILURE_DISABLE_THRESHOLD))
             # Retain bounded history: dead records have no routing value and used
             # to grow forever across frequently-changing public feeds.
@@ -278,8 +299,9 @@ def upsert_nodes(nodes):
             """, (HEALTH_TTL_HOURS,))
             cur.execute("""
                 INSERT INTO mosaic_group_nodes(group_id,node_id,priority)
-                SELECT 'all',id,row_number() OVER (ORDER BY latency_ms NULLS LAST, last_success_at DESC NULLS LAST)
-                FROM mosaic_nodes WHERE enabled AND proxy_ok=true AND last_checked_at >= now() - make_interval(hours => %s) ORDER BY latency_ms NULLS LAST LIMIT 80
+                SELECT 'all',id,row_number() OVER (ORDER BY quality_score DESC NULLS LAST, latency_ms NULLS LAST, last_success_at DESC NULLS LAST)
+                FROM mosaic_nodes WHERE enabled AND proxy_ok=true AND last_checked_at >= now() - make_interval(hours => %s)
+                ORDER BY quality_score DESC NULLS LAST, latency_ms NULLS LAST LIMIT 80
             """, (HEALTH_TTL_HOURS,))
             cur.execute("""
                 INSERT INTO mosaic_group_nodes(group_id,node_id,priority)
@@ -303,11 +325,11 @@ def upsert_nodes(nodes):
             """, (HEALTH_TTL_HOURS,))
             cur.execute("""
                 INSERT INTO mosaic_group_nodes(group_id,node_id,priority)
-                SELECT 'stable',id,row_number() OVER (ORDER BY success_rate DESC, failure_count ASC, latency_ms NULLS LAST, last_success_at DESC NULLS LAST)
+                SELECT 'stable',id,row_number() OVER (ORDER BY quality_score DESC NULLS LAST, success_rate DESC, failure_count ASC, latency_ms NULLS LAST, last_success_at DESC NULLS LAST)
                 FROM mosaic_nodes
                 WHERE enabled AND proxy_ok=true AND failure_count=0 AND success_rate >= 0.85
                   AND last_checked_at >= now() - make_interval(hours => %s)
-                ORDER BY success_rate DESC, latency_ms NULLS LAST LIMIT 40
+                ORDER BY quality_score DESC NULLS LAST, success_rate DESC, latency_ms NULLS LAST LIMIT 40
             """, (HEALTH_TTL_HOURS,))
             cur.execute("""
                 INSERT INTO mosaic_group_nodes(group_id,node_id,priority)

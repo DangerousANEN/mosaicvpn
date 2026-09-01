@@ -24,8 +24,9 @@
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:image" content="https://sub.zxc1x1.ru/assets/mosaic-logo-512.png" />
 
-<link rel="icon" type="image/png" href="/assets/logo-96.png">
+<link rel="icon" type="image/png" href="/assets/logo-96.png"><link rel="preload" as="image" href="/assets/logo-96.png">
 
+<link rel="stylesheet" href="/assets/common.css">
 <style>
   :root{
     --bg:#F4EFE6; --card:#EDE5D6; --elev:#E4DAC6; --ink:#2B2620; --hover:#D9CFB8;
@@ -61,12 +62,8 @@
   .nav-links{margin-left:auto; display:flex; flex-wrap:wrap; gap:18px; font-size:14px; color:var(--text-2)}
   .nav-links a{text-decoration:none; white-space:nowrap}
   .nav-links a:hover{color:var(--accent)}
-  .mobile-cabinet{display:none; margin-left:auto; align-items:center; gap:7px; min-height:38px; padding:8px 11px; border:1px solid var(--border); border-radius:9px; background:var(--card); color:var(--text); font-size:13px; font-weight:600; text-decoration:none; white-space:nowrap}
-  .mobile-cabinet:hover{border-color:var(--accent); color:var(--accent)}
-  .mobile-cabinet svg{width:16px; height:16px; color:var(--accent)}
   @media(max-width:1050px){ .nav-links{gap:12px} }
-  @media(max-width:920px){ .nav-links{display:none}.mobile-cabinet{display:inline-flex} }
-  @media(max-width:360px){.wrap{padding:0 16px}.nav{gap:8px}.brand{gap:7px;font-size:18px}.brand svg{width:21px;height:21px}.mobile-cabinet{padding:7px 9px;font-size:12px}}
+  @media(max-width:360px){.wrap{padding:0 16px}.nav{gap:8px}.brand{gap:7px;font-size:18px}.brand svg{width:21px;height:21px}}
 
   /* hero */
   .hero{padding:76px 0 56px; text-align:center}
@@ -227,8 +224,37 @@
   footer a{color:var(--text-2); text-decoration:none}
   footer a:hover{color:var(--accent)}
 </style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "MosaicVPN",
+  "url": "https://sub.zxc1x1.ru/",
+  "applicationCategory": "NetworkApplication",
+  "operatingSystem": "Windows, Linux, Android",
+  "offers": {
+    "@type": "Offer",
+    "price": "1",
+    "priceCurrency": "RUB",
+    "availability": "https://schema.org/InStock",
+    "description": "1 рубль в сутки, 3 дня бесплатно"
+  },
+  "description": "Кроссплатформенный клиент на движке sing-box для защиты сетевого соединения, шифрования трафика и безопасного доступа к сети.",
+  "author": {
+    "@type": "Person",
+    "name": "Никита Евгеньевич Липский",
+    "identifier": "545113651604"
+  },
+  "supportingData": {
+    "@type": "DataFeed",
+    "name": "Поддержка в Telegram",
+    "url": "https://t.me/mosaicvpnbot"
+  }
+}
+</script>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Перейти к содержимому</a>
 
 <header>
   <div class="wrap nav">
@@ -236,7 +262,7 @@
       <img src="/assets/logo-96.png" alt="" width="24" height="24" style="display:block" loading="eager">
       MosaicVPN<span class="dot">.</span>
     </div>
-    <nav class="nav-links">
+    <nav class="nav-links" id="nav-links">
       <a href="#downloads">Загрузки</a>
       <a href="#pricing">Тариф</a>
       <a href="#features">Возможности</a>
@@ -247,14 +273,15 @@
       <a href="/cabinet.html">Кабинет</a>
       <a href="/docs.html">Провайдерам</a>
     </nav>
-    <a class="mobile-cabinet" href="/cabinet.html" aria-label="Открыть личный кабинет">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-      Кабинет
-    </a>
+    <button class="nav-hamburger" id="nav-toggle" aria-label="Открыть меню" aria-expanded="false" aria-controls="nav-links">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <line x1="3" y1="7" x2="21" y2="7"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="17" x2="21" y2="17"/>
+      </svg>
+    </button>
   </div>
 </header>
 
-<div class="wrap">
+<div id="main-content" class="wrap">
 
   <!-- Public-copy policy: describe connection protection, privacy, encryption,
        route quality and digital delivery. Do not promise bypassing restrictions,
@@ -572,5 +599,37 @@ cd MosaicVPN
   </div>
 </footer>
 
+<script>
+(function(){
+  var btn = document.getElementById('nav-toggle');
+  var nav = document.getElementById('nav-links');
+  if(!btn || !nav) return;
+  btn.addEventListener('click', function(){
+    var open = nav.classList.toggle('open');
+    btn.setAttribute('aria-expanded', String(open));
+    btn.setAttribute('aria-label', open ? 'Закрыть меню' : 'Открыть меню');
+    document.body.style.overflow = open ? 'hidden' : '';
+  });
+  // Close on outside click
+  document.addEventListener('click', function(e){
+    if(!btn.contains(e.target) && !nav.contains(e.target)){
+      nav.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+      btn.setAttribute('aria-label', 'Открыть меню');
+      document.body.style.overflow = '';
+    }
+  });
+  // Close on Escape
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' && nav.classList.contains('open')){
+      nav.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+      btn.setAttribute('aria-label', 'Открыть меню');
+      document.body.style.overflow = '';
+      btn.focus();
+    }
+  });
+})();
+</script>
 </body>
 </html>

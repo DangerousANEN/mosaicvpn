@@ -132,6 +132,15 @@ class ManifestClientPolicy {
   final double stabilityWeight;
   final double speedWeight;
   final SpeedProbePolicy speedProbe;
+  /// Probe mode for latency measurements.
+  /// One of "auto", "tcp", "http_get", "icmp".
+  /// "auto" (default) resolves to "tcp" unless the daemon has elevated
+  /// privileges. "icmp" is unavailable on Android — falls back to "tcp".
+  final String probeMode;
+  /// Number of samples per candidate probe (3–20, default 5).
+  final int probeSamples;
+  /// HTTP URL used when probeMode == "http_get".
+  final String probeUrl;
 
   const ManifestClientPolicy({
     this.mode = 'latency',
@@ -144,6 +153,9 @@ class ManifestClientPolicy {
     this.stabilityWeight = .25,
     this.speedWeight = 0,
     this.speedProbe = const SpeedProbePolicy(),
+    this.probeMode = 'auto',
+    this.probeSamples = 5,
+    this.probeUrl = '',
   });
 
   factory ManifestClientPolicy.fromJson(Map<String, dynamic>? json) {
@@ -165,6 +177,9 @@ class ManifestClientPolicy {
       speedWeight: (value['speed_weight'] as num?)?.toDouble() ?? 0,
       speedProbe: SpeedProbePolicy.fromJson(
           value['speed_probe'] as Map<String, dynamic>?),
+      probeMode: value['probe_mode']?.toString() ?? 'auto',
+      probeSamples: boundedInt('probe_samples', 5, 3, 20),
+      probeUrl: value['probe_url']?.toString() ?? '',
     );
   }
 }

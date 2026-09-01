@@ -1,3 +1,5 @@
+import 'provider_profile.dart';
+
 class SmartGroupCandidateShard {
   final String groupId;
   final String version;
@@ -113,11 +115,20 @@ class SmartGroupProbeResult {
       };
 
   /// Higher is better. Failed probes are always ranked behind successful ones.
-  double get qualityScore {
+  /// Pass the group's [policy] to honour provider-configured weights; omit to
+  /// use the default weights (0.55 reliability / 0.30 latency / 0.15 stability).
+  double qualityScore({ManifestClientPolicy? policy}) {
     if (!successful) return -lossPercent;
+    final lw = policy?.lossWeight ?? 0.55;
+    final latw = policy?.latencyWeight ?? 0.30;
+    final sw = policy?.stabilityWeight ?? 0.15;
+    final spw = policy?.speedWeight ?? 0.0;
+    final targetMbps = policy?.speedProbe.targetMbps ?? 50.0;
     final reliability = 1 - (lossPercent.clamp(0, 100) / 100);
-    final latency = medianLatencyMs <= 0 ? 0 : 1 / (1 + medianLatencyMs / 150);
+    final latency = medianLatencyMs <= 0 ? 0.0 : 1 / (1 + medianLatencyMs / 150);
     final stability = 1 / (1 + jitterMs / 100);
-    return reliability * 0.55 + latency * 0.30 + stability * 0.15;
+    final measured = downloadMbps > uploadMbps * 0.5 ? downloadMbps : uploadMbps * 0.5;
+    final speed = targetMbps > 0 ? (measured / targetMbps).clamp(0.0, 1.0) : 0.0;
+    return reliability * lw + latency * latw + stability * sw + speed * spw;
   }
 }

@@ -14,8 +14,9 @@
 <meta property="og:description" content="Подключите свой VPN-сервис к клиенту MosaicVPN: смарт-группы, профиль провайдера, брендирование и биллинг через один JSON-манифест." />
 <meta property="og:url" content="https://sub.zxc1x1.ru/docs.html" />
 
-<link rel="icon" type="image/png" href="/assets/logo-96.png">
+<link rel="icon" type="image/png" href="/assets/logo-96.png"><link rel="preload" as="image" href="/assets/logo-96.png">
 
+<link rel="stylesheet" href="/assets/common.css">
 <style>
   :root{
     --bg:#F4EFE6; --card:#FBF8F3; --elev:#EFE8DC; --border:#D9CFBE;
@@ -110,17 +111,23 @@
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Перейти к содержимому</a>
 
 <header>
   <div class="wrap hd">
     <a class="logo" href="/"><img src="/assets/logo-96.png" alt="" width="24" height="24" style="display:block" loading="eager">MosaicVPN<span class="dot">.</span></a>
-    <nav class="nav-links">
+    <nav class="nav-links" id="nav-links">
       <a href="#quickstart">Быстрый старт</a>
       <a href="#manifest">Манифест</a>
       <a href="#groups">Группы</a>
       <a href="#profile">Профиль</a>
       <a href="#reference">Справочник</a>
-    </nav>
+
+    <button class="nav-hamburger" id="nav-toggle" aria-label="Открыть меню" aria-expanded="false" aria-controls="nav-links">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <line x1="3" y1="7" x2="21" y2="7"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="17" x2="21" y2="17"/>
+      </svg>
+    </button>
   </div>
 </header>
 
@@ -654,5 +661,37 @@
   </div>
 </footer>
 
+<script>
+(function(){
+  var btn = document.getElementById('nav-toggle');
+  var nav = document.getElementById('nav-links');
+  if(!btn || !nav) return;
+  btn.addEventListener('click', function(){
+    var open = nav.classList.toggle('open');
+    btn.setAttribute('aria-expanded', String(open));
+    btn.setAttribute('aria-label', open ? 'Закрыть меню' : 'Открыть меню');
+    document.body.style.overflow = open ? 'hidden' : '';
+  });
+  // Close on outside click
+  document.addEventListener('click', function(e){
+    if(!btn.contains(e.target) && !nav.contains(e.target)){
+      nav.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+      btn.setAttribute('aria-label', 'Открыть меню');
+      document.body.style.overflow = '';
+    }
+  });
+  // Close on Escape
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' && nav.classList.contains('open')){
+      nav.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+      btn.setAttribute('aria-label', 'Открыть меню');
+      document.body.style.overflow = '';
+      btn.focus();
+    }
+  });
+})();
+</script>
 </body>
 </html>
