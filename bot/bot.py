@@ -1911,7 +1911,23 @@ def available_lava_consumer_services(store):
     ]
 
 
-def create_lava_invoice(store, telegram_id, amount, days, description=None):
+LAVA_PAYMENT_METHOD_SERVICES = {
+    "card": frozenset({"card", "card_ru", "mir_card", "mir_pay"}),
+    "sbp": frozenset({"sbp", "sber_pay"}),
+}
+
+
+def available_lava_payment_methods(store):
+    """Return user-facing methods actually approved for a Lava shop."""
+    services = set(available_lava_consumer_services(store))
+    return [
+        method
+        for method in ("card", "sbp")
+        if services.intersection(LAVA_PAYMENT_METHOD_SERVICES[method])
+    ]
+
+
+def create_lava_invoice(store, telegram_id, amount, days, description=None, payment_method=None):
     config = lava_store_config(store)
     amount = round(float(amount), 2)
     if amount < 1 or amount > 100000:
@@ -1924,6 +1940,15 @@ def create_lava_invoice(store, telegram_id, amount, days, description=None):
             "В магазине пока не активированы способы оплаты СБП или банковской картой. "
             "Пожалуйста, попробуйте позже."
         )
+    if payment_method is not None:
+        payment_method = str(payment_method).lower()
+        allowed = LAVA_PAYMENT_METHOD_SERVICES.get(payment_method)
+        if not allowed:
+            raise ValueError("payment_method must be 'card' or 'sbp'")
+        active_services = [service for service in active_services if service in allowed]
+        if not active_services:
+            label = "СБП" if payment_method == "sbp" else "банковской картой"
+            raise RuntimeError(f"Оплата через {label} пока не активирована для этого магазина")
     internal_id = secrets.randbelow(9_000_000_000_000_000_000) + 1
     order_id = f"mosaic-{store}-{telegram_id}-{secrets.token_urlsafe(10)}"
     payload = {
@@ -1949,6 +1974,7 @@ def create_lava_invoice(store, telegram_id, amount, days, description=None):
         "amount": amount,
         "days": days,
         "store": store,
+        "payment_method": payment_method,
     }
 
 
@@ -3505,13 +3531,57 @@ def handle_buy_discount_callback(call):
     except Exception as e:
         logger.error(f"Discount callback error: {e}")
 
-def _send_lava_invoice_for_chat(telegram_id, amount, days, lang):
-    invoice = create_lava_invoice("bot", telegram_id, amount, days, f"MosaicVPN: пополнение на {days} дней")
-    save_lava_invoice(invoice["internal_id"], invoice["provider_id"], invoice["order_id"], telegram_id, amount, days, "bot")
-    text = (f"💳 **Счёт на оплату готов**\n\nПополнение: **{days} дней**\nСумма: **{amount:.0f} ₽**\n\nПосле оплаты доступ обновится автоматически." if lang == "ru" else f"💳 **Invoice ready**\n\nTop-up: **{days} days**\nAmount: **{amount:.0f} RUB**\n\nYour access will update automatically after payment.")
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton(MESSAGES[lang]["lava_button"], url=invoice["payment_url"]))
+def _send_lava_payment_method_menu(telegram_id, amount, days, lang):
+    methods = available_lava_payment_methods("bot")
+    if not methods:
+        raise RuntimeError("Для Telegram-магазина пока нет активных способов оплаты")
+    text = (
+        f"💳 **Выберите способ оплаты**\n\nПополнение: **{days} дней**\nСумма: **{amount:.0f} ₽**"
+        if lang == "ru" else
+        f"💳 **Choose a payment method**\n\nTop-up: **{days} days**\nAmount: **{amount:.0f} RUB**"
+    )
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    if "card" in methods:
+        markup.add(types.InlineKeyboardButton(
+            "💳 Банковская карта" if lang == "ru" else "💳 Bank card",
+            callback_data=f"lava_card_{int(amount)}_{int(days)}",
+        ))
+    if "sbp" in methods:
+        markup.add(types.InlineKeyboardButton(
+            "📱 СБП" if lang == "ru" else "📱 SBP",
+            callback_data=f"lava_sbp_{int(amount)}_{int(days)}",
+        ))
     bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
+
+
+def _send_lava_invoice_for_chat(telegram_id, amount, days, lang, payment_method):
+    invoice = create_lava_invoice(
+        "bot", telegram_id, amount, days,
+        f"MosaicVPN: пополнение на {days} дней", payment_method=payment_method,
+    )
+    save_lava_invoice(invoice["internal_id"], invoice["provider_id"], invoice["order_id"], telegram_id, amount, days, "bot")
+    method_label = ("СБП" if payment_method == "sbp" else "банковская карта") if lang == "ru" else ("SBP" if payment_method == "sbp" else "bank card")
+    text = (f"💳 **Счёт на оплату готов**\n\nСпособ: **{method_label}**\nПополнение: **{days} дней**\nСумма: **{amount:.0f} ₽**\n\nПосле оплаты доступ обновится автоматически." if lang == "ru" else f"💳 **Invoice ready**\n\nMethod: **{method_label}**\nTop-up: **{days} days**\nAmount: **{amount:.0f} RUB**\n\nYour access will update automatically after payment.")
+    markup = types.InlineKeyboardMarkup()
+    button = ("📱 Оплатить через СБП" if payment_method == "sbp" else "💳 Оплатить картой") if lang == "ru" else ("📱 Pay via SBP" if payment_method == "sbp" else "💳 Pay by card")
+    markup.add(types.InlineKeyboardButton(button, url=invoice["payment_url"]))
+    bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("lava_card_") or call.data.startswith("lava_sbp_"))
+def handle_lava_payment_method_callback(call):
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    lang = db_user["language"] if db_user else "ru"
+    try:
+        _, payment_method, amount_raw, days_raw = call.data.split("_", 3)
+        amount = int(amount_raw)
+        days = int(days_raw)
+        bot.answer_callback_query(call.id, "Создаём счёт..." if lang == "ru" else "Creating invoice...")
+        _send_lava_invoice_for_chat(telegram_id, amount, days, lang, payment_method)
+    except (RuntimeError, ValueError) as exc:
+        logger.error("Lava payment-method callback failed: %s", exc)
+        bot.answer_callback_query(call.id, "Способ оплаты временно недоступен" if lang == "ru" else "Payment method is temporarily unavailable", show_alert=True)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "buy_custom")
@@ -3539,7 +3609,7 @@ def process_custom_lava_amount(message):
         bot.send_message(telegram_id, "Сумма должна быть целым числом от 1 до 100000 ₽." if lang == "ru" else "Amount must be a whole number from 1 to 100000 RUB.")
         return
     try:
-        _send_lava_invoice_for_chat(telegram_id, amount, int(amount), lang)
+        _send_lava_payment_method_menu(telegram_id, amount, int(amount), lang)
     except (RuntimeError, ValueError) as exc:
         logger.error("Custom Lava invoice failed: %s", exc)
         bot.send_message(telegram_id, "Не удалось создать счёт. Попробуйте позже." if lang == "ru" else "Could not create the invoice. Please try again later.")
@@ -3553,8 +3623,8 @@ def handle_buy_callback(call):
         telegram_id = call.message.chat.id
         db_user = get_user(telegram_id)
         lang = db_user["language"] if db_user else "ru"
-        bot.answer_callback_query(call.id, "..." if lang == "en" else "Создаем счет...")
-        _send_lava_invoice_for_chat(telegram_id, pkg["price_rub"], days, lang)
+        bot.answer_callback_query(call.id)
+        _send_lava_payment_method_menu(telegram_id, pkg["price_rub"], days, lang)
     except (RuntimeError, ValueError, KeyError) as exc:
         logger.error("Lava callback error: %s", exc)
         bot.send_message(call.message.chat.id, "Не удалось создать счёт. Попробуйте позже.")

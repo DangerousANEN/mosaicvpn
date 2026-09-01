@@ -149,6 +149,20 @@ class SourceIntegrityTest(unittest.TestCase):
         extend = _src.index("updated = api_extend_user(username, days)")
         self.assertLess(claim, extend)
 
+    def test_lava_card_and_sbp_are_separate_user_choices(self):
+        self.assertIn('"card": frozenset({"card", "card_ru", "mir_card", "mir_pay"})', _src)
+        self.assertIn('"sbp": frozenset({"sbp", "sber_pay"})', _src)
+        self.assertIn('callback_data=f"lava_card_', _src)
+        self.assertIn('callback_data=f"lava_sbp_', _src)
+        self.assertIn('payment_method=payment_method', _src)
+
+    def test_lava_invoice_restricts_include_service_to_selected_method(self):
+        create_start = _src.index("def create_lava_invoice(")
+        create_end = _src.index("def verify_lava_webhook(", create_start)
+        create_block = _src[create_start:create_end]
+        self.assertIn("active_services = [service for service in active_services if service in allowed]", create_block)
+        self.assertIn('"includeService": active_services', create_block)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
