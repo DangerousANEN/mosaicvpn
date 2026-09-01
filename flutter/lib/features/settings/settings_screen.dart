@@ -2013,6 +2013,33 @@ class _SettingTile extends StatelessWidget {
     this.difficulty = 0,
   });
 
+  void _showSettingInfo(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.info_outline),
+            const SizedBox(width: 8),
+            Expanded(child: Text(label)),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Text(
+            tooltip ?? description,
+            style: const TextStyle(fontSize: 14, height: 1.45),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Понятно'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
@@ -2037,6 +2064,14 @@ class _SettingTile extends StatelessWidget {
                     color: c.textPrimary,
                   ),
                 ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.only(left: 4),
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                tooltip: 'Что это значит?',
+                icon: Icon(Icons.info_outline, size: 16, color: c.textMuted),
+                onPressed: () => _showSettingInfo(context),
               ),
               if (difficulty > 0)
                 Tooltip(
