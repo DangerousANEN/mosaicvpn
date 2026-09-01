@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/app.dart';
 import '../../core/theme/atlas_theme.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/providers/billing_provider.dart';
@@ -12,6 +14,7 @@ import '../../core/i18n/app_strings.dart';
 import '../../core/models/models.dart';
 import '../../core/services/android_mosaic_account_service.dart';
 import '../../core/services/android_vpn_service.dart';
+import '../../core/services/smart_group_runtime_controller.dart';
 import '../../core/services/elevation_service.dart';
 import '../../core/services/tray_service.dart';
 import '../../core/services/autostart_service.dart';
@@ -1288,6 +1291,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ),
               _SettingTile(
+                label: 'Сбросить мастер настройки',
+                description:
+                    'Удалить локальные данные, подписки и кэш для повторного теста первого запуска.',
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.restart_alt, size: 18),
+                  label: const Text('Повторить мастер'),
+                  style: OutlinedButton.styleFrom(foregroundColor: c.warning),
+                  onPressed: _resetOnboarding,
+                ),
+              ),
+              _SettingTile(
                 label: s.t('sign_out'),
                 description: s.t('sign_out_description'),
                 child: OutlinedButton.icon(
@@ -1304,6 +1318,56 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _resetOnboarding() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Повторить мастер настройки?'),
+        content: const Text(
+            'Будут удалены локальные данные приложения и остановлен VPN.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Отмена')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Сбросить')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      SmartGroupRuntimeController.instance.stop();
+      if (AppPlatform.isAndroid) {
+        try {
+          await AndroidVpnService.instance.stop();
+        } catch (_) {}
+        await AndroidMosaicAccountService.instance.resetForOnboarding();
+      } else {
+        final api = ref.read(daemonApiProvider);
+        try {
+          await api.disconnect();
+        } catch (_) {}
+        final localSubscriptions = await api.listSubscriptions();
+        for (final subscription in localSubscriptions) {
+          try {
+            await api.deleteSubscription(subscription.id);
+          } catch (_) {}
+        }
+      }
+      final storage = await SharedPreferences.getInstance();
+      await storage.clear();
+      ref.invalidate(onboardingProvider);
+      ref.invalidate(subscriptionsProvider);
+      ref.invalidate(mosaicManifestProvider);
+      if (mounted) {
+        _showSnack('Данные сброшены. Перезапустите приложение для мастера.');
+      }
+    } catch (error) {
+      if (mounted) _showSnack('Не удалось выполнить сброс: $error');
+    }
   }
 
   Future<void> _signOut() async {
@@ -1520,9 +1584,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// config build and therefore needs a tunnel restart to take effect.
   bool _requiresRuntimeRestart(Preferences before, Preferences after) {
     bool listChanged(List<String> a, List<String> b) =>
-        a.length != b.length || !{for (final v in a) v: true}.keys
-            .toSet()
-            .containsAll(b.toSet());
+        a.length != b.length ||
+        !{for (final v in a) v: true}.keys.toSet().containsAll(b.toSet());
     return before.tunnelMode != after.tunnelMode ||
         before.tunStack != after.tunStack ||
         before.mtu != after.mtu ||
