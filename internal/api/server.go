@@ -2361,7 +2361,18 @@ func (s *Server) handleResolveService(w http.ResponseWriter, r *http.Request) {
 type RuntimeQualityProbeRequest struct {
 	// CandidateIDs is the list of opaque server IDs to probe. Bounded by the
 	// policy shard size; the handler rejects requests with more than 32 IDs.
-	CandidateIDs []string `json:"candidate_ids"`
+	CandidateIDs []string        `json:"candidate_ids"`
+	ProbeMode    proto.ProbeMode `json:"probe_mode,omitempty"`
+	ProbeSamples int             `json:"probe_samples,omitempty"`
+	ProbeURL     string          `json:"probe_url,omitempty"`
+	Speed        bool            `json:"speed,omitempty"`
+}
+
+// RuntimeQualityProbeResponseWithSpeed is retained for clients that request
+// optional throughput fields; the normal response type remains compatible.
+type RuntimeQualityProbeResponseWithSpeed struct {
+	GroupID string                       `json:"group_id"`
+	Results []proto.CandidateProbeResult `json:"results"`
 }
 
 // RuntimeQualityProbeResponse carries per-candidate probe results.
@@ -2423,7 +2434,10 @@ func (s *Server) handleRuntimeQualityProbe(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	const maxSamples = 3
+	maxSamples := req.ProbeSamples
+	if maxSamples < 3 || maxSamples > 20 {
+		maxSamples = 5
+	}
 	results := make([]proto.CandidateProbeResult, 0, len(req.CandidateIDs))
 
 	for _, candidateID := range req.CandidateIDs {
@@ -2459,6 +2473,7 @@ func (s *Server) handleRuntimeQualityProbe(w http.ResponseWriter, r *http.Reques
 		}
 
 		latencies := make([]int, 0, maxSamples)
+		observed := make([]int, 0, maxSamples)
 		for i := 0; i < maxSamples; i++ {
 			ctx, cancel := context.WithTimeout(r.Context(), 1500*time.Millisecond)
 			started := time.Now()
@@ -2474,23 +2489,25 @@ func (s *Server) handleRuntimeQualityProbe(w http.ResponseWriter, r *http.Reques
 				elapsed = 1
 			}
 			latencies = append(latencies, elapsed)
+			observed = append(observed, elapsed)
 		}
-		sort.Ints(latencies)
+		median, p95, jitter := computeProbeStats(observed)
 
 		result := proto.CandidateProbeResult{
 			GroupID:     groupID,
 			CandidateID: candidateID,
 			Samples:     maxSamples,
 			Successes:   len(latencies),
-			LossPercent: float64(maxSamples-len(latencies)) * 100 / maxSamples,
+			LossPercent: float64(maxSamples-len(latencies)) * 100 / float64(maxSamples),
 			CheckedAt:   time.Now().UTC(),
 			ProbeKind:   "runtime_tcp",
 		}
 		if len(latencies) > 0 {
 			result.Successful = true
-			result.MedianLatencyMs = latencies[len(latencies)/2]
-			result.P95LatencyMs = latencies[len(latencies)-1]
-			result.JitterMs = result.P95LatencyMs - result.MedianLatencyMs
+			result.MedianLatencyMs = median
+			result.P95LatencyMs = p95
+			result.JitterMs = jitter
+			result.ProbeKind = "runtime_" + string(req.ProbeMode)
 		}
 		results = append(results, result)
 	}

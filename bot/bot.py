@@ -2656,9 +2656,14 @@ def get_home_inline_keyboard(lang):
 def get_download_keyboard(lang):
     """Platform-neutral download fallback; Telegram cannot color buttons."""
     markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(types.InlineKeyboardButton("📱 Android", url="https://sub.zxc1x1.ru/#downloads"))
-    markup.add(types.InlineKeyboardButton("🖥 Windows / Linux", url="https://sub.zxc1x1.ru/#downloads"))
-    markup.add(types.InlineKeyboardButton("✅ Добавить в MosaicVPN" if lang == "ru" else "✅ Add to MosaicVPN", callback_data="home_add_app"))
+    # Telegram clients that support button styles render these semantic colors;
+    # older clients ignore the optional field without breaking the keyboard.
+    def button(text, **kwargs):
+        kwargs.setdefault("style", "primary")
+        return types.InlineKeyboardButton(text, **kwargs)
+    markup.add(button("📱 Android", url="https://sub.zxc1x1.ru/#downloads", style="primary"))
+    markup.add(button("🖥 Windows / Linux", url="https://sub.zxc1x1.ru/#downloads", style="primary"))
+    markup.add(button("✅ Добавить в MosaicVPN" if lang == "ru" else "✅ Add to MosaicVPN", callback_data="home_add_app", style="success"))
     return markup
 
 
@@ -2996,17 +3001,25 @@ def _send_add_to_app_code(telegram_id):
         markup.add(types.InlineKeyboardButton(
             "⬇️ Скачать MosaicVPN" if lang == "ru" else "⬇️ Download MosaicVPN",
             url=dl_url,
+            style="primary",
         ))
     else:
         markup.add(types.InlineKeyboardButton(
             "⬇️ Скачать MosaicVPN" if lang == "ru" else "⬇️ Download MosaicVPN",
             url="https://github.com/DangerousANEN/mosaicvpn/releases/latest",
+            style="primary",
         ))
+    # Newer clients may render semantic button styles; the link itself is
+    # kept compatible with older clients.
+    markup.add(types.InlineKeyboardButton(
+        "✅ Добавить в MosaicVPN" if lang == "ru" else "✅ Add to MosaicVPN",
+        url=f"mosaic://enroll/callback?code={urllib.parse.quote(code)}",
+        style="success",
+    ))
     markup.add(types.InlineKeyboardButton(
         "🔄 Новый код" if lang == "ru" else "🔄 New code",
         callback_data="home_add_app",
     ))
-    markup.add(types.InlineKeyboardButton(t["back_home"], callback_data="home_main"))
     bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
 
 def _claim_telegram_profile_link(message, raw_code):

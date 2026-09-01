@@ -11,7 +11,9 @@
         android:label="MosaicVPN"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round">
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:allowBackup="false"
+        android:fullBackupContent="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -58,6 +60,13 @@
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="mosaicvpn" android:host="enroll" android:path="/callback" />
+            </intent-filter>
+            <!-- Telegram bot fallback: one-time enrollment code and state only. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="mosaic" android:host="enroll" android:path="/callback" />
             </intent-filter>
         </activity>
         <service

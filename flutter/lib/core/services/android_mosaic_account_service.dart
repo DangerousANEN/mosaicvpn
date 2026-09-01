@@ -310,6 +310,15 @@ class AndroidMosaicAccountService {
     await _secureStorage.delete(key: _subscriptionBindingsKey);
   }
 
+  /// Erases all account/session material used by the first-run wizard.
+  /// Keystore-backed values are explicitly deleted; this is not dependent on
+  /// Android's backup/restore policy.
+  Future<void> resetForOnboarding() async {
+    await clearSession();
+    await _secureStorage.delete(key: _cachedAccountKey);
+    await _secureStorage.delete(key: _cachedManifestKey);
+  }
+
   /// Creates the website URL for primary sign-in. Existing cabinet sessions
   /// complete immediately; otherwise the website asks the user to authenticate
   /// there, then returns a code to the app through the registered deep link.
@@ -363,12 +372,24 @@ class AndroidMosaicAccountService {
   /// platform secure store. Despite its historical name, this service is also
   /// the shared Mosaic account authority for desktop browser enrollment.
   Future<AndroidMosaicSession> completeEnrollmentCallback(Uri callback) async {
+    final isBotPairingFallback = callback.scheme == 'mosaic' &&
+        callback.host == 'enroll' &&
+        callback.path == '/callback';
     final isVerifiedWebsiteCallback = callback.scheme == 'https' &&
         callback.host == 'sub.zxc1x1.ru' &&
         callback.path == '/enroll/callback';
-    final isCustomSchemeFallback = callback.scheme == 'mosaicvpn' &&
-        callback.host == 'enroll' &&
-        callback.path == '/callback';
+    final isCustomSchemeFallback =
+        (callback.scheme == 'mosaicvpn' || callback.scheme == 'mosaic') &&
+            callback.host == 'enroll' &&
+            callback.path == '/callback';
+    if (isBotPairingFallback) {
+      final code = callback.queryParameters['code'] ?? '';
+      final state = callback.queryParameters['state'] ?? '';
+      if (code.isEmpty || state.isNotEmpty) {
+        throw const FormatException('Ссылка добавления подписки повреждена.');
+      }
+      return redeemTelegramCode(code);
+    }
     if (!isVerifiedWebsiteCallback && !isCustomSchemeFallback) {
       throw const FormatException(
           'Получена неподдерживаемая ссылка добавления подписки.');
@@ -900,6 +921,12 @@ class AndroidMosaicAccountService {
     }
     if (session.username?.isNotEmpty == true) {
       await _secureStorage.write(key: _usernameKey, value: session.username);
+    }
+    if (session.subscriptionUrl?.isNotEmpty == true ||
+        session.providerId?.isNotEmpty == true) {
+      final bindings = await _readSubscriptionBindings();
+      bindings['default'] = session;
+      await _writeSubscriptionBindings(bindings);
     }
     return session;
   }

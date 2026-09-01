@@ -98,7 +98,7 @@ class MainActivity : FlutterActivity() {
         val isWebsiteEnrollment = uri.scheme == "https" &&
             uri.host == "sub.zxc1x1.ru" &&
             uri.path == "/enroll/callback"
-        val isCustomEnrollmentFallback = uri.scheme == "mosaicvpn" &&
+        val isCustomEnrollmentFallback = (uri.scheme == "mosaicvpn" || uri.scheme == "mosaic") &&
             uri.host == "enroll" &&
             uri.path == "/callback"
         when {
