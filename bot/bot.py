@@ -2653,6 +2653,15 @@ def get_home_inline_keyboard(lang):
     return markup
 
 
+def get_download_keyboard(lang):
+    """Platform-neutral download fallback; Telegram cannot color buttons."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton("📱 Android", url="https://sub.zxc1x1.ru/#downloads"))
+    markup.add(types.InlineKeyboardButton("🖥 Windows / Linux", url="https://sub.zxc1x1.ru/#downloads"))
+    markup.add(types.InlineKeyboardButton("✅ Добавить в MosaicVPN" if lang == "ru" else "✅ Add to MosaicVPN", callback_data="home_add_app"))
+    return markup
+
+
 def get_account_inline_keyboard(lang, sub_url=None):
     """Inline keyboard for the 👤 Account section."""
     t = MESSAGES[lang]
@@ -2988,6 +2997,11 @@ def _send_add_to_app_code(telegram_id):
             "⬇️ Скачать MosaicVPN" if lang == "ru" else "⬇️ Download MosaicVPN",
             url=dl_url,
         ))
+    else:
+        markup.add(types.InlineKeyboardButton(
+            "⬇️ Скачать MosaicVPN" if lang == "ru" else "⬇️ Download MosaicVPN",
+            url="https://github.com/DangerousANEN/mosaicvpn/releases/latest",
+        ))
     markup.add(types.InlineKeyboardButton(
         "🔄 Новый код" if lang == "ru" else "🔄 New code",
         callback_data="home_add_app",
@@ -3034,6 +3048,16 @@ def _claim_telegram_profile_link(message, raw_code):
 def send_welcome(message):
     telegram_id = message.chat.id
     args = message.text.split()
+    if len(args) > 1 and args[1] == "getapp":
+        db_user = get_user(telegram_id)
+        lang = (db_user or {}).get("language", "ru")
+        bot.send_message(
+            telegram_id,
+            "📲 Установите MosaicVPN, затем вернитесь в бот и нажмите «Добавить в приложение»." if lang == "ru" else
+            "📲 Install MosaicVPN, then return here and tap “Add to app”.",
+            reply_markup=get_download_keyboard(lang),
+        )
+        return
     if len(args) > 1 and args[1].startswith("link_"):
         _claim_telegram_profile_link(message, args[1][5:])
         return
