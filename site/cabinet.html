@@ -94,6 +94,7 @@
   .pay-option{position:relative;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-height:105px;padding:18px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--text);text-align:left;text-decoration:none;transition:transform .12s ease,background .15s ease,border-color .15s ease}
   .pay-option:hover{border-color:var(--accent);background:var(--card);transform:translateY(-1px)}.pay-option .sum{font-family:var(--serif);font-size:clamp(24px,2.5vw,28px);line-height:1.03;letter-spacing:-.025em}.pay-option .hint{display:block;max-width:18ch;margin-top:7px;font-size:12px;line-height:1.45;color:var(--text-2)}.pay-option svg{width:19px;height:19px;flex:none;color:var(--accent)}
   .custom-form{display:grid;grid-template-columns:minmax(180px,1fr) minmax(150px,205px) auto;align-items:center;gap:14px;margin-top:13px;padding:14px 15px;border:1px solid var(--border);border-radius:12px;background:var(--card-strong)}.custom-form label{display:grid;gap:3px;font-family:var(--serif);font-size:19px;line-height:1.1;color:var(--text)}.custom-form label small{font-family:var(--sans);font-size:12px;line-height:1.4;color:var(--text-2)}
+  .payment-methods{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px}.payment-method{position:relative;display:flex;align-items:center;gap:11px;padding:14px;border:1px solid var(--border);border-radius:11px;background:#fff;cursor:pointer}.payment-method:has(input:checked){border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}.payment-method input{accent-color:var(--accent)}.payment-method strong{display:block;font-size:14px}.payment-method small{display:block;margin-top:2px;color:var(--text-2);font-size:12px}
   .field{width:100%;min-height:45px;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:#fff;color:var(--text);outline:none}.field:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
   .message{min-height:21px;margin:12px 0 0;color:var(--text-2);font-size:13px;line-height:1.45}
   .linking-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.linking-panel{padding:18px;border:1px solid var(--border);border-radius:13px;background:#fff}.linking-panel h3{font-size:19px}.linking-panel p{margin:7px 0 0;color:var(--text-2);font-size:13px}.code-output{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:13px;padding:10px 10px 10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--card-strong)}.code-output strong{font-family:var(--mono);font-size:18px;letter-spacing:.14em;color:var(--text)}.binding-state{display:inline-flex;align-items:center;gap:6px;margin-top:12px;font-size:12px;font-weight:700;color:var(--text-2)}.binding-state.ok{color:var(--ok)}.binding-state::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor}
@@ -223,12 +224,17 @@
     <section aria-labelledby="topup-title">
       <div class="surface action-card">
         <div class="section-title"><div><div class="fig">Продлить доступ</div><h2 id="topup-title">Пополнение без лишних шагов</h2></div><p>1 ₽ добавляет 1 день доступа. Сумма зачисляется после подтверждения платежа.</p></div>
+        <fieldset style="border:0;padding:0;margin:0"><legend class="field-label">Способ оплаты</legend><div class="payment-methods">
+          <label class="payment-method"><input type="radio" name="payment-method" value="card" checked /><span><strong>Банковская карта</strong><small>МИР и карты российских банков</small></span></label>
+          <label class="payment-method"><input type="radio" name="payment-method" value="sbp" /><span><strong>СБП</strong><small>Оплата через приложение банка</small></span></label>
+        </div></fieldset>
         <div class="payment-options">
           <button class="pay-option lava-pay" data-amount="10" type="button"><span><span class="sum">10 ₽</span><span class="hint">10 дней доступа</span></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg></button>
           <button class="pay-option lava-pay" data-amount="30" type="button"><span><span class="sum">30 ₽</span><span class="hint">30 дней доступа</span></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg></button>
           <a class="pay-option" href="https://t.me/mosaicvpnbot?start=topup" target="_blank" rel="noopener"><span><span class="sum">В Telegram</span><span class="hint">Открыть @mosaicvpnbot</span></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg></a>
         </div>
-        <form id="custom-payment-form" class="custom-form"><label for="custom-amount"><span>Своя сумма</span><small>Введите сумму от 1 ₽ — она равна числу дней доступа.</small></label><input id="custom-amount" class="field" type="number" min="1" max="100000" step="1" inputmode="numeric" placeholder="Например, 45" /><button class="btn btn-secondary" type="submit">Перейти к оплате</button></form>
+        <form id="custom-payment-form" class="custom-form"><label for="custom-amount"><span>Своя сумма</span><small>Введите сумму от 1 ₽ — она равна числу дней доступа.</small></label><input id="custom-amount" class="field" type="number" min="1" max="50000" step="1" inputmode="numeric" placeholder="Например, 45" required /><button class="btn btn-secondary" type="submit">Перейти к оплате</button></form>
+        <p class="message">Перед оплатой вы увидите итоговую сумму и выбранный способ на защищённой странице платёжного партнёра Lava. Автосписаний нет.</p>
         <div id="payment-message" class="message" role="status"></div>
       </div>
     </section>
@@ -590,11 +596,20 @@
     }).catch(function () { setSubscriptionMessage('Не удалось подключиться к сервису.', 'error'); });
   }
 
+  function selectedPaymentMethod() { var node=document.querySelector('input[name="payment-method"]:checked'); return node ? node.value : 'card'; }
+  function applyCheckoutQuery() {
+    var params = new URLSearchParams(window.location.search);
+    var amount = Number(params.get('amount'));
+    var method = String(params.get('method') || '').toLowerCase();
+    if (Number.isInteger(amount) && amount >= 1 && amount <= 50000) document.getElementById('custom-amount').value = amount;
+    var node = document.querySelector('input[name="payment-method"][value="' + method + '"]');
+    if (node) node.checked = true;
+  }
   function startLavaPayment(amount) {
     amount = Number(amount); if (!savedToken) { setMessage('Сначала войдите в кабинет.', 'error'); return; }
     if (!Number.isInteger(amount) || amount < 1 || amount > 100000) { setMessage('Введите целую сумму от 1 до 100000 ₽.', 'error'); return; }
     setMessage('Создаём счёт…');
-    requestJSON(API_LAVA_CREATE, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:savedToken,amount:amount})}).then(function (result) {
+    requestJSON(API_LAVA_CREATE, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:savedToken,amount:amount,payment_method:selectedPaymentMethod()})}).then(function (result) {
       if (result.status !== 200 || !result.body.payment_url) { setMessage(result.body.error || 'Не удалось создать счёт.', 'error'); return; }
       setMessage('Счёт создан. Открываем страницу оплаты…', 'success'); window.location.assign(result.body.payment_url);
     }).catch(function () { setMessage('Не удалось подключиться к платёжному сервису.', 'error'); });
@@ -619,6 +634,7 @@
   document.getElementById('custom-payment-form').addEventListener('submit', function (event) { event.preventDefault(); startLavaPayment(document.getElementById('custom-amount').value); });
   document.getElementById('logout-button').addEventListener('click', function () { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(PROFILE_CACHE_KEY); savedToken = null; profileState = null; preparedEnrollment = null; enrollmentPreparation = null; codeInput.value = ''; codeError.textContent = ''; showGate(); window.scrollTo({top:0,behavior:'smooth'}); });
   document.getElementById('copy-account-id').addEventListener('click', function () { var id = profileState && profileState.telegram_id ? String(profileState.telegram_id) : ''; if (!id) return; var done = function () { setMessage('ID аккаунта скопирован.'); }; if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(id).then(done).catch(function () { window.prompt('Скопируйте ID аккаунта:', id); }); } else { window.prompt('Скопируйте ID аккаунта:', id); } });
+  applyCheckoutQuery();
   if (appReturn && !savedToken) {
     showGate('Войдите в кабинет, чтобы продолжить вход в приложении MosaicVPN.');
   } else if (savedToken) {

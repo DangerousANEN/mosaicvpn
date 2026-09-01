@@ -3807,14 +3807,22 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": f"amount must be a whole number of days at {daily_price} RUB per day"})
             return
         days = int(amount) // daily_price
+        payment_method = str(payload.get("payment_method") or "").lower()
+        if payment_method not in ("card", "sbp"):
+            self._send_json(400, {"error": "payment_method must be card or sbp"})
+            return
         try:
-            invoice = create_lava_invoice("site", session["telegram_id"], amount, days, "MosaicVPN: пополнение веб-кабинета")
+            invoice = create_lava_invoice(
+                "site", session["telegram_id"], amount, days,
+                "MosaicVPN: пополнение веб-кабинета",
+                payment_method=payment_method,
+            )
             save_lava_invoice(invoice["internal_id"], invoice["provider_id"], invoice["order_id"], session["telegram_id"], amount, days, "site")
         except (RuntimeError, ValueError) as exc:
             logger.error("Lava site invoice creation failed: %s", exc)
             self._send_json(502, {"error": "payment provider unavailable"})
             return
-        response = {"payment_id": invoice["provider_id"], "order_id": invoice["order_id"], "amount": amount, "days": days, "status": "pending", "payment_url": invoice["payment_url"]}
+        response = {"payment_id": invoice["provider_id"], "order_id": invoice["order_id"], "amount": amount, "days": days, "payment_method": payment_method, "status": "pending", "payment_url": invoice["payment_url"]}
         if mobile_checkout:
             response.update({
                 "provider": "lava",
