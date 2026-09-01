@@ -2632,25 +2632,90 @@ def get_main_menu(lang):
 
 
 def get_home_inline_keyboard(lang):
-    """Modern 4-section home screen with inline buttons.
+    """Compact account menu modeled after the supplied mobile reference.
 
-    Sections:
-    • 👤 Мой аккаунт  — status, sub URL, settings
-    • 💳 Подписка     — buy/renew, tariffs
-    • 📲 Добавить     — one-tap link-code flow for the MosaicVPN app
-    • 🎧 Помощь       — support, FAQ, complaints
+    Telegram inline keyboards do not support arbitrary CSS colors, so the
+    hierarchy is communicated with semantic emoji and consistent two-column
+    rows. Callback IDs deliberately reuse existing, tested handlers.
     """
     t = MESSAGES[lang]
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.row(
-        types.InlineKeyboardButton(t["menu_account"], callback_data="home_account"),
-        types.InlineKeyboardButton(t["menu_subscribe"], callback_data="home_subscribe"),
+        types.InlineKeyboardButton(
+            "🛒 Купить подписку" if lang == "ru" else "🛒 Buy subscription",
+            callback_data="home_subscribe",
+            style="primary",
+        ),
+        types.InlineKeyboardButton(
+            "💰 Баланс" if lang == "ru" else "💰 Balance",
+            callback_data="home_account",
+            style="primary",
+        ),
     )
     markup.row(
-        types.InlineKeyboardButton(t["menu_add_app"], callback_data="home_add_app"),
-        types.InlineKeyboardButton(t["menu_help"], callback_data="home_help"),
+        types.InlineKeyboardButton(
+            "🎁 Подарить подписку" if lang == "ru" else "🎁 Gift subscription",
+            callback_data="ref_link",
+            style="success",
+        ),
+        types.InlineKeyboardButton(
+            "🤝 Партнёрская программа" if lang == "ru" else "🤝 Affiliate program",
+            callback_data="ref_link",
+            style="success",
+        ),
+    )
+    markup.row(
+        types.InlineKeyboardButton(
+            "📲 Добавить в MosaicVPN" if lang == "ru" else "📲 Add to MosaicVPN",
+            callback_data="home_add_app",
+            style="success",
+        ),
+        types.InlineKeyboardButton(
+            "ℹ️ О сервисе" if lang == "ru" else "ℹ️ About service",
+            callback_data="home_help",
+            style="primary",
+        ),
     )
     return markup
+
+
+def get_home_text(telegram_id, lang):
+    """Build the reference-style home header from current account data."""
+    db_user = get_user(telegram_id) or {}
+    display_name = db_user.get("username") or "друг"
+    active_subscriptions = 0
+    balance_days = 0
+    username = db_user.get("username")
+    if username:
+        try:
+            user_data = api_get_user(username) or {}
+            expire_raw = user_data.get("expireAt")
+            if expire_raw:
+                expire_dt = dateutil.parser.isoparse(expire_raw)
+                if expire_dt.tzinfo is None:
+                    expire_dt = expire_dt.replace(tzinfo=datetime.timezone.utc)
+                days_left = max(0, (expire_dt - datetime.datetime.now(datetime.timezone.utc)).days)
+                balance_days = days_left
+                active_subscriptions = int(user_data.get("status") == "ACTIVE" and days_left > 0)
+        except Exception:
+            logger.debug("home menu account summary unavailable", exc_info=True)
+    if lang == "ru":
+        return (
+            f"🛡 **MosaicVPN**\n\n"
+            f"Привет, **{display_name}**!\n\n"
+            f"💰 Баланс: **{balance_days} дн. доступа**\n"
+            f"📦 Активных подписок: **{active_subscriptions}**\n\n"
+            "🎁 Приглашайте друзей и получайте бесплатные дни подписки!\n\n"
+            "Выберите действие:"
+        )
+    return (
+        f"🛡 **MosaicVPN**\n\n"
+        f"Hi, **{display_name}**!\n\n"
+        f"💰 Balance: **{balance_days} access days**\n"
+        f"📦 Active subscriptions: **{active_subscriptions}**\n\n"
+        "🎁 Invite friends and earn free subscription days!\n\n"
+        "Choose an action:"
+    )
 
 
 def get_download_keyboard(lang):
@@ -2672,11 +2737,11 @@ def get_account_inline_keyboard(lang, sub_url=None):
     t = MESSAGES[lang]
     markup = types.InlineKeyboardMarkup(row_width=1)
     if sub_url:
-        markup.add(types.InlineKeyboardButton(t["web_cabinet"], url=sub_url))
-    markup.add(types.InlineKeyboardButton(t["renew_sub"], callback_data="home_subscribe"))
-    markup.add(types.InlineKeyboardButton(t["invite_friend"], callback_data="ref_link"))
-    markup.add(types.InlineKeyboardButton(t["menu_add_app"], callback_data="home_add_app"))
-    markup.add(types.InlineKeyboardButton(t["back_home"], callback_data="home_main"))
+        markup.add(types.InlineKeyboardButton(t["web_cabinet"], url=sub_url, style="primary"))
+    markup.add(types.InlineKeyboardButton(t["renew_sub"], callback_data="home_subscribe", style="primary"))
+    markup.add(types.InlineKeyboardButton(t["invite_friend"], callback_data="ref_link", style="success"))
+    markup.add(types.InlineKeyboardButton(t["menu_add_app"], callback_data="home_add_app", style="success"))
+    markup.add(types.InlineKeyboardButton(t["back_home"], callback_data="home_main", style="primary"))
     return markup
 
 
@@ -2685,9 +2750,9 @@ def get_subscribe_inline_keyboard(lang):
     t = MESSAGES[lang]
     markup = types.InlineKeyboardMarkup(row_width=1)
     for days, pkg in PACKAGES.items():
-        markup.add(types.InlineKeyboardButton(pkg[lang], callback_data=f"buy_{days}"))
-    markup.add(types.InlineKeyboardButton(t["custom_button"], callback_data="buy_custom"))
-    markup.add(types.InlineKeyboardButton(t["back_home"], callback_data="home_main"))
+        markup.add(types.InlineKeyboardButton(pkg[lang], callback_data=f"buy_{days}", style="primary"))
+    markup.add(types.InlineKeyboardButton(t["custom_button"], callback_data="buy_custom", style="primary"))
+    markup.add(types.InlineKeyboardButton(t["back_home"], callback_data="home_main", style="primary"))
     return markup
 
 
@@ -2695,11 +2760,11 @@ def get_help_inline_keyboard(lang):
     """Inline keyboard for the 🎧 Help section."""
     t = MESSAGES[lang]
     markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(types.InlineKeyboardButton(t["ticket_btn"], callback_data="ticket_new"))
-    markup.add(types.InlineKeyboardButton(t["faq_btn"], callback_data="faq"))
-    markup.add(types.InlineKeyboardButton(t["status_btn"], callback_data="home_status"))
-    markup.add(types.InlineKeyboardButton(t["chat_support"], url="https://t.me/mosaicsup"))
-    markup.add(types.InlineKeyboardButton(t["back_home"], callback_data="home_main"))
+    markup.add(types.InlineKeyboardButton(t["ticket_btn"], callback_data="ticket_new", style="primary"))
+    markup.add(types.InlineKeyboardButton(t["faq_btn"], callback_data="faq", style="primary"))
+    markup.add(types.InlineKeyboardButton(t["status_btn"], callback_data="home_status", style="primary"))
+    markup.add(types.InlineKeyboardButton(t["chat_support"], url="https://t.me/mosaicsup", style="success"))
+    markup.add(types.InlineKeyboardButton(t["back_home"], callback_data="home_main", style="primary"))
     return markup
 
 
@@ -2745,8 +2810,7 @@ def show_home_menu(message):
     telegram_id = message.chat.id
     db_user = get_user(telegram_id)
     lang = (db_user or {}).get("language", "ru")
-    t = MESSAGES[lang]
-    _send_home_with_banner(telegram_id, t["home_title"], get_home_inline_keyboard(lang))
+    _send_home_with_banner(telegram_id, get_home_text(telegram_id, lang), get_home_inline_keyboard(lang))
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "home_main")
@@ -2755,11 +2819,11 @@ def handle_home_main(call):
     telegram_id = call.message.chat.id
     db_user = get_user(telegram_id)
     lang = (db_user or {}).get("language", "ru")
-    t = MESSAGES[lang]
+    text = get_home_text(telegram_id, lang)
     bot.answer_callback_query(call.id)
     try:
         bot.edit_message_text(
-            t["home_title"],
+            text,
             chat_id=telegram_id,
             message_id=call.message.message_id,
             parse_mode="Markdown",
@@ -2767,7 +2831,7 @@ def handle_home_main(call):
         )
     except Exception:
         # If we cannot edit (e.g. message too old), send a new one
-        _send_home_with_banner(telegram_id, t["home_title"], get_home_inline_keyboard(lang))
+        _send_home_with_banner(telegram_id, text, get_home_inline_keyboard(lang))
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "home_account")
@@ -3010,7 +3074,7 @@ def _send_add_to_app_code(telegram_id):
         "🔄 Новый код" if lang == "ru" else "🔄 New code",
         callback_data="home_add_app",
     ))
-    markup.add(types.InlineKeyboardButton(t["back_home"], callback_data="home_main"))
+    markup.add(types.InlineKeyboardButton(t["back_home"], callback_data="home_main", style="primary"))
     bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
 
 def _claim_telegram_profile_link(message, raw_code):
