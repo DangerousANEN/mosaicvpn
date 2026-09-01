@@ -128,9 +128,21 @@ class DaemonApi implements DaemonApiBase {
 
   @override
   Future<SmartGroupProbeResult> probeGroupCandidate(
-      String groupID, String candidateID) async {
-    final response = await _dio
-        .post('/v1/groups/$groupID/probe', data: {'candidate_id': candidateID});
+    String groupID,
+    String candidateID, {
+    String? probeMode,
+    int? probeSamples,
+    String? probeUrl,
+  }) async {
+    final response = await _dio.post(
+      '/v1/groups/$groupID/probe',
+      data: {'candidate_id': candidateID},
+      queryParameters: {
+        if (probeMode != null) 'probe_mode': probeMode,
+        if (probeSamples != null) 'probe_samples': probeSamples,
+        if (probeUrl != null && probeUrl.isNotEmpty) 'probe_url': probeUrl,
+      },
+    );
     return SmartGroupProbeResult.fromJson(
         response.data as Map<String, dynamic>);
   }

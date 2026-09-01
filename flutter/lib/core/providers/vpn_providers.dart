@@ -233,8 +233,19 @@ class _ResolvedDaemonApi implements DaemonApiBase {
       (await _backend()).getCandidateShard(groupID, installationID);
   @override
   Future<SmartGroupProbeResult> probeGroupCandidate(
-          String groupID, String candidateID) async =>
-      (await _backend()).probeGroupCandidate(groupID, candidateID);
+    String groupID,
+    String candidateID, {
+    String? probeMode,
+    int? probeSamples,
+    String? probeUrl,
+  }) async =>
+      (await _backend()).probeGroupCandidate(
+        groupID,
+        candidateID,
+        probeMode: probeMode,
+        probeSamples: probeSamples,
+        probeUrl: probeUrl,
+      );
   @override
   Future<void> connectGroupCandidate(
           String groupID, String candidateID) async =>

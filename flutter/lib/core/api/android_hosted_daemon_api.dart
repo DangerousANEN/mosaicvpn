@@ -252,7 +252,36 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         }
       }
     }
-    samples.sort();
+    return (samples: samples, attempts: attempts);
+  }
+
+  Future<({List<int> samples, int attempts})> _probeHttpSamples(
+    String rawUrl, {
+    int attempts = 5,
+  }) async {
+    final uri = Uri.tryParse(rawUrl);
+    if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
+      return (samples: const <int>[], attempts: attempts);
+    }
+    final samples = <int>[];
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 4);
+      final watch = Stopwatch()..start();
+      try {
+        final request =
+            await client.getUrl(uri).timeout(const Duration(seconds: 4));
+        final response =
+            await request.close().timeout(const Duration(seconds: 4));
+        await response.drain<void>();
+        watch.stop();
+        samples.add(watch.elapsedMilliseconds.clamp(1, 60000));
+      } catch (_) {
+        watch.stop();
+      } finally {
+        client.close(force: true);
+      }
+    }
     return (samples: samples, attempts: attempts);
   }
 
@@ -379,7 +408,12 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   /// quality metrics flow back to the caller, matching the desktop contract.
   @override
   Future<SmartGroupProbeResult> probeGroupCandidate(
-      String groupID, String candidateID) async {
+    String groupID,
+    String candidateID, {
+    String? probeMode,
+    int? probeSamples,
+    String? probeUrl,
+  }) async {
     final outbound = _candidateCache[candidateID];
     if (outbound == null) {
       throw StateError(
@@ -387,22 +421,33 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     }
     final host = outbound['server']?.toString() ?? '';
     final port = int.tryParse(outbound['server_port']?.toString() ?? '') ?? 443;
-    final probe = await _probeTcpSamples(host, port);
-    final samples = probe.samples;
-    final median = samples.isEmpty ? 0 : samples[samples.length ~/ 2];
-    final p95Index = samples.isEmpty
+    final attempts = (probeSamples ?? 5).clamp(3, 20);
+    final requestedMode = (probeMode ?? 'auto').toLowerCase();
+    final effectiveMode = requestedMode == 'http_get' ? 'http_get' : 'tcp';
+    final probe = effectiveMode == 'http_get'
+        ? await _probeHttpSamples(
+            probeUrl?.isNotEmpty == true
+                ? probeUrl!
+                : 'https://1.1.1.1/cdn-cgi/trace',
+            attempts: attempts,
+          )
+        : await _probeTcpSamples(host, port, attempts: attempts);
+    final observed = probe.samples;
+    final ordered = [...observed]..sort();
+    final median = ordered.isEmpty ? 0 : ordered[ordered.length ~/ 2];
+    final p95Index = ordered.isEmpty
         ? 0
-        : ((samples.length - 1) * 0.95).ceil().clamp(0, samples.length - 1);
-    final p95 = samples.isEmpty ? 0 : samples[p95Index];
+        : ((ordered.length - 1) * 0.95).ceil().clamp(0, ordered.length - 1);
+    final p95 = ordered.isEmpty ? 0 : ordered[p95Index];
     var jitter = 0;
-    if (samples.length > 1) {
+    if (observed.length > 1) {
       var totalDelta = 0;
-      for (var index = 1; index < samples.length; index++) {
-        totalDelta += (samples[index] - samples[index - 1]).abs();
+      for (var index = 1; index < observed.length; index++) {
+        totalDelta += (observed[index] - observed[index - 1]).abs();
       }
-      jitter = (totalDelta / (samples.length - 1)).round();
+      jitter = (totalDelta / (observed.length - 1)).round();
     }
-    final successes = samples.length;
+    final successes = observed.length;
     return SmartGroupProbeResult(
       groupId: groupID,
       candidateId: candidateID,
@@ -414,7 +459,13 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       p95LatencyMs: p95,
       jitterMs: jitter,
       checkedAt: DateTime.now().toUtc(),
-      probeKind: 'tcp-connect',
+      probeKind: requestedMode == 'icmp'
+          ? 'tcp-connect-fallback-icmp-android'
+          : effectiveMode == 'http_get'
+              ? 'http-get'
+              : requestedMode == 'auto'
+                  ? 'tcp-connect-auto-android'
+                  : 'tcp-connect',
     );
   }
 

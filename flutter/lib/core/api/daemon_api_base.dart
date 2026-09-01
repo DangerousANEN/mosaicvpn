@@ -27,7 +27,12 @@ abstract class DaemonApiBase {
 
   /// Runs a bounded probe from the user's device through the local daemon.
   Future<SmartGroupProbeResult> probeGroupCandidate(
-      String groupID, String candidateID);
+    String groupID,
+    String candidateID, {
+    String? probeMode,
+    int? probeSamples,
+    String? probeUrl,
+  });
 
   /// Connects a candidate only after the daemon verifies it belongs to groupID.
   Future<void> connectGroupCandidate(String groupID, String candidateID);

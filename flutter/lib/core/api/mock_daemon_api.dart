@@ -298,7 +298,12 @@ class MockDaemonApi implements DaemonApiBase {
 
   @override
   Future<SmartGroupProbeResult> probeGroupCandidate(
-      String groupID, String candidateID) async {
+    String groupID,
+    String candidateID, {
+    String? probeMode,
+    int? probeSamples,
+    String? probeUrl,
+  }) async {
     await _delayVoid();
     final seed = candidateID.codeUnits.fold<int>(0, (sum, code) => sum + code);
     final latency = 24 + (seed % 110);

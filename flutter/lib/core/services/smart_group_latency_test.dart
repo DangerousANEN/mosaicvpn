@@ -71,7 +71,13 @@ class SmartGroupLatencyTest {
     for (final candidateId in candidateIds) {
       if (_cancelled) return publish(cancelled: true);
       try {
-        final result = await api.probeGroupCandidate(group.id, candidateId);
+        final result = await api.probeGroupCandidate(
+          group.id,
+          candidateId,
+          probeMode: group.clientPolicy.probeMode,
+          probeSamples: group.clientPolicy.probeSamples,
+          probeUrl: group.clientPolicy.probeUrl,
+        );
         if (result.successful && result.medianLatencyMs > 0) {
           successful.add(result);
         }
