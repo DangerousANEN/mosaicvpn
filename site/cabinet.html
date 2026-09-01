@@ -9,18 +9,16 @@
 <link rel="canonical" href="https://sub.zxc1x1.ru/cabinet.html" />
 <meta name="robots" content="noindex, nofollow" />
 <meta name="theme-color" content="#F4EFE6" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet" />
+
 <style>
   :root{
     --bg:#F4EFE6; --card:#FBF8F2; --card-strong:#EDE5D6; --border:#DED3C0;
     --text:#241F1A; --text-2:#6B6157; --muted:#8A7F72; --accent:#B85C38;
     --accent-soft:rgba(184,92,56,.12); --ok:#3F6B4A; --ok-soft:rgba(63,107,74,.1);
     --warn:#8A6A1F; --warn-soft:rgba(138,106,31,.1); --err:#8C3A2E;
-    --serif:'Source Serif 4','Iowan Old Style','Palatino Linotype','Book Antiqua',Georgia,serif;
+    --serif:'Iowan Old Style','Palatino Linotype','Book Antiqua',Georgia,serif;
     --mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
-    --sans:Manrope,Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    --sans:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
   }
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
@@ -599,11 +597,15 @@
   function selectedPaymentMethod() { var node=document.querySelector('input[name="payment-method"]:checked'); return node ? node.value : 'card'; }
   function applyCheckoutQuery() {
     var params = new URLSearchParams(window.location.search);
-    var amount = Number(params.get('amount'));
-    var method = String(params.get('method') || '').toLowerCase();
+    var storedAmount = sessionStorage.getItem('mv_prefill_amount');
+    var storedMethod = sessionStorage.getItem('mv_prefill_method');
+    var amount = Number(storedAmount || params.get('amount'));
+    var method = String(storedMethod || params.get('method') || '').toLowerCase();
     if (Number.isInteger(amount) && amount >= 1 && amount <= 50000) document.getElementById('custom-amount').value = amount;
     var node = document.querySelector('input[name="payment-method"][value="' + method + '"]');
     if (node) node.checked = true;
+    if (storedAmount) sessionStorage.removeItem('mv_prefill_amount');
+    if (storedMethod) sessionStorage.removeItem('mv_prefill_method');
   }
   function startLavaPayment(amount) {
     amount = Number(amount); if (!savedToken) { setMessage('Сначала войдите в кабинет.', 'error'); return; }

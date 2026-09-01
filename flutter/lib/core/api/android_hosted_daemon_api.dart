@@ -216,40 +216,50 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   /// hosted facade probes the real server address directly. A successful
   /// handshake is genuine evidence the endpoint answers; it cannot validate
   /// protocol credentials, but it is exactly what a "ping" column promises.
-  Future<int?> _probeTcpLatency(String host, int port) async {
-    if (host.isEmpty || port <= 0 || port > 65535) return null;
-    List<InternetAddress> target = const [];
+  Future<({List<int> samples, int attempts})> _probeTcpSamples(
+      String host, int port,
+      {int attempts = 5}) async {
+    if (host.isEmpty || port <= 0 || port > 65535) {
+      return (samples: const <int>[], attempts: attempts);
+    }
+    List<InternetAddress> targets = const [];
     final address = InternetAddress.tryParse(host);
     if (address != null) {
-      target = [address];
+      targets = [address];
     } else {
       try {
-        target = await InternetAddress.lookup(
-          host,
-          type: InternetAddressType.any,
-        );
+        targets =
+            await InternetAddress.lookup(host, type: InternetAddressType.any);
       } on SocketException {
-        return null;
+        return (samples: const <int>[], attempts: attempts);
       }
     }
-    for (final candidate in target) {
-      final watch = Stopwatch()..start();
-      try {
-        final socket = await Socket.connect(
-          candidate,
-          port,
-          timeout: const Duration(seconds: 4),
-        );
-        watch.stop();
-        socket.destroy();
-        return watch.elapsedMilliseconds;
-      } on SocketException {
-        watch.stop();
-      } on TimeoutException {
-        watch.stop();
+    final samples = <int>[];
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      for (final target in targets) {
+        final watch = Stopwatch()..start();
+        try {
+          final socket = await Socket.connect(target, port,
+              timeout: const Duration(seconds: 4));
+          watch.stop();
+          socket.destroy();
+          samples.add(watch.elapsedMilliseconds.clamp(1, 60000));
+          break;
+        } on SocketException {
+          watch.stop();
+        } on TimeoutException {
+          watch.stop();
+        }
       }
     }
-    return null;
+    samples.sort();
+    return (samples: samples, attempts: attempts);
+  }
+
+  Future<int?> _probeTcpLatency(String host, int port) async {
+    final result = await _probeTcpSamples(host, port, attempts: 3);
+    if (result.samples.isEmpty) return null;
+    return result.samples[result.samples.length ~/ 2];
   }
 
   (String, int)? _endpointOfShareUri(String importUri) {
@@ -377,19 +387,34 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     }
     final host = outbound['server']?.toString() ?? '';
     final port = int.tryParse(outbound['server_port']?.toString() ?? '') ?? 443;
-    final latency = await _probeTcpLatency(host, port);
+    final probe = await _probeTcpSamples(host, port);
+    final samples = probe.samples;
+    final median = samples.isEmpty ? 0 : samples[samples.length ~/ 2];
+    final p95Index = samples.isEmpty
+        ? 0
+        : ((samples.length - 1) * 0.95).ceil().clamp(0, samples.length - 1);
+    final p95 = samples.isEmpty ? 0 : samples[p95Index];
+    var jitter = 0;
+    if (samples.length > 1) {
+      var totalDelta = 0;
+      for (var index = 1; index < samples.length; index++) {
+        totalDelta += (samples[index] - samples[index - 1]).abs();
+      }
+      jitter = (totalDelta / (samples.length - 1)).round();
+    }
+    final successes = samples.length;
     return SmartGroupProbeResult(
       groupId: groupID,
       candidateId: candidateID,
-      successful: latency != null,
-      samples: 1,
-      successes: latency != null ? 1 : 0,
-      lossPercent: latency != null ? 0 : 100,
-      medianLatencyMs: latency ?? 0,
-      p95LatencyMs: latency ?? 0,
-      jitterMs: 0,
+      successful: successes > 0,
+      samples: probe.attempts,
+      successes: successes,
+      lossPercent: (probe.attempts - successes) * 100 / probe.attempts,
+      medianLatencyMs: median,
+      p95LatencyMs: p95,
+      jitterMs: jitter,
       checkedAt: DateTime.now().toUtc(),
-      probeKind: 'tcp-handshake',
+      probeKind: 'tcp-connect',
     );
   }
 

@@ -82,12 +82,14 @@ func parseTrojan(subID, raw string) (proto.Server, error) {
 		Tag:            q.Get("sni"),
 		SubscriptionID: subID,
 		Raw: map[string]any{
-			"password": password,
-			"sni":      q.Get("sni"),
-			"security": "tls",
-			"type":     q.Get("type"),
-			"path":     q.Get("path"),
-			"host":     q.Get("host"),
+			"password":         password,
+			"sni":              q.Get("sni"),
+			"security":         "tls",
+			"type":             q.Get("type"),
+			"path":             q.Get("path"),
+			"host":             q.Get("host"),
+			"allow_insecure":   q.Get("allowInsecure"),
+			"skip-cert-verify": q.Get("skip-cert-verify"),
 		},
 	}, nil
 }
@@ -117,16 +119,16 @@ func parseVLESS(subID, raw string) (proto.Server, error) {
 		Tag:            tag,
 		SubscriptionID: subID,
 		Raw: map[string]any{
-			"uuid":       uuid,
-			"flow":       flow,
-			"security":   q.Get("security"),
-			"sni":        q.Get("sni"),
-			"public_key": q.Get("pbk"),
-			"short_id":   q.Get("sid"),
+			"uuid":        uuid,
+			"flow":        flow,
+			"security":    q.Get("security"),
+			"sni":         q.Get("sni"),
+			"public_key":  q.Get("pbk"),
+			"short_id":    q.Get("sid"),
 			"fingerprint": q.Get("fp"),
-			"network":    q.Get("type"),
-			"path":       q.Get("path"),
-			"host":       q.Get("host"),
+			"network":     q.Get("type"),
+			"path":        q.Get("path"),
+			"host":        q.Get("host"),
 			// Camouflage deployments commonly serve a certificate for the
 			// fronting domain while the URI carries sni=<mask>. The link
 			// explicitly opts out of verification with allowInsecure=1;
@@ -258,11 +260,11 @@ func parseHysteria2(subID, raw string) (proto.Server, error) {
 		Tag:            q.Get("obfs"),
 		SubscriptionID: subID,
 		Raw: map[string]any{
-			"password":     password,
-			"obfs":         q.Get("obfs"),
+			"password":      password,
+			"obfs":          q.Get("obfs"),
 			"obfs_password": q.Get("obfs-password"),
-			"sni":          q.Get("sni"),
-			"insecure":     q.Get("insecure") == "1",
+			"sni":           q.Get("sni"),
+			"insecure":      q.Get("insecure") == "1",
 		},
 	}, nil
 }
@@ -311,12 +313,12 @@ func parseTUIC(subID, raw string) (proto.Server, error) {
 		Port:           port,
 		SubscriptionID: subID,
 		Raw: map[string]any{
-			"uuid":            uuid,
-			"password":        pass,
+			"uuid":               uuid,
+			"password":           pass,
 			"congestion_control": q.Get("congestion_control"),
-			"udp_relay_mode":  q.Get("udp_relay_mode"),
-			"sni":             q.Get("sni"),
-			"alpn":            q.Get("alpn"),
+			"udp_relay_mode":     q.Get("udp_relay_mode"),
+			"sni":                q.Get("sni"),
+			"alpn":               q.Get("alpn"),
 		},
 	}, nil
 }

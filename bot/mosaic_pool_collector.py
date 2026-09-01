@@ -11,7 +11,9 @@ import concurrent.futures
 import hashlib
 import json
 import os
+import random
 import socket
+import statistics
 import subprocess
 import tempfile
 import time
@@ -57,6 +59,8 @@ class Node:
     latency_ms: int | None = None
     proxy_ok: bool | None = None
     speed_mbps: float | None = None
+    jitter_ms: float | None = None
+    packet_loss: float | None = None
 
 
 def pg_connect():
@@ -128,14 +132,19 @@ def fetch_source(source):
 
 
 def tcp_probe(node):
-    started = time.monotonic()
-    try:
-        with socket.create_connection((node.address, node.port), timeout=CONNECT_TIMEOUT):
-            node.tcp_ok = True
-            node.latency_ms = max(1, int((time.monotonic() - started) * 1000))
-    except OSError:
-        node.tcp_ok = False
-        node.latency_ms = None
+    samples = []
+    attempts = 3
+    for _ in range(attempts):
+        started = time.monotonic()
+        try:
+            with socket.create_connection((node.address, node.port), timeout=CONNECT_TIMEOUT):
+                samples.append(max(1.0, (time.monotonic() - started) * 1000))
+        except OSError:
+            pass
+    node.tcp_ok = bool(samples)
+    node.packet_loss = round((attempts - len(samples)) / attempts, 3)
+    node.latency_ms = int(statistics.median(samples)) if samples else None
+    node.jitter_ms = round(statistics.pstdev(samples), 2) if len(samples) > 1 else (0.0 if samples else None)
     return node
 
 
@@ -149,7 +158,11 @@ def proxy_probe(node):
     if not node.tcp_ok or 'uri' in node.config or not Path(SING_BOX).exists():
         node.proxy_ok = False
         return node
-    port = 23000 + int(node.fingerprint[:4], 16) % 2000
+    # Reserve an OS-assigned ephemeral port. Fingerprint-derived ports collided
+    # under concurrent probes and produced false failures.
+    with socket.socket() as reservation:
+        reservation.bind(('127.0.0.1', 0))
+        port = reservation.getsockname()[1]
     config = {
         'log': {'level': 'error'},
         'inbounds': [{'type': 'socks', 'tag': 'probe-in', 'listen': '127.0.0.1', 'listen_port': port}],
@@ -165,7 +178,15 @@ def proxy_probe(node):
             return node
         proc = subprocess.Popen([SING_BOX, 'run', '-c', str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
-            time.sleep(0.7)
+            deadline = time.monotonic() + 4.0
+            while time.monotonic() < deadline:
+                try:
+                    with socket.create_connection(('127.0.0.1', port), timeout=0.15):
+                        break
+                except OSError:
+                    if proc.poll() is not None:
+                        break
+                    time.sleep(0.05)
             curl = subprocess.run(
                 ['curl', '--silent', '--show-error', '--max-time', str(HTTP_TIMEOUT), '--socks5-hostname', f'127.0.0.1:{port}',
                  '--output', '/dev/null', '--write-out', '%{http_code}|%{time_total}|%{speed_download}', 'https://www.cloudflare.com/cdn-cgi/trace'],
@@ -212,7 +233,11 @@ def upsert_nodes(nodes):
                       enabled=CASE WHEN excluded.proxy_ok THEN true WHEN mosaic_nodes.failure_count+1 >= %s THEN false ELSE mosaic_nodes.enabled END,updated_at=now()
                 """, (node.source_url, node.source_name, node.fingerprint, node.protocol, node.address, node.port, node.country_code,
                       Json(node.config), node.tcp_ok, node.proxy_ok, node.latency_ms, node.speed_mbps,
-                      1.0 if node.proxy_ok else 0.0, bool(node.proxy_ok), bool(node.proxy_ok), FAILURE_DISABLE_THRESHOLD))
+                      0.70 if node.proxy_ok else 0.0, bool(node.proxy_ok), bool(node.proxy_ok), FAILURE_DISABLE_THRESHOLD))
+            # Retain bounded history: dead records have no routing value and used
+            # to grow forever across frequently-changing public feeds.
+            cur.execute("""DELETE FROM mosaic_nodes
+                           WHERE enabled=false AND last_checked_at < now() - interval '21 days'""")
             # Group membership is rebuilt from fresh, directly tested nodes only.
             # "owned" is intentionally excluded: it belongs to the legacy owned-node path.
             GROUP_IDS = ('all','germany','canada','min_latency','max_speed','stable','allowlist',
@@ -306,11 +331,16 @@ def main():
     args = parser.parse_args()
 
     imported = []
-    for source in SOURCES:
-        try:
-            imported.extend(fetch_source(source))
-        except Exception as exc:
-            print(f'source_failed={source[0]} reason={type(exc).__name__}')
+    # Fetch independent sources concurrently so one 20 s timeout cannot stall all
+    # remaining feeds. The small fixed pool bounds response bodies held in RAM.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(SOURCES))) as source_pool:
+        jobs = {source_pool.submit(fetch_source, source): source for source in SOURCES}
+        for future in concurrent.futures.as_completed(jobs):
+            source = jobs[future]
+            try:
+                imported.extend(future.result())
+            except Exception as exc:
+                print(f'source_failed={source[0]} reason={type(exc).__name__}')
     unique = {}
     for node in imported:
         existing = unique.get(node.fingerprint)
@@ -320,7 +350,13 @@ def main():
             unique[node.fingerprint] = node
     # Probe country shards first so regional groups are not starved by the
     # large all-verified feed; then fill remaining slots with global candidates.
-    candidates = sorted(unique.values(), key=lambda n: (n.country_code is None, n.source_name, n.fingerprint))[:max(1, args.limit)]
+    # Randomise within priority tiers. A deterministic fingerprint cap repeatedly
+    # tested the same nodes and permanently starved the tail of large feeds.
+    regional = [n for n in unique.values() if n.country_code is not None]
+    global_nodes = [n for n in unique.values() if n.country_code is None]
+    random.SystemRandom().shuffle(regional)
+    random.SystemRandom().shuffle(global_nodes)
+    candidates = (regional + global_nodes)[:max(1, args.limit)]
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(args.workers, 64))) as pool:
         checked = list(pool.map(tcp_probe, candidates))
     if args.full_probe:
