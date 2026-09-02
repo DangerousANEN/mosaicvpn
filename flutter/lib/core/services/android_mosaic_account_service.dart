@@ -396,6 +396,13 @@ class AndroidMosaicAccountService {
     }
     final code = callback.queryParameters['code'] ?? '';
     final state = callback.queryParameters['state'] ?? '';
+    if (isVerifiedWebsiteCallback && state.isEmpty && code.isNotEmpty) {
+      // Telegram inline buttons must use HTTPS. The bot-issued callback carries
+      // the same one-time 8-character pairing code as /link, but no browser
+      // state. Treat it as the Telegram pairing flow instead of requiring the
+      // browser-only app-auth state.
+      return redeemTelegramCode(code);
+    }
     if (code.isEmpty || state.isEmpty) {
       throw const FormatException(
           'Не удалось подтвердить добавление подписки в приложение.');

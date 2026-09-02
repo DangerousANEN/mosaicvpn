@@ -778,20 +778,16 @@ class _AppShellState extends ConsumerState<AppShell>
   }
 
   Future<void> _connectTargetRoute(DaemonApiBase api, String routeId) async {
-    // If target route ID is a group (direct, min-latency, stable, or scoped),
-    // connectGroup resolves it safely with fallback to plain connect.
-    try {
-      if (routeId.startsWith('mosaic:') ||
-          routeId == 'direct' ||
-          routeId == 'min-latency' ||
-          routeId == 'stable' ||
-          routeId == 'max-speed') {
-        await api.connectGroup(routeId);
-      } else {
-        await api.connect(routeId);
-      }
-    } catch (_) {
-      // Fallback attempt with connect
+    // Route IDs are typed by the manifest. Never retry a failed group as a
+    // physical server: that hides the original diagnostic and produces a
+    // second, misleading error.
+    if (routeId.startsWith('mosaic:') ||
+        routeId == 'direct' ||
+        routeId == 'min-latency' ||
+        routeId == 'stable' ||
+        routeId == 'max-speed') {
+      await api.connectGroup(routeId);
+    } else {
       await api.connect(routeId);
     }
   }

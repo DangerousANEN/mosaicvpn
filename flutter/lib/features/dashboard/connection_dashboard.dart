@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/models.dart';
+import '../../core/api/daemon_api_base.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/platform/app_platform.dart';
 import '../../core/services/elevation_prompt.dart';
@@ -394,17 +396,31 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     final api = ref.read(daemonApiProvider);
     try {
       setState(() => _busy = true);
+      if (selected.disabled) {
+        final disabledLabel = selected.disabledReason.isEmpty
+            ? 'Маршрут временно отключён.'
+            : selected.disabledReason;
+        _notice(disabledLabel, error: true);
+        return;
+      }
       if (status.isConnected || status.isConnecting) {
         SmartGroupRuntimeController.instance.stop();
         await api.disconnect();
-      } else if (selected.disabled) {
-        _notice(
-            selected.disabledReason.isEmpty
-                ? AppStrings.of(context).t('disabled')
-                : selected.disabledReason,
-            error: true);
+        // The daemon stop is asynchronous. Do not race the next connect with
+        // the old runtime; wait for the authoritative state transition.
+        await _waitForDisconnected(api);
+        if (_sameActiveRoute(status, selected)) {
+          ref.invalidate(vpnStatusProvider);
+          return;
+        }
+      }
+      if (selected.disabled) {
+        final disabledLabel = selected.disabledReason.isEmpty
+            ? 'Маршрут временно отключён.'
+            : selected.disabledReason;
+        _notice(disabledLabel, error: true);
       } else if (AppPlatform.isAndroid) {
-        await _toggleAndroidRuntime(status, selected);
+        await _toggleAndroidRuntime(selected);
         await _uiPrefs.writeLastConnectedRouteId(selected.id);
         if (_selectedSubscriptionId(ref) case final subId?
             when subId.isNotEmpty) {
@@ -465,19 +481,31 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     }
   }
 
-  Future<void> _toggleAndroidRuntime(
-      VpnStatus status, _RouteChoice selected) async {
-    // Android must share the exact same connection authority as the Routes
-    // screen. Keeping a dashboard-only config builder caused the two entry
-    // points to diverge in validation, group lookup and actionable errors.
+  Future<void> _toggleAndroidRuntime(_RouteChoice selected) async {
+    // The shared toggle has already stopped an active runtime and waited for
+    // disconnected, so Android must only perform the new connect here.
     final api = ref.read(daemonApiProvider);
-    if (status.isConnected || status.isConnecting) {
-      await api.disconnect();
-    } else if (selected.isGroup) {
+    if (selected.isGroup) {
       await api.connectGroup(selected.id);
     } else {
       await api.connect(selected.id);
     }
+  }
+
+  bool _sameActiveRoute(VpnStatus status, _RouteChoice selected) {
+    final active = status.activeGroupId.isNotEmpty
+        ? status.activeGroupId
+        : status.server?.id;
+    return active == selected.id;
+  }
+
+  Future<void> _waitForDisconnected(DaemonApiBase api) async {
+    for (var attempt = 0; attempt < 20; attempt++) {
+      final current = await api.getStatus();
+      if (!current.isConnected && !current.isConnecting) return;
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+    }
+    throw TimeoutException('VPN runtime не подтвердил отключение.');
   }
 
   String _connectionErrorDetail(Object error) {

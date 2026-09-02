@@ -56,22 +56,24 @@
     position:sticky; top:0; z-index:50; backdrop-filter:blur(8px);
     background:rgba(244,239,230,.86); border-bottom:1px solid var(--border);
   }
-  .nav{display:flex; align-items:center; gap:16px; height:64px}
-  .brand{display:flex; align-items:center; gap:10px; font-family:var(--serif); font-size:20px; font-weight:600; letter-spacing:.2px}
-  .brand .dot{color:var(--accent)}
+  .nav{display:flex; align-items:center; gap:16px; height:64px; position:relative}
   .nav-links{margin-left:auto; display:flex; flex-wrap:wrap; gap:18px; font-size:14px; color:var(--text-2)}
   .nav-links a{text-decoration:none; white-space:nowrap}
   .nav-links a:hover{color:var(--accent)}
-  .nav-links a:hover{color:var(--accent)}
-  .nav-hamburger{display:none;margin-left:auto;align-items:center;justify-content:center;width:40px;height:40px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);cursor:pointer}
+  .nav-hamburger{display:none;margin-left:auto;align-items:center;justify-content:center;width:40px;height:40px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);cursor:pointer;position:relative;z-index:61}
   .nav-hamburger:hover{border-color:var(--accent);color:var(--accent)}
   .nav-hamburger svg{pointer-events:none}
-  .nav-links.open{display:flex !important;flex-direction:column;gap:0;position:fixed;inset:64px 0 0;background:rgba(244,239,230,.98);backdrop-filter:blur(12px);padding:16px 24px;overflow-y:auto;border-top:1px solid var(--border);animation:navSlideIn .18s ease}
-  .nav-links.open a{display:block;padding:14px 0;font-size:17px;border-bottom:1px solid var(--border-light)}
-  .nav-links.open a:last-child{border-bottom:none}
+  .mobile-menu-backdrop{display:none}
+  @media(max-width:920px){
+    .nav-links{display:none}
+    .nav-hamburger{display:inline-flex}
+    .nav-links.open{display:flex !important;flex-direction:column;gap:0;position:fixed;z-index:60;top:64px;left:12px;right:12px;max-height:calc(100dvh - 80px);background:var(--card);backdrop-filter:blur(12px);padding:8px 20px;overflow-y:auto;border:1px solid var(--border);border-radius:12px;box-shadow:0 18px 50px rgba(47,42,36,.2);animation:navSlideIn .18s ease}
+    .nav-links.open a{display:block;padding:14px 0;font-size:17px;border-bottom:1px solid var(--border-light)}
+    .nav-links.open a:last-child{border-bottom:none}
+    .mobile-menu-backdrop.open{display:block;position:fixed;z-index:55;inset:0;background:rgba(47,42,36,.18)}
+  }
+  @media(max-width:540px){.nav-links.open{top:60px;left:8px;right:8px;max-height:calc(100dvh - 72px);padding:6px 16px}.nav-links.open a{font-size:16px;padding:13px 0}}
   @keyframes navSlideIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
-  @media(max-width:920px){.nav-links{display:none}.nav-hamburger{display:inline-flex}}
-  @media(max-width:540px){.nav-links.open{inset:64px 0 0;padding:14px 20px}.nav-links.open a{font-size:16px;padding:13px 0}}
 
   /* hero */
   .hero{padding:76px 0 56px; text-align:center}
@@ -289,6 +291,7 @@
       </svg>
     </button>
   </div>
+<div class="mobile-menu-backdrop" id="nav-backdrop" aria-hidden="true"></div>
 </header>
 
 <div id="main-content" class="wrap">
@@ -613,6 +616,7 @@
 (function(){
   var btn = document.getElementById('nav-toggle');
   var nav = document.getElementById('nav-links');
+  var backdrop = document.getElementById('nav-backdrop');
   var cards = Array.prototype.slice.call(document.querySelectorAll('.dl-card'));
   var ua = navigator.userAgent || '';
   var recommended = /Android/i.test(ua) ? 'Android' : /Windows/i.test(ua) ? 'Windows' : /Linux/i.test(ua) ? 'Linux' : '';
@@ -621,30 +625,39 @@
     if(card){ card.classList.add('recommended'); var grid = card.parentNode; grid.insertBefore(card, grid.firstChild); }
   }
   if(!btn || !nav) return;
-  btn.addEventListener('click', function(){
-    var open = nav.classList.toggle('open');
-    btn.setAttribute('aria-expanded', String(open));
-    btn.setAttribute('aria-label', open ? 'Закрыть меню' : 'Открыть меню');
-    document.body.style.overflow = open ? 'hidden' : '';
+  function closeMenu(){
+    nav.classList.remove('open');
+    if(backdrop) backdrop.classList.remove('open');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.setAttribute('aria-label', 'Открыть меню');
+    document.body.style.overflow = '';
+  }
+  btn.addEventListener('click', function(e){
+    e.stopPropagation();
+    var open = !nav.classList.contains('open');
+    if(open){
+      nav.classList.add('open');
+      if(backdrop) backdrop.classList.add('open');
+      btn.setAttribute('aria-expanded', 'true');
+      btn.setAttribute('aria-label', 'Закрыть меню');
+      document.body.style.overflow = 'hidden';
+    } else closeMenu();
   });
-  // Close on outside click
+  nav.addEventListener('click', function(e){
+    if(e.target.closest('a')) closeMenu();
+  });
+  if(backdrop) backdrop.addEventListener('click', closeMenu);
   document.addEventListener('click', function(e){
-    if(!btn.contains(e.target) && !nav.contains(e.target)){
-      nav.classList.remove('open');
-      btn.setAttribute('aria-expanded', 'false');
-      btn.setAttribute('aria-label', 'Открыть меню');
-      document.body.style.overflow = '';
-    }
+    if(!btn.contains(e.target) && !nav.contains(e.target)) closeMenu();
   });
-  // Close on Escape
   document.addEventListener('keydown', function(e){
     if(e.key === 'Escape' && nav.classList.contains('open')){
-      nav.classList.remove('open');
-      btn.setAttribute('aria-expanded', 'false');
-      btn.setAttribute('aria-label', 'Открыть меню');
-      document.body.style.overflow = '';
+      closeMenu();
       btn.focus();
     }
+  });
+  window.addEventListener('resize', function(){
+    if(window.innerWidth > 920) closeMenu();
   });
 })();
 </script>
