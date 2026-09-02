@@ -14,6 +14,7 @@ import '../../core/services/smart_group_runtime_controller.dart';
 import '../../core/services/ui_preferences_service.dart';
 import '../../core/i18n/app_strings.dart';
 import '../../core/theme/atlas_theme.dart';
+import 'dashboard_facts.dart';
 
 /// The first screen of MosaicVPN: one calm connection decision, with smart
 /// groups rather than an overwhelming inventory of physical nodes.
@@ -348,6 +349,8 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                             ),
                           ),
                         ),
+                        const SizedBox(height: 16),
+                        DashboardFacts(status: status, routes: groups),
                         const SizedBox(height: 16),
                         _HowItWorksCard(),
                       ],
