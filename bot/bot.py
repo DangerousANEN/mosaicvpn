@@ -314,7 +314,7 @@ MESSAGES["ru"]["home_title"] = (
     "Выберите раздел ниже:"
 )
 MESSAGES["ru"]["menu_account"] = "📲 Моё подключение"
-MESSAGES["ru"]["menu_subscribe"] = "💳 Купить подписку"
+MESSAGES["ru"]["menu_subscribe"] = "💳 Подписка"
 MESSAGES["ru"]["menu_add_app"] = "📲 Открыть MosaicVPN"
 MESSAGES["ru"]["menu_help"] = "🆘 Помощь"
 MESSAGES["ru"]["menu_home"] = "🏠 Главное меню"
@@ -324,7 +324,7 @@ MESSAGES["ru"]["account_section"] = (
     "Здесь находится ваша подписка и кнопка для открытия MosaicVPN."
 )
 MESSAGES["ru"]["subscribe_section"] = (
-    "💳 Купить подписку\n\n"
+    "💳 Подписка\n\n"
     "1 ₽ = 1 день доступа.\n"
     "Выберите пакет или введите свою сумму."
 )
@@ -342,12 +342,12 @@ MESSAGES["ru"]["add_app_code_fmt"] = (
 
 MESSAGES["en"]["home_title"] = "🛡 MosaicVPN — your personal shield online\n\nChoose a section below:"
 MESSAGES["en"]["menu_account"] = "📲 My connection"
-MESSAGES["en"]["menu_subscribe"] = "💳 Buy subscription"
+MESSAGES["en"]["menu_subscribe"] = "💳 Subscription"
 MESSAGES["en"]["menu_add_app"] = "📲 Open MosaicVPN"
 MESSAGES["en"]["menu_help"] = "🆘 Help"
 MESSAGES["en"]["menu_home"] = "🏠 Main menu"
 MESSAGES["en"]["account_section"] = "📲 My connection\n\nYour subscription and the button to open MosaicVPN are here."
-MESSAGES["en"]["subscribe_section"] = "💳 Buy subscription\n\n1 RUB = 1 day of access.\nChoose a package or enter a custom amount."
+MESSAGES["en"]["subscribe_section"] = "💳 Subscription\n\n1 RUB = 1 day of access.\nChoose a package or enter a custom amount."
 MESSAGES["en"]["add_app_prompt"] = "📲 Open MosaicVPN\n\nPress the button below — the app will load your subscription automatically.\n\nIf the app did not open, choose the backup method."
 MESSAGES["en"]["add_app_code_fmt"] = "📲 Open MosaicVPN\n\nOne-time code: {code}\n\nThe code is valid for {minutes} minutes and only links your Telegram profile.\nThe subscription link adds the subscription; the code links your profile."
 
@@ -2683,27 +2683,19 @@ def get_home_inline_keyboard(lang):
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.row(
         types.InlineKeyboardButton(
-            "🛒 Купить подписку" if lang == "ru" else "🛒 Buy subscription",
+            "💳 Подписка" if lang == "ru" else "💳 Subscription",
             callback_data="home_subscribe", style="primary"),
-        types.InlineKeyboardButton(
-            "💳 Продлить подписку" if lang == "ru" else "💳 Renew subscription",
-            callback_data="home_subscribe", style="primary"),
-    )
-    markup.row(
         types.InlineKeyboardButton(
             "📲 Моё подключение" if lang == "ru" else "📲 My connection",
             callback_data="home_account", style="primary"),
-        types.InlineKeyboardButton(
-            "💰 Баланс" if lang == "ru" else "💰 Balance",
-            callback_data="home_account", style="primary"),
     )
     markup.row(
         types.InlineKeyboardButton(
+            "💰 Баланс" if lang == "ru" else "💰 Balance",
+            callback_data="home_account", style="primary"),
+        types.InlineKeyboardButton(
             "🤝 Пригласить друга" if lang == "ru" else "🤝 Invite a friend",
             callback_data="ref_link", style="success"),
-        types.InlineKeyboardButton(
-            "🆘 Помощь" if lang == "ru" else "🆘 Help",
-            callback_data="home_help", style="primary"),
     )
     markup.row(
         types.InlineKeyboardButton(
