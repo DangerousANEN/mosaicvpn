@@ -407,12 +407,13 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
         return;
       }
       if (status.isConnected || status.isConnecting) {
+        final wasSameRoute = _sameActiveRoute(status, selected);
         SmartGroupRuntimeController.instance.stop();
         await api.disconnect();
         // The daemon stop is asynchronous. Do not race the next connect with
         // the old runtime; wait for the authoritative state transition.
         await _waitForDisconnected(api);
-        if (_sameActiveRoute(status, selected)) {
+        if (wasSameRoute) {
           ref.invalidate(vpnStatusProvider);
           return;
         }
