@@ -110,6 +110,8 @@ class GroupsScreen extends ConsumerStatefulWidget {
 
 class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   String? _connectingId;
+  final Map<String, TestResult> _testResults = <String, TestResult>{};
+  final Set<String> _testingRoutes = <String>{};
   _RouteSort _sort = _RouteSort.name;
   bool _ascending = true;
   List<String>? _pendingSubscriptionOrder;
@@ -352,9 +354,8 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
               name: group.routeType == 'direct'
                   ? 'Автоматический маршрут'
                   : _groupTitle(group),
-              ping: _groupLatencyProgress?.groupId == group.id
-                  ? _groupLatencyProgress?.latencyMs
-                  : null,
+              ping: _testResults[group.id]?.latencyMS ??
+                  (group.routeType == 'direct' ? null : -1),
               jitter: _groupLatencyProgress?.groupId == group.id
                   ? _groupLatencyProgress?.jitterMs
                   : null,
@@ -381,7 +382,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
             id: group.id,
             type: AppStrings.of(context).t('local_group'),
             name: group.name.isEmpty ? 'Безымянный сборник' : group.name,
-            ping: null,
+            ping: _testResults[group.id]?.latencyMS,
             traffic: AppStrings.of(context).t('automatic'),
             isGroup: true,
             icon: Icons.folder_copy_outlined,
@@ -1157,15 +1158,33 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       return;
     }
     try {
-      await ref.read(daemonApiProvider).testServer(row.id);
+      _testingRoutes.add(row.id);
+      if (mounted) setState(() {});
+      final result = await ref.read(daemonApiProvider).testServer(row.id);
+      _testResults[row.id] = result;
+      _testingRoutes.remove(row.id);
+      if (mounted) setState(() {});
+      if (!mounted) return;
+      final danger = ThemeColors.of(context).danger;
+      final success = ThemeColors.of(context).success;
+      if (result.failed) {
+        _showMessage(
+          result.error.isEmpty ? 'Маршрут не отвечает.' : result.error,
+          danger,
+        );
+        return;
+      }
+      _showMessage(
+        'Проверка завершена: ${result.latencyMS} мс.',
+        success,
+      );
       ref.invalidate(serversProvider);
+    } catch (error) {
+      _testingRoutes.remove(row.id);
+      if (mounted) setState(() {});
       if (!mounted) return;
       _showMessage(
-          'Проверка маршрута завершена.', ThemeColors.of(context).success);
-    } catch (_) {
-      if (!mounted) return;
-      _showMessage(
-        'Не удалось проверить маршрут. Повторите после обновления источника.',
+        'Не удалось проверить маршрут: $error',
         ThemeColors.of(context).danger,
       );
     }
@@ -2317,7 +2336,7 @@ class _RouteTable extends StatelessWidget {
       _RouteColumn.action => SizedBox(
           width: width,
           child: IconButton(
-            tooltip: connected ? 'Подключено' : 'Подключиться',
+            tooltip: connected ? 'Отключить' : 'Подключиться',
             onPressed: row.disabled || connecting ? null : () => onConnect(row),
             icon: Icon(
               connected
