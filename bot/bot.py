@@ -2269,7 +2269,7 @@ def send_payment_success_notification(telegram_id, days, short_uuid, expire_at_s
     markup.add(types.InlineKeyboardButton("🗺 Web Map" if lang == 'en' else "🗺 Открыть веб-карту", url=sub_url))
     
     try:
-        bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
+        _safe_bot_send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
     except Exception as e:
         logger.error(f"Failed to send message to user {telegram_id}: {e}")
 
@@ -2701,18 +2701,18 @@ def get_home_text(telegram_id, lang):
             logger.debug("home menu account summary unavailable", exc_info=True)
     if lang == "ru":
         return (
-            f"🛡 **MosaicVPN**\n\n"
-            f"Привет, **{display_name}**!\n\n"
-            f"💰 Баланс: **{balance_days} дн. доступа**\n"
-            f"📦 Активных подписок: **{active_subscriptions}**\n\n"
+            f"🛡 MosaicVPN\n\n"
+            f"Привет, {display_name}!\n\n"
+            f"💰 Баланс: {balance_days} дн. доступа\n"
+            f"📦 Активных подписок: {active_subscriptions}\n\n"
             "🎁 Приглашайте друзей и получайте бесплатные дни подписки!\n\n"
             "Выберите действие:"
         )
     return (
-        f"🛡 **MosaicVPN**\n\n"
-        f"Hi, **{display_name}**!\n\n"
-        f"💰 Balance: **{balance_days} access days**\n"
-        f"📦 Active subscriptions: **{active_subscriptions}**\n\n"
+        f"🛡 MosaicVPN\n\n"
+        f"Hi, {display_name}!\n\n"
+        f"💰 Balance: {balance_days} access days\n"
+        f"📦 Active subscriptions: {active_subscriptions}\n\n"
         "🎁 Invite friends and earn free subscription days!\n\n"
         "Choose an action:"
     )
@@ -2776,6 +2776,32 @@ def get_help_inline_keyboard(lang):
 HOME_BANNER_PATH = os.environ.get("MOSAIC_HOME_BANNER_PATH", "")
 
 
+def _safe_bot_send_message(chat_id, text, **kwargs):
+    """Send formatted text, retrying plain text on Telegram parse errors."""
+    try:
+        return bot.send_message(chat_id, text, **kwargs)
+    except Exception as exc:
+        if "parse" not in str(exc).lower() and "entity" not in str(exc).lower():
+            raise
+        kwargs.pop("parse_mode", None)
+        return bot.send_message(chat_id, text, **kwargs)
+
+
+def _edit_or_send_home(call, text, markup):
+    """Return any menu section to the same editable message when possible."""
+    chat_id = call.message.chat.id
+    try:
+        bot.edit_message_text(
+            text,
+            chat_id=chat_id,
+            message_id=call.message.message_id,
+            reply_markup=markup,
+        )
+    except Exception as exc:
+        logger.info("menu edit fallback for %s: %s", chat_id, exc)
+        _safe_bot_send_message(chat_id, text, reply_markup=markup)
+
+
 def _send_home_with_banner(chat_id, text, markup, parse_mode="Markdown"):
     """Send home screen text, optionally with a banner image.
 
@@ -2786,19 +2812,22 @@ def _send_home_with_banner(chat_id, text, markup, parse_mode="Markdown"):
     if HOME_BANNER_PATH and os.path.isfile(HOME_BANNER_PATH):
         try:
             with open(HOME_BANNER_PATH, "rb") as f:
-                bot.send_photo(
-                    chat_id,
-                    f,
-                    caption=text,
-                    parse_mode=parse_mode,
-                    reply_markup=markup,
-                )
+                kwargs = {"chat_id": chat_id, "caption": text, "reply_markup": markup}
+                if parse_mode:
+                    kwargs["parse_mode"] = parse_mode
+                try:
+                    bot.send_photo(**kwargs)
+                except Exception as exc:
+                    if "parse" not in str(exc).lower() and "entity" not in str(exc).lower():
+                        raise
+                    kwargs.pop("parse_mode", None)
+                    f.seek(0)
+                    bot.send_photo(**kwargs)
             return
         except Exception as exc:
             logger.warning(
                 "_send_home_with_banner: photo send failed (%s), falling back to text", exc
             )
-    # Fallback: plain text message
     bot.send_message(chat_id, text, parse_mode=parse_mode, reply_markup=markup)
 
 
@@ -2889,17 +2918,7 @@ def handle_home_account(call):
                       "⚠️ Профиль не найден. Нажмите /start для регистрации." if lang == "ru"
                       else "⚠️ Profile not found. Press /start to register.")
 
-    markup = get_account_inline_keyboard(lang, sub_url)
-    try:
-        bot.edit_message_text(
-            text,
-            chat_id=telegram_id,
-            message_id=call.message.message_id,
-            parse_mode="Markdown",
-            reply_markup=markup,
-        )
-    except Exception:
-        bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
+    _edit_or_send_home(call, text, get_account_inline_keyboard(lang, sub_url))
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "home_subscribe")
@@ -2917,19 +2936,7 @@ def handle_home_subscribe(call):
         if lang == "ru" else
         "\n\nPayment via Lava: SBP or bank card — fast and secure."
     )
-    try:
-        bot.edit_message_text(
-            t["subscribe_section"] + note,
-            chat_id=telegram_id,
-            message_id=call.message.message_id,
-            parse_mode="Markdown",
-            reply_markup=markup,
-        )
-    except Exception:
-        bot.send_message(
-            telegram_id, t["subscribe_section"] + note,
-            parse_mode="Markdown", reply_markup=markup,
-        )
+    _edit_or_send_home(call, t["subscribe_section"] + note, get_subscribe_inline_keyboard(lang))
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "home_help")
@@ -2940,17 +2947,7 @@ def handle_home_help(call):
     lang = (db_user or {}).get("language", "ru")
     t = MESSAGES[lang]
     bot.answer_callback_query(call.id)
-    markup = get_help_inline_keyboard(lang)
-    try:
-        bot.edit_message_text(
-            t["help_section"],
-            chat_id=telegram_id,
-            message_id=call.message.message_id,
-            parse_mode="Markdown",
-            reply_markup=markup,
-        )
-    except Exception:
-        bot.send_message(telegram_id, t["help_section"], parse_mode="Markdown", reply_markup=markup)
+    _edit_or_send_home(call, t["help_section"], get_help_inline_keyboard(lang))
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "home_status")
@@ -2973,26 +2970,26 @@ def handle_home_status(call):
         status_emoji, status_text = "🔴", ("Сервер недоступен" if lang == "ru" else "Server down")
 
     text = (
-        f"📊 **Статус сервиса**\n\n"
-        f"{status_emoji} **{status_text}**\n\n"
-        f"⏱ Uptime 24ч: **{up_24h}%**\n"
-        f"⏱ Uptime 7д: **{up_7d}%**\n"
-        f"⭐ Рейтинг: **{avg_rating['avg'] or '—'}** ({avg_rating['count']})\n\n"
-        f"_Обновляется каждые 5 минут_"
+        f"📊 Статус сервиса\n\n"
+        f"{status_emoji} {status_text}\n\n"
+        f"⏱ Uptime 24ч: {up_24h}%\n"
+        f"⏱ Uptime 7д: {up_7d}%\n"
+        f"⭐ Рейтинг: {avg_rating['avg'] or '—'} ({avg_rating['count']})\n\n"
+        "Обновляется каждые 5 минут"
     ) if lang == "ru" else (
-        f"📊 **Service Status**\n\n"
-        f"{status_emoji} **{status_text}**\n\n"
-        f"⏱ Uptime 24h: **{up_24h}%**\n"
-        f"⏱ Uptime 7d: **{up_7d}%**\n"
-        f"⭐ Rating: **{avg_rating['avg'] or '—'}** ({avg_rating['count']})\n\n"
-        f"_Updated every 5 minutes_"
+        f"📊 Service Status\n\n"
+        f"{status_emoji} {status_text}\n\n"
+        f"⏱ Uptime 24h: {up_24h}%\n"
+        f"⏱ Uptime 7d: {up_7d}%\n"
+        f"⭐ Rating: {avg_rating['avg'] or '—'} ({avg_rating['count']})\n\n"
+        "Updated every 5 minutes"
     )
     back_markup = types.InlineKeyboardMarkup()
-    back_markup.add(types.InlineKeyboardButton(t["back_home"], callback_data="home_main"))
+    back_markup.add(types.InlineKeyboardButton(t["back_home"], callback_data="home_main", style="primary"))
     back_markup.add(types.InlineKeyboardButton(
         "⚠️ Сообщить о проблеме" if lang == "ru" else "⚠️ Report an issue",
         callback_data="report_issue"))
-    bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=back_markup)
+    bot.send_message(telegram_id, text, reply_markup=back_markup)
 
 
 # ─── "Добавить в MosaicVPN" one-tap secure flow ─────────────────────────────
@@ -3016,7 +3013,7 @@ def handle_home_add_app(call):
     """One-tap 'Добавить в MosaicVPN' — issues a link code inline."""
     telegram_id = call.message.chat.id
     bot.answer_callback_query(call.id)
-    _send_add_to_app_code(telegram_id)
+    _send_add_to_app_code(call.message.chat.id)
 
 
 @bot.message_handler(commands=["add"])
@@ -3066,8 +3063,8 @@ def _send_add_to_app_code(telegram_id):
         style="primary",
     ))
     markup.add(types.InlineKeyboardButton(
-        "✅ Добавить в MosaicVPN" if lang == "ru" else "✅ Add to MosaicVPN",
-        url=f"mosaic://enroll/callback?code={urllib.parse.quote(code)}",
+        "📲 Открыть MosaicVPN" if lang == "ru" else "📲 Open MosaicVPN",
+        url="https://sub.zxc1x1.ru/enroll/callback?code=" + urllib.parse.quote(code),
         style="success",
     ))
     markup.add(types.InlineKeyboardButton(
@@ -3075,7 +3072,7 @@ def _send_add_to_app_code(telegram_id):
         callback_data="home_add_app",
     ))
     markup.add(types.InlineKeyboardButton(t["back_home"], callback_data="home_main", style="primary"))
-    bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
+    _safe_bot_send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
 
 def _claim_telegram_profile_link(message, raw_code):
     """Consume a cabinet-issued code in the Telegram chat that will be bound."""
@@ -3416,7 +3413,7 @@ def show_profile(message):
                 
             markup = types.InlineKeyboardMarkup()
             markup.add(types.InlineKeyboardButton("🗺 Web Map" if lang == 'en' else "🗺 Открыть веб-карту", url=sub_url))
-            bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
+            _safe_bot_send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
             return
             
     bot.send_message(telegram_id, t["profile_not_found"], parse_mode="Markdown")
@@ -3682,7 +3679,7 @@ def show_service_status(message):
     markup.add(types.InlineKeyboardButton(
         "⚠️ Сообщить о проблеме" if lang == "ru" else "⚠️ Report an issue",
         callback_data="report_issue"))
-    bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
+    _safe_bot_send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "report_issue")
@@ -3712,7 +3709,7 @@ def handle_report_issue(call):
     text = ("⚠️ **Что случилось?**\n\nВыберите категорию проблемы — мы проверим сразу."
             if lang == "ru"
             else "⚠️ **What happened?**\n\nSelect a problem category — we'll check right away.")
-    bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
+    _safe_bot_send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("cat_"))
@@ -3788,7 +3785,7 @@ def handle_back_to_status(call):
     markup.add(types.InlineKeyboardButton(
         "⚠️ Сообщить о проблеме" if lang == "ru" else "⚠️ Report an issue",
         callback_data="report_issue"))
-    bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
+    _safe_bot_send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
 
 
 # ============================================================
@@ -4113,7 +4110,7 @@ def handle_buy_discount_callback(call):
             
             markup = types.InlineKeyboardMarkup()
             markup.add(types.InlineKeyboardButton(t["pay_button"], url=pay_url))
-            bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
+            _safe_bot_send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
         else:
             bot.send_message(telegram_id, t["error_invoice"])
     except Exception as e:
@@ -4139,7 +4136,7 @@ def _send_lava_payment_method_menu(telegram_id, amount, days, lang):
             "📱 СБП" if lang == "ru" else "📱 SBP",
             callback_data=f"lava_sbp_{int(amount)}_{int(days)}",
         ))
-    bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
+    _safe_bot_send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
 
 
 def _send_lava_invoice_for_chat(telegram_id, amount, days, lang, payment_method):
@@ -4153,7 +4150,7 @@ def _send_lava_invoice_for_chat(telegram_id, amount, days, lang, payment_method)
     markup = types.InlineKeyboardMarkup()
     button = ("📱 Оплатить через СБП" if payment_method == "sbp" else "💳 Оплатить картой") if lang == "ru" else ("📱 Pay via SBP" if payment_method == "sbp" else "💳 Pay by card")
     markup.add(types.InlineKeyboardButton(button, url=invoice["payment_url"]))
-    bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
+    _safe_bot_send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("lava_card_") or call.data.startswith("lava_sbp_"))
@@ -5975,7 +5972,7 @@ def handle_proxy_callback(call):
                 
             markup.add(types.InlineKeyboardButton(btn_text, url=link))
             
-        bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
+        _safe_bot_send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
         
     except Exception as e:
         logger.error(f"Error fetching/parsing proxies: {e}")
@@ -6042,7 +6039,7 @@ def _is_unreachable_error(err):
 
 def send_funnel_notification(telegram_id, notification_type, text, markup=None):
     try:
-        bot.send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
+        _safe_bot_send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
         
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()

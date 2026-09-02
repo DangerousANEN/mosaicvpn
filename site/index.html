@@ -62,8 +62,16 @@
   .nav-links{margin-left:auto; display:flex; flex-wrap:wrap; gap:18px; font-size:14px; color:var(--text-2)}
   .nav-links a{text-decoration:none; white-space:nowrap}
   .nav-links a:hover{color:var(--accent)}
-  @media(max-width:1050px){ .nav-links{gap:12px} }
-  @media(max-width:360px){.wrap{padding:0 16px}.nav{gap:8px}.brand{gap:7px;font-size:18px}.brand svg{width:21px;height:21px}}
+  .nav-links a:hover{color:var(--accent)}
+  .nav-hamburger{display:none;margin-left:auto;align-items:center;justify-content:center;width:40px;height:40px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);cursor:pointer}
+  .nav-hamburger:hover{border-color:var(--accent);color:var(--accent)}
+  .nav-hamburger svg{pointer-events:none}
+  .nav-links.open{display:flex !important;flex-direction:column;gap:0;position:fixed;inset:64px 0 0;background:rgba(244,239,230,.98);backdrop-filter:blur(12px);padding:16px 24px;overflow-y:auto;border-top:1px solid var(--border);animation:navSlideIn .18s ease}
+  .nav-links.open a{display:block;padding:14px 0;font-size:17px;border-bottom:1px solid var(--border-light)}
+  .nav-links.open a:last-child{border-bottom:none}
+  @keyframes navSlideIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+  @media(max-width:920px){.nav-links{display:none}.nav-hamburger{display:inline-flex}}
+  @media(max-width:540px){.nav-links.open{inset:64px 0 0;padding:14px 20px}.nav-links.open a{font-size:16px;padding:13px 0}}
 
   /* hero */
   .hero{padding:76px 0 56px; text-align:center}
@@ -558,9 +566,9 @@
         <div class="n">1</div>
         <h4>Установите клиент</h4>
         <p>Windows — запустите установщик или распакуйте portable-архив и откройте <code>MosaicVPN.exe</code>. Android — разрешите установку из выбранного источника. Linux — установите DEB либо распакуйте архив:</p>
-        <pre>tar -xzf MosaicVPN-Portable-x86_64-v0.3.48.tar.gz
-cd MosaicVPN
-./mosaicvpn</pre>
+        <pre>tar -xzf MosaicVPN-Portable-x86_64-v0.3.49.tar.gz
+        cd MosaicVPN
+        ./mosaicvpn</pre>
       </div>
       <div class="step">
         <div class="n">2</div>
@@ -609,7 +617,7 @@ cd MosaicVPN
   var ua = navigator.userAgent || '';
   var recommended = /Android/i.test(ua) ? 'Android' : /Windows/i.test(ua) ? 'Windows' : /Linux/i.test(ua) ? 'Linux' : '';
   if(recommended){
-    var card = cards.find(function(c){ return (c.querySelector('h3') || {}).textContent === recommended; });
+    var card = cards.find(function(c){ return ((c.querySelector('h3') || {}).textContent || '').trim().toLowerCase() === recommended.toLowerCase(); });
     if(card){ card.classList.add('recommended'); var grid = card.parentNode; grid.insertBefore(card, grid.firstChild); }
   }
   if(!btn || !nav) return;
