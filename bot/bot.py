@@ -107,14 +107,14 @@ PACKAGES = {
 MESSAGES = {
     "ru": {
         "welcome": (
-            "🛡 **MosaicVPN** — защита сетевого соединения\n\n"
+            "🛡 MosaicVPN — защита сетевого соединения\n\n"
             "Сервис помогает поддерживать приватность соединения и безопасно пользоваться сетью. "
             "Маршруты подбираются автоматически с учётом доступности и качества связи.\n\n"
-            "✅ **Тестовый доступ активирован на 3 дня.**\n\n"
+            "✅ Тестовый доступ активирован на 3 дня.\n\n"
             "• Стоимость после тестового периода — 1 ₽ в день\n"
             "• До 5 устройств на одной подписке\n"
             "• Подбор стабильного маршрута выполняется автоматически\n\n"
-            "Откройте **📖 Инструкция**, чтобы добавить подписку в приложение."
+            "Откройте 📖 Инструкция, чтобы добавить подписку в приложение."
         ),
         "menu_buy": "🛒 Купить подписку",
         "menu_profile": "👤 Мой профиль",
@@ -122,7 +122,7 @@ MESSAGES = {
         "menu_instructions": "📖 Инструкция",
         "menu_lang": "🌐 Язык / Language",
         "buy_title": "🛒 Выберите пакет пополнения (1 рубль = 1 день):",
-        "pay_title": "💳 **Счёт готов**\n\nСумма пополнения: **{amount:.2f} USDT**\nПериод доступа: **{days} дней**\n\nНажмите кнопку ниже, чтобы перейти к оплате.",
+        "pay_title": "💳 Счёт готов\n\nСумма пополнения: {amount:.2f} USDT\nПериод доступа: {days} дней\n\nНажмите кнопку ниже, чтобы перейти к оплате.",
         "pay_button": "💳 Оплатить через CryptoBot",
         "lava_button": "🏦 Оплатить через СБП / карту",
         "custom_button": "✍️ Своя сумма",
@@ -131,46 +131,46 @@ MESSAGES = {
             "После подтверждения оплата будет зачислена на баланс доступа автоматически."
         ),
         "profile_active": (
-            "👤 **Профиль MosaicVPN**\n\n"
-            "Статус: **активен**\n"
-            "Баланс доступа: **{balance} ₽**\n"
-            "Осталось: **{days} дней**, до {expire_date}\n"
-            "Устройства: до **5** одновременно\n\n"
-            "🔗 **Ссылка на подписку**\n"
+            "👤 Профиль MosaicVPN\n\n"
+            "Статус: активен\n"
+            "Баланс доступа: {balance} ₽\n"
+            "Осталось: {days} дней, до {expire_date}\n"
+            "Устройства: до 5 одновременно\n\n"
+            "🔗 Ссылка на подписку\n"
             "`{sub_url}`\n\n"
             "Откройте веб-кабинет или добавьте ссылку в приложение MosaicVPN."
         ),
         "profile_inactive": (
-            "👤 **Профиль MosaicVPN**\n\n"
-            "Статус: **требуется продление**\n"
+            "👤 Профиль MosaicVPN\n\n"
+            "Статус: требуется продление\n"
             "Срок доступа завершился: {expire_date}\n\n"
             "Пополните баланс, чтобы снова активировать подписку."
         ),
-        "profile_not_found": "⚠️ Профиль не найден. Нажмите **🛒 Купить подписку** для создания.",
+        "profile_not_found": "⚠️ Профиль не найден. Нажмите 🛒 Купить подписку для создания.",
         "tariffs": (
-            "💎 **Тарифы и правила**\n\n"
-            "Стоимость доступа: **1 ₽ = 1 день**.\n"
+            "💎 Тарифы и правила\n\n"
+            "Стоимость доступа: 1 ₽ = 1 день.\n"
             "В стоимость уже включены маршруты и поддержка — дополнительных комиссий MosaicVPN нет.\n\n"
-            "• **10 дней — 10 ₽**\n"
-            "• **30 дней — 30 ₽**\n"
-            "• **Своя сумма — от 1 ₽**\n\n"
+            "• 10 дней — 10 ₽\n"
+            "• 30 дней — 30 ₽\n"
+            "• Своя сумма — от 1 ₽\n\n"
             "После оплаты дни добавляются к вашему действующему сроку. Выберите готовый тариф или укажите произвольную сумму ниже.\n\n"
             "💬 Поддержка: @mosaicsup"
         ),
         "instructions": (
-            "📖 **Настройка за 1 минуту**\n\n"
-            "1. Откройте **веб-карту** (кнопка 🗺 Веб-карта в меню).\n"
-            "2. Перейдите во вкладку **«Программы»** (Software) в меню слева.\n"
+            "📖 Настройка за 1 минуту\n\n"
+            "1. Откройте веб-карту (кнопка 🗺 Веб-карта в меню).\n"
+            "2. Перейдите во вкладку «Программы» (Software) в меню слева.\n"
             "3. Выберите устройство (iOS, Android, Windows, macOS, Linux) и установите клиент.\n"
-            "4. Нажмите **«ИМПОРТИРОВАТЬ В MOSAICVPN»** (или вставьте ссылку в приложение).\n\n"
+            "4. Нажмите «ИМПОРТИРОВАТЬ В MOSAICVPN» (или вставьте ссылку в приложение).\n\n"
             "✅ Подписка добавится автоматически.\n\n"
             "💬 Поддержка: @mosaicsup"
         ),
         "payment_success": (
-            "✅ **Оплата зачислена**\n\n"
-            "Доступ продлён на **{days} дней**.\n"
-            "Новый срок действия: **до {expire_date}**.\n\n"
-            "🔗 **Ссылка на подписку**\n"
+            "✅ Оплата зачислена\n\n"
+            "Доступ продлён на {days} дней.\n"
+            "Новый срок действия: до {expire_date}.\n\n"
+            "🔗 Ссылка на подписку\n"
             "`{sub_url}`"
         ),
         "lang_title": "🌐 Выберите язык / Select language:",
@@ -178,7 +178,7 @@ MESSAGES = {
         "error_invoice": "⚠️ Ошибка при создании счёта. Попробуйте позже.",
         "broadcast_sent": "📢 Рассылка отправлена {count} пользователям.",
         "support": (
-            "💬 **Поддержка Mosaic vpn.**\n\n"
+            "💬 Поддержка Mosaic vpn.\n\n"
             "Вопросы по оплате, настройке или работе сервиса:\n"
             "💬 @mosaicsup\n\n"
             "Мы ответим в самое ближайшее время\\!"
@@ -186,14 +186,14 @@ MESSAGES = {
     },
     "en": {
         "welcome": (
-            "🛡 **MosaicVPN** — secure network connection\n\n"
+            "🛡 MosaicVPN — secure network connection\n\n"
             "The service helps maintain connection privacy and use the network securely. "
             "Routes are selected automatically according to availability and connection quality.\n\n"
-            "✅ **Your 3-day trial is active.**\n\n"
+            "✅ Your 3-day trial is active.\n\n"
             "• Access costs 1 RUB per day after the trial\n"
             "• Up to 5 devices on one subscription\n"
             "• A stable route is selected automatically\n\n"
-            "Open **📖 Setup** to add the subscription to your app."
+            "Open 📖 Setup to add the subscription to your app."
         ),
         "menu_buy": "🛒 Buy subscription",
         "menu_profile": "👤 Profile",
@@ -201,7 +201,7 @@ MESSAGES = {
         "menu_instructions": "📖 Setup",
         "menu_lang": "🌐 Language / Язык",
         "buy_title": "🛒 Select a top-up package (1 RUB = 1 day):",
-        "pay_title": "💳 **Invoice ready**\n\nTop-up amount: **{amount:.2f} USDT**\nAccess period: **{days} days**\n\nUse the button below to continue to payment.",
+        "pay_title": "💳 Invoice ready\n\nTop-up amount: {amount:.2f} USDT\nAccess period: {days} days\n\nUse the button below to continue to payment.",
         "pay_button": "💳 Pay via CryptoBot",
         "lava_button": "🏦 Pay by SBP / card",
         "custom_button": "✍️ Custom amount",
@@ -210,46 +210,46 @@ MESSAGES = {
             "After confirmation, payment is credited to the access balance automatically."
         ),
         "profile_active": (
-            "👤 **MosaicVPN profile**\n\n"
-            "Status: **active**\n"
-            "Access balance: **{balance} RUB**\n"
-            "Remaining: **{days} days**, until {expire_date}\n"
-            "Devices: up to **5** at the same time\n\n"
-            "🔗 **Subscription link**\n"
+            "👤 MosaicVPN profile\n\n"
+            "Status: active\n"
+            "Access balance: {balance} RUB\n"
+            "Remaining: {days} days, until {expire_date}\n"
+            "Devices: up to 5 at the same time\n\n"
+            "🔗 Subscription link\n"
             "`{sub_url}`\n\n"
             "Open the web cabinet or add the link to the MosaicVPN app."
         ),
         "profile_inactive": (
-            "👤 **MosaicVPN profile**\n\n"
-            "Status: **renewal required**\n"
+            "👤 MosaicVPN profile\n\n"
+            "Status: renewal required\n"
             "Access period ended: {expire_date}\n\n"
             "Top up your balance to activate the subscription again."
         ),
-        "profile_not_found": "⚠️ Profile not found. Click **🛒 Buy subscription** to create one.",
+        "profile_not_found": "⚠️ Profile not found. Click 🛒 Buy subscription to create one.",
         "tariffs": (
-            "💎 **Tariffs and Rules**\n\n"
-            "Access costs **1 RUB = 1 day**.\n"
+            "💎 Tariffs and Rules\n\n"
+            "Access costs 1 RUB = 1 day.\n"
             "Routes and support are included; MosaicVPN adds no extra service fee.\n\n"
-            "• **10 days — 10 RUB**\n"
-            "• **30 days — 30 RUB**\n"
-            "• **Custom amount — from 1 RUB**\n\n"
+            "• 10 days — 10 RUB\n"
+            "• 30 days — 30 RUB\n"
+            "• Custom amount — from 1 RUB\n\n"
             "After payment, the days are added to your current access period. Choose a package or enter any amount below.\n\n"
             "💬 Support: @mosaicsup"
         ),
         "instructions": (
-            "📖 **Simple 1-minute Setup**\n\n"
-            "1. Open the **web map** (click 🗺 Web Map in menu).\n"
-            "2. Go to the **\"Software\"** tab in the left-hand menu.\n"
+            "📖 Simple 1-minute Setup\n\n"
+            "1. Open the web map (click 🗺 Web Map in menu).\n"
+            "2. Go to the \"Software\" tab in the left-hand menu.\n"
             "3. Choose your device (iOS, Android, Windows, macOS, Linux) and install the client.\n"
-            "4. Click **\"IMPORT TO MOSAIC\"** (or paste the link into the app).\n\n"
+            "4. Click \"IMPORT TO MOSAIC\" (or paste the link into the app).\n\n"
             "✅ The subscription will be added automatically.\n\n"
             "💬 Support: @mosaicsup"
         ),
         "payment_success": (
-            "✅ **Payment received**\n\n"
-            "Your access has been extended by **{days} days**.\n"
-            "New expiry date: **{expire_date}**.\n\n"
-            "🔗 **Subscription link**\n"
+            "✅ Payment received\n\n"
+            "Your access has been extended by {days} days.\n"
+            "New expiry date: {expire_date}.\n\n"
+            "🔗 Subscription link\n"
             "`{sub_url}`"
         ),
         "lang_title": "🌐 Select language / Выберите язык:",
@@ -257,7 +257,7 @@ MESSAGES = {
         "error_invoice": "⚠️ Failed to create invoice. Please try again later.",
         "broadcast_sent": "📢 Broadcast sent to {count} users.",
         "support": (
-            "💬 **Mosaic vpn. Support**\n\n"
+            "💬 Mosaic vpn. Support\n\n"
             "Questions about payments, configuration, or service:\n"
             "💬 @mosaicsup\n\n"
             "We will get back to you as soon as possible!"
@@ -277,17 +277,17 @@ MESSAGES["ru"]["menu_referral"] = "🎁 Пригласить друга"
 MESSAGES["ru"]["menu_support"] = "🎧 Поддержка"
 MESSAGES["ru"]["menu_status"] = "📊 Статус"
 MESSAGES["ru"]["support_prompt"] = (
-    "🎧 **Поддержка Mosaic**\n\n"
+    "🎧 Поддержка Mosaic\n\n"
     "Выберите действие ниже — мы отвечаем 24/7."
 )
 MESSAGES["ru"]["referral_promo"] = (
-    "🎁 **Получите VPN бесплатно**\n\n"
-    "Пригласите друга в Mosaic VPN! Когда он оплатит подписку, вы **ОБА** получите бонусные дни.\n\n"
+    "🎁 Получите VPN бесплатно\n\n"
+    "Пригласите друга в Mosaic VPN! Когда он оплатит подписку, вы ОБА получите бонусные дни.\n\n"
     "Когда приглашённый пользователь оплачивает подписку, вам и ему добавляются бонусные дни.\n\n"
     "Приглашайте друзей и получайте бонусные дни за успешное подключение.\n\n"
     "Нажмите кнопку ниже, чтобы получить реферальную ссылку."
 )
-MESSAGES["ru"]["referral_link_text"] = "🔗 **Ваша реферальная ссылка:**\n`{link}`\n\nОтправьте её другу. Когда он запустит бота, система свяжет ваши профили."
+MESSAGES["ru"]["referral_link_text"] = "🔗 Ваша реферальная ссылка:\n`{link}`\n\nОтправьте её другу. Когда он запустит бота, система свяжет ваши профили."
 
 MESSAGES["en"]["menu_proxies"] = "Additional tools"
 MESSAGES["en"]["proxies_welcome"] = "This section is temporarily unavailable."
@@ -299,22 +299,63 @@ MESSAGES["en"]["menu_referral"] = "🎁 Invite a Friend"
 MESSAGES["en"]["menu_support"] = "🎧 Support"
 MESSAGES["en"]["menu_status"] = "📊 Status"
 MESSAGES["en"]["support_prompt"] = (
-    "🎧 **Mosaic Support**\n\n"
+    "🎧 Mosaic Support\n\n"
     "Choose an action below — we're available 24/7."
 )
 MESSAGES["en"]["referral_promo"] = (
-    "🎁 **Invite a friend and receive bonus days**\n\n"
+    "🎁 Invite a friend and receive bonus days\n\n"
     "When an invited user purchases a subscription, bonus days are added to both profiles.\n\n"
     "Use the button below to get your referral link."
 )
-MESSAGES["en"]["referral_link_text"] = "🔗 **Your referral link:**\n`{link}`\n\nShare it with a friend. When they start the bot, our system will link your accounts."
+MESSAGES["en"]["referral_link_text"] = "🔗 Your referral link:\n`{link}`\n\nShare it with a friend. When they start the bot, our system will link your accounts."
 
-# ─── UX Redesign v2: human-friendly copy additions ─────────────────────────
+MESSAGES["ru"]["home_title"] = (
+    "🛡 MosaicVPN — ваш персональный щит в сети\n\n"
+    "Выберите раздел ниже:"
+)
+MESSAGES["ru"]["menu_account"] = "📲 Моё подключение"
+MESSAGES["ru"]["menu_subscribe"] = "💳 Купить подписку"
+MESSAGES["ru"]["menu_add_app"] = "📲 Открыть MosaicVPN"
+MESSAGES["ru"]["menu_help"] = "🆘 Помощь"
+MESSAGES["ru"]["menu_home"] = "🏠 Главное меню"
+
+MESSAGES["ru"]["account_section"] = (
+    "📲 Моё подключение\n\n"
+    "Здесь находится ваша подписка и кнопка для открытия MosaicVPN."
+)
+MESSAGES["ru"]["subscribe_section"] = (
+    "💳 Купить подписку\n\n"
+    "1 ₽ = 1 день доступа.\n"
+    "Выберите пакет или введите свою сумму."
+)
+MESSAGES["ru"]["add_app_prompt"] = (
+    "📲 Открыть MosaicVPN\n\n"
+    "Нажмите кнопку ниже — приложение получит вашу подписку автоматически.\n\n"
+    "Если приложение не открылось, выберите запасной способ."
+)
+MESSAGES["ru"]["add_app_code_fmt"] = (
+    "📲 Открыть MosaicVPN\n\n"
+    "Одноразовый код: {code}\n\n"
+    "Код действует {minutes} минут. Он нужен только для привязки Telegram-профиля.\n"
+    "Ссылку подписки и код нельзя путать: ссылка добавляет подписку, код связывает профиль."
+)
+
+MESSAGES["en"]["home_title"] = "🛡 MosaicVPN — your personal shield online\n\nChoose a section below:"
+MESSAGES["en"]["menu_account"] = "📲 My connection"
+MESSAGES["en"]["menu_subscribe"] = "💳 Buy subscription"
+MESSAGES["en"]["menu_add_app"] = "📲 Open MosaicVPN"
+MESSAGES["en"]["menu_help"] = "🆘 Help"
+MESSAGES["en"]["menu_home"] = "🏠 Main menu"
+MESSAGES["en"]["account_section"] = "📲 My connection\n\nYour subscription and the button to open MosaicVPN are here."
+MESSAGES["en"]["subscribe_section"] = "💳 Buy subscription\n\n1 RUB = 1 day of access.\nChoose a package or enter a custom amount."
+MESSAGES["en"]["add_app_prompt"] = "📲 Open MosaicVPN\n\nPress the button below — the app will load your subscription automatically.\n\nIf the app did not open, choose the backup method."
+MESSAGES["en"]["add_app_code_fmt"] = "📲 Open MosaicVPN\n\nOne-time code: {code}\n\nThe code is valid for {minutes} minutes and only links your Telegram profile.\nThe subscription link adds the subscription; the code links your profile."
+
 # These keys are used only by the new handlers below; existing callbacks are
 # unaffected.  All strings are plain-text-safe (no stray * or _ outside bold).
 
 MESSAGES["ru"]["home_title"] = (
-    "🛡 **MosaicVPN** — ваш персональный щит в сети\n\n"
+    "🛡 MosaicVPN — ваш персональный щит в сети\n\n"
     "Выберите раздел ниже:"
 )
 MESSAGES["ru"]["menu_account"] = "👤 Мой аккаунт"
@@ -324,33 +365,33 @@ MESSAGES["ru"]["menu_help"] = "🎧 Помощь"
 MESSAGES["ru"]["menu_home"] = "🏠 Главное меню"
 
 MESSAGES["ru"]["account_section"] = (
-    "👤 **Мой аккаунт**\n\n"
+    "👤 Мой аккаунт\n\n"
     "Здесь вы найдёте всё о своём профиле, подписке и настройках."
 )
 MESSAGES["ru"]["subscribe_section"] = (
-    "💳 **Подписка**\n\n"
+    "💳 Подписка\n\n"
     "1 ₽ = 1 день доступа.\n"
     "Выберите пакет или введите свою сумму."
 )
 MESSAGES["ru"]["help_section"] = (
-    "🎧 **Помощь и поддержка**\n\n"
+    "🎧 Помощь и поддержка\n\n"
     "Мы отвечаем 24/7. Чем можем помочь?"
 )
 MESSAGES["ru"]["add_app_prompt"] = (
-    "📲 **Добавить в MosaicVPN**\n\n"
+    "📲 Добавить в MosaicVPN\n\n"
     "Приложение само загрузит вашу подписку — никаких ссылок копировать не нужно.\n\n"
     "Шаги:\n"
-    "1️⃣ Откройте приложение **MosaicVPN** на устройстве\n"
-    "2️⃣ Перейдите в **Кабинет → Добавить подписку**\n"
-    "3️⃣ Нажмите **«Войти через Telegram»** и введите код ниже\n\n"
+    "1️⃣ Откройте приложение MosaicVPN на устройстве\n"
+    "2️⃣ Перейдите в Кабинет → Добавить подписку\n"
+    "3️⃣ Нажмите «Войти через Telegram» и введите код ниже\n\n"
     "Ваш одноразовый код:"
 )
 MESSAGES["ru"]["add_app_code_fmt"] = (
-    "📲 **Добавить в MosaicVPN**\n\n"
+    "📲 Добавить в MosaicVPN\n\n"
     "Ваш одноразовый код:\n\n"
     "🔑 `{code}`\n\n"
-    "Действует **{minutes} минут**. Введите его в приложении в разделе «Войти через Telegram».\n"
-    "_Код используется один раз и не нужно никому показывать._"
+    "Действует {minutes} минут. Введите его в приложении в разделе «Войти через Telegram».\n"
+    "Код используется один раз и не нужно никому показывать."
 )
 MESSAGES["ru"]["add_app_no_profile"] = (
     "⚠️ Сначала нажмите /start — у вас ещё нет профиля.\n\n"
@@ -370,7 +411,7 @@ MESSAGES["ru"]["ticket_btn"] = "📝 Написать в поддержку"
 MESSAGES["ru"]["chat_support"] = "💬 Чат @mosaicsup"
 
 MESSAGES["en"]["home_title"] = (
-    "🛡 **MosaicVPN** — your personal shield online\n\n"
+    "🛡 MosaicVPN — your personal shield online\n\n"
     "Choose a section below:"
 )
 MESSAGES["en"]["menu_account"] = "👤 My Account"
@@ -380,33 +421,33 @@ MESSAGES["en"]["menu_help"] = "🎧 Help"
 MESSAGES["en"]["menu_home"] = "🏠 Home"
 
 MESSAGES["en"]["account_section"] = (
-    "👤 **My Account**\n\n"
+    "👤 My Account\n\n"
     "Everything about your profile, subscription and settings."
 )
 MESSAGES["en"]["subscribe_section"] = (
-    "💳 **Subscription**\n\n"
+    "💳 Subscription\n\n"
     "1 RUB = 1 day of access.\n"
     "Choose a package or enter a custom amount."
 )
 MESSAGES["en"]["help_section"] = (
-    "🎧 **Help & Support**\n\n"
+    "🎧 Help & Support\n\n"
     "We're available 24/7. How can we help?"
 )
 MESSAGES["en"]["add_app_prompt"] = (
-    "📲 **Add to MosaicVPN**\n\n"
+    "📲 Add to MosaicVPN\n\n"
     "The app will automatically load your subscription — no links to copy.\n\n"
     "Steps:\n"
-    "1️⃣ Open the **MosaicVPN** app on your device\n"
-    "2️⃣ Go to **Cabinet → Add Subscription**\n"
-    "3️⃣ Tap **«Sign in via Telegram»** and enter the code below\n\n"
+    "1️⃣ Open the MosaicVPN app on your device\n"
+    "2️⃣ Go to Cabinet → Add Subscription\n"
+    "3️⃣ Tap «Sign in via Telegram» and enter the code below\n\n"
     "Your single-use code:"
 )
 MESSAGES["en"]["add_app_code_fmt"] = (
-    "📲 **Add to MosaicVPN**\n\n"
+    "📲 Add to MosaicVPN\n\n"
     "Your single-use code:\n\n"
     "🔑 `{code}`\n\n"
-    "Valid for **{minutes} minutes**. Enter it in the app under «Sign in via Telegram».\n"
-    "_This code is single-use — keep it private._"
+    "Valid for {minutes} minutes. Enter it in the app under «Sign in via Telegram».\n"
+    "This code is single-use — keep it private."
 )
 MESSAGES["en"]["add_app_no_profile"] = (
     "⚠️ Press /start first — you don't have a profile yet.\n\n"
@@ -2214,14 +2255,14 @@ def polling_invoices_thread():
                                 if ref_lang == "ru":
                                     ref_text = (
                                         f"🎉 Вам начислен бонус за приглашённого друга!\n\n"
-                                        f"Вы получили **{days} дней** бесплатной подписки. "
+                                        f"Вы получили {days} дней бесплатной подписки. "
                                         f"Приглашайте ещё — бонус за каждого друга."
                                     )
                                     ref_button_text = "🎁 Пригласить ещё"
                                 else:
                                     ref_text = (
                                         f"🎉 You received a bonus for inviting a friend!\n\n"
-                                        f"You got **{days} days** of free subscription. "
+                                        f"You got {days} days of free subscription. "
                                         f"Invite more friends to get more bonus days!"
                                     )
                                     ref_button_text = "🎁 Invite more"
@@ -2514,7 +2555,7 @@ def admin_alert(text):
     """Send an urgent alert to all admins."""
     for admin_id in ADMIN_IDS:
         try:
-            bot.send_message(admin_id, f"🚨 **АЛЕРТ**\n\n{text}", parse_mode="Markdown")
+            bot.send_message(admin_id, f"🚨 АЛЕРТ\n\n{text}", parse_mode="Markdown")
         except Exception as e:
             # Fallback: send without parse_mode so a stray _ or * in text
             # doesn't silently swallow the alert.
@@ -2643,38 +2684,34 @@ def get_home_inline_keyboard(lang):
     markup.row(
         types.InlineKeyboardButton(
             "🛒 Купить подписку" if lang == "ru" else "🛒 Buy subscription",
-            callback_data="home_subscribe",
-            style="primary",
-        ),
+            callback_data="home_subscribe", style="primary"),
+        types.InlineKeyboardButton(
+            "💳 Продлить подписку" if lang == "ru" else "💳 Renew subscription",
+            callback_data="home_subscribe", style="primary"),
+    )
+    markup.row(
+        types.InlineKeyboardButton(
+            "📲 Моё подключение" if lang == "ru" else "📲 My connection",
+            callback_data="home_account", style="primary"),
         types.InlineKeyboardButton(
             "💰 Баланс" if lang == "ru" else "💰 Balance",
-            callback_data="home_account",
-            style="primary",
-        ),
+            callback_data="home_account", style="primary"),
     )
     markup.row(
         types.InlineKeyboardButton(
-            "🎁 Подарить подписку" if lang == "ru" else "🎁 Gift subscription",
-            callback_data="ref_link",
-            style="success",
-        ),
+            "🤝 Пригласить друга" if lang == "ru" else "🤝 Invite a friend",
+            callback_data="ref_link", style="success"),
         types.InlineKeyboardButton(
-            "🤝 Партнёрская программа" if lang == "ru" else "🤝 Affiliate program",
-            callback_data="ref_link",
-            style="success",
-        ),
+            "🆘 Помощь" if lang == "ru" else "🆘 Help",
+            callback_data="home_help", style="primary"),
     )
     markup.row(
-        types.InlineKeyboardButton(
-            "📲 Добавить в MosaicVPN" if lang == "ru" else "📲 Add to MosaicVPN",
-            callback_data="home_add_app",
-            style="success",
-        ),
         types.InlineKeyboardButton(
             "ℹ️ О сервисе" if lang == "ru" else "ℹ️ About service",
-            callback_data="home_help",
-            style="primary",
-        ),
+            callback_data="home_help", style="primary"),
+        types.InlineKeyboardButton(
+            "📲 Открыть MosaicVPN" if lang == "ru" else "📲 Open MosaicVPN",
+            callback_data="home_add_app", style="success"),
     )
     return markup
 
@@ -2897,19 +2934,19 @@ def handle_home_account(call):
             status_label = ("активна" if active else "истекла") if lang == "ru" else ("active" if active else "expired")
             if lang == "ru":
                 text = (
-                    f"👤 **Мой аккаунт**\n\n"
-                    f"{status_icon} Подписка: **{status_label}**\n"
-                    f"📅 Действует до: **{expire_date}** ({days_left} дн.)\n"
-                    f"📱 Устройств: до **5**\n"
+                    f"👤 Мой аккаунт\n\n"
+                    f"{status_icon} Подписка: {status_label}\n"
+                    f"📅 Действует до: {expire_date} ({days_left} дн.)\n"
+                    f"📱 Устройств: до 5\n"
                 )
                 if sub_url:
                     text += f"\n🔗 Ссылка подписки:\n`{sub_url}`"
             else:
                 text = (
-                    f"👤 **My Account**\n\n"
-                    f"{status_icon} Subscription: **{status_label}**\n"
-                    f"📅 Expires: **{expire_date}** ({days_left}d)\n"
-                    f"📱 Devices: up to **5**\n"
+                    f"👤 My Account\n\n"
+                    f"{status_icon} Subscription: {status_label}\n"
+                    f"📅 Expires: {expire_date} ({days_left}d)\n"
+                    f"📱 Devices: up to 5\n"
                 )
                 if sub_url:
                     text += f"\n🔗 Subscription link:\n`{sub_url}`"
@@ -3232,18 +3269,18 @@ def send_welcome(message):
         # Combine Welcome and Profile message for first start
         welcome_text = t["welcome"]
         profile_text = (
-            "\n\n👤 **Ваш Профиль подписки:**\n"
-            "• **Имя:** `{username}`\n"
-            "• **Баланс:** `{balance} руб.`\n"
-            "• **Действует до:** `{expire_date}` ({days} дн.)\n\n"
-            "🔗 **Ваша ссылка на подписку (Атлас):**\n"
+            "\n\n👤 Ваш Профиль подписки:\n"
+            "• Имя: `{username}`\n"
+            "• Баланс: `{balance} руб.`\n"
+            "• Действует до: `{expire_date}` ({days} дн.)\n\n"
+            "🔗 Ваша ссылка на подписку (Атлас):\n"
             "`{sub_url}`"
         ) if lang == "ru" else (
-            "\n\n👤 **Your Subscription Profile:**\n"
-            "• **Username:** `{username}`\n"
-            "• **Balance:** `{balance} RUB`\n"
-            "• **Expires:** `{expire_date}` ({days} days)\n\n"
-            "🔗 **Your Subscription Link (Atlas):**\n"
+            "\n\n👤 Your Subscription Profile:\n"
+            "• Username: `{username}`\n"
+            "• Balance: `{balance} RUB`\n"
+            "• Expires: `{expire_date}` ({days} days)\n\n"
+            "🔗 Your Subscription Link (Atlas):\n"
             "`{sub_url}`"
         )
         
@@ -3369,7 +3406,7 @@ def show_profile(message):
             
             if lang == "ru":
                 ref_block = (
-                    f"\n\n📊 **Реферальная статистика:**\n"
+                    f"\n\n📊 Реферальная статистика:\n"
                     f"👥 Приглашено: *{ref_stats['joined']}*\n"
                     f"💳 Оплатили: *{ref_stats['paid']}*\n"
                     f"🎁 Бонусных дней заработано: *{ref_stats['bonus_days_earned']}*\n"
@@ -3378,7 +3415,7 @@ def show_profile(message):
                     ref_block += f"🔗 Вы пришли по приглашению пользователя `{referrer_of}`\n"
             else:
                 ref_block = (
-                    f"\n\n📊 **Referral Statistics:**\n"
+                    f"\n\n📊 Referral Statistics:\n"
                     f"👥 Invited: *{ref_stats['joined']}*\n"
                     f"💳 Paid: *{ref_stats['paid']}*\n"
                     f"🎁 Bonus days earned: *{ref_stats['bonus_days_earned']}*\n"
@@ -3529,10 +3566,10 @@ def send_buy_discount_menu(chat_id, lang):
             promo_text = f"🏷 {days} subscription days — {disc_price:.2f} USDT (was {pkg['price_usdt']:.2f} USDT)"
         markup.add(types.InlineKeyboardButton(promo_text, callback_data=f"buy_discount_{days}"))
     text = (
-        "🏷 **Выберите пакет со скидкой 50%:**\n\n"
+        "🏷 Выберите пакет со скидкой 50%:\n\n"
         "Предложение действует 24 часа. Скидка применится к вашему счету автоматически."
         if lang == "ru" else
-        "🏷 **Select a package with 50% discount:**\n\n"
+        "🏷 Select a package with 50% discount:\n\n"
         "Offer valid for 24 hours. Discount will apply automatically."
     )
     bot.send_message(chat_id, text, parse_mode="Markdown", reply_markup=markup)
@@ -3577,10 +3614,10 @@ def handle_ref_leaderboard(call):
     bot.answer_callback_query(call.id)
     top = ref_leaderboard_top(10)
     if not top or all(r[1] == 0 and r[2] == 0 for r in top):
-        text = "🏆 **Лидерборд пока пуст**\n\nНикто ещё не пригласил друзей. Будь первым!" if lang == "ru" else "🏆 **Leaderboard is empty**\n\nNobody has invited friends yet. Be the first!"
+        text = "🏆 Лидерборд пока пуст\n\nНикто ещё не пригласил друзей. Будь первым!" if lang == "ru" else "🏆 Leaderboard is empty\n\nNobody has invited friends yet. Be the first!"
     else:
         if lang == "ru":
-            text = "🏆 **Топ-10 рефералов Mosaic VPN**\n\n"
+            text = "🏆 Топ-10 рефералов Mosaic VPN\n\n"
             medals = ["🥇", "🥈", "🥉"]
             for i, (rid, joined, paid, bonus) in enumerate(top):
                 if joined == 0 and paid == 0:
@@ -3589,7 +3626,7 @@ def handle_ref_leaderboard(call):
                 text += f"{medal} ID `{rid}` — 👥 {joined} | 💳 {paid} | 🎁 {bonus} дн.\n"
             text += "\nПриглашай друзей и поднимайся в топ!"
         else:
-            text = "🏆 **Top-10 Mosaic VPN Referrers**\n\n"
+            text = "🏆 Top-10 Mosaic VPN Referrers\n\n"
             medals = ["🥇", "🥈", "🥉"]
             for i, (rid, joined, paid, bonus) in enumerate(top):
                 if joined == 0 and paid == 0:
@@ -3661,18 +3698,18 @@ def show_service_status(message):
         status_emoji = "🔴"
         status_text = "Сервер недоступен" if lang == "ru" else "Server down"
     text = (
-        f"📊 **Статус сервиса**\n\n"
-        f"{status_emoji} **{status_text}**\n\n"
-        f"⏱ Uptime 24ч: **{up_24h}%**\n"
-        f"⏱ Uptime 7д: **{up_7d}%**\n"
-        f"⭐ Средняя оценка: **{avg_rating['avg'] or '—'}** ({avg_rating['count']} отзывов)\n\n"
-        f"_Обновляется каждые 5 минут_"
+        f"📊 Статус сервиса\n\n"
+        f"{status_emoji} {status_text}\n\n"
+        f"⏱ Uptime 24ч: {up_24h}%\n"
+        f"⏱ Uptime 7д: {up_7d}%\n"
+        f"⭐ Средняя оценка: {avg_rating['avg'] or '—'} ({avg_rating['count']} отзывов)\n\n"
+        f"Обновляется каждые 5 минут"
     ) if lang == "ru" else (
-        f"📊 **Service Status**\n\n"
-        f"{status_emoji} **{status_text}**\n\n"
-        f"⏱ Uptime 24h: **{up_24h}%**\n"
-        f"⏱ Uptime 7d: **{up_7d}%**\n"
-        f"⭐ Average rating: **{avg_rating['avg'] or '—'}** ({avg_rating['count']} reviews)\n\n"
+        f"📊 Service Status\n\n"
+        f"{status_emoji} {status_text}\n\n"
+        f"⏱ Uptime 24h: {up_24h}%\n"
+        f"⏱ Uptime 7d: {up_7d}%\n"
+        f"⭐ Average rating: {avg_rating['avg'] or '—'} ({avg_rating['count']} reviews)\n\n"
         f"_Updated every 5 minutes_"
     )
     markup = types.InlineKeyboardMarkup(row_width=1)
@@ -3706,9 +3743,9 @@ def handle_report_issue(call):
     for label, cd in cats:
         markup.add(types.InlineKeyboardButton(label, callback_data=cd))
     markup.add(types.InlineKeyboardButton("🔙 Назад" if lang == "ru" else "🔙 Back", callback_data="back_to_status"))
-    text = ("⚠️ **Что случилось?**\n\nВыберите категорию проблемы — мы проверим сразу."
+    text = ("⚠️ Что случилось?\n\nВыберите категорию проблемы — мы проверим сразу."
             if lang == "ru"
-            else "⚠️ **What happened?**\n\nSelect a problem category — we'll check right away.")
+            else "⚠️ What happened?\n\nSelect a problem category — we'll check right away.")
     _safe_bot_send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
 
 
@@ -3732,7 +3769,7 @@ def handle_complaint_category(call):
         user_link = f"tg://user?id={telegram_id}"
         for admin_id in ADMIN_IDS:
             bot.send_message(admin_id,
-                f"⚠️ **Жалоба #{complaint_id}**\n"
+                f"⚠️ Жалоба #{complaint_id}\n"
                 f"📂 Категория: {category}\n"
                 f"👤 Юзер: {user_link}\n"
                 f"🕐 {datetime.datetime.now(timezone.utc).strftime('%H:%M UTC')}",
@@ -3767,18 +3804,18 @@ def handle_back_to_status(call):
         status_emoji = "🔴"
         status_text = "Сервер недоступен" if lang == "ru" else "Server down"
     text = (
-        f"📊 **Статус сервиса**\n\n"
-        f"{status_emoji} **{status_text}**\n\n"
-        f"⏱ Uptime 24ч: **{up_24h}%**\n"
-        f"⏱ Uptime 7д: **{up_7d}%**\n"
-        f"⭐ Средняя оценка: **{avg_rating['avg'] or '—'}** ({avg_rating['count']} отзывов)\n\n"
-        f"_Обновляется каждые 5 минут_"
+        f"📊 Статус сервиса\n\n"
+        f"{status_emoji} {status_text}\n\n"
+        f"⏱ Uptime 24ч: {up_24h}%\n"
+        f"⏱ Uptime 7д: {up_7d}%\n"
+        f"⭐ Средняя оценка: {avg_rating['avg'] or '—'} ({avg_rating['count']} отзывов)\n\n"
+        f"Обновляется каждые 5 минут"
     ) if lang == "ru" else (
-        f"📊 **Service Status**\n\n"
-        f"{status_emoji} **{status_text}**\n\n"
-        f"⏱ Uptime 24h: **{up_24h}%**\n"
-        f"⏱ Uptime 7d: **{up_7d}%**\n"
-        f"⭐ Average rating: **{avg_rating['avg'] or '—'}** ({avg_rating['count']} reviews)\n\n"
+        f"📊 Service Status\n\n"
+        f"{status_emoji} {status_text}\n\n"
+        f"⏱ Uptime 24h: {up_24h}%\n"
+        f"⏱ Uptime 7d: {up_7d}%\n"
+        f"⭐ Average rating: {avg_rating['avg'] or '—'} ({avg_rating['count']} reviews)\n\n"
         f"_Updated every 5 minutes_"
     )
     markup = types.InlineKeyboardMarkup(row_width=1)
@@ -3813,28 +3850,28 @@ def handle_faq(call):
     db_user = get_user(telegram_id)
     lang = db_user["language"] if db_user else "ru"
     faq_text = (
-        "❓ **FAQ Mosaic VPN**\n\n"
-        "**Q: Как подключиться?**\n"
+        "❓ FAQ Mosaic VPN\n\n"
+        "Q: Как подключиться?\n"
         "A: Откройте профиль → скопируйте ссылку подписки → вставьте в приложение (v2RayTun, Hiddify, sing-box).\n\n"
-        "**Q: Сколько устройств?**\n"
+        "Q: Сколько устройств?\n"
         "A: До 5 устройств, привязка по HWID.\n\n"
-        "**Q: Как продлить?**\n"
+        "Q: Как продлить?\n"
         "A: Меню → 🛒 Купить → выберите тариф.\n\n"
-        "**Q: Рефералка?**\n"
+        "Q: Рефералка?\n"
         "A: 🎁 Пригласить друга → друг оплачивает → вы оба получаете бонусные дни.\n\n"
-        "**Q: Поддержка 24/7?**\n"
+        "Q: Поддержка 24/7?\n"
         "A: Да! Создайте обращение через 🎧 Поддержка."
     ) if lang == "ru" else (
-        "❓ **Mosaic VPN FAQ**\n\n"
-        "**Q: How to connect?**\n"
+        "❓ Mosaic VPN FAQ\n\n"
+        "Q: How to connect?\n"
         "A: Open profile → copy subscription link → paste into app (v2RayTun, Hiddify, sing-box).\n\n"
-        "**Q: How many devices?**\n"
+        "Q: How many devices?\n"
         "A: Up to 5 devices, HWID-bound.\n\n"
-        "**Q: How to renew?**\n"
+        "Q: How to renew?\n"
         "A: Menu → 🛒 Buy → select a plan.\n\n"
-        "**Q: Referral program?**\n"
+        "Q: Referral program?\n"
         "A: 🎁 Invite a friend → they purchase → you both get bonus days.\n\n"
-        "**Q: 24/7 support?**\n"
+        "Q: 24/7 support?\n"
         "A: Yes! Create a ticket via 🎧 Support."
     )
     bot.send_message(telegram_id, faq_text, parse_mode="Markdown")
@@ -3858,7 +3895,7 @@ def process_ticket_message(message):
     ticket_add_message(ticket_id, "user", subject)
     # Forward to admin
     admin_text = (
-        f"🎫 **Новый тикет #{ticket_id}**\n"
+        f"🎫 Новый тикет #{ticket_id}\n"
         f"👤 Юзер: `{telegram_id}`\n"
         f"📝 Тема: {subject[:200]}"
     )
@@ -3887,7 +3924,7 @@ def handle_ticket_list(call):
     if not rows:
         bot.send_message(telegram_id, "📋 У вас нет обращений." if lang == "ru" else "📋 You have no tickets.")
         return
-    text = "📋 **Ваши обращения:**\n\n" if lang == "ru" else "📋 **Your tickets:**\n\n"
+    text = "📋 Ваши обращения:\n\n" if lang == "ru" else "📋 Your tickets:\n\n"
     for tid, subj, status, created in rows:
         status_emoji = "🟢" if status == "open" else "🔴"
         text += f"{status_emoji} #{tid} — {subj[:60]}{'…' if len(subj)>60 else ''}\n"
@@ -3913,7 +3950,7 @@ def process_admin_reply(message, ticket_id=None):
         owner_id = row[0]
         try:
             bot.send_message(owner_id,
-                f"💬 **Ответ поддержки по обращению #{ticket_id}:**\n\n{reply_text}",
+                f"💬 Ответ поддержки по обращению #{ticket_id}:\n\n{reply_text}",
                 parse_mode="Markdown",
                 reply_markup=types.InlineKeyboardMarkup().add(
                     types.InlineKeyboardButton("✉️ Ответить" if True else "✉️ Reply",
@@ -3963,7 +4000,7 @@ def show_admin_panel(message):
     stats = admin_stats()
     rating_str = f"{stats['rating_avg']:.1f}⭐ ({stats['rating_count']} оценок)" if stats['rating_avg'] else "—"
     text = (
-        f"🔐 **Админ-панель Mosaic**\n\n"
+        f"🔐 Админ-панель Mosaic\n\n"
         f"👥 Юзеров: `{stats['total_users']}`\n"
         f"💳 Оплаченных инвойсов: `{stats['paid_invoices']}`\n"
         f"💰 Выручка: `{stats['total_revenue']}` ₽\n"
@@ -3986,7 +4023,7 @@ def handle_admin_top(message):
     if message.chat.id not in ADMIN_IDS:
         return
     users = admin_top_users(10)
-    text = "🏆 **Топ-10 юзеров по выручке:**\n\n"
+    text = "🏆 Топ-10 юзеров по выручке:\n\n"
     medals = ["🥇","🥈","🥉"]
     for i, (uid, uname, paid_count, total_paid) in enumerate(users):
         medal = medals[i] if i < 3 else f"`{i+1}.`"
@@ -4025,7 +4062,7 @@ def handle_promo_admin(message):
         if not rows:
             bot.send_message(message.chat.id, "Промокодов нет.")
             return
-        text = "🎟 **Промокоды:**\n\n"
+        text = "🎟 Промокоды:\n\n"
         for code, days, disc, mx, used in rows:
             lim = str(mx) if mx >= 0 else "∞"
             text += f"`{code}` — +{days}дн, {disc}%, исп: {used}/{lim}\n"
@@ -4039,7 +4076,7 @@ def handle_admin_tickets(message):
     if not tickets:
         bot.send_message(message.chat.id, "✅ Нет открытых тикетов.")
         return
-    text = f"🎫 **Открытые тикеты ({len(tickets)}):**\n\n"
+    text = f"🎫 Открытые тикеты ({len(tickets)}):\n\n"
     for tid, tg_id, subj, created, uname in tickets:
         text += f"#{tid} — {uname or tg_id}: {subj[:80]}\n"
     text += "\nИспользуйте `/admin_reply_ID` чтобы ответить."
@@ -4095,16 +4132,16 @@ def handle_buy_discount_callback(call):
         if invoice_id and pay_url:
             save_invoice(invoice_id, telegram_id, amount, months, days)
             text = (
-                f"✅ **Скидка 50% применена!**\n\n"
-                f"💳 **Счет на оплату готов!**\n\n"
-                f"• **Товар:** Пополнение баланса на {days} дней (Акция)\n"
-                f"• **Сумма:** {amount:.2f} USDT (вместо {pkg['price_usdt']:.2f} USDT)\n\n"
+                f"✅ Скидка 50% применена!\n\n"
+                f"💳 Счет на оплату готов!\n\n"
+                f"• Товар: Пополнение баланса на {days} дней (Акция)\n"
+                f"• Сумма: {amount:.2f} USDT (вместо {pkg['price_usdt']:.2f} USDT)\n\n"
                 f"Нажмите кнопку ниже, чтобы перейти к оплате через CryptoBot."
                 if lang == "ru" else
-                f"✅ **50% Discount Applied!**\n\n"
-                f"💳 **Invoice is ready!**\n\n"
-                f"• **Item:** {days} subscription days (Promo)\n"
-                f"• **Price:** {amount:.2f} USDT (was {pkg['price_usdt']:.2f} USDT)\n\n"
+                f"✅ 50% Discount Applied!\n\n"
+                f"💳 Invoice is ready!\n\n"
+                f"• Item: {days} subscription days (Promo)\n"
+                f"• Price: {amount:.2f} USDT (was {pkg['price_usdt']:.2f} USDT)\n\n"
                 f"Click the button below to pay via CryptoBot."
             )
             
@@ -4121,9 +4158,9 @@ def _send_lava_payment_method_menu(telegram_id, amount, days, lang):
     if not methods:
         raise RuntimeError("Для Telegram-магазина пока нет активных способов оплаты")
     text = (
-        f"💳 **Выберите способ оплаты**\n\nПополнение: **{days} дней**\nСумма: **{amount:.0f} ₽**"
+        f"💳 Выберите способ оплаты\n\nПополнение: {days} дней\nСумма: {amount:.0f} ₽"
         if lang == "ru" else
-        f"💳 **Choose a payment method**\n\nTop-up: **{days} days**\nAmount: **{amount:.0f} RUB**"
+        f"💳 Choose a payment method\n\nTop-up: {days} days\nAmount: {amount:.0f} RUB"
     )
     markup = types.InlineKeyboardMarkup(row_width=1)
     if "card" in methods:
@@ -4146,7 +4183,7 @@ def _send_lava_invoice_for_chat(telegram_id, amount, days, lang, payment_method)
     )
     save_lava_invoice(invoice["internal_id"], invoice["provider_id"], invoice["order_id"], telegram_id, amount, days, "bot")
     method_label = ("СБП" if payment_method == "sbp" else "банковская карта") if lang == "ru" else ("SBP" if payment_method == "sbp" else "bank card")
-    text = (f"💳 **Счёт на оплату готов**\n\nСпособ: **{method_label}**\nПополнение: **{days} дней**\nСумма: **{amount:.0f} ₽**\n\nПосле оплаты доступ обновится автоматически." if lang == "ru" else f"💳 **Invoice ready**\n\nMethod: **{method_label}**\nTop-up: **{days} days**\nAmount: **{amount:.0f} RUB**\n\nYour access will update automatically after payment.")
+    text = (f"💳 Счёт на оплату готов\n\nСпособ: {method_label}\nПополнение: {days} дней\nСумма: {amount:.0f} ₽\n\nПосле оплаты доступ обновится автоматически." if lang == "ru" else f"💳 Invoice ready\n\nMethod: {method_label}\nTop-up: {days} days\nAmount: {amount:.0f} RUB\n\nYour access will update automatically after payment.")
     markup = types.InlineKeyboardMarkup()
     button = ("📱 Оплатить через СБП" if payment_method == "sbp" else "💳 Оплатить картой") if lang == "ru" else ("📱 Pay via SBP" if payment_method == "sbp" else "💳 Pay by card")
     markup.add(types.InlineKeyboardButton(button, url=invoice["payment_url"]))
@@ -4245,7 +4282,7 @@ def setup_bot_branding():
         
         # Set description (locale RU)
         # Telegram bot descriptions are plain text: Bot API does not render
-        # Markdown here, so never use **, code blocks or other markup symbols.
+        # Telegram Bot API does not render Markdown in bot descriptions; keep this text plain.
         bot.set_my_description(
             "🛡 MosaicVPN — защита сетевого соединения и приватность трафика.\n\n"
             "Тестовый доступ: 3 дня.\n"
@@ -5964,10 +6001,10 @@ def handle_proxy_callback(call):
                     mask_info = f" (Mask: {domain})"
                     
             if proxy_type == "socks5":
-                text += f"⚡ **Proxy #{idx}**\n`{server}:{port}`\n\n"
+                text += f"⚡ Proxy #{idx}\n`{server}:{port}`\n\n"
                 btn_text = f"Connect SOCKS5 #{idx}"
             else:
-                text += f"⚡ **Proxy #{idx}**{mask_info}\n`{server}:{port}`\n\n"
+                text += f"⚡ Proxy #{idx}{mask_info}\n`{server}:{port}`\n\n"
                 btn_text = f"Connect MTProto #{idx}"
                 
             markup.add(types.InlineKeyboardButton(btn_text, url=link))
@@ -6187,10 +6224,10 @@ def run_notifications_check():
                 elif time_since_traffic >= datetime.timedelta(hours=12) and "traffic_12h_dis" not in sent_notifications:
                     text = (
                         "У вас всё работает отлично! ✅\n\n"
-                        "Специально для новых пользователей — **скидка 50%** на первую подписку! Предложение действует ровно 24 часа."
+                        "Специально для новых пользователей — скидка 50% на первую подписку! Предложение действует ровно 24 часа."
                         if lang == "ru" else
                         "Everything works great for you! ✅\n\n"
-                        "Special offer for new users — **50% discount** on your first subscription! Valid for 24 hours only."
+                        "Special offer for new users — 50% discount on your first subscription! Valid for 24 hours only."
                     )
                     markup = types.InlineKeyboardMarkup()
                     markup.row(types.InlineKeyboardButton("🏷 Оформить со скидкой 50%" if lang == "ru" else "🏷 Buy with 50% OFF", callback_data="buy_discount"))
@@ -6428,7 +6465,7 @@ def run_notifications_check():
                     
                     if lang == "ru":
                         text = (
-                            f"🎁 **{display_name}, получите бонусные дни!**\n\n"
+                            f"🎁 {display_name}, получите бонусные дни!\n\n"
                             f"Пригласите друга в MosaicVPN. Когда он оплатит подписку, бонусные дни будут добавлены вам и приглашённому пользователю.\n\n"
                             f"Нажмите кнопку ниже, чтобы получить реферальную ссылку."
                         )
@@ -6436,7 +6473,7 @@ def run_notifications_check():
                         btn_tariffs = "Тарифы"
                     else:
                         text = (
-                            f"🎁 **{display_name}, receive bonus days!**\n\n"
+                            f"🎁 {display_name}, receive bonus days!\n\n"
                             f"Invite a friend to MosaicVPN. When they purchase a subscription, bonus days are added to both profiles."
                         )
                         btn_link = "Get Referral Link"

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MosaicVPN — canvas UX Telegram-бота</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+:root{--bg:#10131a;--panel:#171c25;--line:#303b4d;--ink:#edf2f7;--muted:#aab6c5;--accent:#68d391;--warn:#f6c85f;--bad:#f07b86}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,Segoe UI,sans-serif}.wrap{max-width:1500px;margin:auto;padding:28px 22px 60px}h1{font-size:30px;margin:0 0 8px}h2{font-size:20px;margin:0 0 7px;color:var(--accent)}.lead{color:var(--muted);max-width:950px;margin:0 0 22px}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.tab{border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:9px;padding:10px 14px;cursor:pointer}.tab.active{color:var(--accent);border-color:var(--accent)}.canvas{display:none;background:#0d1118;border:1px solid var(--line);border-radius:14px;padding:22px;overflow:auto;min-height:470px}.canvas.active{display:block}.mermaid{min-width:980px}.note{color:var(--muted);margin:14px 0 0}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:16px}.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:17px}.card.good{border-color:#68d39199}.card.warn{border-color:#f6c85f99}.card h3{margin:0 0 8px}.card p,.card li{color:var(--muted)}.scripted{margin-top:24px}.messages{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.msg{background:#111722;border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:10px;padding:15px}.msg h3{margin:0 0 6px;font-size:16px}.msg p{white-space:pre-line;color:var(--muted);margin:0}.rule{margin-top:18px;padding:15px 17px;border:1px solid #68d39166;border-radius:10px;background:#10221b;color:#dcefe5}.small{font-size:12px;color:var(--muted)}@media(max-width:800px){.cards,.messages{grid-template-columns:1fr}h1{font-size:24px}}
+</style></head>
+<body><main class="wrap"><h1>MosaicVPN · UX canvas Telegram-бота</h1><p class="lead">Три рамки для сравнения: как работает сейчас, рекомендуемый вариант 1 и рекомендуемый вариант 2. Внизу — скриптовые сообщения, которые бот отправляет сам при отсутствии активности пользователя.</p><div class="tabs"><button class="tab active" data-id="current">Текущая система</button><button class="tab" data-id="recommended1">Рекомендуемая 1 · один экран</button><button class="tab" data-id="recommended2">Рекомендуемая 2 · мастер подключения</button></div>
+<section id="current" class="canvas active"><h2>Текущая система</h2><div class="mermaid">flowchart LR
+A[🏠 Главное меню] --> B[🛒 Купить подписку]
+A --> C[💰 Баланс]
+A --> D[🎁 Подарить подписку]
+A --> E[🤝 Партнёрская программа]
+A --> F[📲 Добавить в MosaicVPN]
+A --> G[ℹ️ О сервисе]
+D --> E
+F --> H[Одноразовый код]
+H --> I[Нужно вручную вводить в приложении]
+E --> J[Реферальная ссылка]
+G --> K[Помощь]
+classDef root fill:#182838,stroke:#f07b86,color:#fff;classDef bad fill:#2b2025,stroke:#f07b86,color:#fff;class A root;class D,E,F,H,I,J bad
+</div><p class="note">Проблемы: подарочная кнопка не нужна в первой менюшке; подарок и рефералка смешиваются; «Добавить» технически звучит как раздел; ссылка и код выглядят как одно и то же действие.</p></section>
+<section id="recommended1" class="canvas"><h2>Рекомендуемая 1 · простое меню для большинства пользователей</h2><div class="mermaid">flowchart LR
+A[🏠 Главное меню] --> B[🛒 Купить подписку]
+A --> C[💳 Продлить подписку]
+A --> D[📲 Моё подключение]
+A --> E[💰 Баланс]
+A --> F[🤝 Пригласить друга]
+A --> G[🆘 Помощь]
+A --> H[ℹ️ О сервисе]
+D --> D1[Ваша единственная подписка]
+D1 --> D2[✅ Открыть MosaicVPN]
+D2 --> D3[HTTPS enrollment]
+G --> G1[Выбрать проблему]
+G1 --> G2[Быстрая проверка]
+G2 --> G3[Написать оператору]
+classDef root fill:#183427,stroke:#68d391,color:#fff;classDef action fill:#172b3b,stroke:#68d391,color:#fff;class A root;class B,C,D,E,F,G,H,D1,D2,D3,G1,G2,G3 action
+</div><p class="note">Лучший вариант для старта: одна подписка на пользователя, одно понятное «Моё подключение», автоматическое открытие приложения и короткая помощь без технического жаргона.</p></section>
+<section id="recommended2" class="canvas"><h2>Рекомендуемая 2 · пошаговый мастер, если нужен запасной путь</h2><div class="mermaid">flowchart TB
+A[🏠 Главное меню] --> B[📲 Моё подключение]
+B --> C{Подписка найдена?}
+C -->|Да| D[✅ Открыть MosaicVPN]
+D --> E[HTTPS enrollment → приложение]
+C -->|Нет| F[🛒 Купить подписку]
+E --> G{Приложение открылось?}
+G -->|Да| H[🎉 Готово]
+G -->|Нет| I[📋 Запасной способ]
+I --> J[Ссылка подписки]
+I --> K[Одноразовый код]
+J --> L[Ссылка добавляет подписку]
+K --> M[Код связывает Telegram-профиль]
+L --> N[📖 Инструкция в 3 шага]
+M --> N
+classDef root fill:#183427,stroke:#68d391,color:#fff;classDef decision fill:#332b18,stroke:#f6c85f,color:#fff;classDef backup fill:#202b3b,stroke:#68d391,color:#fff;class A root;class C,G decision;class I,J,K,L,M,N backup
+</div><p class="note">Лучший вариант для поддержки: новичок видит только кнопку. URL и код появляются лишь после «Не открылось?», поэтому основной экран не перегружен.</p></section>
+<div class="cards"><article class="card good"><h3>Название раздела</h3><p><b>📲 Моё подключение</b> — лучше, чем «Мои подписки»: у пользователя одна подписка, а раздел описывает именно действие и состояние приложения.</p></article><article class="card good"><h3>Что оставляем в первом меню</h3><p>Купить, продлить, моё подключение, баланс, пригласить друга, помощь, о сервисе.</p></article><article class="card warn"><h3>Что убираем</h3><p>🎁 Подарить подписку из первой менюшки. Отдельный gift-flow сейчас не нужен. Техническое «Добавить в MosaicVPN» переносим внутрь подключения.</p></article></div>
+<section class="scripted"><h2>Скриптовые сообщения при отсутствии активности</h2><p class="lead">Отправляются один раз на каждое событие, с кнопкой «Не напоминать». Не спамить: повторять только после нового периода активности.</p><div class="messages"><article class="msg"><h3>После 12 часов без трафика</h3><p>Всё работает отлично! ✅
+
+Если захотите проверить настройки или продлить доступ — мы рядом.</p></article><article class="msg"><h3>14 дней без использования</h3><p>👋 Давно вас не было в MosaicVPN.
+
+Ваша подписка и настройки сохранены. Проверьте подключение, когда будет удобно.</p></article><article class="msg"><h3>Подписка закончилась</h3><p>⚠️ Доступ закончился.
+
+Настройки сохранены. Продлите подписку, чтобы снова подключиться.</p></article><article class="msg"><h3>Подписка скоро закончится</h3><p>⏳ Доступ заканчивается через {days} дней.
+
+Продлите заранее — оставшиеся дни не пропадут.</p></article><article class="msg"><h3>Незавершённая оплата</h3><p>💳 Вы не завершили оплату.
+
+Можно вернуться к счёту или выбрать другой срок. Не оплачивайте повторно, если платёж ещё проверяется.</p></article><article class="msg"><h3>Оплата обрабатывается</h3><p>⏳ Проверяем оплату.
+
+Не оплачивайте повторно. Статус обновится автоматически.</p></article></div><div class="rule"><b>Общие кнопки для скриптовых сообщений:</b> 💳 Продлить подписку · 📲 Моё подключение · 🆘 Помощь · 🔕 Не напоминать</div></section><p class="small" style="margin-top:24px">Легенда: зелёное — рекомендуемый путь · жёлтое — решение/выбор · красное — текущая путаница.</p></main>
+<script>mermaid.initialize({startOnLoad:true,theme:'dark',flowchart:{htmlLabels:true,curve:'basis'}});document.querySelectorAll('.tab').forEach(function(btn){btn.addEventListener('click',function(){document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.canvas').forEach(x=>x.classList.remove('active'));btn.classList.add('active');document.getElementById(btn.dataset.id).classList.add('active');});});</script></body></html>

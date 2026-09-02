@@ -347,11 +347,11 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
             (group) => _RouteRow(
               id: group.id,
               type: group.routeType == 'direct'
-                  ? (group.protocol.isEmpty
-                      ? 'VLESS'
-                      : group.protocol.toUpperCase())
+                  ? 'Напрямую'
                   : strings.t('smart_group'),
-              name: _groupTitle(group),
+              name: group.routeType == 'direct'
+                  ? 'Автоматический маршрут'
+                  : _groupTitle(group),
               ping: _groupLatencyProgress?.groupId == group.id
                   ? _groupLatencyProgress?.latencyMs
                   : null,
@@ -370,7 +370,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
               icon: _groupIcon(group.icon),
               disabled: group.disabled,
               disabledReason: group.disabledReason,
-              canTest: true,
+              canTest: group.routeType != 'direct',
             ),
           ));
     }
