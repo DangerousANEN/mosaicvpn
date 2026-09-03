@@ -340,14 +340,24 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
           'Это Smart Group. Используйте проверку задержки для групп.');
     }
     final uris = await _account.fetchSubscriptionShareUris(resolved.$1.url);
-    (String, int)? endpoint;
-    for (final uriText in uris) {
-      endpoint = _endpointOfShareUri(uriText);
-      if (endpoint != null) break;
-    }
-    final latency = endpoint == null
+    // Probe the actual transport, not just TCP/443. Direct WS can share a
+    // healthy TLS port with another route while its path is broken or slow.
+    final directUri = uris.cast<String?>().firstWhere(
+          (value) =>
+              value != null &&
+              value.contains('type=ws') &&
+              value.contains('mosaicws'),
+          orElse: () => null,
+        );
+    final endpoint = directUri == null ? null : _endpointOfShareUri(directUri);
+    final httpSamples = directUri == null
+        ? (samples: const <int>[], attempts: 3)
+        : await _probeHttpSamples(
+            'https://${endpoint!.$1}:${endpoint.$2}/mosaicws',
+            attempts: 3);
+    final latency = httpSamples.samples.isEmpty
         ? null
-        : await _probeTcpLatency(endpoint.$1, endpoint.$2);
+        : httpSamples.samples[httpSamples.samples.length ~/ 2];
     return TestResult(
       serverID: group.id,
       serverName: group.title.isEmpty ? group.id : group.title,
