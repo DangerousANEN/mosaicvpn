@@ -47,6 +47,7 @@ Section "MosaicVPN" SEC_MAIN
 
     ; Stop running daemon if any
     nsExec::ExecToLog 'taskkill /F /IM mosaicd.exe'
+    nsExec::ExecToLog 'taskkill /F /IM MosaicVPN.exe'
     nsExec::ExecToLog 'taskkill /F /IM mosaic_vpn.exe'
     Sleep 1000
 
@@ -54,13 +55,18 @@ Section "MosaicVPN" SEC_MAIN
     SetOutPath "$INSTDIR\bin"
     File "..\build\mosaicd.exe"
     File "..\build\mosaic.exe"
+    IfFileExists "..\build\sing-box.exe" 0 +2
+    File "..\build\sing-box.exe"
 
     ; ── Flutter UI ──
     SetOutPath "$INSTDIR\ui"
-    File "..\flutter\build\windows\x64\runner\Release\mosaic_vpn.exe"
+    File "..\flutter\build\windows\x64\runner\Release\MosaicVPN.exe"
     File "..\flutter\build\windows\x64\runner\Release\flutter_windows.dll"
     File "..\flutter\build\windows\x64\runner\Release\dartjni.dll"
+    File "..\flutter\build\windows\x64\runner\Release\app_links_plugin.dll"
+    File "..\flutter\build\windows\x64\runner\Release\flutter_secure_storage_windows_plugin.dll"
     File "..\flutter\build\windows\x64\runner\Release\screen_retriever_windows_plugin.dll"
+    File "..\flutter\build\windows\x64\runner\Release\share_plus_plugin.dll"
     File "..\flutter\build\windows\x64\runner\Release\system_tray_plugin.dll"
     File "..\flutter\build\windows\x64\runner\Release\url_launcher_windows_plugin.dll"
     File "..\flutter\build\windows\x64\runner\Release\window_manager_plugin.dll"
@@ -74,11 +80,11 @@ Section "MosaicVPN" SEC_MAIN
 
     ; Start Menu
     CreateDirectory "$SMPROGRAMS\${PRODUCT_NAME}"
-    CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\${PRODUCT_NAME}.lnk" "$INSTDIR\ui\mosaic_vpn.exe" "" "$INSTDIR\ui\mosaic_vpn.exe" 0
+    CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\${PRODUCT_NAME}.lnk" "$INSTDIR\ui\MosaicVPN.exe" "" "$INSTDIR\ui\MosaicVPN.exe" 0
     CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\Uninstall.lnk" "$INSTDIR\uninstall.exe" "" "$INSTDIR\uninstall.exe" 0
 
     ; Desktop shortcut
-    CreateShortCut "$DESKTOP\${PRODUCT_NAME}.lnk" "$INSTDIR\ui\mosaic_vpn.exe" "" "$INSTDIR\ui\mosaic_vpn.exe" 0
+    CreateShortCut "$DESKTOP\${PRODUCT_NAME}.lnk" "$INSTDIR\ui\MosaicVPN.exe" "" "$INSTDIR\ui\MosaicVPN.exe" 0
 
     ; ── Windows Service (daemon auto-start) ──
     ; Install mosaicd as a Windows service that starts on boot
@@ -115,6 +121,7 @@ Section "Uninstall"
     ; Stop services
     nsExec::ExecToLog '"$INSTDIR\bin\mosaicd.exe" service uninstall'
     nsExec::ExecToLog 'taskkill /F /IM mosaicd.exe'
+    nsExec::ExecToLog 'taskkill /F /IM MosaicVPN.exe'
     nsExec::ExecToLog 'taskkill /F /IM mosaic_vpn.exe'
     Sleep 1000
 

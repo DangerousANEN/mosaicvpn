@@ -4449,7 +4449,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": f"amount must be a whole number of days at {daily_price} RUB per day"})
             return
         days = int(amount) // daily_price
-        payment_method = str(payload.get("payment_method") or "").lower()
+        payment_method = str(payload.get("payment_method") or ("card" if mobile_checkout else "")).lower()
         if payment_method not in ("card", "sbp"):
             self._send_json(400, {"error": "payment_method must be card or sbp"})
             return
@@ -4880,7 +4880,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         direct_routes = [
             {
                 "id": "direct", "title": "Mosaic Direct", "route_type": "direct",
-                "type": "direct_node", "pool_id": "public-direct", "direct_path": "/direct",
+                "type": "direct_node", "pool_id": "public-direct", "direct_path": "/mosaicws",
                 "protocol": "vless", "category": "direct", "icon": "node", "badge": "Прямой",
                 "description": "Единственный прямой маршрут из публичной подписки.",
             },

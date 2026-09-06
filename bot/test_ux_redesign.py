@@ -190,7 +190,7 @@ class TestImageFallbackHelper(unittest.TestCase):
 
     def test_fallback_uses_send_message(self):
         i = _SRC.index("def _send_home_with_banner(")
-        snippet = _SRC[i:i + 1200]
+        snippet = _SRC[i:i + 2000]
         self.assertIn("bot.send_message(", snippet)
         self.assertIn("os.path.isfile(", snippet)
 
@@ -351,7 +351,7 @@ class TestHomeKeyboards(unittest.TestCase):
 
     def test_get_home_keyboard_has_four_sections(self):
         i = _SRC.index("def get_home_inline_keyboard(lang):")
-        snippet = _SRC[i:i + 800]
+        snippet = _SRC[i:i + 1500]
         for cb in ["home_account", "home_subscribe", "home_add_app", "home_help"]:
             self.assertIn(cb, snippet, f"home keyboard missing section: {cb}")
 
@@ -363,12 +363,12 @@ class TestHomeKeyboards(unittest.TestCase):
 
     def test_subscribe_keyboard_has_back_home(self):
         i = _SRC.index("def get_subscribe_inline_keyboard(lang):")
-        snippet = _SRC[i:i + 600]
+        snippet = _SRC[i:i + 800]
         self.assertIn("home_main", snippet)
 
     def test_help_keyboard_has_back_home_and_support_url(self):
         i = _SRC.index("def get_help_inline_keyboard(lang):")
-        snippet = _SRC[i:i + 600]
+        snippet = _SRC[i:i + 1000]
         self.assertIn("home_main", snippet)
         self.assertIn("mosaicsup", snippet)
 

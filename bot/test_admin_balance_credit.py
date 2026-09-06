@@ -5,7 +5,7 @@ import tempfile
 os.environ.setdefault("MOSAIC_BOT_TOKEN", "123456:abcdefghijklmnopqrstuvwxyzABCDEF")
 os.environ.setdefault("MOSAIC_REMNAWAVE_TOKEN", "test-token")
 
-source = "/home/ubuntu/mosaicvpn-payment-workspace/mosaicvpn/bot/bot.py"
+source = os.path.join(os.path.dirname(__file__), "bot.py")
 spec = importlib.util.spec_from_file_location("mosaic_bot_ledger_test", source)
 bot = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bot)

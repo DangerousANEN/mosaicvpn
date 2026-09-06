@@ -538,22 +538,30 @@ func singBoxDNSServer(tag, endpoint, detour string) map[string]any {
 // connect directly to the candidate node and never route payload traffic via
 // MosaicVPN infrastructure.
 func virtualGroupAllowsCandidate(group proto.Server, candidate proto.Server, targetCountry string) bool {
-	if group.GroupTag == "rg-all" || group.GroupTag == "" {
+	tag := group.GroupTag
+	if idx := strings.LastIndex(tag, ":"); idx >= 0 {
+		tag = tag[idx+1:]
+	}
+	normalizedTag := strings.ReplaceAll(strings.ToLower(tag), "-", "_")
+
+	if normalizedTag == "rg_all" || normalizedTag == "all" || tag == "" {
 		return true
 	}
 
-	switch group.GroupTag {
-	case "auto-stable":
+	switch normalizedTag {
+	case "stable", "auto_stable":
 		if stable, present := outboundBoolHint(candidate, "mosaic_stable"); present {
 			return stable
 		}
 		return true
-	case "auto-speed":
+	case "max_speed", "speed", "auto_speed":
 		if eligible, present := outboundBoolHint(candidate, "mosaic_speed_eligible"); present {
 			return eligible
 		}
 		return true
-	case "auto-allowlist", "auto-whitelist":
+	case "min_latency", "min_ping":
+		return true
+	case "auto_allowlist", "auto_whitelist", "allowlist", "whitelist":
 		if allowed, present := outboundBoolHint(candidate, "mosaic_allowlist"); present {
 			return allowed
 		}
@@ -561,20 +569,24 @@ func virtualGroupAllowsCandidate(group proto.Server, candidate proto.Server, tar
 		return strings.Contains(nameLower, "whitelist") || strings.Contains(nameLower, "4g") || strings.Contains(nameLower, "tspu") || candidate.Protocol == proto.ProtoVLESS
 	}
 
-	// Provider-annotated membership wins before GeoIP heuristics. The synthetic
-	// candidate names contain "ca" ("mosaic-candidate-*"), so a name-substring
-	// country match would put every candidate into the Canada group.
+	// Provider-annotated membership wins before GeoIP heuristics.
 	for _, key := range []string{"mosaic_group_ids", "mosaic_candidate_groups"} {
 		if list, ok := candidate.Raw[key].([]any); ok {
 			for _, raw := range list {
-				if gid, _ := raw.(string); gid != "" && gid == group.GroupTag {
-					return true
+				if gid, _ := raw.(string); gid != "" {
+					gNorm := strings.ReplaceAll(strings.ToLower(gid), "-", "_")
+					if gid == group.GroupTag || gid == tag || gNorm == normalizedTag {
+						return true
+					}
 				}
 			}
 		}
 	}
 
-	return targetCountry != "" && matchServerCountry(candidate, targetCountry)
+	if targetCountry == "" {
+		return group.Category == "smart" || group.Category == ""
+	}
+	return matchServerCountry(candidate, targetCountry)
 }
 
 func outboundBoolHint(server proto.Server, key string) (bool, bool) {

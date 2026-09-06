@@ -586,24 +586,14 @@ func BuildVirtualServersFromManifest(manifest proto.SubscriptionManifest, subID 
 		switch {
 		case g.CountryCode != "":
 			srv.Country = strings.ToUpper(g.CountryCode)
-		case strings.Contains(g.ID, "de"):
-			srv.Country = "DE"
-		case strings.Contains(g.ID, "nl"):
-			srv.Country = "NL"
-		case strings.Contains(g.ID, "us"):
-			srv.Country = "US"
-		case strings.Contains(g.ID, "ca"):
-			srv.Country = "CA"
-		case strings.Contains(g.ID, "fr"):
-			srv.Country = "FR"
-		case strings.Contains(g.ID, "sg"):
-			srv.Country = "SG"
-		case strings.Contains(g.ID, "gb"):
-			srv.Country = "GB"
-		case strings.Contains(g.ID, "fi"):
-			srv.Country = "FI"
-		case strings.Contains(g.ID, "ru"):
-			srv.Country = "RU"
+		default:
+			baseID := g.ID
+			if idx := strings.LastIndex(baseID, ":"); idx >= 0 {
+				baseID = baseID[idx+1:]
+			}
+			if cc := groupCountryFromID(baseID); cc != "" {
+				srv.Country = cc
+			}
 		}
 		list = append(list, srv)
 	}

@@ -104,7 +104,8 @@ class AppAuthAndCabinetTest(unittest.TestCase):
         self.assertTrue(exchanged["session_token"])
         self.assertNotEqual(exchanged["session_token"], self.session_token)
 
-    def test_checkout_options_require_session_and_describe_lava(self):
+    @patch.object(bot_module, "available_lava_payment_methods", return_value=["card", "sbp"])
+    def test_checkout_options_require_session_and_describe_lava(self, lava_methods):
         status, _ = self._get("/api/checkout/options")
         self.assertEqual(status, 401)
         status, body = self._get(f"/api/checkout/options?token={self.session_token}")

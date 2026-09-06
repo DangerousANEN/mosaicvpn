@@ -52,7 +52,10 @@ CREATE TABLE IF NOT EXISTS invoices (
     status TEXT,
     created_at TEXT,
     promo_code TEXT,
-    bonus_days INTEGER DEFAULT 0
+    bonus_days INTEGER DEFAULT 0,
+    payment_provider TEXT DEFAULT 'cryptobot',
+    provider_invoice_id TEXT,
+    order_id TEXT
 )
 """
 

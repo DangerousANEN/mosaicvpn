@@ -86,7 +86,12 @@ class TelegramProfileLinkingTest(unittest.TestCase):
         self.website_account_id = -101
 
     def tearDown(self):
-        os.unlink(self.db_path)
+        import gc
+        gc.collect()
+        try:
+            os.unlink(self.db_path)
+        except OSError:
+            pass
 
     def test_cabinet_code_binds_one_unbound_telegram_chat(self):
         code, _ = issue_telegram_link_code(self.website_account_id)
