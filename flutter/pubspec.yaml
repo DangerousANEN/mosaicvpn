@@ -1,7 +1,7 @@
 name: mosaic_vpn
 description: MosaicVPN — lightweight cross-platform VPN client
 publish_to: 'none'
-version: 0.3.49+49
+version: 0.3.50+50
 
 environment:
   sdk: ^3.5.0

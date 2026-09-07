@@ -2794,8 +2794,8 @@ def get_install_os_keyboard(lang):
 def get_install_android_keyboard(lang):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton(
-        "⬇️ Скачать APK v0.3.49 (55.5 МБ)" if lang == "ru" else "⬇️ Download APK v0.3.49 (55.5 MB)",
-        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.49/MosaicVPN-Android-v0.3.49.apk",
+        "⬇️ Скачать APK v0.3.50 (53.6 МБ)" if lang == "ru" else "⬇️ Download APK v0.3.50 (53.6 MB)",
+        url="https://sub.zxc1x1.ru/assets/MosaicVPN-Android.apk",
         style="primary",
     ))
     markup.add(types.InlineKeyboardButton(
@@ -2882,7 +2882,7 @@ def get_download_keyboard(lang):
     def button(text, **kwargs):
         kwargs.setdefault("style", "primary")
         return types.InlineKeyboardButton(text, **kwargs)
-    markup.add(button("📱 Android", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.49/MosaicVPN-Android-v0.3.49.apk", style="primary"))
+    markup.add(button("📱 Android", url="https://sub.zxc1x1.ru/assets/MosaicVPN-Android.apk", style="primary"))
     markup.add(button("🪟 Windows (Setup)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.49/MosaicVPN-Setup-x64-v0.3.49.exe", style="primary"))
     markup.add(button("🐧 Linux (Debian/Ubuntu)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.49/MosaicVPN_0.3.49_amd64.deb", style="primary"))
     markup.add(button("📲 Добавить в клиент" if lang == "ru" else "📲 Add to Client", callback_data="home_add_client_menu", style="success"))
