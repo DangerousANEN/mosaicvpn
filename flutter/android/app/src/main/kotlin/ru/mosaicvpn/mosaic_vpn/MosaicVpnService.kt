@@ -138,7 +138,8 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 workingPath = working.absolutePath
                 tempPath = temporary.absolutePath
                 fixAndroidStack = true
-                logMaxLines = 500
+                debug = true
+                logMaxLines = 1000
             })
             libboxReady = true
         }
@@ -363,7 +364,7 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     override fun setSystemProxyEnabled(isEnabled: Boolean) = Unit
 
     override fun writeDebugMessage(message: String) {
-        Log.i(TAG, message)
+        Log.i(TAG, "SINGBOX_MSG: $message")
         try {
             java.io.File(filesDir, "singbox.log")
                 .appendText(simpleDateFormat.format(java.util.Date()) + " " + message + "\n")
@@ -598,7 +599,13 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                         }
                     }
                     addresses = SimpleStringIterator(addrList)
-                    flags = 0
+                    var rawFlags = 0
+                    if (jni.isUp) rawFlags = rawFlags or 1 // IFF_UP
+                    if (jni.isLoopback) rawFlags = rawFlags or 8 // IFF_LOOPBACK
+                    if (jni.isPointToPoint) rawFlags = rawFlags or 16 // IFF_POINTOPOINT
+                    if (jni.supportsMulticast()) rawFlags = rawFlags or 0x1000 // IFF_MULTICAST
+                    rawFlags = rawFlags or 0x40 // IFF_RUNNING
+                    flags = rawFlags
                     type = when {
                         caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> 1
                         caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> 2
