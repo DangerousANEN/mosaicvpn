@@ -714,6 +714,10 @@ class AndroidMosaicAccountService {
     String? groupId,
     List<String> bypassPackages = const [],
     List<String> proxyPackages = const [],
+    bool bypassRussianSites = true,
+    List<String> customBypassDomains = const [],
+    List<String> customProxyDomains = const [],
+    bool autoFailover = true,
   }) async {
     final uri = Uri.tryParse(subscriptionUrl.trim());
     if (uri == null || !uri.hasScheme || !uri.isScheme('https')) {
@@ -736,10 +740,16 @@ class AndroidMosaicAccountService {
       throw StateError(
           'Подписка не вернула конфигурацию для этого устройства.');
     }
-    return buildNativeTunConfigFromSubscriptionPayload(payload,
-        groupId: groupId,
-        bypassPackages: bypassPackages,
-        proxyPackages: proxyPackages);
+    return buildNativeTunConfigFromSubscriptionPayload(
+      payload,
+      groupId: groupId,
+      bypassPackages: bypassPackages,
+      proxyPackages: proxyPackages,
+      bypassRussianSites: bypassRussianSites,
+      customBypassDomains: customBypassDomains,
+      customProxyDomains: customProxyDomains,
+      autoFailover: autoFailover,
+    );
   }
 
   /// Smart Groups never parse the ordinary direct subscription row. The
@@ -750,6 +760,10 @@ class AndroidMosaicAccountService {
     required String groupId,
     List<String> bypassPackages = const [],
     List<String> proxyPackages = const [],
+    bool bypassRussianSites = true,
+    List<String> customBypassDomains = const [],
+    List<String> customProxyDomains = const [],
+    bool autoFailover = true,
   }) async {
     final outbounds =
         await fetchGroupCandidates(subscriptionUrl, groupId: groupId);
@@ -761,6 +775,10 @@ class AndroidMosaicAccountService {
       outbounds,
       bypassPackages: bypassPackages,
       proxyPackages: proxyPackages,
+      bypassRussianSites: bypassRussianSites,
+      customBypassDomains: customBypassDomains,
+      customProxyDomains: customProxyDomains,
+      autoFailover: autoFailover,
     );
   }
 
@@ -945,6 +963,10 @@ class AndroidMosaicAccountService {
     String shareUri, {
     List<String> bypassPackages = const [],
     List<String> proxyPackages = const [],
+    bool bypassRussianSites = true,
+    List<String> customBypassDomains = const [],
+    List<String> customProxyDomains = const [],
+    bool autoFailover = true,
   }) {
     final outbound = _outboundFromShareUri(shareUri);
     if (outbound == null) {
@@ -956,6 +978,10 @@ class AndroidMosaicAccountService {
       <Map<String, dynamic>>[outbound],
       bypassPackages: bypassPackages,
       proxyPackages: proxyPackages,
+      bypassRussianSites: bypassRussianSites,
+      customBypassDomains: customBypassDomains,
+      customProxyDomains: customProxyDomains,
+      autoFailover: autoFailover,
     );
   }
 
@@ -967,12 +993,20 @@ class AndroidMosaicAccountService {
     String? groupId,
     List<String> bypassPackages = const [],
     List<String> proxyPackages = const [],
+    bool bypassRussianSites = true,
+    List<String> customBypassDomains = const [],
+    List<String> customProxyDomains = const [],
+    bool autoFailover = true,
   }) =>
       _withAndroidTunInbound(
         payload,
         groupId: groupId,
         bypassPackages: bypassPackages,
         proxyPackages: proxyPackages,
+        bypassRussianSites: bypassRussianSites,
+        customBypassDomains: customBypassDomains,
+        customProxyDomains: customProxyDomains,
+        autoFailover: autoFailover,
       );
 
   static String _withAndroidTunInbound(
@@ -980,6 +1014,10 @@ class AndroidMosaicAccountService {
     String? groupId,
     List<String> bypassPackages = const [],
     List<String> proxyPackages = const [],
+    bool bypassRussianSites = true,
+    List<String> customBypassDomains = const [],
+    List<String> customProxyDomains = const [],
+    bool autoFailover = true,
   }) {
     final normalized = _decodeSubscriptionPayload(payload);
     Map<String, dynamic>? config;
@@ -1005,6 +1043,10 @@ class AndroidMosaicAccountService {
         outbounds,
         bypassPackages: bypassPackages,
         proxyPackages: proxyPackages,
+        bypassRussianSites: bypassRussianSites,
+        customBypassDomains: customBypassDomains,
+        customProxyDomains: customProxyDomains,
+        autoFailover: autoFailover,
       );
     }
     final rawOutbounds = config['outbounds'];
@@ -1109,6 +1151,10 @@ class AndroidMosaicAccountService {
       existingConfig: config,
       bypassPackages: bypassPackages,
       proxyPackages: proxyPackages,
+      bypassRussianSites: bypassRussianSites,
+      customBypassDomains: customBypassDomains,
+      customProxyDomains: customProxyDomains,
+      autoFailover: autoFailover,
     );
   }
 
@@ -1417,7 +1463,11 @@ class AndroidMosaicAccountService {
   static String _buildTunConfig(List<Map<String, dynamic>> outbounds,
       {Map<String, dynamic>? existingConfig,
       List<String> bypassPackages = const [],
-      List<String> proxyPackages = const []}) {
+      List<String> proxyPackages = const [],
+      bool bypassRussianSites = true,
+      List<String> customBypassDomains = const [],
+      List<String> customProxyDomains = const [],
+      bool autoFailover = true}) {
     if (outbounds.isEmpty) {
       throw const FormatException(
           'Подписка не содержит поддерживаемых серверов.');
@@ -1455,7 +1505,9 @@ class AndroidMosaicAccountService {
     // connectivity to gstatic before any traffic is forwarded, and on a
     // freshly raised TUN that first probe can stall, leaving every client
     // connection reset. Route straight to the selected outbound instead.
-    final directSelection = outbounds.length == 1;
+    // Also, when autoFailover is disabled (e.g. for competitive gaming),
+    // we route straight to tags.first without urltest failover swapping.
+    final directSelection = outbounds.length == 1 || !autoFailover;
     config['outbounds'] = [
       ...outbounds,
       if (!directSelection)
@@ -1503,12 +1555,48 @@ class AndroidMosaicAccountService {
         ? Map<String, dynamic>.from(existingRoute)
         : <String, dynamic>{};
     final existingRules = route['rules'];
+
+    final domainBypassList = <String>[
+      if (bypassRussianSites) ...[
+        '.ru',
+        '.su',
+        '.xn--p1ai',
+        'gosuslugi.ru',
+        'sberbank.ru',
+        'tinkoff.ru',
+        't-bank.ru',
+        'vtb.ru',
+        'alfabank.ru',
+        'yandex.ru',
+        'ya.ru',
+        'vk.com',
+        'mail.ru',
+        'ozon.ru',
+        'wildberries.ru',
+        'avito.ru',
+        'kinopoisk.ru',
+        'mos.ru',
+        'nalog.gov.ru',
+      ],
+      ...customBypassDomains,
+    ];
+
     route['rules'] = [
       // Classify DNS and TCP streams before hijack-dns. Without sniffing,
       // Android TUN DNS packets are not marked as protocol=dns and domain
       // connections lose their SNI/Host before reaching camouflage servers.
       {'action': 'sniff'},
       {'protocol': 'dns', 'action': 'hijack-dns'},
+      if (domainBypassList.isNotEmpty)
+        {
+          'domain_suffix': domainBypassList,
+          'outbound': 'direct',
+        },
+      if (customProxyDomains.isNotEmpty)
+        {
+          'domain_suffix': customProxyDomains,
+          'outbound': effectiveFinal,
+        },
       if (existingRules is List) ...existingRules,
     ];
     route['auto_detect_interface'] = true;

@@ -15,6 +15,8 @@ import '../../core/services/ui_preferences_service.dart';
 import '../../core/i18n/app_strings.dart';
 import '../../core/theme/atlas_theme.dart';
 import 'dashboard_facts.dart';
+import 'atlas_route_picker_sheet.dart';
+import 'atlas_onboarding_card.dart';
 
 /// The first screen of MosaicVPN: one calm connection decision, with smart
 /// groups rather than an overwhelming inventory of physical nodes.
@@ -124,7 +126,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
       backgroundColor: c.bgBase,
       body: SafeArea(
         child: groups.isEmpty
-            ? _NoDashboardRoutes(
+            ? AtlasOnboardingCard(
                 subscriptions: subscriptions,
                 selectedSubscription: selectedSubscription,
                 onSubscriptionChanged: _selectSubscription,
@@ -262,6 +264,8 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
               ),
               const SizedBox(height: 12),
             ],
+            const _QuickControlsRow(),
+            const SizedBox(height: 10),
             _connectionButton(c, status, selected, expand: true),
             const SizedBox(height: 10),
             _ProtectionRow(status: status),
@@ -531,24 +535,34 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
 
   Future<void> _pickGroup(BuildContext context, List<_RouteChoice> groups,
       _RouteChoice current) async {
-    final selected = await showDialog<_RouteChoice>(
-      context: context,
-      builder: (_) => _AtlasChoiceDialog<_RouteChoice>(
-        eyebrow: 'Маршруты',
-        title: AppStrings.of(context).t('route_picker'),
-        hint: AppStrings.of(context).t('route_picker_hint'),
-        choices: groups,
-        selectedId: current.id,
-        titleOf: (route) => route.title,
-        subtitleOf: (route) => route.disabled && route.disabledReason.isNotEmpty
-            ? route.disabledReason
-            : route.subtitle,
-        iconOf: (route) => _groupIcon(route.icon),
-        enabledOf: (route) => !route.disabled,
-      ),
+    final routeItems = groups
+        .map((g) => AtlasRouteItem(
+              id: g.id,
+              title: g.title,
+              subtitle: g.subtitle,
+              icon: g.icon,
+              disabled: g.disabled,
+              disabledReason: g.disabledReason,
+              shareUri: g.importUri,
+            ))
+        .toList();
+
+    final selected = await AtlasRoutePickerSheet.show(
+      context,
+      routes: routeItems,
+      selectedId: current.id,
     );
+
     if (selected != null && mounted) {
       ref.read(selectedRouteIdProvider.notifier).set(selected.id);
+      final chosenChoice = groups.firstWhere(
+        (g) => g.id == selected.id,
+        orElse: () => current,
+      );
+      final status = ref.read(vpnStatusProvider).valueOrNull;
+      if (status?.isConnected == true) {
+        await _toggle(status!, chosenChoice);
+      }
     }
   }
 
@@ -1371,18 +1385,40 @@ class _StatusRingPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2 - 6;
     final base = Paint()
-      ..color = color.withValues(alpha: active ? .75 : .35)
+      ..color = color.withValues(alpha: active ? .85 : .35)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3;
-    canvas.drawCircle(center, size.width / 2 - 6, base);
+      ..strokeWidth = 2.5;
+    canvas.drawCircle(center, radius, base);
+
+    // Atlas Compass dial marks
+    final tickPaint = Paint()
+      ..color = color.withValues(alpha: active ? .75 : .25)
+      ..strokeCap = StrokeCap.round;
+
+    for (var i = 0; i < 12; i++) {
+      final angle = (i * 30) * math.pi / 180;
+      final isCardinal = (i % 3 == 0);
+      final tickLen = isCardinal ? 8.0 : 4.0;
+      final p1 = Offset(
+        center.dx + (radius - 2) * math.cos(angle),
+        center.dy + (radius - 2) * math.sin(angle),
+      );
+      final p2 = Offset(
+        center.dx + (radius - 2 - tickLen) * math.cos(angle),
+        center.dy + (radius - 2 - tickLen) * math.sin(angle),
+      );
+      canvas.drawLine(p1, p2, tickPaint..strokeWidth = isCardinal ? 2.0 : 1.2);
+    }
+
     if (!active) return;
     for (var i = 0; i < 2; i++) {
       final phase = (progress + i / 2) % 1;
-      final radius = (size.width / 2 - 6) + phase * 16;
+      final r = radius + phase * 16;
       canvas.drawCircle(
         center,
-        radius,
+        r,
         Paint()
           ..color = color.withValues(alpha: (1 - phase) * .28)
           ..style = PaintingStyle.stroke
@@ -1568,8 +1604,10 @@ class _ProtectionRow extends StatelessWidget {
 
 // Smart groups are defined by the provider manifest. The generic client
 // deliberately does not know Mosaic-specific IDs, geographies, or policies.
-String _localizedGroupTitle(BuildContext context, ManifestGroup group) =>
-    group.title.isEmpty ? group.id : group.title;
+String _localizedGroupTitle(BuildContext context, ManifestGroup group) {
+  final raw = group.title.isEmpty ? group.id : group.title;
+  return raw.replaceAll(RegExp(r'\[SG\]\s*'), '').trim();
+}
 
 String _localizedGroupDescription(BuildContext context, ManifestGroup group) =>
     group.description.isEmpty ? group.badge : group.description;
@@ -1595,3 +1633,103 @@ Widget _groupIcon(String raw) {
           borderRadius: BorderRadius.circular(12)),
       child: Icon(icon, color: AtlasTheme.accent));
 }
+
+class _QuickControlsRow extends ConsumerWidget {
+  const _QuickControlsRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = ThemeColors.of(context);
+    final autoFailover = ref.watch(autoFailoverProvider);
+    final bypassRussian = ref.watch(bypassRussianSitesProvider);
+
+    return Row(
+      children: [
+        Expanded(
+          child: Material(
+            color: c.bgElevated,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () {
+                ref.read(autoFailoverProvider.notifier).toggle();
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: autoFailover ? AtlasTheme.success : c.border,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.alt_route_rounded,
+                      size: 15,
+                      color: autoFailover ? AtlasTheme.success : c.textMuted,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        autoFailover ? 'Автосмена: ВКЛ' : 'Автосмена: ВЫКЛ',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: autoFailover ? AtlasTheme.success : c.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Material(
+            color: c.bgElevated,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () {
+                ref.read(bypassRussianSitesProvider.notifier).toggle();
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: bypassRussian ? AtlasTheme.accent : c.border,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Text('🇷🇺', style: TextStyle(fontSize: 13)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        bypassRussian ? 'Обход РФ: ВКЛ' : 'Обход РФ: ВЫКЛ',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: bypassRussian ? AtlasTheme.accent : c.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+

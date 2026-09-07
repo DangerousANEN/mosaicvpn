@@ -149,6 +149,7 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     private var tunDescriptor: ParcelFileDescriptor? = null
     private var activeConfig: String = ""
     private var shuttingDown = false
+    private val runtimeExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -217,7 +218,7 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                     } else {
                         startForeground(NOTIFICATION_ID, makeNotification("Подключение…"))
                     }
-                    Thread({ startOrReloadRuntime(pinnedConfig) }, "MosaicVpnRuntime").start()
+                    runtimeExecutor.execute { startOrReloadRuntime(pinnedConfig) }
                 }
             }
         }
@@ -420,16 +421,17 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             addApplications(builder, options)
         }
 
+        try {
+            tunDescriptor?.close()
+        } catch (_: Exception) {
+        }
+        tunDescriptor = null
         val descriptor = builder.establish()
             ?: error("Android failed to establish MosaicVPN TUN interface")
         appendNativeLog(
             "tun: established (mtu=${options.mtu}, " +
                 "autoRoute=${options.autoRoute})"
         )
-        try {
-            tunDescriptor?.close()
-        } catch (_: Exception) {
-        }
         tunDescriptor = descriptor
         return descriptor.fd
     }

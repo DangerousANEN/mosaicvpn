@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import '../services/android_mosaic_account_service.dart';
 import '../services/android_vpn_service.dart';
+import '../services/ui_preferences_service.dart';
 import 'unavailable_daemon_api.dart';
 
 /// Android-side API facade.
@@ -36,18 +37,25 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   /// Reads the per-app split-tunneling lists from stored preferences. Applied
   /// at connect time so preset/profile changes take effect on the next
   /// connection without a daemon restart.
-  Future<({List<String> bypassPackages, List<String> proxyPackages})>
+  Future<({List<String> bypassPackages, List<String> proxyPackages, bool bypassRussian, bool autoFailover})>
       _readPerAppLists() async {
+    final uiPrefs = UiPreferencesService();
+    final bool bypassRussian = await uiPrefs.readBypassRussianSites();
+    final bool autoFailover = await uiPrefs.readAutoFailover();
     try {
       final prefs = await getPrefs();
       return (
-        bypassPackages: prefs.bypassProcesses,
-        proxyPackages: prefs.proxyPackages,
+        bypassPackages: List<String>.from(prefs.bypassProcesses),
+        proxyPackages: List<String>.from(prefs.proxyPackages),
+        bypassRussian: bypassRussian,
+        autoFailover: autoFailover,
       );
     } catch (_) {
       return (
         bypassPackages: const <String>[],
-        proxyPackages: const <String>[]
+        proxyPackages: const <String>[],
+        bypassRussian: bypassRussian,
+        autoFailover: autoFailover,
       );
     }
   }
@@ -70,6 +78,19 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         'Разрешение на создание VPN-подключения не получено. '
         'Разрешите VPN в системном окне Android и повторите попытку.',
       );
+    }
+    final currentStatus = await vpn.status();
+    if (currentStatus.isConnected || currentStatus.isBusy) {
+      if (_activeRoute?.id != route.id) {
+        await vpn.stop();
+        var loops = 0;
+        while (loops < 15) {
+          final s = await vpn.status();
+          if (!s.isConnected && !s.isBusy) break;
+          await Future<void>.delayed(const Duration(milliseconds: 80));
+          loops++;
+        }
+      }
     }
     final state = await vpn.startAndAwaitReady(config);
     if (!state.isConnected) {
@@ -142,6 +163,8 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       importUri,
       bypassPackages: perApp.bypassPackages,
       proxyPackages: perApp.proxyPackages,
+      bypassRussianSites: perApp.bypassRussian,
+      autoFailover: perApp.autoFailover,
     );
     await _startNativeRoute(config: config, route: server);
   }
@@ -171,12 +194,16 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
             resolved.$1.url,
             bypassPackages: perApp.bypassPackages,
             proxyPackages: perApp.proxyPackages,
+            bypassRussianSites: perApp.bypassRussian,
+            autoFailover: perApp.autoFailover,
           )
         : await _account.buildNativeTunConfigFromScopedCandidates(
             resolved.$1.url,
             groupId: resolved.$2,
             bypassPackages: perApp.bypassPackages,
             proxyPackages: perApp.proxyPackages,
+            bypassRussianSites: perApp.bypassRussian,
+            autoFailover: perApp.autoFailover,
           );
     await _startNativeRoute(
       config: config,

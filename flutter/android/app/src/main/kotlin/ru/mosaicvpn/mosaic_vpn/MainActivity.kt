@@ -89,6 +89,28 @@ class MainActivity : FlutterActivity() {
                     result.error("invalid_config", error.message, null)
                 }
             }
+            "getInstalledApps" -> {
+                try {
+                    val pm = packageManager
+                    val packages = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
+                    val list = mutableListOf<Map<String, Any>>()
+                    for (app in packages) {
+                        val isSystem = (app.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+                        val name = pm.getApplicationLabel(app).toString()
+                        val pkg = app.packageName
+                        if (pkg == packageName) continue
+                        list.add(mapOf(
+                            "name" to name,
+                            "package" to pkg,
+                            "isSystem" to isSystem
+                        ))
+                    }
+                    list.sortBy { (it["name"] as? String)?.lowercase() ?: "" }
+                    result.success(list)
+                } catch (e: Exception) {
+                    result.error("get_apps_failed", e.message, null)
+                }
+            }
             else -> result.notImplemented()
         }
     }

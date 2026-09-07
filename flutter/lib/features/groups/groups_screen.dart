@@ -354,8 +354,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
               name: group.routeType == 'direct'
                   ? 'Автоматический маршрут'
                   : _groupTitle(group),
-              ping: _testResults[group.id]?.latencyMS ??
-                  (group.routeType == 'direct' ? null : -1),
+              ping: _testResults[group.id]?.latencyMS,
               jitter: _groupLatencyProgress?.groupId == group.id
                   ? _groupLatencyProgress?.jitterMs
                   : null,
@@ -866,6 +865,23 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     ref.read(selectedRouteIdProvider.notifier).set(row.id);
     try {
       final api = ref.read(daemonApiProvider);
+      final currentStatus = ref.read(vpnStatusProvider).valueOrNull;
+      final activeRouteID = currentStatus?.activeGroupId.isNotEmpty == true
+          ? currentStatus!.activeGroupId
+          : currentStatus?.server?.id;
+      if (currentStatus?.isConnected == true && activeRouteID != row.id) {
+        SmartGroupRuntimeController.instance.stop();
+        try {
+          await api.disconnect();
+          var loops = 0;
+          while (loops < 15) {
+            final st = await api.getStatus();
+            if (!st.isConnected && !st.isConnecting) break;
+            await Future<void>.delayed(const Duration(milliseconds: 80));
+            loops++;
+          }
+        } catch (_) {}
+      }
       final selectedSourceID = ref.read(selectedSubscriptionIdProvider);
       final selectedManifest = selectedSourceID?.isNotEmpty == true
           ? ref
@@ -2623,8 +2639,10 @@ class _MobileRouteList extends StatelessWidget {
 
 // Group names are supplied by the provider manifest; the client only knows
 // the generic Smart Group route type.
-String _groupTitle(ManifestGroup group) =>
-    group.title.isEmpty ? group.id : group.title;
+String _groupTitle(ManifestGroup group) {
+  final title = group.title.isEmpty ? group.id : group.title;
+  return title.replaceAll(RegExp(r'\[SG\]\s*'), '').trim();
+}
 
 IconData _groupIcon(String icon) {
   return switch (icon) {

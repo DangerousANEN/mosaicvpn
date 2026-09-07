@@ -142,6 +142,23 @@ class AndroidVpnService {
         .invokeMethod<bool>('validateConfig', {'config': singBoxConfig});
   }
 
+  Future<List<Map<String, dynamic>>> getInstalledApps() async {
+    if (!isSupported) return const [];
+    try {
+      final raw = await _channel.invokeListMethod<Map<Object?, Object?>>('getInstalledApps');
+      if (raw == null) return const [];
+      return raw.map((item) {
+        return {
+          'name': item['name']?.toString() ?? '',
+          'package': item['package']?.toString() ?? '',
+          'isSystem': item['isSystem'] == true,
+        };
+      }).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   /// Returns and clears the browser callback URI for website-first login. The
   /// URI carries only a short-lived code and state, never account credentials.
   Future<Uri?> consumeAuthCallback() => _consumeCallback('consumeAuthCallback');

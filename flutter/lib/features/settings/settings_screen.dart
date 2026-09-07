@@ -22,6 +22,7 @@ import '../../core/config/app_config.dart';
 import '../../core/utils/daemon_error_message.dart';
 import '../../shared/widgets/atlas_widgets.dart';
 import '../../shared/widgets/skeleton_loader.dart';
+import 'split_tunnel_screen.dart';
 
 /// Settings screen — tunnel, proxy, DNS, startup, MCP configuration.
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -971,6 +972,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _SettingsGroup(
             title: 'Split Tunneling',
             children: [
+              if (Platform.isAndroid)
+                _SettingTile(
+                  label: 'Приложения на устройстве',
+                  description:
+                      'Графический выбор установленных приложений для разделения трафика',
+                  difficulty: 1,
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const SplitTunnelScreen()),
+                    ),
+                    icon: const Icon(Icons.apps_rounded, size: 16),
+                    label: const Text('Выбрать приложения'),
+                  ),
+                ),
               _SettingTile(
                 label: 'Mode',
                 description:

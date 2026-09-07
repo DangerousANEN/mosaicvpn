@@ -13,6 +13,43 @@ class UiPreferencesService {
   static const _lastConnectedSubscriptionIdKey =
       'ui.last_connected_subscription_id';
   static const _lastConnectedRouteIdKey = 'ui.last_connected_route_id';
+  static const _autoFailoverKey = 'ui.auto_failover';
+  static const _bypassRussianSitesKey = 'ui.bypass_russian_sites';
+  static const _dismissedHintsKey = 'ui.dismissed_hints';
+
+  Future<bool> readAutoFailover() async {
+    final preferences = await SharedPreferences.getInstance();
+    return preferences.getBool(_autoFailoverKey) ?? true;
+  }
+
+  Future<void> writeAutoFailover(bool value) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(_autoFailoverKey, value);
+  }
+
+  Future<bool> readBypassRussianSites() async {
+    final preferences = await SharedPreferences.getInstance();
+    return preferences.getBool(_bypassRussianSitesKey) ?? true;
+  }
+
+  Future<void> writeBypassRussianSites(bool value) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(_bypassRussianSitesKey, value);
+  }
+
+  Future<Set<String>> readDismissedHints() async {
+    final preferences = await SharedPreferences.getInstance();
+    return (preferences.getStringList(_dismissedHintsKey) ?? const []).toSet();
+  }
+
+  Future<void> dismissHint(String hintId) async {
+    final preferences = await SharedPreferences.getInstance();
+    final list = preferences.getStringList(_dismissedHintsKey) ?? [];
+    if (!list.contains(hintId)) {
+      list.add(hintId);
+      await preferences.setStringList(_dismissedHintsKey, list);
+    }
+  }
 
   Future<String?> readThemeMode() async {
     final preferences = await SharedPreferences.getInstance();

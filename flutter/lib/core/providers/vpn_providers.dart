@@ -945,6 +945,60 @@ final selectedRouteIdProvider =
   return SelectedRouteNotifier(UiPreferencesService());
 });
 
+final autoFailoverProvider =
+    StateNotifierProvider<AutoFailoverNotifier, bool>((ref) {
+  return AutoFailoverNotifier(UiPreferencesService());
+});
+
+class AutoFailoverNotifier extends StateNotifier<bool> {
+  final UiPreferencesService _preferences;
+
+  AutoFailoverNotifier(this._preferences) : super(true) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final value = await _preferences.readAutoFailover();
+    if (mounted) state = value;
+  }
+
+  Future<void> set(bool value) async {
+    state = value;
+    await _preferences.writeAutoFailover(value);
+  }
+
+  Future<void> toggle() async {
+    await set(!state);
+  }
+}
+
+final bypassRussianSitesProvider =
+    StateNotifierProvider<BypassRussianSitesNotifier, bool>((ref) {
+  return BypassRussianSitesNotifier(UiPreferencesService());
+});
+
+class BypassRussianSitesNotifier extends StateNotifier<bool> {
+  final UiPreferencesService _preferences;
+
+  BypassRussianSitesNotifier(this._preferences) : super(true) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final value = await _preferences.readBypassRussianSites();
+    if (mounted) state = value;
+  }
+
+  Future<void> set(bool value) async {
+    state = value;
+    await _preferences.writeBypassRussianSites(value);
+  }
+
+  Future<void> toggle() async {
+    await set(!state);
+  }
+}
+
 class SelectedRouteNotifier extends StateNotifier<String?> {
   final UiPreferencesService _preferences;
   bool _loaded = false;
