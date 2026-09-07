@@ -1,0 +1,927 @@
+<!doctype html>
+<html lang="ru" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Настройка MosaicVPN в сторонних клиентах — Инструкция и ссылки</title>
+  <meta name="description" content="Пошаговые инструкции по настройке подписки MosaicVPN в сторонних клиентах: v2rayNG, Exclave, Happ, Throne, Nekoray на Android, Windows и Linux." />
+  <link rel="canonical" href="https://sub.zxc1x1.ru/manual.html" />
+  <meta name="theme-color" content="#F4EFE6" />
+  <link rel="icon" type="image/png" href="/assets/logo-96.png">
+  <link rel="stylesheet" href="/assets/common.css">
+  <style>
+    :root {
+      --bg: #F4EFE6;
+      --card: #FBF8F3;
+      --elev: #EFE8DC;
+      --border: #D9CFBE;
+      --border-focus: #B85C38;
+      --text: #241F1A;
+      --text-2: #4A413A;
+      --muted: #8A7D6D;
+      --accent: #B85C38;
+      --accent-hover: #9E4A28;
+      --danger-bg: #FDF2F0;
+      --danger-border: #E89A8E;
+      --danger-text: #9B2C1B;
+      --success-bg: #EEF8F1;
+      --success-border: #8AC99C;
+      --success-text: #1E6B35;
+      --serif: 'Playfair Display', Georgia, 'Times New Roman', serif;
+      --mono: 'Fira Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 15px;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+      background-image:
+        linear-gradient(rgba(217,207,190,.25) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(217,207,190,.25) 1px, transparent 1px);
+      background-size: 32px 32px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 0 20px; width: 100%; }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(244, 239, 230, .94);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+    }
+    .hd { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; gap: 16px; }
+    .logo {
+      font-family: var(--serif);
+      font-size: 20px;
+      font-weight: 700;
+      text-decoration: none;
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+    }
+    .logo img { width: 28px; height: 28px; border-radius: 6px; }
+    .logo .dot { color: var(--accent); }
+    .nav-links { display: flex; gap: 18px; font-size: 13.5px; }
+    .nav-links a { color: var(--text-2); text-decoration: none; font-weight: 500; }
+    .nav-links a:hover { color: var(--accent); }
+
+    .hero { padding: 36px 0 20px; text-align: center; }
+    .eyebrow {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      display: inline-block;
+      margin-bottom: 8px;
+    }
+    h1 { font-family: var(--serif); font-size: clamp(26px, 4vw, 38px); line-height: 1.25; font-weight: 700; margin-bottom: 12px; }
+    h1 .accent { color: var(--accent); }
+    .lede { font-size: 16px; color: var(--text-2); max-width: 68ch; margin: 0 auto; }
+
+    /* Subscription URL Box */
+    .sub-box {
+      background: var(--card);
+      border: 2px solid var(--border);
+      border-radius: 14px;
+      padding: 22px 24px;
+      margin: 24px 0 28px;
+      box-shadow: 0 6px 20px rgba(47,42,36,.06);
+    }
+    .sub-label {
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .sub-input-wrap {
+      display: flex;
+      gap: 10px;
+      position: relative;
+    }
+    .sub-input {
+      flex: 1;
+      font-family: var(--mono);
+      font-size: 14px;
+      padding: 12px 14px;
+      background: var(--elev);
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      outline: none;
+      transition: border-color .15s ease;
+    }
+    .sub-input:focus { border-color: var(--border-focus); background: #FFF; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      padding: 12px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      text-decoration: none;
+      border: none;
+      transition: all .15s ease;
+      white-space: nowrap;
+    }
+    .btn-accent { background: var(--accent); color: #fff; }
+    .btn-accent:hover { background: var(--accent-hover); box-shadow: 0 2px 8px rgba(184,92,56,.25); }
+    .btn-ghost { background: var(--elev); color: var(--text); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--card); border-color: var(--muted); }
+
+    /* Warning Callout */
+    .warning-callout {
+      background: var(--danger-bg);
+      border: 1px solid var(--danger-border);
+      border-left: 6px solid var(--danger-text);
+      border-radius: 12px;
+      padding: 20px 22px;
+      margin-bottom: 32px;
+      color: var(--text);
+    }
+    .warning-callout h3 {
+      font-family: var(--serif);
+      font-size: 19px;
+      color: var(--danger-text);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .warning-callout ul {
+      margin: 8px 0 12px 22px;
+      color: var(--text-2);
+      font-size: 14px;
+    }
+    .warning-callout li { margin-bottom: 6px; }
+    .warning-callout .rec-box {
+      background: rgba(255,255,255,.75);
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 13.5px;
+      color: var(--text-2);
+      border: 1px dashed var(--danger-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    /* OS Tabs */
+    .os-tabs {
+      display: flex;
+      gap: 8px;
+      border-bottom: 2px solid var(--border);
+      margin-bottom: 28px;
+      overflow-x: auto;
+    }
+    .os-tab {
+      padding: 12px 24px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all .15s ease;
+      background: none;
+      border-top: none;
+      border-left: none;
+      border-right: none;
+    }
+    .os-tab:hover { color: var(--text); }
+    .os-tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    /* Client Cards */
+    .client-grid { display: flex; flex-direction: column; gap: 32px; margin-bottom: 48px; }
+    .client-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 26px;
+      box-shadow: 0 4px 16px rgba(47,42,36,.04);
+    }
+    .client-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .client-title {
+      font-family: var(--serif);
+      font-size: 22px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .client-badge {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: var(--elev);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    .client-badge.popular {
+      background: #EBF3ED;
+      color: var(--success-text);
+      font-weight: 600;
+    }
+
+    .client-caveat {
+      background: #FFF8EB;
+      border: 1px solid #F0D499;
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      color: #7A5310;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .steps-list { list-style: none; counter-reset: step-counter; }
+    .steps-list li {
+      position: relative;
+      padding-left: 36px;
+      margin-bottom: 16px;
+      font-size: 14.5px;
+      color: var(--text-2);
+    }
+    .steps-list li::before {
+      counter-increment: step-counter;
+      content: counter(step-counter);
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--elev);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .steps-list li strong { color: var(--text); font-weight: 600; }
+    .steps-list code {
+      font-family: var(--mono);
+      font-size: 12.5px;
+      background: var(--elev);
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      word-break: break-all;
+    }
+
+    .sub-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 6px;
+      background: var(--elev);
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      width: fit-content;
+      max-width: 100%;
+    }
+    .sub-chip code {
+      background: transparent;
+      border: none;
+      padding: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .chip-btn {
+      background: #FFF;
+      border: 1px solid var(--border);
+      padding: 4px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .chip-btn:hover { background: var(--elev); border-color: var(--muted); }
+
+    /* Visual Screen Frame / Mockup */
+    .screen-frame {
+      background: #191613;
+      border-radius: 10px;
+      border: 1px solid #332B24;
+      margin: 18px 0 10px;
+      overflow: hidden;
+      box-shadow: 0 6px 18px rgba(0,0,0,.25);
+    }
+    .frame-bar {
+      background: #25201B;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #332B24;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: #9C8F80;
+    }
+    .frame-dots { display: flex; gap: 6px; }
+    .frame-dots span { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+    .frame-dots .red { background: #E05D44; }
+    .frame-dots .yellow { background: #EAA83A; }
+    .frame-dots .green { background: #3FB950; }
+
+    .frame-body {
+      padding: 16px;
+      color: #ECE5DC;
+      font-family: var(--sans);
+      font-size: 13px;
+    }
+    .mock-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: #231E19;
+      border-radius: 6px;
+      margin-bottom: 6px;
+      border: 1px solid #2E2721;
+    }
+    .mock-row.highlight {
+      border-color: var(--accent);
+      background: rgba(184, 92, 56, 0.15);
+    }
+    .mock-tag {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #2F2821;
+      color: #A39688;
+    }
+    .mock-btn {
+      background: var(--accent);
+      color: #FFF;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 12px;
+      display: inline-block;
+    }
+
+    /* Toast */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #241F1A;
+      color: #FFF;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      display: none;
+      box-shadow: 0 8px 24px rgba(0,0,0,.2);
+      z-index: 100;
+    }
+
+    footer {
+      margin-top: auto;
+      border-top: 1px solid var(--border);
+      padding: 28px 0;
+      background: var(--card);
+      font-size: 13.5px;
+      color: var(--muted);
+      text-align: center;
+    }
+    footer a { color: var(--text-2); text-decoration: none; margin: 0 8px; }
+    footer a:hover { color: var(--accent); }
+    @media (max-width: 640px) {
+      .sub-input-wrap { flex-direction: column; }
+      .client-header { flex-direction: column; align-items: flex-start; }
+      .os-tab { padding: 10px 14px; font-size: 14px; }
+      .rec-box { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="wrap hd">
+    <a href="/" class="logo">
+      <img src="/assets/logo-96.png" alt="MosaicVPN" width="28" height="28">
+      <span>MosaicVPN<span class="dot">.</span></span>
+    </a>
+    <nav class="nav-links">
+      <a href="/#downloads">Официальный клиент</a>
+      <a href="/cabinet.html">Личный кабинет</a>
+      <a href="https://t.me/mosaicsup" target="_blank" rel="noopener">Поддержка</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap" style="flex: 1;">
+
+  <div class="hero">
+    <span class="eyebrow">Руководство по настройке</span>
+    <h1>Подключение в <span class="accent">сторонних клиентах</span></h1>
+    <p class="lede">
+      Пошаговые инструкции по добавлению вашей ссылки подписки в поддерживаемые VPN-приложения: Android, Windows и Linux.
+    </p>
+  </div>
+
+  <!-- Subscription URL Box -->
+  <div class="sub-box">
+    <div class="sub-label">
+      <span>Ваша персональная ссылка подписки</span>
+      <span style="font-size: 11px; text-transform: none; color: var(--muted);">Единая ссылка для всех клиентов ниже</span>
+    </div>
+    <div class="sub-input-wrap">
+      <input type="text" id="sub-url-input" class="sub-input" readonly value="https://sub.zxc1x1.ru/reftcT_frzSCwhav" placeholder="Загрузка ссылки...">
+      <button class="btn btn-accent" id="copy-btn" onclick="copySubUrl()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Скопировать ссылку
+      </button>
+    </div>
+  </div>
+
+  <!-- Critical Warning Callout -->
+  <div class="warning-callout">
+    <h3>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Ограничения сторонних клиентов
+    </h3>
+    <ul>
+      <li><strong>Смарт-группы (Smart Groups) НЕ работают:</strong> адаптивный выбор сервера с минимальной задержкой (Германия, Канада, Оптимальный), умный обход цензуры и обход DPI доступны <strong>только в официальном клиенте MosaicVPN</strong>.</li>
+      <li><strong>Доступна только 1 локация:</strong> в сторонних клиентах отдаётся единая базовая точка прямого выхода (Direct-маршрут). Переключение стран недоступно.</li>
+      <li><strong>Нет кабинета подписки:</strong> просматривать остаток дней, управлять устройствами и продлевать тариф внутри сторонних программ невозможно.</li>
+    </ul>
+    <div class="rec-box">
+      <span>💡 Чтобы пользоваться всеми локациями, Смарт-группами и полным функционалом:</span>
+      <a href="/#downloads" class="btn btn-accent" style="padding: 6px 14px; font-size: 13px;">Скачать официальный MosaicVPN</a>
+    </div>
+  </div>
+
+  <!-- OS Tabs -->
+  <div class="os-tabs">
+    <button class="os-tab active" onclick="switchOs('android', this)">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M17.6 9.5c-.5 0-.9.4-.9.9v4.4c0 .5.4.9.9.9s.9-.4.9-.9v-4.4c0-.5-.4-.9-.9-.9Zm-11.2 0c-.5 0-.9.4-.9.9v4.4c0 .5.4.9.9.9s.9-.4.9-.9v-4.4c0-.5-.4-.9-.9-.9Zm1.5 0v6.2c0 .4.3.8.8.8h.8v2.1c0 .5.4.9.9.9s.9-.4.9-.9v-2.1h1.4v2.1c0 .5.4.9.9.9s.9-.4.9-.9v-2.1h.8c.4 0 .8-.3.8-.8V9.5H7.9Zm6.6-4.9.7-1.2a.2.2 0 0 0-.1-.3.2.2 0 0 0-.3.1l-.7 1.2a4.9 4.9 0 0 0-3.8 0l-.7-1.2a.2.2 0 0 0-.3-.1.2.2 0 0 0-.1.3l.7 1.2A4.2 4.2 0 0 0 7.9 8.4h8.2a4.2 4.2 0 0 0-1.6-3.8ZM10 6.9a.4.4 0 1 1 0-.8.4.4 0 0 1 0 .8Zm4 0a.4.4 0 1 1 0-.8.4.4 0 0 1 0 .8Z"/></svg>
+      Android
+    </button>
+    <button class="os-tab" onclick="switchOs('windows', this)">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.5 10 4.6v6.9H3V5.5Zm0 13L10 19.4v-6.8H3v5.9Zm8-14.1L21 3v8.5h-10V4.4Zm0 15.2L21 21v-8.4h-10v7Z"/></svg>
+      Windows
+    </button>
+    <button class="os-tab" onclick="switchOs('linux', this)">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c-2.2 0-3.6 1.8-3.5 4.2.1 1.6-.2 2.5-1 3.7-1.1 1.7-1.9 3.2-1.9 4.9 0 .9.3 1.6.8 2.2-.4.5-.6 1-.5 1.5.2 1 1.3 1.5 3 1.7 1 .1 1.7.5 2.4.9.6.4 1.2.6 1.9.6s1.3-.2 1.9-.6c.7-.4 1.4-.8 2.4-.9 1.7-.2 2.8-.7 3-1.7.1-.5-.1-1-.5-1.5.5-.6.8-1.3.8-2.2 0-1.7-.8-3.2-1.9-4.9-.8-1.2-1.1-2.1-1-3.7C15.6 3.8 14.2 2 12 2Zm-1.6 4.1c.4 0 .7.4.7.9s-.3.9-.7.9-.7-.4-.7-.9.3-.9.7-.9Zm3.2 0c.4 0 .7.4.7.9s-.3.9-.7.9-.7-.4-.7-.9.3-.9.7-.9ZM12 9.4c.9 0 1.8.4 1.8.9 0 .3-.4.6-.9.8-.3.1-.6.3-.9.3s-.6-.2-.9-.3c-.5-.2-.9-.5-.9-.8 0-.5.9-.9 1.8-.9Z"/></svg>
+      Linux
+    </button>
+  </div>
+
+  <!-- SECTION: ANDROID -->
+  <div id="section-android" class="client-grid">
+
+    <!-- v2rayNG -->
+    <div class="client-card">
+      <div class="client-header">
+        <div class="client-title">
+          <span>v2rayNG</span>
+          <span class="client-badge popular">Android · Популярный</span>
+        </div>
+        <a href="https://github.com/2dust/v2rayNG/releases" target="_blank" rel="noopener" class="btn btn-ghost" style="padding: 6px 12px; font-size: 13px;">Скачать v2rayNG APK</a>
+      </div>
+      <div class="client-caveat">
+        ⚠️ Доступна только 1 локация прямого выхода. Смарт-группы и смена локаций не поддерживаются.
+      </div>
+      <ol class="steps-list">
+        <li>Откройте приложение <strong>v2rayNG</strong> на вашем устройстве.</li>
+        <li>Нажмите на иконку бокового меню <strong>☰</strong> (вверху слева) и откройте <strong>«Группы подписок»</strong>.</li>
+        <li>В правом верхнем углу нажмите кнопку <strong>«+»</strong> для создания новой подписки.</li>
+        <li>В поле <strong>«Основная информация (URL)»</strong> вставьте вашу персональную ссылку:
+          <div class="sub-chip">
+            <code class="sub-target-code">https://sub.zxc1x1.ru/...</code>
+            <button class="chip-btn" onclick="copySubUrl()">Скопировать</button>
+          </div>
+        </li>
+        <li>В поле <strong>«Замечания»</strong> напишите <code>MosaicVPN</code> и нажмите галочку <strong>✓</strong> (вверху справа) для сохранения.</li>
+        <li>Вернитесь на главный экран, нажмите меню <strong>⋮</strong> (три точки) вверху справа и выберите <strong>«Обновить подписку»</strong>.</li>
+        <li>В списке появится сервер MosaicVPN. Нажмите на него, затем нажмите круглую кнопку <strong>[ V ]</strong> в правом нижнем углу для подключения.</li>
+      </ol>
+
+      <!-- Visual mockup -->
+      <div class="screen-frame">
+        <div class="frame-bar">
+          <div class="frame-dots"><span class="red"></span><span class="yellow"></span><span class="green"></span></div>
+          <span>Интерфейс v2rayNG (Android)</span>
+          <span>v1.9.x</span>
+        </div>
+        <div class="frame-body">
+          <div class="mock-row">
+            <span>☰ Меню ➔ <strong>Группы подписок</strong> ➔ <strong>[+]</strong></span>
+            <span class="mock-tag">Шаг 1-3</span>
+          </div>
+          <div class="mock-row highlight">
+            <span>URL: <span style="color:var(--accent); font-family:var(--mono);" class="sub-target-code">https://sub.zxc1x1.ru/...</span></span>
+            <span class="mock-tag">Шаг 4</span>
+          </div>
+          <div class="mock-row">
+            <span>⋮ Меню ➔ <strong>Обновить подписку</strong></span>
+            <span class="mock-tag">Шаг 6</span>
+          </div>
+          <div class="mock-row" style="justify-content: flex-end; margin-top: 10px;">
+            <span class="mock-btn" style="border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; padding: 0;">V</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Exclave -->
+    <div class="client-card">
+      <div class="client-header">
+        <div class="client-title">
+          <span>Exclave</span>
+          <span class="client-badge">Android · Современный UI</span>
+        </div>
+        <a href="https://github.com/exclave-app/exclave/releases" target="_blank" rel="noopener" class="btn btn-ghost" style="padding: 6px 12px; font-size: 13px;">Скачать Exclave APK</a>
+      </div>
+      <div class="client-caveat">
+        ⚠️ Доступна только 1 локация прямого выхода. Смарт-группы и смена локаций не поддерживаются.
+      </div>
+      <ol class="steps-list">
+        <li>Запустите <strong>Exclave</strong> на вашем смартфоне.</li>
+        <li>В правом верхнем углу нажмите кнопку <strong>«+»</strong> (Добавить конфигурацию).</li>
+        <li>Выберите вариант <strong>«Добавить подписку по URL»</strong> (Add subscription from URL).</li>
+        <li>Вставьте вашу ссылку подписки в поле ввода:
+          <div class="sub-chip">
+            <code class="sub-target-code">https://sub.zxc1x1.ru/...</code>
+            <button class="chip-btn" onclick="copySubUrl()">Скопировать</button>
+          </div>
+        </li>
+        <li>Нажмите <strong>«Импортировать»</strong> (Import). Ноды загрузятся автоматически.</li>
+        <li>Нажмите на переключатель на главном экране для включения VPN.</li>
+      </ol>
+
+      <div class="screen-frame">
+        <div class="frame-bar">
+          <div class="frame-dots"><span class="red"></span><span class="yellow"></span><span class="green"></span></div>
+          <span>Интерфейс Exclave (Android)</span>
+          <span>UI Preview</span>
+        </div>
+        <div class="frame-body">
+          <div class="mock-row">
+            <span>Главный экран ➔ Нажать <strong>[+]</strong></span>
+            <span class="mock-tag">Add Config</span>
+          </div>
+          <div class="mock-row highlight">
+            <span>Импорт по URL ➔ Вставить <code style="color:var(--accent)" class="sub-target-code">https://sub.zxc1x1.ru/...</code></span>
+            <span class="mock-tag">Import</span>
+          </div>
+          <div class="mock-row">
+            <span>Тумблер подключения: <strong style="color:#3FB950">● ВКЛЮЧЕН</strong></span>
+            <span class="mock-tag">Connected</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Happ (Android) -->
+    <div class="client-card">
+      <div class="client-header">
+        <div class="client-title">
+          <span>Happ / Hiddify</span>
+          <span class="client-badge">Android · Авто-импорт</span>
+        </div>
+        <a href="https://github.com/hiddify/hiddify-app/releases" target="_blank" rel="noopener" class="btn btn-ghost" style="padding: 6px 12px; font-size: 13px;">Скачать Happ APK</a>
+      </div>
+      <div class="client-caveat">
+        ⚠️ Доступна только 1 локация прямого выхода. Смарт-группы и смена локаций не поддерживаются.
+      </div>
+      <ol class="steps-list">
+        <li>Скопируйте вашу персональную ссылку в блоке вверху этой страницы.</li>
+        <li>Откройте приложение <strong>Happ</strong> (или Hiddify).</li>
+        <li>Нажмите на иконку <strong>«+»</strong> в правом верхнем углу.</li>
+        <li>Приложение определит ссылку в буфере обмена и покажет <strong>«Добавить из буфера обмена»</strong>. Нажмите эту строку.</li>
+        <li>Нажмите большую центральную кнопку для подключения к туннелю.</li>
+      </ol>
+    </div>
+
+  </div>
+
+  <!-- SECTION: WINDOWS -->
+  <div id="section-windows" class="client-grid" style="display: none;">
+
+    <!-- Throne -->
+    <div class="client-card">
+      <div class="client-header">
+        <div class="client-title">
+          <span>Throne</span>
+          <span class="client-badge popular">Windows · Рекомендуемый</span>
+        </div>
+        <a href="https://github.com/throne-app/throne/releases" target="_blank" rel="noopener" class="btn btn-ghost" style="padding: 6px 12px; font-size: 13px;">Скачать Throne x64</a>
+      </div>
+      <div class="client-caveat">
+        ⚠️ Доступна только 1 локация прямого выхода. Смарт-группы и смена локаций не поддерживаются.
+      </div>
+      <ol class="steps-list">
+        <li>Запустите клиент <strong>Throne</strong> на Windows от имени администратора.</li>
+        <li>В панели слева выберите раздел <strong>«Subscriptions»</strong> (Подписки).</li>
+        <li>Нажмите кнопку <strong>«+ Add Subscription»</strong> в верхнем углу окна.</li>
+        <li>Вставьте вашу ссылку подписки в поле <strong>URL</strong>:
+          <div class="sub-chip">
+            <code class="sub-target-code">https://sub.zxc1x1.ru/...</code>
+            <button class="chip-btn" onclick="copySubUrl()">Скопировать</button>
+          </div>
+        </li>
+        <li>Введите имя <code>MosaicVPN</code> и нажмите <strong>«Save»</strong>.</li>
+        <li>Нажмите кнопку <strong>«Update»</strong> для загрузки конфигурации сервера.</li>
+        <li>Вверху переведите тумблер <strong>«System Proxy»</strong> или <strong>«TUN Mode»</strong> во включенное положение.</li>
+      </ol>
+
+      <div class="screen-frame">
+        <div class="frame-bar">
+          <div class="frame-dots"><span class="red"></span><span class="yellow"></span><span class="green"></span></div>
+          <span>Throne Client for Windows</span>
+          <span>x64</span>
+        </div>
+        <div class="frame-body">
+          <div class="mock-row">
+            <span>Sidebar: [Connections] [Proxies] [<strong>Subscriptions</strong> ◄] [Settings]</span>
+            <span class="mock-tag">Вкладка</span>
+          </div>
+          <div class="mock-row highlight">
+            <span>[+ Add Subscription] ➔ URL: <span style="color:var(--accent)" class="sub-target-code">https://sub.zxc1x1.ru/...</span></span>
+            <span class="mock-tag">Сохранить</span>
+          </div>
+          <div class="mock-row">
+            <span>Режим перехвата: <strong>[ TUN Mode: Active ]</strong> · Пинг: ~1 ms</span>
+            <span class="mock-tag" style="color:#3FB950">Active</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Happ (Windows) -->
+    <div class="client-card">
+      <div class="client-header">
+        <div class="client-title">
+          <span>Happ / Hiddify (Windows)</span>
+          <span class="client-badge">Windows · sing-box GUI</span>
+        </div>
+        <a href="https://github.com/hiddify/hiddify-app/releases" target="_blank" rel="noopener" class="btn btn-ghost" style="padding: 6px 12px; font-size: 13px;">Скачать Windows Setup</a>
+      </div>
+      <div class="client-caveat">
+        ⚠️ Доступна только 1 локация прямого выхода. Смарт-группы и смена локаций не поддерживаются.
+      </div>
+      <ol class="steps-list">
+        <li>Откройте <strong>Happ</strong> на вашем компьютере.</li>
+        <li>В правом верхнем углу нажмите кнопку <strong>«+»</strong> (Новый профиль).</li>
+        <li>Выберите <strong>«Добавить из буфера обмена»</strong> (Add from clipboard) со скопированной ссылкой:
+          <div class="sub-chip">
+            <code class="sub-target-code">https://sub.zxc1x1.ru/...</code>
+            <button class="chip-btn" onclick="copySubUrl()">Скопировать</button>
+          </div>
+        </li>
+        <li>Убедитесь, что переключатель <strong>«Режим TUN»</strong> активен (для работы всех программ и игр).</li>
+        <li>Нажмите круглую кнопку подключения в центре.</li>
+      </ol>
+    </div>
+
+    <!-- Nekoray / v2rayN -->
+    <div class="client-card">
+      <div class="client-header">
+        <div class="client-title">
+          <span>Nekoray / v2rayN</span>
+          <span class="client-badge">Windows · Классический</span>
+        </div>
+        <a href="https://github.com/MatsuriDayo/nekoray/releases" target="_blank" rel="noopener" class="btn btn-ghost" style="padding: 6px 12px; font-size: 13px;">GitHub Releases</a>
+      </div>
+      <div class="client-caveat">
+        ⚠️ Доступна только 1 локация прямого выхода. Смарт-группы и смена локаций не поддерживаются.
+      </div>
+      <ol class="steps-list">
+        <li>Запустите <strong>Nekoray</strong> от имени администратора.</li>
+        <li>В верхнем меню откройте <strong>Preferences</strong> ➔ <strong>Groups</strong>.</li>
+        <li>Нажмите <strong>«New Group»</strong>, выберите тип <strong>«Subscription»</strong>.</li>
+        <li>Вставьте вашу ссылку подписки в поле URL и нажмите OK.</li>
+        <li>Нажмите правой кнопкой мыши по группе и выберите <strong>«Update Subscription»</strong>.</li>
+        <li>Поставьте галочку <strong>«TUN Mode»</strong> в панели инструментов для перехвата всего системного трафика.</li>
+      </ol>
+    </div>
+
+  </div>
+
+  <!-- SECTION: LINUX -->
+  <div id="section-linux" class="client-grid" style="display: none;">
+
+    <!-- Throne Linux -->
+    <div class="client-card">
+      <div class="client-header">
+        <div class="client-title">
+          <span>Throne Linux</span>
+          <span class="client-badge popular">Linux · DEB / AppImage</span>
+        </div>
+        <a href="https://github.com/throne-app/throne/releases" target="_blank" rel="noopener" class="btn btn-ghost" style="padding: 6px 12px; font-size: 13px;">Скачать Throne Linux</a>
+      </div>
+      <div class="client-caveat">
+        ⚠️ Доступна только 1 локация прямого выхода. Смарт-группы и смена локаций не поддерживаются.
+      </div>
+      <ol class="steps-list">
+        <li>Запустите <strong>Throne</strong> на вашем дистрибутиве Linux (Ubuntu, Debian, Fedora, Arch).</li>
+        <li>Перейдите в боковой панели в <strong>Subscriptions</strong> ➔ нажмите <strong>Add Subscription</strong>.</li>
+        <li>Вставьте вашу ссылку подписки:
+          <div class="sub-chip">
+            <code class="sub-target-code">https://sub.zxc1x1.ru/...</code>
+            <button class="chip-btn" onclick="copySubUrl()">Скопировать</button>
+          </div>
+        </li>
+        <li>Нажмите <strong>Save & Update</strong>. Сервер появится в списке доступных нод.</li>
+        <li>Включите системный тумблер <strong>TUN Mode</strong> (система запросит пароль sudo/polkit для создания tun-интерфейса).</li>
+      </ol>
+
+      <div class="screen-frame">
+        <div class="frame-bar">
+          <div class="frame-dots"><span class="red"></span><span class="yellow"></span><span class="green"></span></div>
+          <span>Throne Linux Desktop</span>
+          <span>AppImage / DEB</span>
+        </div>
+        <div class="frame-body">
+          <div class="mock-row">
+            <span>Subscriptions ➔ [ + Add ] ➔ Name: MosaicVPN</span>
+            <span class="mock-tag">Setup</span>
+          </div>
+          <div class="mock-row highlight">
+            <span>URL: <span style="color:var(--accent)" class="sub-target-code">https://sub.zxc1x1.ru/...</span></span>
+            <span class="mock-tag">Sub link</span>
+          </div>
+          <div class="mock-row">
+            <span>TUN Interface: <strong>tun0 [172.19.0.1/30]</strong> · Status: Up</span>
+            <span class="mock-tag" style="color:#3FB950">Active</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Nekoray Linux -->
+    <div class="client-card">
+      <div class="client-header">
+        <div class="client-title">
+          <span>Nekoray (Linux AppImage / Flatpak)</span>
+          <span class="client-badge">Linux · Xray Core</span>
+        </div>
+        <a href="https://github.com/MatsuriDayo/nekoray/releases" target="_blank" rel="noopener" class="btn btn-ghost" style="padding: 6px 12px; font-size: 13px;">GitHub Releases</a>
+      </div>
+      <div class="client-caveat">
+        ⚠️ Доступна только 1 локация прямого выхода. Смарт-группы и смена локаций не поддерживаются.
+      </div>
+      <ol class="steps-list">
+        <li>Сделайте бинарник исполняемым: <code>chmod +x nekoray-*-linux64.AppImage</code> и запустите.</li>
+        <li>В меню откройте <strong>Preferences</strong> ➔ <strong>Groups</strong> ➔ <strong>New Group</strong>.</li>
+        <li>Выберите тип <code>Subscription</code>, укажите URL:
+          <div class="sub-chip">
+            <code class="sub-target-code">https://sub.zxc1x1.ru/...</code>
+            <button class="chip-btn" onclick="copySubUrl()">Скопировать</button>
+          </div>
+        </li>
+        <li>Нажмите <strong>Update</strong> для загрузки списка конфигураций.</li>
+        <li>Включите чекбокс <strong>TUN Mode</strong> в панели управления.</li>
+      </ol>
+    </div>
+
+    <!-- Hiddify / Happ Linux -->
+    <div class="client-card">
+      <div class="client-header">
+        <div class="client-title">
+          <span>Hiddify / Happ (Linux)</span>
+          <span class="client-badge">Linux · AppImage / Flatpak</span>
+        </div>
+        <a href="https://github.com/hiddify/hiddify-app/releases" target="_blank" rel="noopener" class="btn btn-ghost" style="padding: 6px 12px; font-size: 13px;">Скачать AppImage</a>
+      </div>
+      <div class="client-caveat">
+        ⚠️ Доступна только 1 локация прямого выхода. Смарт-группы и смена локаций не поддерживаются.
+      </div>
+      <ol class="steps-list">
+        <li>Запустите <code>Hiddify-Linux-x64.AppImage</code>.</li>
+        <li>Нажмите <strong>«+»</strong> (Новый профиль) ➔ <strong>«Добавить из буфера обмена»</strong>.</li>
+        <li>Профиль загрузится автоматически. Нажмите <strong>Connect</strong> для старта.</li>
+      </ol>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div id="toast">✅ Ссылка скопирована в буфер обмена!</div>
+
+<footer>
+  <div class="wrap">
+    <div><strong>MosaicVPN</strong> · Высокоскоростная приватная сеть с адаптивной защитой</div>
+    <div style="margin-top: 8px;">
+      <a href="/">Главная</a> ·
+      <a href="/#downloads">Загрузка официального клиента</a> ·
+      <a href="/cabinet.html">Личный кабинет</a> ·
+      <a href="/terms.html">Условия сервиса</a> ·
+      <a href="/privacy.html">Конфиденциальность</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+// Parse subscription URL from query params (?sub=... or #sub=...)
+(function initSubUrl() {
+  var urlParams = new URLSearchParams(window.location.search);
+  var sub = urlParams.get('sub');
+  if (!sub) {
+    var hash = window.location.hash.replace('#', '');
+    if (hash.startsWith('sub=')) {
+      sub = hash.replace('sub=', '');
+    }
+  }
+
+  var input = document.getElementById('sub-url-input');
+  var codeBlocks = document.querySelectorAll('.sub-target-code');
+
+  if (sub && (sub.startsWith('http://') || sub.startsWith('https://'))) {
+    input.value = sub;
+    for (var i = 0; i < codeBlocks.length; i++) {
+      codeBlocks[i].innerText = sub;
+    }
+  } else {
+    var defaultSub = input.value;
+    for (var i = 0; i < codeBlocks.length; i++) {
+      codeBlocks[i].innerText = defaultSub;
+    }
+  }
+})();
+
+function copySubUrl() {
+  var input = document.getElementById('sub-url-input');
+  input.select();
+  input.setSelectionRange(0, 99999);
+  
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(input.value).then(showToast);
+  } else {
+    document.execCommand('copy');
+    showToast();
+  }
+}
+
+function showToast() {
+  var t = document.getElementById('toast');
+  t.style.display = 'block';
+  setTimeout(function() {
+    t.style.display = 'none';
+  }, 2500);
+}
+
+function switchOs(os, btn) {
+  var tabs = document.querySelectorAll('.os-tab');
+  for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove('active');
+  btn.classList.add('active');
+
+  document.getElementById('section-android').style.display = (os === 'android') ? 'flex' : 'none';
+  document.getElementById('section-windows').style.display = (os === 'windows') ? 'flex' : 'none';
+  document.getElementById('section-linux').style.display = (os === 'linux') ? 'flex' : 'none';
+}
+</script>
+
+</body>
+</html>

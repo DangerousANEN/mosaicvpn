@@ -315,7 +315,7 @@ MESSAGES["ru"]["home_title"] = (
 )
 MESSAGES["ru"]["menu_account"] = "📲 Моё подключение"
 MESSAGES["ru"]["menu_subscribe"] = "💳 Подписка"
-MESSAGES["ru"]["menu_add_app"] = "📲 Открыть MosaicVPN"
+MESSAGES["ru"]["menu_add_app"] = "📲 Добавить в клиент"
 MESSAGES["ru"]["menu_help"] = "🆘 Помощь"
 MESSAGES["ru"]["menu_home"] = "🏠 Главное меню"
 
@@ -343,7 +343,7 @@ MESSAGES["ru"]["add_app_code_fmt"] = (
 MESSAGES["en"]["home_title"] = "🛡 MosaicVPN — your personal shield online\n\nChoose a section below:"
 MESSAGES["en"]["menu_account"] = "📲 My connection"
 MESSAGES["en"]["menu_subscribe"] = "💳 Subscription"
-MESSAGES["en"]["menu_add_app"] = "📲 Open MosaicVPN"
+MESSAGES["en"]["menu_add_app"] = "📲 Add to client"
 MESSAGES["en"]["menu_help"] = "🆘 Help"
 MESSAGES["en"]["menu_home"] = "🏠 Main menu"
 MESSAGES["en"]["account_section"] = "📲 My connection\n\nYour subscription and the button to open MosaicVPN are here."
@@ -360,7 +360,7 @@ MESSAGES["ru"]["home_title"] = (
 )
 MESSAGES["ru"]["menu_account"] = "👤 Мой аккаунт"
 MESSAGES["ru"]["menu_subscribe"] = "💳 Подписка"
-MESSAGES["ru"]["menu_add_app"] = "📲 Добавить в MosaicVPN"
+MESSAGES["ru"]["menu_add_app"] = "📲 Добавить в клиент"
 MESSAGES["ru"]["menu_help"] = "🎧 Помощь"
 MESSAGES["ru"]["menu_home"] = "🏠 Главное меню"
 
@@ -416,7 +416,7 @@ MESSAGES["en"]["home_title"] = (
 )
 MESSAGES["en"]["menu_account"] = "👤 My Account"
 MESSAGES["en"]["menu_subscribe"] = "💳 Subscription"
-MESSAGES["en"]["menu_add_app"] = "📲 Add to MosaicVPN"
+MESSAGES["en"]["menu_add_app"] = "📲 Add to client"
 MESSAGES["en"]["menu_help"] = "🎧 Help"
 MESSAGES["en"]["menu_home"] = "🏠 Home"
 
@@ -2675,9 +2675,10 @@ def get_main_menu(lang):
 def get_home_inline_keyboard(lang):
     """Compact account menu modeled after the supplied mobile reference.
 
-    Telegram inline keyboards do not support arbitrary CSS colors, so the
-    hierarchy is communicated with semantic emoji and consistent two-column
-    rows. Callback IDs deliberately reuse existing, tested handlers.
+    6-tile layout:
+    [ 💳 Подписка           ] [ 👤 Мой аккаунт          ]
+    [ 📥 Установить клиент  ] [ 📲 Добавить в клиент     ]
+    [ 🤝 Пригласить друга   ] [ ℹ️ О сервисе            ]
     """
     t = MESSAGES[lang]
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -2686,92 +2687,223 @@ def get_home_inline_keyboard(lang):
             "💳 Подписка" if lang == "ru" else "💳 Subscription",
             callback_data="home_subscribe", style="primary"),
         types.InlineKeyboardButton(
-            "📲 Моё подключение" if lang == "ru" else "📲 My connection",
+            "👤 Мой аккаунт" if lang == "ru" else "👤 My Account",
             callback_data="home_account", style="primary"),
     )
     markup.row(
         types.InlineKeyboardButton(
-            "💰 Баланс" if lang == "ru" else "💰 Balance",
-            callback_data="home_account", style="primary"),
+            "📥 Установить клиент" if lang == "ru" else "📥 Install Client",
+            callback_data="home_install", style="primary"),
+        types.InlineKeyboardButton(
+            "📲 Добавить в клиент" if lang == "ru" else "📲 Add to Client",
+            callback_data="home_add_client_menu", style="success"),
+    )
+    markup.row(
         types.InlineKeyboardButton(
             "🤝 Пригласить друга" if lang == "ru" else "🤝 Invite a friend",
-            callback_data="ref_link", style="success"),
-    )
-    markup.row(
+            callback_data="ref_link", style="primary"),
         types.InlineKeyboardButton(
             "ℹ️ О сервисе" if lang == "ru" else "ℹ️ About service",
             callback_data="home_help", style="primary"),
-        types.InlineKeyboardButton(
-            "📲 Открыть MosaicVPN" if lang == "ru" else "📲 Open MosaicVPN",
-            callback_data="home_add_app", style="success"),
     )
+    # home_add_app alias supported
     return markup
 
 
-def get_home_text(telegram_id, lang):
-    """Build the reference-style home header from current account data."""
-    db_user = get_user(telegram_id) or {}
-    display_name = db_user.get("username") or "друг"
-    active_subscriptions = 0
-    balance_days = 0
-    username = db_user.get("username")
-    if username:
+def get_user_sub_url(telegram_id):
+    """Resolve full personal subscription URL for a given telegram account."""
+    account_id = resolve_telegram_account_id(telegram_id)
+    db_user = get_user(account_id)
+    if not db_user:
+        return None
+    short_uuid = db_user.get("short_uuid")
+    if not short_uuid and db_user.get("username"):
         try:
-            user_data = api_get_user(username) or {}
-            expire_raw = user_data.get("expireAt")
-            if expire_raw:
-                expire_dt = dateutil.parser.isoparse(expire_raw)
-                if expire_dt.tzinfo is None:
-                    expire_dt = expire_dt.replace(tzinfo=datetime.timezone.utc)
-                days_left = max(0, (expire_dt - datetime.datetime.now(datetime.timezone.utc)).days)
-                balance_days = days_left
-                active_subscriptions = int(user_data.get("status") == "ACTIVE" and days_left > 0)
+            remote = api_get_user(db_user["username"])
+            if remote and remote.get("shortUuid"):
+                short_uuid = remote.get("shortUuid")
+                save_user(account_id, db_user["username"], short_uuid,
+                          db_user.get("language", "ru"), db_user.get("trial_used", 0), db_user.get("referrer_id"))
         except Exception:
-            logger.debug("home menu account summary unavailable", exc_info=True)
-    if lang == "ru":
-        return (
-            f"🛡 MosaicVPN\n\n"
-            f"Привет, {display_name}!\n\n"
-            f"💰 Баланс: {balance_days} дн. доступа\n"
-            f"📦 Активных подписок: {active_subscriptions}\n\n"
-            "🎁 Приглашайте друзей и получайте бесплатные дни подписки!\n\n"
-            "Выберите действие:"
-        )
-    return (
-        f"🛡 MosaicVPN\n\n"
-        f"Hi, {display_name}!\n\n"
-        f"💰 Balance: {balance_days} access days\n"
-        f"📦 Active subscriptions: {active_subscriptions}\n\n"
-        "🎁 Invite friends and earn free subscription days!\n\n"
-        "Choose an action:"
-    )
+            pass
+    if short_uuid:
+        return f"https://sub.zxc1x1.ru/{short_uuid}"
+    return None
+
+
+def get_add_client_inline_keyboard(lang, sub_url=None):
+    """Selection keyboard: official MosaicVPN or third-party client documentation."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(
+        "🛡 Добавить в MosaicVPN (Официальный)" if lang == "ru" else "🛡 Add to MosaicVPN (Official)",
+        callback_data="home_add_app",
+        style="success",
+    ))
+    manual_url = "https://sub.zxc1x1.ru/manual.html"
+    if sub_url:
+        manual_url += f"?sub={urllib.parse.quote(sub_url, safe='')}"
+    markup.add(types.InlineKeyboardButton(
+        "🌐 В сторонний клиент (v2rayNG, Happ, Throne)" if lang == "ru" else "🌐 Third-Party Client (Guide & Link)",
+        url=manual_url,
+        style="primary",
+    ))
+    markup.add(types.InlineKeyboardButton(
+        "📥 Установить клиент" if lang == "ru" else "📥 Install Client",
+        callback_data="home_install",
+        style="primary",
+    ))
+    markup.add(types.InlineKeyboardButton(
+        "🏠 Главное меню" if lang == "ru" else "🏠 Main Menu",
+        callback_data="home_main",
+        style="primary",
+    ))
+    return markup
+
+
+def get_install_os_keyboard(lang):
+    """OS selection for installer downloads."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(
+        "📱 Android" if lang == "ru" else "📱 Android",
+        callback_data="install_android",
+        style="primary",
+    ))
+    markup.add(types.InlineKeyboardButton(
+        "🪟 Windows" if lang == "ru" else "🪟 Windows",
+        callback_data="install_windows",
+        style="primary",
+    ))
+    markup.add(types.InlineKeyboardButton(
+        "🐧 Linux" if lang == "ru" else "🐧 Linux",
+        callback_data="install_linux",
+        style="primary",
+    ))
+    markup.add(types.InlineKeyboardButton(
+        "📲 Добавить в клиент" if lang == "ru" else "📲 Add to Client",
+        callback_data="home_add_client_menu",
+        style="success",
+    ))
+    markup.add(types.InlineKeyboardButton(
+        "🏠 Главное меню" if lang == "ru" else "🏠 Main Menu",
+        callback_data="home_main",
+        style="primary",
+    ))
+    return markup
+
+
+def get_install_android_keyboard(lang):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(
+        "⬇️ Скачать APK v0.3.49 (55.5 МБ)" if lang == "ru" else "⬇️ Download APK v0.3.49 (55.5 MB)",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.49/MosaicVPN-Android-v0.3.49.apk",
+        style="primary",
+    ))
+    markup.add(types.InlineKeyboardButton(
+        "📲 Добавить в клиент" if lang == "ru" else "📲 Add to Client",
+        callback_data="home_add_client_menu",
+        style="success",
+    ))
+    markup.add(types.InlineKeyboardButton(
+        "⬅️ Назад к выбору ОС" if lang == "ru" else "⬅️ Back to OS select",
+        callback_data="home_install",
+        style="primary",
+    ))
+    markup.add(types.InlineKeyboardButton(
+        "🏠 Главное меню" if lang == "ru" else "🏠 Main Menu",
+        callback_data="home_main",
+        style="primary",
+    ))
+    return markup
+
+
+def get_install_windows_keyboard(lang):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(
+        "⬇️ Скачать Setup.exe (33.8 МБ)" if lang == "ru" else "⬇️ Download Setup.exe (33.8 MB)",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.49/MosaicVPN-Setup-x64-v0.3.49.exe",
+        style="primary",
+    ))
+    markup.add(types.InlineKeyboardButton(
+        "📦 Скачать Portable .zip (44.2 МБ)" if lang == "ru" else "📦 Download Portable .zip (44.2 MB)",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.49/MosaicVPN-Portable-x64-v0.3.49.zip",
+        style="primary",
+    ))
+    markup.add(types.InlineKeyboardButton(
+        "📲 Добавить в клиент" if lang == "ru" else "📲 Add to Client",
+        callback_data="home_add_client_menu",
+        style="success",
+    ))
+    markup.add(types.InlineKeyboardButton(
+        "⬅️ Назад к выбору ОС" if lang == "ru" else "⬅️ Back to OS select",
+        callback_data="home_install",
+        style="primary",
+    ))
+    markup.add(types.InlineKeyboardButton(
+        "🏠 Главное меню" if lang == "ru" else "🏠 Main Menu",
+        callback_data="home_main",
+        style="primary",
+    ))
+    return markup
+
+
+def get_install_linux_keyboard(lang):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(
+        "📦 Ubuntu / Debian (.deb)" if lang == "ru" else "📦 Ubuntu / Debian (.deb)",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.49/MosaicVPN_0.3.49_amd64.deb",
+        style="primary",
+    ))
+    markup.add(types.InlineKeyboardButton(
+        "📦 Любой Linux (.tar.gz)" if lang == "ru" else "📦 Any Linux (.tar.gz)",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.49/MosaicVPN-Portable-x86_64-v0.3.49.tar.gz",
+        style="primary",
+    ))
+    markup.add(types.InlineKeyboardButton(
+        "📲 Добавить в клиент" if lang == "ru" else "📲 Add to Client",
+        callback_data="home_add_client_menu",
+        style="success",
+    ))
+    markup.add(types.InlineKeyboardButton(
+        "⬅️ Назад к выбору ОС" if lang == "ru" else "⬅️ Back to OS select",
+        callback_data="home_install",
+        style="primary",
+    ))
+    markup.add(types.InlineKeyboardButton(
+        "🏠 Главное меню" if lang == "ru" else "🏠 Main Menu",
+        callback_data="home_main",
+        style="primary",
+    ))
+    return markup
 
 
 def get_download_keyboard(lang):
     """Platform-neutral download fallback; Telegram cannot color buttons."""
     markup = types.InlineKeyboardMarkup(row_width=1)
-    # Telegram clients that support button styles render these semantic colors;
-    # older clients ignore the optional field without breaking the keyboard.
     def button(text, **kwargs):
         kwargs.setdefault("style", "primary")
         return types.InlineKeyboardButton(text, **kwargs)
-    markup.add(button("📱 Android", url="https://sub.zxc1x1.ru/#downloads", style="primary"))
-    markup.add(button("🖥 Windows / Linux", url="https://sub.zxc1x1.ru/#downloads", style="primary"))
-    markup.add(button("✅ Добавить в MosaicVPN" if lang == "ru" else "✅ Add to MosaicVPN", callback_data="home_add_app", style="success"))
+    markup.add(button("📱 Android", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.49/MosaicVPN-Android-v0.3.49.apk", style="primary"))
+    markup.add(button("🪟 Windows (Setup)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.49/MosaicVPN-Setup-x64-v0.3.49.exe", style="primary"))
+    markup.add(button("🐧 Linux (Debian/Ubuntu)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.49/MosaicVPN_0.3.49_amd64.deb", style="primary"))
+    markup.add(button("📲 Добавить в клиент" if lang == "ru" else "📲 Add to Client", callback_data="home_add_client_menu", style="success"))
+    # home_add_app alias supported
     return markup
 
 
-def get_account_inline_keyboard(lang, sub_url=None):
-    """Inline keyboard for the 👤 Account section."""
-    t = MESSAGES[lang]
-    markup = types.InlineKeyboardMarkup(row_width=1)
+def get_account_inline_keyboard(lang, sub_url=None, is_frozen=False):
+    t, m = MESSAGES[lang], types.InlineKeyboardMarkup(row_width=1)
     if sub_url:
-        markup.add(types.InlineKeyboardButton(t["web_cabinet"], url=sub_url, style="primary"))
-    markup.add(types.InlineKeyboardButton(t["renew_sub"], callback_data="home_subscribe", style="primary"))
-    markup.add(types.InlineKeyboardButton(t["invite_friend"], callback_data="ref_link", style="success"))
-    markup.add(types.InlineKeyboardButton(t["menu_add_app"], callback_data="home_add_app", style="success"))
-    markup.add(types.InlineKeyboardButton(t["back_home"], callback_data="home_main", style="primary"))
-    return markup
+        m.add(types.InlineKeyboardButton(t["web_cabinet"], url=sub_url, style="primary"))
+    m.add(types.InlineKeyboardButton(t["renew_sub"], callback_data="home_subscribe", style="primary"))
+    m.add(types.InlineKeyboardButton("📥 Установить" if lang == "ru" else "📥 Install", callback_data="home_install", style="primary"))
+    m.add(types.InlineKeyboardButton("📲 Добавить в клиент" if lang == "ru" else "📲 Add to Client", callback_data="home_add_client_menu", style="success"))
+    fl = ("▶️ Возобновить" if is_frozen else "⏸ Пауза") if lang == "ru" else ("▶️ Resume" if is_frozen else "⏸ Pause")
+    fcb = "home_account_unfreeze" if is_frozen else "home_account_freeze"
+    rot = "🔄 Сменить" if lang == "ru" else "🔄 Rotate"
+    m.row(types.InlineKeyboardButton(fl, callback_data=fcb), types.InlineKeyboardButton(rot, callback_data="home_account_rotate_ask"))
+    m.add(types.InlineKeyboardButton(t["invite_friend"], callback_data="ref_link", style="primary"))
+    m.add(types.InlineKeyboardButton(t["back_home"], callback_data="home_main", style="primary"))
+    return m
 
 
 def get_subscribe_inline_keyboard(lang):
@@ -2903,6 +3035,7 @@ def handle_home_account(call):
 
     sub_url = None
     text = t["account_section"]
+    is_frozen = False
 
     if db_user:
         username = db_user.get("username")
@@ -2921,23 +3054,47 @@ def handle_home_account(call):
                 expire_date = expire_at_raw or "—"
                 days_left = 0
 
-            active = user_data.get("status") == "ACTIVE" and days_left > 0
-            status_icon = "✅" if active else "⏳"
-            status_label = ("активна" if active else "истекла") if lang == "ru" else ("active" if active else "expired")
+            status_raw = str(user_data.get("status") or "").upper()
+            is_frozen = status_raw == "DISABLED"
+            active = status_raw == "ACTIVE" and days_left > 0
+            
+            # Format used traffic bytes
+            used_traffic_b = user_data.get("usedTraffic") or 0
+            if used_traffic_b >= 1024 ** 3:
+                traffic_str = f"{used_traffic_b / (1024 ** 3):.2f} ГБ"
+            elif used_traffic_b >= 1024 ** 2:
+                traffic_str = f"{used_traffic_b / (1024 ** 2):.1f} МБ"
+            elif used_traffic_b >= 1024:
+                traffic_str = f"{used_traffic_b / 1024:.0f} КБ"
+            else:
+                traffic_str = f"{int(used_traffic_b)} Б"
+
+            if is_frozen:
+                status_icon = "⏸"
+                status_label = "на паузе" if lang == "ru" else "paused"
+            elif active:
+                status_icon = "✅"
+                status_label = "активна" if lang == "ru" else "active"
+            else:
+                status_icon = "⏳"
+                status_label = "истекла" if lang == "ru" else "expired"
+
             if lang == "ru":
                 text = (
                     f"👤 Мой аккаунт\n\n"
                     f"{status_icon} Подписка: {status_label}\n"
                     f"📅 Действует до: {expire_date} ({days_left} дн.)\n"
+                    f"📊 Трафик: {traffic_str}\n"
                     f"📱 Устройств: до 5\n"
                 )
                 if sub_url:
-                    text += f"\n🔗 Ссылка подписки:\n`{sub_url}`"
+                    text += f"\n🔗 Ссылка подписки:\n`{sub_url}`\n_(нажмите для копирования)_"
             else:
                 text = (
                     f"👤 My Account\n\n"
                     f"{status_icon} Subscription: {status_label}\n"
                     f"📅 Expires: {expire_date} ({days_left}d)\n"
+                    f"📊 Traffic: {traffic_str}\n"
                     f"📱 Devices: up to 5\n"
                 )
                 if sub_url:
@@ -2947,7 +3104,264 @@ def handle_home_account(call):
                       "⚠️ Профиль не найден. Нажмите /start для регистрации." if lang == "ru"
                       else "⚠️ Profile not found. Press /start to register.")
 
-    _edit_or_send_home(call, text, get_account_inline_keyboard(lang, sub_url))
+    _edit_or_send_home(call, text, get_account_inline_keyboard(lang, sub_url, is_frozen=is_frozen))
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "home_account_freeze")
+def handle_account_freeze(call):
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    username = (db_user or {}).get("username")
+    lang = (db_user or {}).get("language", "ru")
+    if not username:
+        bot.answer_callback_query(call.id, "⚠️ Пользователь не найден")
+        return
+    try:
+        api_disable_user(username)
+        bot.answer_callback_query(call.id, "⏸ Доступ успешно поставлен на паузу" if lang == "ru" else "⏸ Access paused")
+    except Exception as exc:
+        logger.error("Failed to pause access for %s: %s", username, exc)
+        bot.answer_callback_query(call.id, "⚠️ Ошибка при паузе" if lang == "ru" else "⚠️ Pause error")
+    handle_home_account(call)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "home_account_unfreeze")
+def handle_account_unfreeze(call):
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    username = (db_user or {}).get("username")
+    lang = (db_user or {}).get("language", "ru")
+    if not username:
+        bot.answer_callback_query(call.id, "⚠️ Пользователь не найден")
+        return
+    try:
+        api_enable_user(username)
+        bot.answer_callback_query(call.id, "▶️ Доступ возобновлен" if lang == "ru" else "▶️ Access resumed")
+    except Exception as exc:
+        logger.error("Failed to resume access for %s: %s", username, exc)
+        bot.answer_callback_query(call.id, "⚠️ Ошибка при возобновлении" if lang == "ru" else "⚠️ Resume error")
+    handle_home_account(call)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "home_account_rotate_ask")
+def handle_account_rotate_ask(call):
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    lang = (db_user or {}).get("language", "ru")
+    bot.answer_callback_query(call.id)
+    if lang == "ru":
+        text = (
+            "⚠️ Перевыпуск ссылки подписки\n\n"
+            "После перевыпуска:\n"
+            "• Старая ссылка подписки перестанет работать\n"
+            "• Все ранее подключенные клиенты отключатся\n"
+            "• Вам потребуется заново добавить новую ссылку в клиенты\n\n"
+            "Вы уверены, что хотите сменить ссылку?"
+        )
+    else:
+        text = (
+            "⚠️ Rotate Subscription Link\n\n"
+            "After rotating:\n"
+            "• Old subscription link will immediately stop working\n"
+            "• All connected client apps will disconnect\n"
+            "• You will need to add the new link to your clients\n\n"
+            "Are you sure you want to proceed?"
+        )
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton(
+        "✅ Да, выпустить новую ссылку" if lang == "ru" else "✅ Yes, generate new link",
+        callback_data="home_account_rotate_confirm", style="primary"
+    ))
+    markup.add(types.InlineKeyboardButton(
+        "❌ Отмена" if lang == "ru" else "❌ Cancel",
+        callback_data="home_account", style="primary"
+    ))
+    _edit_or_send_home(call, text, markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "home_account_rotate_confirm")
+def handle_account_rotate_confirm(call):
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    username = (db_user or {}).get("username")
+    lang = (db_user or {}).get("language", "ru")
+    if not username:
+        bot.answer_callback_query(call.id, "⚠️ Пользователь не найден")
+        return
+    try:
+        updated = api_revoke_user_subscription(username)
+        new_short_uuid = None
+        if isinstance(updated, dict):
+            new_short_uuid = updated.get("shortUuid") or updated.get("short_uuid")
+        if not new_short_uuid:
+            remote = api_get_user(username)
+            if remote:
+                new_short_uuid = remote.get("shortUuid")
+        if new_short_uuid:
+            save_user(resolve_telegram_account_id(telegram_id), username, new_short_uuid,
+                      db_user.get("language", "ru"), db_user.get("trial_used", 0), db_user.get("referrer_id"))
+        bot.answer_callback_query(call.id, "✅ Ссылка успешно обновлена!" if lang == "ru" else "✅ Link rotated successfully!")
+    except Exception as exc:
+        logger.error("Failed to rotate link for %s: %s", username, exc)
+        bot.answer_callback_query(call.id, "⚠️ Ошибка при перевыпуске ссылки")
+    handle_home_account(call)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "home_add_client_menu")
+def handle_add_client_menu(call):
+    """Router menu: official MosaicVPN or 3rd-party client."""
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    lang = (db_user or {}).get("language", "ru")
+    sub_url = get_user_sub_url(telegram_id)
+    bot.answer_callback_query(call.id)
+    if lang == "ru":
+        text = (
+            "📲 Добавление в клиент\n\n"
+            "Выберите способ подключения:\n\n"
+            "🛡 Официальное приложение MosaicVPN (Рекомендуется)\n"
+            "• Автоматический выбор самого быстрого сервера\n"
+            "• Смарт-группы и умный обход цензуры\n"
+            "• Встроенный личный кабинет подписки\n\n"
+            "🌐 Сторонний клиент (v2rayNG, Happ, Throne, Exclave...)\n"
+            "• Инструкция на сайте с вашей персональной ссылкой\n"
+            "⚠️ В сторонних клиентах доступна только 1 локация прямого выхода (Direct). Смарт-группы и личный кабинет работать не будут."
+        )
+    else:
+        text = (
+            "📲 Add to Client\n\n"
+            "Choose your client setup:\n\n"
+            "🛡 Official MosaicVPN App (Recommended)\n"
+            "• Automatic lowest-ping server switching\n"
+            "• Smart censorship circumvention groups\n"
+            "• Built-in subscription cabinet & status\n\n"
+            "🌐 Third-Party Client (v2rayNG, Happ, Throne, Exclave...)\n"
+            "• Web guide pre-filled with your subscription link\n"
+            "⚠️ Only 1 direct location is available in third-party clients. Smart groups and subscription cabinet will not work."
+        )
+    _edit_or_send_home(call, text, get_add_client_inline_keyboard(lang, sub_url))
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "home_install")
+def handle_home_install(call):
+    """OS installer selection menu."""
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    lang = (db_user or {}).get("language", "ru")
+    bot.answer_callback_query(call.id)
+    if lang == "ru":
+        text = (
+            "📥 Установка приложения MosaicVPN\n\n"
+            "Выберите вашу операционную систему:\n"
+            "• 📱 Android (смартфоны, планшеты, ТВ)\n"
+            "• 🪟 Windows (10 / 11, 64-bit)\n"
+            "• 🐧 Linux (Ubuntu, Debian, Mint, Arch, Fedora...)\n\n"
+            "После установки приложения вернитесь сюда и нажмите «Добавить в клиент»."
+        )
+    else:
+        text = (
+            "📥 Install MosaicVPN App\n\n"
+            "Select your operating system:\n"
+            "• 📱 Android (phones, tablets, Android TV)\n"
+            "• 🪟 Windows (10 / 11, 64-bit)\n"
+            "• 🐧 Linux (Ubuntu, Debian, Mint, Arch, Fedora...)\n\n"
+            "After installing the app, return here and tap “Add to Client”."
+        )
+    _edit_or_send_home(call, text, get_install_os_keyboard(lang))
+
+
+@bot.message_handler(commands=["install", "download"])
+def handle_install_command(message):
+    telegram_id = message.chat.id
+    db_user = get_user(telegram_id)
+    lang = (db_user or {}).get("language", "ru")
+    if lang == "ru":
+        text = (
+            "📥 Установка приложения MosaicVPN\n\n"
+            "Выберите вашу операционную систему:\n"
+            "• 📱 Android (смартфоны, планшеты, ТВ)\n"
+            "• 🪟 Windows (10 / 11, 64-bit)\n"
+            "• 🐧 Linux (Ubuntu, Debian, Mint, Arch, Fedora...)"
+        )
+    else:
+        text = (
+            "📥 Install MosaicVPN App\n\n"
+            "Select your operating system:"
+        )
+    _safe_bot_send_message(telegram_id, text, reply_markup=get_install_os_keyboard(lang))
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "install_android")
+def handle_install_android(call):
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    lang = (db_user or {}).get("language", "ru")
+    bot.answer_callback_query(call.id)
+    if lang == "ru":
+        text = (
+            "📱 Установка для Android\n\n"
+            "1. Нажмите кнопку ниже для скачивания APK.\n"
+            "2. Откройте скачанный файл и подтвердите установку.\n"
+            "3. Если система запросит разрешение на установку из браузера/проводника — разрешите.\n"
+            "4. Запустите MosaicVPN и нажмите «Добавить в клиент» в боте."
+        )
+    else:
+        text = (
+            "📱 Android Installation\n\n"
+            "1. Tap button below to download the APK.\n"
+            "2. Open the downloaded file and confirm installation.\n"
+            "3. If prompted to allow installs from unknown sources — grant permission.\n"
+            "4. Launch MosaicVPN and tap “Add to Client” in bot."
+        )
+    _edit_or_send_home(call, text, get_install_android_keyboard(lang))
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "install_windows")
+def handle_install_windows(call):
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    lang = (db_user or {}).get("language", "ru")
+    bot.answer_callback_query(call.id)
+    if lang == "ru":
+        text = (
+            "🪟 Установка для Windows (10 / 11 64-bit)\n\n"
+            "• Установщик (.exe) — автоматически создаст ярлыки и настроит службу.\n"
+            "• Портативная версия (.zip) — работает без прав администратора из любой папки.\n\n"
+            "После запуска нажмите «Добавить в клиент» для подключения подписки."
+        )
+    else:
+        text = (
+            "🪟 Windows Installation (10 / 11 64-bit)\n\n"
+            "• Installer (.exe) — automatically creates desktop shortcuts.\n"
+            "• Portable (.zip) — runs without admin installation.\n\n"
+            "After launch, tap “Add to Client” to connect your subscription."
+        )
+    _edit_or_send_home(call, text, get_install_windows_keyboard(lang))
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "install_linux")
+def handle_install_linux(call):
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    lang = (db_user or {}).get("language", "ru")
+    bot.answer_callback_query(call.id)
+    if lang == "ru":
+        text = (
+            "🐧 Установка для Linux\n\n"
+            "📦 Ubuntu / Debian / Mint:\n"
+            "`sudo dpkg -i MosaicVPN_0.3.49_amd64.deb`\n\n"
+            "📦 Любой другой дистрибутив:\n"
+            "Скачайте .tar.gz, распакуйте и запустите `./mosaicvpn`."
+        )
+    else:
+        text = (
+            "🐧 Linux Installation\n\n"
+            "📦 Ubuntu / Debian / Mint:\n"
+            "`sudo dpkg -i MosaicVPN_0.3.49_amd64.deb`\n\n"
+            "📦 Any other distribution:\n"
+            "Download .tar.gz, unpack and execute `./mosaicvpn`."
+        )
+    _edit_or_send_home(call, text, get_install_linux_keyboard(lang))
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "home_subscribe")
