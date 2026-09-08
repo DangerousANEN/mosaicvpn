@@ -360,7 +360,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     final resolved = await _resolveMosaicGroup(groupID);
     final manifest = await getProviderManifest(subscriptionId: resolved.$1.id);
     final group = manifest.routes.cast<ManifestGroup?>().firstWhere(
-          (value) => value?.id == groupID,
+          (value) => value?.id == resolved.$2 || value?.id == groupID,
           orElse: () => null,
         );
     if (group == null) {

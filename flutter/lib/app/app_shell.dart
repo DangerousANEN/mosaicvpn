@@ -363,6 +363,7 @@ class _AppShellState extends ConsumerState<AppShell>
       );
       TrayService.instance.setConnectionState(
         trayStatus?.state == 'connected',
+        connecting: trayStatus?.state == 'connecting',
         routeLabel: trayStatus?.server?.name ?? '',
       );
     }
@@ -673,11 +674,15 @@ class _AppShellState extends ConsumerState<AppShell>
     try {
       await ref.read(daemonApiProvider).disconnect();
       ref.invalidate(vpnStatusProvider);
+      if (mounted) {
+        _dismissTrayQuickPanel();
+      }
     } catch (error) {
       if (mounted) {
+        final errText = error.toString().replaceFirst('Exception: ', '').replaceFirst('Bad state: ', '');
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Не удалось отключиться. Повторите попытку.'),
+          SnackBar(
+            content: Text('Не удалось отключиться: $errText'),
           ),
         );
       }

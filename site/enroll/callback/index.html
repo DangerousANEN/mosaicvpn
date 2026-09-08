@@ -24,7 +24,7 @@
       var parameters = new URLSearchParams(window.location.search);
       var code = parameters.get('code') || '';
       var state = parameters.get('state') || '';
-      var valid = /^[A-Za-z0-9_-]{16,128}$/.test(code) && /^[A-Za-z0-9]{16,128}$/.test(state);
+      var valid = /^[A-Za-z0-9_-]{16,128}$/.test(code) && /^[A-Za-z0-9_-]{16,128}$/.test(state);
       var link = document.getElementById('open-app');
       var message = document.getElementById('message');
       var eyebrow = document.getElementById('eyebrow');

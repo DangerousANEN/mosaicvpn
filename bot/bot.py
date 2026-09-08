@@ -2826,13 +2826,13 @@ def get_install_android_keyboard(lang):
 def get_install_windows_keyboard(lang):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton(
-        "⬇️ Скачать Setup.exe (33.8 МБ)" if lang == "ru" else "⬇️ Download Setup.exe (33.8 MB)",
-        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.51/MosaicVPN-Setup-x64-v0.3.51.exe",
+        "⬇️ Скачать Setup.exe (24.7 МБ)" if lang == "ru" else "⬇️ Download Setup.exe (24.7 MB)",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.52/MosaicVPN-Setup-x64-v0.3.52.exe",
         style="primary",
     ))
     markup.add(types.InlineKeyboardButton(
-        "📦 Скачать Portable .zip (44.2 МБ)" if lang == "ru" else "📦 Download Portable .zip (44.2 MB)",
-        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.51/MosaicVPN-Portable-x64-v0.3.51.zip",
+        "📦 Скачать Portable .zip (36.8 МБ)" if lang == "ru" else "📦 Download Portable .zip (36.8 MB)",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.52/MosaicVPN-Portable-x64-v0.3.52.zip",
         style="primary",
     ))
     markup.add(types.InlineKeyboardButton(
@@ -2857,12 +2857,12 @@ def get_install_linux_keyboard(lang):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton(
         "📦 Ubuntu / Debian (.deb)" if lang == "ru" else "📦 Ubuntu / Debian (.deb)",
-        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.51/MosaicVPN_0.3.51_amd64.deb",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.52/MosaicVPN_0.3.52_amd64.deb",
         style="primary",
     ))
     markup.add(types.InlineKeyboardButton(
         "📦 Любой Linux (.tar.gz)" if lang == "ru" else "📦 Any Linux (.tar.gz)",
-        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.51/MosaicVPN-Portable-x86_64-v0.3.51.tar.gz",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.52/MosaicVPN-Portable-x86_64-v0.3.52.tar.gz",
         style="primary",
     ))
     markup.add(types.InlineKeyboardButton(
@@ -2890,8 +2890,8 @@ def get_download_keyboard(lang):
         kwargs.setdefault("style", "primary")
         return types.InlineKeyboardButton(text, **kwargs)
     markup.add(button("📱 Android", url="https://sub.zxc1x1.ru/assets/MosaicVPN-Android.apk", style="primary"))
-    markup.add(button("🪟 Windows (Setup)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.51/MosaicVPN-Setup-x64-v0.3.51.exe", style="primary"))
-    markup.add(button("🐧 Linux (Debian/Ubuntu)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.51/MosaicVPN_0.3.51_amd64.deb", style="primary"))
+    markup.add(button("🪟 Windows (Setup)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.52/MosaicVPN-Setup-x64-v0.3.52.exe", style="primary"))
+    markup.add(button("🐧 Linux (Debian/Ubuntu)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.52/MosaicVPN_0.3.52_amd64.deb", style="primary"))
     markup.add(button("📲 Добавить в клиент" if lang == "ru" else "📲 Add to Client", callback_data="home_add_client_menu", style="success"))
     # home_add_app alias supported
     return markup
@@ -4346,6 +4346,9 @@ def handle_ticket_list(call):
 @bot.callback_query_handler(func=lambda call: call.data.startswith("admin_reply_"))
 def handle_admin_reply(call):
     admin_id = call.message.chat.id
+    if not is_admin(admin_id):
+        bot.answer_callback_query(call.id, "⛔ Доступ запрещён", show_alert=True)
+        return
     ticket_id = int(call.data.split("_")[2])
     bot.answer_callback_query(call.id)
     msg = bot.send_message(admin_id, f"💬 Напишите ответ для тикета #{ticket_id}:")
@@ -4353,6 +4356,8 @@ def handle_admin_reply(call):
 
 def process_admin_reply(message, ticket_id=None):
     admin_id = message.chat.id
+    if not is_admin(admin_id):
+        return
     reply_text = message.text[:2000]
     ticket_add_message(ticket_id, "admin", reply_text)
     # Find ticket owner
@@ -4770,12 +4775,16 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self._cors_headers()
         self.end_headers()
-        self.wfile.write(body)
+        if getattr(self, "command", "GET") != "HEAD":
+            self.wfile.write(body)
 
     def _cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "https://sub.zxc1x1.ru")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS, HEAD")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+    def do_HEAD(self):
+        self.do_GET()
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -6000,8 +6009,8 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                 host="127.0.0.1",
                 port=6767,
                 user="postgres",
-                password="postgres",
-                database="postgres"
+                password=os.environ.get("MOSAIC_PG_PASSWORD", "postgres"),
+                database=os.environ.get("MOSAIC_PG_DATABASE", "postgres")
             )
             cursor = pg_conn.cursor()
             

@@ -1460,6 +1460,7 @@ func (s *Server) refresh(ctx context.Context, sub proto.Subscription) error {
 		s.manifestMu.Lock()
 		s.activeManifest = &manifest
 		s.manifestMu.Unlock()
+		s.pool.SetTargets(manifest.Routes(), s.store.Snapshot().Servers)
 		if err := s.store.SaveManifestForSubscription(sub.ID, &manifest); err != nil {
 			return fmt.Errorf("save provider manifest: %w", err)
 		}
@@ -2011,16 +2012,25 @@ func (s *Server) handleTestSpeedGroup(w http.ResponseWriter, r *http.Request) {
 // ---------- Pool / Group selection handlers --------------------------------
 
 // StartPool launches the background health-check loop using the current
-// manifest and server list from the store.
+// manifest and server list from the store, and keeps monitoring active.
 func (s *Server) StartPool(ctx context.Context) {
 	s.manifestMu.RLock()
 	manifest := s.activeManifest
 	s.manifestMu.RUnlock()
-	snap := s.store.Snapshot()
-	if manifest == nil || !manifest.HasRoutes() {
-		return
+
+	var initialRoutes []proto.ManifestGroup
+	var servers []proto.Server
+	if manifest != nil && manifest.HasRoutes() {
+		initialRoutes = manifest.Routes()
+		servers = s.store.Snapshot().Servers
+	} else {
+		snap := s.store.Snapshot()
+		if snap.ActiveManifest != nil && snap.ActiveManifest.HasRoutes() {
+			initialRoutes = snap.ActiveManifest.Routes()
+			servers = snap.Servers
+		}
 	}
-	s.pool.Start(ctx, manifest.Routes(), snap.Servers)
+	s.pool.Start(ctx, initialRoutes, servers)
 }
 
 // handleCandidateShard returns a bounded deterministic candidate subset to

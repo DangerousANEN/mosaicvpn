@@ -59,6 +59,7 @@ class TrayService {
   bool _initialized = false;
   bool _minimizeToTray = false;
   bool _connected = false;
+  bool _connecting = false;
   String _routeLabel = '';
   bool _hidden = false;
   TrayLabels _labels = const TrayLabels.russian();
@@ -101,9 +102,10 @@ class TrayService {
   }
 
   /// Reflects the current connection state in the next context menu rebuild.
-  void setConnectionState(bool connected, {String routeLabel = ''}) {
-    if (_connected == connected && _routeLabel == routeLabel) return;
+  void setConnectionState(bool connected, {bool connecting = false, String routeLabel = ''}) {
+    if (_connected == connected && _connecting == connecting && _routeLabel == routeLabel) return;
     _connected = connected;
+    _connecting = connecting;
     _routeLabel = routeLabel;
     if (_initialized) _buildMenu();
   }
@@ -152,7 +154,7 @@ class TrayService {
       ),
       MenuItemLabel(
         label: _labels.connect,
-        enabled: !_connected,
+        enabled: !_connected && !_connecting,
         onClicked: (_) async {
           await _onConnect?.call();
           await showWindow();
@@ -160,7 +162,7 @@ class TrayService {
       ),
       MenuItemLabel(
         label: _labels.disconnect,
-        enabled: _connected,
+        enabled: _connected || _connecting,
         onClicked: (_) async => _onDisconnect?.call(),
       ),
       MenuItemLabel(

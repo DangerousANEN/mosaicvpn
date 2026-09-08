@@ -234,6 +234,20 @@ func Open(path string) (*Store, error) {
 	if s.state.Prefs.SocksAddr == "" {
 		s.state.Prefs = DefaultPrefs()
 		needsPersist = true
+	} else {
+		// Detect when kill_switch was omitted from older stores (pre-0.3.43)
+		var rawMap map[string]json.RawMessage
+		if err := json.Unmarshal(data, &rawMap); err == nil {
+			if prefsRaw, ok := rawMap["prefs"]; ok {
+				var pMap map[string]json.RawMessage
+				if err := json.Unmarshal(prefsRaw, &pMap); err == nil {
+					if _, hasKillSwitch := pMap["kill_switch"]; !hasKillSwitch {
+						s.state.Prefs.KillSwitch = true
+						needsPersist = true
+					}
+				}
+			}
+		}
 	}
 	// Version 2 establishes close-to-tray as the desktop default. This is a
 	// one-time migration for pre-0.3.11 stores; subsequent user changes are

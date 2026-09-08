@@ -35,12 +35,17 @@ const (
 // groups. It must not be used as the final user-quality selector: that work is
 // intentionally performed by the local client runtime.
 type PoolEngine struct {
-	mu     sync.RWMutex
-	health map[string]HealthStatus
-	stopCh chan struct{}
-	wg     sync.WaitGroup
-	rrIdx  map[string]int // round-robin cursor per group ID
-	rrMu   sync.Mutex
+	mu        sync.RWMutex
+	health    map[string]HealthStatus
+	stopCh    chan struct{}
+	closeOnce sync.Once
+	wg        sync.WaitGroup
+	rrIdx     map[string]int // round-robin cursor per group ID
+	rrMu      sync.Mutex
+
+	targetMu sync.RWMutex
+	groups   []proto.ManifestGroup
+	servers  []proto.Server
 }
 
 // NewPoolEngine creates a new PoolEngine.
@@ -52,15 +57,40 @@ func NewPoolEngine() *PoolEngine {
 	}
 }
 
+// SetTargets safely updates the candidate groups and servers monitored by the pool engine.
+func (e *PoolEngine) SetTargets(groups []proto.ManifestGroup, servers []proto.Server) {
+	e.targetMu.Lock()
+	e.groups = make([]proto.ManifestGroup, len(groups))
+	copy(e.groups, groups)
+	e.servers = make([]proto.Server, len(servers))
+	copy(e.servers, servers)
+	e.targetMu.Unlock()
+}
+
+func (e *PoolEngine) getTargets() ([]proto.ManifestGroup, []proto.Server) {
+	e.targetMu.RLock()
+	defer e.targetMu.RUnlock()
+	g := make([]proto.ManifestGroup, len(e.groups))
+	copy(g, e.groups)
+	s := make([]proto.Server, len(e.servers))
+	copy(s, e.servers)
+	return g, s
+}
+
 // Start launches the background health-check loop.
-// Nodes are discovered from the provided manifest groups + servers.
+// Nodes are dynamically discovered and updated via SetTargets.
 func (e *PoolEngine) Start(ctx context.Context, groups []proto.ManifestGroup, servers []proto.Server) {
+	if len(groups) > 0 || len(servers) > 0 {
+		e.SetTargets(groups, servers)
+	}
 	e.wg.Add(1)
 	go func() {
 		defer e.wg.Done()
 		ticker := time.NewTicker(admissionProbeEvery)
 		defer ticker.Stop()
-		e.checkAll(groups, servers) // immediate first check
+		if initGroups, initServers := e.getTargets(); len(initGroups) > 0 && len(initServers) > 0 {
+			e.checkAll(initGroups, initServers)
+		}
 		for {
 			select {
 			case <-ctx.Done():
@@ -68,19 +98,20 @@ func (e *PoolEngine) Start(ctx context.Context, groups []proto.ManifestGroup, se
 			case <-e.stopCh:
 				return
 			case <-ticker.C:
-				e.checkAll(groups, servers)
+				curGroups, curServers := e.getTargets()
+				if len(curGroups) > 0 && len(curServers) > 0 {
+					e.checkAll(curGroups, curServers)
+				}
 			}
 		}
 	}()
 }
 
-// Stop signals the background loop to exit.
+// Stop signals the background loop to exit. Safe for repeated calls.
 func (e *PoolEngine) Stop() {
-	select {
-	case <-e.stopCh:
-	default:
+	e.closeOnce.Do(func() {
 		close(e.stopCh)
-	}
+	})
 	e.wg.Wait()
 }
 

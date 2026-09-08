@@ -65,7 +65,7 @@ class VpnStatus {
   bool get isConnected => state == 'connected';
   bool get isConnecting => state == 'connecting';
   bool get isDisconnected => state == 'disconnected';
-  bool get hasError => state == 'error' || lastError.isNotEmpty;
+  bool get hasError => state == 'error';
 
   VpnStatus copyWith({
     bool? agentConnected,
