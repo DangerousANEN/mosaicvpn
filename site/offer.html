@@ -159,6 +159,20 @@
     justify-content:center;
     flex-wrap:wrap;
   }
+
+  /* --- mobile hamburger menu (injected v0.3.52) --- */
+  .nav-hamburger{display:none;margin-left:auto;align-items:center;justify-content:center;width:40px;height:40px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);cursor:pointer;position:relative;z-index:61}
+  .nav-hamburger:hover{border-color:var(--accent);color:var(--accent)}
+  .nav-hamburger svg{pointer-events:none}
+  @media(max-width:920px){
+    header:has(.nav-links.open){z-index:120}
+    .nav-links{display:none}
+    .nav-hamburger{display:inline-flex}
+    .nav-links.open{display:block !important;flex-wrap:nowrap;height:auto !important;position:fixed;z-index:60;top:64px;bottom:auto;left:12px;right:12px;max-height:calc(100dvh - 80px);background:var(--card);backdrop-filter:blur(12px);padding:8px 20px;overflow-y:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.25)}
+    .nav-links.open a{display:block;padding:14px 0;font-size:17px;border-bottom:1px solid var(--border)}
+    .nav-links.open a:last-child{border-bottom:none}
+  }
+  @media(max-width:540px){.nav-links.open{top:60px;left:8px;right:8px;max-height:calc(100dvh - 72px);padding:6px 16px}.nav-links.open a{font-size:16px;padding:13px 0}}
 </style>
 </head>
 <body>
