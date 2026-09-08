@@ -209,11 +209,13 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                     // startForeground(); the one-arg overload crashes with
                     // MissingForegroundServiceTypeException on API 35/36/37
                     // even when foregroundServiceType="specialUse" is set.
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    // Using literal constant 0x40000000 prevents NoSuchFieldError
+                    // on devices with Android < 14.
+                    if (Build.VERSION.SDK_INT >= 34) {
                         startForeground(
                             NOTIFICATION_ID,
                             makeNotification("Подключение…"),
-                            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+                            0x40000000,
                         )
                     } else {
                         startForeground(NOTIFICATION_ID, makeNotification("Подключение…"))
