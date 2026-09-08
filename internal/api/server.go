@@ -1529,6 +1529,38 @@ func (s *Server) syncProviderGroups(subscriptionID string, manifest proto.Subscr
 		group.Source = proto.GroupSourcePool
 		group.Description = manifestGroup.Description
 		group.Icon = manifestGroup.Icon
+
+		cleanID := manifestGroup.ID
+		if idx := strings.LastIndex(cleanID, ":"); idx >= 0 {
+			cleanID = cleanID[idx+1:]
+		}
+		cleanNorm := strings.ToLower(strings.ReplaceAll(cleanID, "_", "-"))
+
+		if len(group.Nodes) == 0 {
+			for _, srv := range s.store.Snapshot().Servers {
+				if srv.IsVirtualGroup {
+					continue
+				}
+				matched := false
+				if rawGroups, ok := srv.Raw["mosaic_group_ids"].([]any); ok {
+					for _, g := range rawGroups {
+						gStr := strings.ToLower(strings.ReplaceAll(fmt.Sprint(g), "_", "-"))
+						if gStr == cleanNorm || cleanNorm == "min-latency" || cleanNorm == "stable" {
+							matched = true
+							break
+						}
+					}
+				}
+				if matched {
+					group.Nodes = append(group.Nodes, proto.NodeRef{
+						ServerID: srv.ID,
+						Weight:   100,
+						Alive:    true,
+					})
+				}
+			}
+		}
+
 		if err := s.store.SaveGroup(group); err != nil {
 			return err
 		}
@@ -2088,6 +2120,48 @@ func (s *Server) handleCandidateShard(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, exists := s.store.FindServer(node.ServerID); exists {
 			valid = append(valid, node.ServerID)
+		}
+	}
+	if len(valid) == 0 {
+		cleanGroupID := groupID
+		if idx := strings.LastIndex(cleanGroupID, ":"); idx >= 0 {
+			cleanGroupID = cleanGroupID[idx+1:]
+		}
+		cleanNorm := strings.ToLower(strings.ReplaceAll(cleanGroupID, "_", "-"))
+		for _, srv := range s.store.Snapshot().Servers {
+			if srv.IsVirtualGroup {
+				continue
+			}
+			matched := false
+			if rawGroups, ok := srv.Raw["mosaic_group_ids"].([]any); ok {
+				for _, g := range rawGroups {
+					gStr := strings.ToLower(strings.ReplaceAll(fmt.Sprint(g), "_", "-"))
+					if gStr == cleanNorm || cleanNorm == "min-latency" || cleanNorm == "stable" {
+						matched = true
+						break
+					}
+				}
+			} else if rawGroups, ok := srv.Raw["mosaic_candidate_groups"].([]any); ok {
+				for _, g := range rawGroups {
+					gStr := strings.ToLower(strings.ReplaceAll(fmt.Sprint(g), "_", "-"))
+					if gStr == cleanNorm || cleanNorm == "min-latency" || cleanNorm == "stable" {
+						matched = true
+						break
+					}
+				}
+			}
+			if matched {
+				valid = append(valid, srv.ID)
+			}
+		}
+		// If still empty, use any real server as anchor fallback
+		if len(valid) == 0 {
+			for _, srv := range s.store.Snapshot().Servers {
+				if !srv.IsVirtualGroup && srv.Protocol != "" {
+					valid = append(valid, srv.ID)
+					break
+				}
+			}
 		}
 	}
 	// Per-installation deterministic shuffling distributes clients over the

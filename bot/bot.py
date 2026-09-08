@@ -5429,7 +5429,48 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                     outbound["mosaic_speed_mbps"] = float(speed_mbps)
                 outbounds.append(outbound)
             cursor.close()
+            # Query vless_uuid for this subscriber to build a guaranteed anchor node
+            u_cursor = pg_conn.cursor()
+            u_cursor.execute("SELECT vless_uuid FROM users WHERE short_uuid = %s", (opaque_id,))
+            u_row = u_cursor.fetchone()
+            user_vless_uuid = str(u_row[0]) if (u_row and u_row[0]) else None
+            u_cursor.close()
             pg_conn.close()
+
+            if user_vless_uuid:
+                anchor_groups = [
+                    "auto-ca", "auto-de", "auto-fr", "auto-nl", "auto-us",
+                    "canada", "france", "germany", "max_speed", "min_latency",
+                    "netherlands", "stable", "usa"
+                ]
+                anchor_outbound = {
+                    "type": "vless",
+                    "tag": "mosaic-anchor-direct-ws",
+                    "server": "5.175.188.152",
+                    "server_port": 443,
+                    "uuid": user_vless_uuid,
+                    "tls": {
+                        "enabled": True,
+                        "server_name": "vk.com",
+                        "insecure": False
+                    },
+                    "transport": {
+                        "type": "ws",
+                        "path": "/mosaicws",
+                        "headers": {
+                            "Host": "vk.com"
+                        }
+                    },
+                    "mosaic_client_candidate": True,
+                    "mosaic_candidate_groups": anchor_groups,
+                    "mosaic_group_ids": anchor_groups,
+                    "mosaic_stable": True,
+                    "mosaic_speed_eligible": True,
+                    "mosaic_country": "DE",
+                    "mosaic_speed_mbps": 150.0
+                }
+                outbounds.insert(0, anchor_outbound)
+
             if not outbounds:
                 trigger_urgent_pool_refresh("empty client candidate feed")
         except Exception as exc:

@@ -1120,7 +1120,9 @@ func outboundForWithTag(s proto.Server, tag string) (map[string]any, error) {
 				"type":         "grpc",
 				"service_name": rs("path"),
 			}
-		case "xhttp", "http":
+		case "xhttp":
+			return nil, fmt.Errorf("transport 'xhttp' is proprietary to Xray-core and is not supported by sing-box")
+		case "http":
 			t := map[string]any{"type": "http"}
 			if path := rs("path"); path != "" {
 				t["path"] = path

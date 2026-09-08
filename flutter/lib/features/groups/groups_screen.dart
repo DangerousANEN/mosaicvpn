@@ -363,7 +363,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                   : null,
               traffic: _groupLatencyProgress?.groupId == group.id
                   ? '${_groupLatencyProgress!.label} проверено'
-                  : '—',
+                  : (_testResults[group.id] != null ? 'Проверено' : '—'),
               country: group.countryCode,
               isGroup: true,
               isSmartGroup: group.routeType == 'smart_group',
@@ -574,6 +574,11 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
         () async {
           try {
             final result = await api.testServer(server.id);
+            if (mounted) {
+              setState(() {
+                _testResults[server.id] = result;
+              });
+            }
             return !result.failed;
           } catch (_) {
             return false; // unreachable route must not stop the sweep
@@ -581,17 +586,48 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
         },
       for (final group in groups)
         () async {
-          try {
-            final result = await api.testDirectRoute(group.id);
-            return !result.failed && result.latencyMS >= 0;
-          } catch (_) {
-            // Smart Groups fall back to their own bounded runner.
+          if (group.routeType != 'smart_group') {
             try {
-              await _runGroupLatencyTest(group);
-              return true;
+              final result = await api.testDirectRoute(group.id);
+              if (mounted) {
+                setState(() {
+                  _testResults[group.id] = result;
+                });
+              }
+              return !result.failed && result.latencyMS >= 0;
             } catch (_) {
               return false;
             }
+          }
+          try {
+            final runner = SmartGroupLatencyTest(
+              api: api,
+              selector: _smartGroupSelector,
+            );
+            final result = await runner.run(
+              group,
+              onProgress: (progress) {
+                if (mounted) {
+                  setState(() => _groupLatencyProgress = progress);
+                }
+              },
+            );
+            if (result.latencyMs != null && result.latencyMs! > 0) {
+              if (mounted) {
+                setState(() {
+                  _testResults[group.id] = TestResult(
+                    serverID: group.id,
+                    serverName: _groupTitle(group),
+                    latencyMS: result.latencyMs!,
+                    testedAt: DateTime.now(),
+                  );
+                });
+              }
+              return true;
+            }
+            return false;
+          } catch (_) {
+            return false;
           }
         },
     ];
@@ -1148,6 +1184,11 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
         try {
           final result =
               await ref.read(daemonApiProvider).testDirectRoute(group.id);
+          if (mounted) {
+            setState(() {
+              _testResults[group.id] = result;
+            });
+          }
           ref.invalidate(serversProvider);
           if (!mounted) return;
           final ok = !result.failed && result.latencyMS >= 0;
@@ -1223,6 +1264,18 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       final result = await runner.run(group, onProgress: (progress) {
         if (mounted) setState(() => _groupLatencyProgress = progress);
       });
+      if (result.latencyMs != null && result.latencyMs! > 0) {
+        if (mounted) {
+          setState(() {
+            _testResults[group.id] = TestResult(
+              serverID: group.id,
+              serverName: _groupTitle(group),
+              latencyMS: result.latencyMs!,
+              testedAt: DateTime.now(),
+            );
+          });
+        }
+      }
       if (!mounted) return;
       _showMessage(
         result.cancelled

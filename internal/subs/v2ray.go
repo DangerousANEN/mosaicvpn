@@ -102,6 +102,9 @@ func parseVLESS(subID, raw string) (proto.Server, error) {
 	host, port := hostPort(u)
 	uuid := u.User.Username()
 	q := u.Query()
+	if strings.EqualFold(q.Get("type"), "xhttp") {
+		return proto.Server{}, fmt.Errorf("transport 'xhttp' is not supported by sing-box")
+	}
 	name := decodeFragment(u.Fragment, fmt.Sprintf("vless://%s:%d", host, port))
 
 	flow := q.Get("flow")

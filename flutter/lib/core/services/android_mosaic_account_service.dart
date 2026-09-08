@@ -903,6 +903,12 @@ class AndroidMosaicAccountService {
           type == 'selector') {
         continue;
       }
+      final transportType = outbound['transport'] is Map
+          ? (outbound['transport']['type']?.toString() ?? '').toLowerCase()
+          : '';
+      if (transportType == 'xhttp') {
+        continue;
+      }
       final matches = groupIDs.any((id) => normalize(id) == wanted);
       hasMembershipMetadata.add(groupIDs.isNotEmpty);
       if (matches) members.add(outbound);
@@ -1576,9 +1582,9 @@ class AndroidMosaicAccountService {
           'tag': routeTag,
           'outbounds': tags,
           'url': 'https://www.gstatic.com/generate_204',
-          'interval': '15s',
-          'tolerance': 50,
-          'interrupt_exist_connections': true,
+          'interval': '1m',
+          'tolerance': 100,
+          'interrupt_exist_connections': false,
         },
       {'type': 'direct', 'tag': 'direct'},
     ];

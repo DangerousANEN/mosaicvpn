@@ -28,6 +28,9 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   static const _localSubscriptionID = 'local-default';
   final _account = AndroidMosaicAccountService.instance;
   Server? _activeRoute;
+  int _lastMeasuredLatencyMS = 0;
+  DateTime? _lastLatencyProbeAt;
+  bool _probingLatency = false;
 
   /// Candidates of the most recent [getCandidateShard] call, keyed by opaque
   /// tag. Kept in-memory only: probe results must never outlive the feed that
@@ -131,16 +134,59 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     }
   }
 
+  void _probeActiveConnectionLatency() {
+    if (_probingLatency) return;
+    _probingLatency = true;
+    _lastLatencyProbeAt = DateTime.now();
+    Future<void>(() async {
+      try {
+        final sw = Stopwatch()..start();
+        final client = HttpClient()
+          ..connectionTimeout = const Duration(seconds: 4);
+        final req = await client
+            .getUrl(Uri.parse('https://www.gstatic.com/generate_204'));
+        final resp = await req.close();
+        sw.stop();
+        if (resp.statusCode == 204 || resp.statusCode == 200) {
+          _lastMeasuredLatencyMS = sw.elapsedMilliseconds;
+        }
+        client.close(force: true);
+      } catch (_) {
+        if (_activeRoute?.lastTestMS != null && _activeRoute!.lastTestMS > 0) {
+          _lastMeasuredLatencyMS = _activeRoute!.lastTestMS;
+        }
+      } finally {
+        _probingLatency = false;
+      }
+    });
+  }
+
   @override
   Future<VpnStatus> getStatus() async {
     final state = await AndroidVpnService.instance.status();
-    if (!state.isConnected) _activeRoute = null;
+    if (!state.isConnected) {
+      _activeRoute = null;
+      _lastMeasuredLatencyMS = 0;
+      _lastLatencyProbeAt = null;
+    } else {
+      if (_lastMeasuredLatencyMS <= 0) {
+        if (_activeRoute?.lastTestMS != null && _activeRoute!.lastTestMS > 0) {
+          _lastMeasuredLatencyMS = _activeRoute!.lastTestMS;
+        }
+      }
+      if (_lastLatencyProbeAt == null ||
+          DateTime.now().difference(_lastLatencyProbeAt!) >
+              const Duration(seconds: 30)) {
+        _probeActiveConnectionLatency();
+      }
+    }
     return VpnStatus(
       agentConnected: true,
       state: state.state,
       tunnelMode: 'tun',
       server: state.isConnected ? _activeRoute : null,
       lastError: state.error ?? '',
+      latencyMS: state.isConnected ? _lastMeasuredLatencyMS : 0,
     );
   }
 
@@ -342,6 +388,10 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     final latency = endpoint == null
         ? null
         : await _probeTcpLatency(endpoint.$1, endpoint.$2);
+    if (latency != null && latency > 0) {
+      _lastMeasuredLatencyMS = latency;
+      _lastLatencyProbeAt = DateTime.now();
+    }
     return TestResult(
       serverID: server.id,
       serverName: server.name,
@@ -389,6 +439,10 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     final latency = httpSamples.samples.isEmpty
         ? null
         : httpSamples.samples[httpSamples.samples.length ~/ 2];
+    if (latency != null && latency > 0) {
+      _lastMeasuredLatencyMS = latency;
+      _lastLatencyProbeAt = DateTime.now();
+    }
     return TestResult(
       serverID: group.id,
       serverName: group.title.isEmpty ? group.id : group.title,
@@ -1009,6 +1063,9 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
           final link = links[index];
           final uri = Uri.tryParse(link);
           if (uri == null || uri.scheme.isEmpty) continue;
+          final transport =
+              (uri.queryParameters['type'] ?? 'tcp').toLowerCase();
+          if (transport == 'xhttp') continue;
           final label = uri.fragment.isEmpty
               ? '${uri.scheme.toUpperCase()} ${uri.host}'
               : Uri.decodeComponent(uri.fragment);

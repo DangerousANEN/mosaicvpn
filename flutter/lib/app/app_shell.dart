@@ -787,10 +787,17 @@ class _AppShellState extends ConsumerState<AppShell>
     // physical server: that hides the original diagnostic and produces a
     // second, misleading error.
     if (routeId.startsWith('mosaic:') ||
+        routeId.startsWith('provider:') ||
         routeId == 'direct' ||
         routeId == 'min-latency' ||
         routeId == 'stable' ||
-        routeId == 'max-speed') {
+        routeId == 'max-speed' ||
+        routeId == 'germany' ||
+        routeId == 'usa' ||
+        routeId == 'netherlands' ||
+        routeId == 'france' ||
+        routeId == 'canada' ||
+        routeId.startsWith('auto-')) {
       await api.connectGroup(routeId);
     } else {
       await api.connect(routeId);
