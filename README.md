@@ -47,14 +47,14 @@ system settings.
 
 ## Install
 
-**Latest: v0.3.37** — UAC self-restart for TUN mode on Windows, direct-route
-latency testing, XHTTP transport filtering. Downloads:
+**Latest: v0.3.51** — resilient connect (URL sanitization, graceful candidate
+fallback, DNS resilience), new France route, mobile menu fix. Downloads:
 
 | Platform | File |
 |---|---|
-| Windows 10/11 x64 | [Setup](https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.37/MosaicVPN-Setup-x64-v0.3.37.exe) · [Portable .zip](https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.37/MosaicVPN-Portable-x64-v0.3.37.zip) |
-| Linux x86_64 | [.deb](https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.37/MosaicVPN_0.3.37_amd64.deb) · [Portable .tar.gz](https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.37/MosaicVPN-Portable-x86_64-v0.3.37.tar.gz) |
-| Android 7.0+ | [.apk](https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.37/MosaicVPN-Android-v0.3.37.apk) |
+| Windows 10/11 x64 | [Setup](https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.51/MosaicVPN-Setup-x64-v0.3.51.exe) · [Portable .zip](https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.51/MosaicVPN-Portable-x64-v0.3.51.zip) |
+| Linux x86_64 | [.deb](https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.51/MosaicVPN_0.3.51_amd64.deb) · [Portable .tar.gz](https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.51/MosaicVPN-Portable-x86_64-v0.3.51.tar.gz) |
+| Android 7.0+ | [.apk](https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.51/MosaicVPN-Android-v0.3.51.apk) |
 
 Landing page with full docs: <https://zxc1x1.ru/>
 
