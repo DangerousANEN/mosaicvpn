@@ -5,7 +5,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/models/subscription.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/theme/atlas_theme.dart';
-import '../../shared/widgets/atlas_widgets.dart';
 
 class AtlasOnboardingCard extends ConsumerStatefulWidget {
   final List<Subscription> subscriptions;
@@ -26,7 +25,6 @@ class AtlasOnboardingCard extends ConsumerStatefulWidget {
 
 class _AtlasOnboardingCardState extends ConsumerState<AtlasOnboardingCard> {
   String? _clipboardCandidate;
-  bool _checkingClipboard = false;
 
   @override
   void initState() {
@@ -35,7 +33,6 @@ class _AtlasOnboardingCardState extends ConsumerState<AtlasOnboardingCard> {
   }
 
   Future<void> _checkClipboard() async {
-    setState(() => _checkingClipboard = true);
     try {
       final data = await Clipboard.getData(Clipboard.kTextPlain);
       final text = data?.text?.trim() ?? '';
@@ -47,7 +44,6 @@ class _AtlasOnboardingCardState extends ConsumerState<AtlasOnboardingCard> {
         if (mounted) setState(() => _clipboardCandidate = text);
       }
     } catch (_) {}
-    if (mounted) setState(() => _checkingClipboard = false);
   }
 
   Future<void> _addCandidate(String url) async {

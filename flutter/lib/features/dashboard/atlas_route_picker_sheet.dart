@@ -1,12 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/models/subscription.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/services/scale_proof_prober.dart';
-import '../../core/services/ui_preferences_service.dart';
 import '../../core/theme/atlas_theme.dart';
-import '../../shared/widgets/atlas_widgets.dart';
 
 class AtlasRouteItem {
   final String id;
@@ -280,7 +277,7 @@ class _AtlasRoutePickerSheetState extends ConsumerState<AtlasRoutePickerSheet> {
                       ),
                       Switch.adaptive(
                         value: autoFailover,
-                        activeColor: c.success,
+                        activeThumbColor: c.success,
                         onChanged: (val) {
                           ref.read(autoFailoverProvider.notifier).toggle();
                         },

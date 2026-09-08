@@ -1,12 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/api/daemon_api.dart';
-import '../../core/models/preferences.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/services/android_vpn_service.dart';
-import '../../core/services/ui_preferences_service.dart';
 import '../../core/theme/atlas_theme.dart';
-import '../../shared/widgets/atlas_widgets.dart';
 
 class SplitTunnelScreen extends ConsumerStatefulWidget {
   const SplitTunnelScreen({super.key});
