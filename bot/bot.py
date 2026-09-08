@@ -2801,7 +2801,7 @@ def get_install_os_keyboard(lang):
 def get_install_android_keyboard(lang):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton(
-        "⬇️ Скачать APK v0.3.51 (53.6 МБ)" if lang == "ru" else "⬇️ Download APK v0.3.51 (53.6 MB)",
+        "⬇️ Скачать APK v0.3.52 (62.2 МБ)" if lang == "ru" else "⬇️ Download APK v0.3.52 (62.2 MB)",
         url="https://sub.zxc1x1.ru/assets/MosaicVPN-Android.apk",
         style="primary",
     ))
