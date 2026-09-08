@@ -219,6 +219,10 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   }
 
   @override
+  Future<void> connectGroupCandidate(String groupID, String candidateID) =>
+      connectGroup(groupID);
+
+  @override
   Future<void> disconnect() async {
     // Stopping is best-effort: the native runtime may already be gone.
     try {
@@ -559,11 +563,22 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     final subscriptions = await listSubscriptions();
     final scoped = _parseScopedGroupID(groupID);
     if (scoped != null) {
-      final subscription = subscriptions.cast<Subscription?>().firstWhere(
+      var subscription = subscriptions.cast<Subscription?>().firstWhere(
             (value) => value?.id == scoped.subscriptionID,
             orElse: () => null,
           );
       if (subscription != null && _isMosaicSubscription(subscription)) {
+        if (subscription.url.endsWith('.')) {
+          final cleanUrl = subscription.url.replaceAll(RegExp(r'\.+$'), '');
+          final updated = subscription.copyWith(url: cleanUrl);
+          final all = await _readLocalSubscriptions();
+          final idx = all.indexWhere((s) => s.id == updated.id);
+          if (idx >= 0) {
+            all[idx] = updated;
+            await _writeLocalSubscriptions(all);
+          }
+          subscription = updated;
+        }
         return (subscription, scoped.manifestGroupID);
       }
       throw StateError(
@@ -732,10 +747,14 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     final normalized = <Subscription>[];
     final urls = <String>{};
     for (final value in stored) {
+      final fixedUrl = value.url.trim().replaceAll(RegExp(r'\.+$'), '');
+      final sanitized =
+          fixedUrl != value.url ? value.copyWith(url: fixedUrl) : value;
       final legacyMosaicProvider =
-          value.isProviderSource && _isMosaicSubscriptionUrl(value.url);
-      final current = legacyMosaicProvider ? _asUrlSubscription(value) : value;
-      migrated = migrated || legacyMosaicProvider;
+          sanitized.isProviderSource && _isMosaicSubscriptionUrl(sanitized.url);
+      final current =
+          legacyMosaicProvider ? _asUrlSubscription(sanitized) : sanitized;
+      migrated = migrated || legacyMosaicProvider || fixedUrl != value.url;
       // Keep the first row in user-defined order when a previous website flow
       // left both a generic import and a provider mirror for the same URL.
       final key = current.url.trim();
@@ -759,7 +778,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     bool autoRefresh = false,
     int refreshInterval = 3600,
   }) async {
-    final normalized = url.trim();
+    final normalized = url.trim().replaceAll(RegExp(r'\.+$'), '');
     if (normalized.isEmpty) {
       throw const FormatException('Введите URL подписки.');
     }
@@ -981,10 +1000,6 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       result.addAll(await _readLocalServers());
     }
     for (final subscription in subscriptions) {
-      // A Mosaic URL may expose Smart Groups through its manifest. Never render
-      // the implementation feed's physical pool rows, but retain ordinary URL
-      // ownership, deletion and connection semantics for the subscription.
-      if (_isMosaicSubscription(subscription)) continue;
       if (subscription.id == _localSubscriptionID) continue;
       if (subscriptionID != null && subscription.id != subscriptionID) continue;
       try {

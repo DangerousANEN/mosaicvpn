@@ -1438,15 +1438,17 @@ def get_admin_balance_credit_history(limit=50):
 
 # Known manifest route IDs.  Kept in sync with _handle_provider_manifest.
 KNOWN_ROUTE_IDS = frozenset({
-    "min-latency", "stable", "max-speed", "germany", "canada", "direct",
+    "min-latency", "stable", "max-speed", "germany", "usa", "netherlands", "france", "canada", "direct",
 })
 ROUTE_DB_GROUP_IDS = {
     "min-latency": "min_latency", "stable": "stable",
-    "max-speed": "max_speed", "germany": "germany", "canada": "canada",
+    "max-speed": "max_speed", "germany": "germany",
+    "usa": "auto-us", "netherlands": "auto-nl", "france": "auto-fr",
+    "canada": "canada",
 }
 DEFAULT_ROUTE_MIN_ELIGIBLE = {
-    "min-latency": 12, "stable": 12, "max-speed": 12,
-    "germany": 6, "canada": 6,
+    "min-latency": 4, "stable": 4, "max-speed": 4,
+    "germany": 2, "usa": 2, "netherlands": 2, "france": 2, "canada": 2,
 }
 
 
@@ -1540,7 +1542,12 @@ def get_route_eligible_counts():
               AND mn.last_checked_at >= now() - interval '6 hours'
             GROUP BY gn.group_id
         """)
-        return {str(group_id): int(count) for group_id, count in cursor.fetchall()}
+        raw = {str(group_id): int(count) for group_id, count in cursor.fetchall()}
+        raw["stable"] = raw.get("stable") or raw.get("allowlist") or raw.get("min_latency", 20)
+        raw["usa"] = raw.get("auto-us", 0)
+        raw["netherlands"] = raw.get("auto-nl", 0)
+        raw["france"] = raw.get("auto-fr", 0)
+        return raw
     finally:
         conn.close()
 
@@ -2794,7 +2801,7 @@ def get_install_os_keyboard(lang):
 def get_install_android_keyboard(lang):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton(
-        "⬇️ Скачать APK v0.3.50 (53.6 МБ)" if lang == "ru" else "⬇️ Download APK v0.3.50 (53.6 MB)",
+        "⬇️ Скачать APK v0.3.51 (53.6 МБ)" if lang == "ru" else "⬇️ Download APK v0.3.51 (53.6 MB)",
         url="https://sub.zxc1x1.ru/assets/MosaicVPN-Android.apk",
         style="primary",
     ))
@@ -2820,12 +2827,12 @@ def get_install_windows_keyboard(lang):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton(
         "⬇️ Скачать Setup.exe (33.8 МБ)" if lang == "ru" else "⬇️ Download Setup.exe (33.8 MB)",
-        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.49/MosaicVPN-Setup-x64-v0.3.49.exe",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.51/MosaicVPN-Setup-x64-v0.3.51.exe",
         style="primary",
     ))
     markup.add(types.InlineKeyboardButton(
         "📦 Скачать Portable .zip (44.2 МБ)" if lang == "ru" else "📦 Download Portable .zip (44.2 MB)",
-        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.49/MosaicVPN-Portable-x64-v0.3.49.zip",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.51/MosaicVPN-Portable-x64-v0.3.51.zip",
         style="primary",
     ))
     markup.add(types.InlineKeyboardButton(
@@ -2850,12 +2857,12 @@ def get_install_linux_keyboard(lang):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton(
         "📦 Ubuntu / Debian (.deb)" if lang == "ru" else "📦 Ubuntu / Debian (.deb)",
-        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.49/MosaicVPN_0.3.49_amd64.deb",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.51/MosaicVPN_0.3.51_amd64.deb",
         style="primary",
     ))
     markup.add(types.InlineKeyboardButton(
         "📦 Любой Linux (.tar.gz)" if lang == "ru" else "📦 Any Linux (.tar.gz)",
-        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.49/MosaicVPN-Portable-x86_64-v0.3.49.tar.gz",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.51/MosaicVPN-Portable-x86_64-v0.3.51.tar.gz",
         style="primary",
     ))
     markup.add(types.InlineKeyboardButton(
@@ -2883,8 +2890,8 @@ def get_download_keyboard(lang):
         kwargs.setdefault("style", "primary")
         return types.InlineKeyboardButton(text, **kwargs)
     markup.add(button("📱 Android", url="https://sub.zxc1x1.ru/assets/MosaicVPN-Android.apk", style="primary"))
-    markup.add(button("🪟 Windows (Setup)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.49/MosaicVPN-Setup-x64-v0.3.49.exe", style="primary"))
-    markup.add(button("🐧 Linux (Debian/Ubuntu)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.49/MosaicVPN_0.3.49_amd64.deb", style="primary"))
+    markup.add(button("🪟 Windows (Setup)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.51/MosaicVPN-Setup-x64-v0.3.51.exe", style="primary"))
+    markup.add(button("🐧 Linux (Debian/Ubuntu)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.51/MosaicVPN_0.3.51_amd64.deb", style="primary"))
     markup.add(button("📲 Добавить в клиент" if lang == "ru" else "📲 Add to Client", callback_data="home_add_client_menu", style="success"))
     # home_add_app alias supported
     return markup
@@ -3349,7 +3356,7 @@ def handle_install_linux(call):
         text = (
             "🐧 Установка для Linux\n\n"
             "📦 Ubuntu / Debian / Mint:\n"
-            "`sudo dpkg -i MosaicVPN_0.3.49_amd64.deb`\n\n"
+            "`sudo dpkg -i MosaicVPN_0.3.51_amd64.deb`\n\n"
             "📦 Любой другой дистрибутив:\n"
             "Скачайте .tar.gz, распакуйте и запустите `./mosaicvpn`."
         )
@@ -3357,7 +3364,7 @@ def handle_install_linux(call):
         text = (
             "🐧 Linux Installation\n\n"
             "📦 Ubuntu / Debian / Mint:\n"
-            "`sudo dpkg -i MosaicVPN_0.3.49_amd64.deb`\n\n"
+            "`sudo dpkg -i MosaicVPN_0.3.51_amd64.deb`\n\n"
             "📦 Any other distribution:\n"
             "Download .tar.gz, unpack and execute `./mosaicvpn`."
         )
@@ -5244,19 +5251,19 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         }
         groups = [
             {
-                "id": "min-latency", "title": "[SG] Минимальный пинг", "route_type": "smart_group",
+                "id": "min-latency", "title": "Минимальный пинг", "route_type": "smart_group",
                 "type": "urltest", "pool_id": "client-min-latency", "category": "smart",
                 "icon": "lightning", "badge": "Авто", "description": "Выбор маршрута с минимальной задержкой на этом устройстве.",
                 "client_policy": {**policy, "mode": "latency"},
             },
             {
-                "id": "stable", "title": "[SG] Оптимальный", "route_type": "smart_group",
+                "id": "stable", "title": "Оптимальный", "route_type": "smart_group",
                 "type": "urltest", "pool_id": "client-stable", "category": "smart",
                 "icon": "shield", "badge": "Рекомендуется", "description": "Баланс стабильности и задержки с локальным failover.",
                 "client_policy": {**policy, "mode": "stability", "stability_weight": 0.45, "latency_weight": 0.30},
             },
             {
-                "id": "max-speed", "title": "[SG] Максимальная скорость", "route_type": "smart_group",
+                "id": "max-speed", "title": "Максимальная скорость", "route_type": "smart_group",
                 "type": "urltest", "pool_id": "client-max-speed", "category": "smart",
                 "icon": "speed", "badge": "Авто", "description": "Сравнивает не более двух подходящих маршрутов на этом устройстве.",
                 "client_policy": {
@@ -5279,13 +5286,31 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                 },
             },
             {
-                "id": "germany", "title": "[SG] Германия", "route_type": "smart_group",
+                "id": "germany", "title": "Германия", "route_type": "smart_group",
                 "type": "urltest", "pool_id": "client-germany", "country_code": "DE", "category": "smart",
                 "icon": "flag_de", "badge": "Авто", "description": "Автоматический выбор среди подтверждённых маршрутов в Германии.",
                 "client_policy": {**policy, "mode": "latency"},
             },
             {
-                "id": "canada", "title": "[SG] Канада", "route_type": "smart_group",
+                "id": "usa", "title": "США", "route_type": "smart_group",
+                "type": "urltest", "pool_id": "client-usa", "country_code": "US", "category": "smart",
+                "icon": "flag_us", "badge": "Авто", "description": "Автоматический выбор среди подтверждённых маршрутов в США.",
+                "client_policy": {**policy, "mode": "latency"},
+            },
+            {
+                "id": "netherlands", "title": "Нидерланды", "route_type": "smart_group",
+                "type": "urltest", "pool_id": "client-netherlands", "country_code": "NL", "category": "smart",
+                "icon": "flag_nl", "badge": "Авто", "description": "Автоматический выбор среди подтверждённых маршрутов в Нидерландах.",
+                "client_policy": {**policy, "mode": "latency"},
+            },
+            {
+                "id": "france", "title": "Франция", "route_type": "smart_group",
+                "type": "urltest", "pool_id": "client-france", "country_code": "FR", "category": "smart",
+                "icon": "flag_fr", "badge": "Авто", "description": "Автоматический выбор среди подтверждённых маршрутов во Франции.",
+                "client_policy": {**policy, "mode": "latency"},
+            },
+            {
+                "id": "canada", "title": "Канада", "route_type": "smart_group",
                 "type": "urltest", "pool_id": "client-canada", "country_code": "CA", "category": "smart",
                 "icon": "flag_ca", "badge": "Авто", "description": "Автоматический выбор среди подтверждённых маршрутов в Канаде.",
                 "client_policy": {**policy, "mode": "latency"},
@@ -5355,8 +5380,8 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                   AND mn.last_checked_at >= now() - interval '6 hours'
                 GROUP BY mn.fingerprint, mn.config, mn.country_code, mn.speed_mbps
                 ORDER BY min(gn.priority), mn.speed_mbps DESC NULLS LAST
-                LIMIT 80
-            """, (["min_latency", "stable", "max_speed", "germany", "canada"],))
+                LIMIT 120
+            """, (["min_latency", "stable", "max_speed", "germany", "auto-de", "usa", "auto-us", "netherlands", "auto-nl", "france", "auto-fr", "canada", "auto-ca"],))
             outbounds = []
             for fingerprint, config, country_code, speed_mbps, group_ids in cursor.fetchall():
                 if not isinstance(config, dict):
@@ -5367,13 +5392,28 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                 outbound = dict(config)
                 outbound["tag"] = f"mosaic-candidate-{str(fingerprint)[:12]}"
                 outbound["mosaic_client_candidate"] = True
-                outbound["mosaic_candidate_groups"] = list(group_ids or [])
+                mapped_groups = set(group_ids or [])
+                if "auto-us" in mapped_groups:
+                    mapped_groups.add("usa")
+                if "auto-nl" in mapped_groups:
+                    mapped_groups.add("netherlands")
+                if "auto-fr" in mapped_groups:
+                    mapped_groups.add("france")
+                if "auto-de" in mapped_groups:
+                    mapped_groups.add("germany")
+                if "auto-ca" in mapped_groups:
+                    mapped_groups.add("canada")
+                # Every confirmed node is eligible for min-latency and stable fallback
+                mapped_groups.add("min_latency")
+                mapped_groups.add("stable")
+                mapped_groups_list = sorted(mapped_groups)
+                outbound["mosaic_candidate_groups"] = mapped_groups_list
                 # Android and desktop select the daemon-only candidates only
                 # through these opaque group memberships. They are stripped
                 # before the sing-box config reaches the runtime.
-                outbound["mosaic_group_ids"] = list(group_ids or [])
-                outbound["mosaic_stable"] = "stable" in (group_ids or [])
-                outbound["mosaic_speed_eligible"] = "max_speed" in (group_ids or [])
+                outbound["mosaic_group_ids"] = mapped_groups_list
+                outbound["mosaic_stable"] = True
+                outbound["mosaic_speed_eligible"] = "max_speed" in mapped_groups
                 if country_code:
                     outbound["mosaic_country"] = str(country_code).upper()
                 if speed_mbps is not None:

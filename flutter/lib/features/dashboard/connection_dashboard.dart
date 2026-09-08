@@ -167,107 +167,86 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     List<_RouteChoice> groups,
     _RouteChoice selected,
   ) {
-    final s = AppStrings.of(context);
+    final connected = status.isConnected;
+    final connecting = status.isConnecting;
+
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _DashboardHeader(
-                onRefresh: () => ref.invalidate(vpnStatusProvider)),
-            const SizedBox(height: 10),
-            Expanded(
-              child: _ConnectionHeroCard(
-                status: status,
-                animation: _pulse,
-                routeTitle: selected.title,
-                routeSubtitle: selected.subtitle.isEmpty
-                    ? s.t('route_picker_hint')
-                    : selected.subtitle,
-                onPickRoute: groups.length > 1
-                    ? () => _pickGroup(context, groups, selected)
-                    : null,
-              ),
+              onRefresh: () => ref.invalidate(vpnStatusProvider),
             ),
-            const SizedBox(height: 12),
-            if (groups.length > 1) ...[
-              SizedBox(
-                height: 40,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: groups.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, index) {
-                    final group = groups[index];
-                    final active = group.id == selected.id;
-                    return Semantics(
-                      button: true,
-                      label: 'Выбрать маршрут ${group.title}',
-                      child: Material(
-                        color: group.disabled
-                            ? AtlasTheme.error.withValues(alpha: .10)
-                            : active
-                                ? AtlasTheme.accent
-                                : c.bgCard,
-                        borderRadius: BorderRadius.circular(20),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(20),
-                          onTap: group.disabled
-                              ? null
-                              : () {
-                                  ref
-                                      .read(selectedRouteIdProvider.notifier)
-                                      .set(group.id);
-                                },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 13),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: group.disabled
-                                    ? AtlasTheme.error
-                                    : active
-                                        ? AtlasTheme.accent
-                                        : c.border,
-                              ),
-                            ),
-                            alignment: Alignment.center,
-                            child:
-                                Row(mainAxisSize: MainAxisSize.min, children: [
-                              Icon(_chipIcon(group.icon),
-                                  size: 15,
-                                  color: group.disabled
-                                      ? AtlasTheme.error
-                                      : active
-                                          ? AtlasTheme.onAccent
-                                          : c.textSecondary),
-                              const SizedBox(width: 6),
-                              Text(group.title,
-                                  style: TextStyle(
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w600,
-                                    color: group.disabled
-                                        ? AtlasTheme.error
-                                        : active
-                                            ? AtlasTheme.onAccent
-                                            : c.textPrimary,
-                                  )),
-                            ]),
-                          ),
+            const SizedBox(height: 8),
+
+            // ── The Centerpiece: Hero Compass Dial & Status ──
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _AtlasHeroCompassButton(
+                        status: status,
+                        animation: _pulse,
+                        busy: _busy,
+                        onTap: () => _toggle(status, selected),
+                      ),
+                      const SizedBox(height: 18),
+                      Text(
+                        connected
+                            ? 'ЗАЩИЩЕНО'
+                            : connecting
+                                ? 'ПОДКЛЮЧЕНИЕ…'
+                                : 'ОТКЛЮЧЕНО',
+                        style: TextStyle(
+                          fontFamily: AtlasTheme.serifFamily,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.8,
+                          color: connected
+                              ? const Color(0xFF6E9E48)
+                              : connecting
+                                  ? AtlasTheme.accent
+                                  : c.textPrimary,
                         ),
                       ),
-                    );
-                  },
+                      const SizedBox(height: 5),
+                      Text(
+                        connected
+                            ? 'VLESS • TLS • Защита активна'
+                            : connecting
+                                ? 'Установка защищённого соединения…'
+                                : 'Нажмите на компас для подключения',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: c.textSecondary,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // ── Sleek Atlas Route Selector Card ──
+                      _AtlasRouteSelectorCard(
+                        selected: selected,
+                        status: status,
+                        onTap: groups.length > 1
+                            ? () => _pickGroup(context, groups, selected)
+                            : null,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 12),
-            ],
+            ),
+
+            const SizedBox(height: 10),
             const _QuickControlsRow(),
-            const SizedBox(height: 10),
-            _connectionButton(c, status, selected, expand: true),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             _ProtectionRow(status: status),
           ],
         ),
@@ -464,7 +443,8 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
         }
       }
       ref.invalidate(vpnStatusProvider);
-    } catch (error) {
+    } catch (error, stackTrace) {
+      debugPrint('[HERO_COMPASS] _toggle ERROR: $error\n$stackTrace');
       // TUN without an administrator token is fully recoverable: offer the
       // UAC restart instead of a dead-end error notice (Throne behaviour).
       if (isElevationRequiredError(error) && mounted) {
@@ -1195,6 +1175,355 @@ class _ConnectionVisual extends StatelessWidget {
   }
 }
 
+// ── True Atlas Zen Hero Compass & Route Selector ────────────────────────
+
+class _AtlasHeroCompassButton extends StatefulWidget {
+  final VpnStatus status;
+  final Animation<double> animation;
+  final bool busy;
+  final VoidCallback onTap;
+
+  const _AtlasHeroCompassButton({
+    required this.status,
+    required this.animation,
+    required this.busy,
+    required this.onTap,
+  });
+
+  @override
+  State<_AtlasHeroCompassButton> createState() =>
+      _AtlasHeroCompassButtonState();
+}
+
+class _AtlasHeroCompassButtonState extends State<_AtlasHeroCompassButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final connected = widget.status.isConnected;
+    final connecting = widget.status.isConnecting;
+    final active = connected || connecting;
+    final tint = connected
+        ? const Color(0xFF6E9E48)
+        : connecting
+            ? AtlasTheme.accent
+            : const Color(0xFFB85C38);
+
+    return Semantics(
+      button: true,
+      label: connected ? 'Отключить VPN' : 'Подключить VPN',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        onTap: widget.busy ? null : widget.onTap,
+        child: AnimatedScale(
+          scale: _pressed ? 0.94 : 1.0,
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOutCubic,
+          child: SizedBox(
+            width: 216,
+            height: 216,
+            child: AnimatedBuilder(
+              animation: widget.animation,
+              builder: (context, _) {
+                return Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    CustomPaint(
+                      size: const Size(216, 216),
+                      painter: _AtlasCompassDialPainter(
+                        progress: widget.animation.value,
+                        color: tint,
+                        active: active,
+                        connected: connected,
+                        connecting: connecting,
+                      ),
+                    ),
+                    Container(
+                      width: 146,
+                      height: 146,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [
+                            connected
+                                ? const Color(0xFF1B281A)
+                                : connecting
+                                    ? const Color(0xFF281C16)
+                                    : const Color(0xFF1E212B),
+                            connected
+                                ? const Color(0xFF101910)
+                                : connecting
+                                    ? const Color(0xFF17100B)
+                                    : const Color(0xFF101218),
+                          ],
+                          radius: 0.85,
+                        ),
+                        border: Border.all(
+                          color: tint.withValues(alpha: connected ? .70 : .35),
+                          width: 2.2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: tint.withValues(alpha: active ? .35 : .12),
+                            blurRadius: active ? 28 : 14,
+                            spreadRadius: active ? 3 : 0,
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: widget.busy
+                            ? SizedBox(
+                                width: 44,
+                                height: 44,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 3.5,
+                                  valueColor:
+                                      AlwaysStoppedAnimation<Color>(tint),
+                                ),
+                              )
+                            : Icon(
+                                connected
+                                    ? Icons.shield_rounded
+                                    : connecting
+                                        ? Icons.route_rounded
+                                        : Icons.power_settings_new_rounded,
+                                color: tint,
+                                size: 54,
+                              ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AtlasCompassDialPainter extends CustomPainter {
+  final double progress;
+  final Color color;
+  final bool active;
+  final bool connected;
+  final bool connecting;
+
+  _AtlasCompassDialPainter({
+    required this.progress,
+    required this.color,
+    required this.active,
+    required this.connected,
+    required this.connecting,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final maxRadius = size.width / 2;
+    final bezelRadius = maxRadius - 12;
+
+    // Outermost track
+    canvas.drawCircle(
+      center,
+      bezelRadius,
+      Paint()
+        ..color = color.withValues(alpha: active ? .30 : .12)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2,
+    );
+
+    // Dynamic ripple waves
+    if (active) {
+      final waveCount = connecting ? 3 : 2;
+      for (var i = 0; i < waveCount; i++) {
+        final phase = (progress + i / waveCount) % 1.0;
+        final r = (bezelRadius - 18) + phase * 28;
+        final alpha = (1.0 - phase) * (connecting ? 0.40 : 0.25);
+        canvas.drawCircle(
+          center,
+          r,
+          Paint()
+            ..color = color.withValues(alpha: alpha)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5,
+        );
+      }
+    }
+
+    // Compass bezel ticks
+    final tickPaint = Paint()..strokeCap = StrokeCap.round;
+    const tickCount = 36;
+    final rotationOffset = connecting ? progress * 2 * math.pi : 0.0;
+
+    for (var i = 0; i < tickCount; i++) {
+      final angle = (i * (360 / tickCount)) * math.pi / 180 + rotationOffset;
+      final isCardinal = (i % 9 == 0);
+      final isMajor = (i % 3 == 0);
+
+      final tickLength = isCardinal ? 10.0 : (isMajor ? 6.5 : 3.5);
+      final tickAlpha = isCardinal
+          ? (active ? 0.90 : 0.50)
+          : isMajor
+              ? (active ? 0.65 : 0.30)
+              : (active ? 0.40 : 0.18);
+
+      tickPaint
+        ..color = color.withValues(alpha: tickAlpha)
+        ..strokeWidth = isCardinal ? 2.2 : (isMajor ? 1.5 : 1.0);
+
+      final outer = Offset(
+        center.dx + (bezelRadius - 2) * math.cos(angle),
+        center.dy + (bezelRadius - 2) * math.sin(angle),
+      );
+      final inner = Offset(
+        center.dx + (bezelRadius - 2 - tickLength) * math.cos(angle),
+        center.dy + (bezelRadius - 2 - tickLength) * math.sin(angle),
+      );
+
+      canvas.drawLine(outer, inner, tickPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _AtlasCompassDialPainter old) =>
+      old.progress != progress ||
+      old.color != color ||
+      old.active != active ||
+      old.connected != connected ||
+      old.connecting != connecting;
+}
+
+class _AtlasRouteSelectorCard extends StatelessWidget {
+  final _RouteChoice selected;
+  final VpnStatus status;
+  final VoidCallback? onTap;
+
+  const _AtlasRouteSelectorCard({
+    required this.selected,
+    required this.status,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeColors.of(context);
+    final connected = status.isConnected;
+    final cleanTitle =
+        selected.title.replaceAll(RegExp(r'\[SG\]\s*'), '').trim();
+
+    return Semantics(
+      button: true,
+      label: 'Выбрать маршрут: $cleanTitle',
+      child: Material(
+        color: c.bgCard,
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: connected
+                    ? const Color(0xFF6E9E48).withValues(alpha: .35)
+                    : c.border,
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: .20),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: AtlasTheme.accent.withValues(alpha: .12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    _chipIcon(selected.icon),
+                    color: AtlasTheme.accent,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Маршрут подключения',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: c.textSecondary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        cleanTitle.isEmpty ? 'Минимальный пинг' : cleanTitle,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: c.textPrimary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                if (connected && status.latencyMS > 0) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color:
+                          const Color(0xFF6E9E48).withValues(alpha: .15),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color:
+                            const Color(0xFF6E9E48).withValues(alpha: .35),
+                      ),
+                    ),
+                    child: Text(
+                      '${status.latencyMS} мс',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF6E9E48),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Icon(
+                  Icons.unfold_more_rounded,
+                  color: c.textSecondary,
+                  size: 20,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// The dashboard's main surface: a large status ring with the connected
 /// route, a device→shield→globe mini-diagram and the primary action. It is
 /// deliberately the only tall element so everything fits without scrolling.
@@ -1622,6 +1951,8 @@ Widget _groupIcon(String raw) {
     'flag_de' => Icons.flag_outlined,
     'flag_us' => Icons.flag_outlined,
     'flag_ca' => Icons.flag_outlined,
+    'flag_nl' => Icons.flag_outlined,
+    'flag_fr' => Icons.flag_outlined,
     'node' => Icons.dns_outlined,
     _ => Icons.public_rounded,
   };

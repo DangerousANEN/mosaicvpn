@@ -393,7 +393,6 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       servers
           .where((server) =>
               server.subscriptionID == source.id &&
-              !_isMosaicSubscription(source) &&
               !source.hidePhysicalNodes)
           .map(
             (server) => _RouteRow(
@@ -2651,7 +2650,7 @@ IconData _groupIcon(String icon) {
     'shield' => Icons.shield_outlined,
     'wrench' => Icons.build_rounded,
     'hourglass' => Icons.hourglass_top_rounded,
-    'flag_de' || 'flag_ca' || 'flag_us' => Icons.flag_outlined,
+    'flag_de' || 'flag_ca' || 'flag_us' || 'flag_nl' || 'flag_fr' => Icons.flag_outlined,
     _ => Icons.route_outlined,
   };
 }

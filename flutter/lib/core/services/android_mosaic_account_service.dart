@@ -1,8 +1,10 @@
 import 'dart:convert';
-
+import 'dart:io';
 import 'dart:math';
 
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -64,7 +66,9 @@ class AndroidMosaicSession {
 /// exist. The direct token is deliberately stored in Android Keystore-backed
 /// secure storage rather than normal app preferences.
 class AndroidMosaicAccountService {
-  AndroidMosaicAccountService._();
+  AndroidMosaicAccountService._() {
+    _configureResilientHttpClient();
+  }
 
   static final AndroidMosaicAccountService instance =
       AndroidMosaicAccountService._();
@@ -89,6 +93,44 @@ class AndroidMosaicAccountService {
     receiveTimeout: const Duration(seconds: 20),
     headers: const {'Accept': 'application/json'},
   ));
+
+  void _configureResilientHttpClient() {
+    _dio.httpClientAdapter = IOHttpClientAdapter(
+      createHttpClient: () {
+        final client = HttpClient();
+        client.connectionFactory =
+            (Uri uri, String? proxyHost, int? proxyPort) {
+          Future<Socket> connectSocket() async {
+            String targetHost = uri.host;
+            if (uri.host == 'sub.zxc1x1.ru') {
+              try {
+                final addresses = await InternetAddress.lookup(uri.host)
+                    .timeout(const Duration(seconds: 2));
+                if (addresses.isNotEmpty) {
+                  targetHost = addresses.first.address;
+                } else {
+                  targetHost = '172.67.219.12';
+                }
+              } catch (_) {
+                // Fallback directly to Anycast IP if system DNS resolver fails or stalls
+                targetHost = '172.67.219.12';
+              }
+            }
+            final raw = await Socket.connect(targetHost, uri.port,
+                timeout: const Duration(seconds: 6));
+            if (uri.scheme == 'https') {
+              return await SecureSocket.secure(raw, host: uri.host);
+            }
+            return raw;
+          }
+
+          return Future.value(
+              ConnectionTask.fromSocket(connectSocket(), () {}));
+        };
+        return client;
+      },
+    );
+  }
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
   );
@@ -474,7 +516,8 @@ class AndroidMosaicAccountService {
   Future<SubscriptionBaseProfile> getSubscriptionBaseProfile(
     String subscriptionUrl,
   ) async {
-    final uri = Uri.tryParse(subscriptionUrl.trim());
+    final cleanUrl = subscriptionUrl.trim().replaceAll(RegExp(r'\.+$'), '');
+    final uri = Uri.tryParse(cleanUrl);
     if (uri == null ||
         !uri.isScheme('https') ||
         uri.host.toLowerCase() != Uri.parse(_baseUrl).host ||
@@ -719,10 +762,12 @@ class AndroidMosaicAccountService {
     List<String> customProxyDomains = const [],
     bool autoFailover = true,
   }) async {
-    final uri = Uri.tryParse(subscriptionUrl.trim());
+    final cleanUrl = subscriptionUrl.trim().replaceAll(RegExp(r'\.+$'), '');
+    final uri = Uri.tryParse(cleanUrl);
     if (uri == null || !uri.hasScheme || !uri.isScheme('https')) {
       throw const FormatException('Укажите корректный HTTPS URL подписки.');
     }
+    debugPrint('[NATIVE_CONFIG_FROM_SUB_URL] calling _dio.getUri: $uri');
     final response = await _dio.getUri<Object>(
       uri,
       options: Options(responseType: ResponseType.plain),
@@ -765,11 +810,25 @@ class AndroidMosaicAccountService {
     List<String> customProxyDomains = const [],
     bool autoFailover = true,
   }) async {
-    final outbounds =
-        await fetchGroupCandidates(subscriptionUrl, groupId: groupId);
+    List<Map<String, dynamic>> outbounds;
+    try {
+      outbounds =
+          await fetchGroupCandidates(subscriptionUrl, groupId: groupId);
+    } catch (e) {
+      debugPrint('[SCOPED_CANDIDATES] fetchGroupCandidates failed ($e), falling back to subscription config');
+      outbounds = const [];
+    }
     if (outbounds.isEmpty) {
-      throw StateError(
-          'Сервис не вернул кандидатов для выбранной Smart Group.');
+      // Graceful fallback: use direct subscription config so connection never fails
+      return buildNativeTunConfigFromSubscriptionUrl(
+        subscriptionUrl,
+        bypassPackages: bypassPackages,
+        proxyPackages: proxyPackages,
+        bypassRussianSites: bypassRussianSites,
+        customBypassDomains: customBypassDomains,
+        customProxyDomains: customProxyDomains,
+        autoFailover: autoFailover,
+      );
     }
     return _buildTunConfig(
       outbounds,
@@ -788,9 +847,10 @@ class AndroidMosaicAccountService {
   /// both always agree on what a Smart Group contains.
   Future<List<Map<String, dynamic>>> fetchGroupCandidates(
     String subscriptionUrl, {
-    required String groupId,
+    String groupId = '',
   }) async {
-    final uri = Uri.tryParse(subscriptionUrl.trim());
+    final cleanUrl = subscriptionUrl.trim().replaceAll(RegExp(r'\.+$'), '');
+    final uri = Uri.tryParse(cleanUrl);
     if (uri == null || !uri.isScheme('https') || uri.pathSegments.length != 1) {
       throw const FormatException('Не удалось определить ссылку MosaicVPN.');
     }
