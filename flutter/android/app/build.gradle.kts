@@ -48,9 +48,19 @@ android {
         }
     }
 
+    // Release APKs ship ARM only: libbox.aar bundles a ~66 MB x86_64 libbox.so
+    // (vs ~20 MB per ARM ABI) through the jniLibs merge path, and x86_64 is only
+    // used by emulators / rare Intel Android devices. Excluding it roughly halves
+    // the release APK. Gated on a Gradle property so debug/emulator builds keep
+    // x86_64 (default true); CI/local release builds pass -PstripX86=true.
+    val stripX86 = (project.findProperty("stripX86") as String?)?.toBoolean() ?: false
+
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            if (stripX86) {
+                excludes += listOf("lib/x86/**", "lib/x86_64/**")
+            }
         }
     }
 
