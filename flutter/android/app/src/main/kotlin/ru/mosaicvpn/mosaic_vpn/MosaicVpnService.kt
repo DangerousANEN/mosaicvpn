@@ -138,8 +138,8 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 workingPath = working.absolutePath
                 tempPath = temporary.absolutePath
                 fixAndroidStack = true
-                debug = true
-                logMaxLines = 1000
+                debug = false
+                logMaxLines = 300
             })
             libboxReady = true
         }
@@ -367,11 +367,17 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     override fun setSystemProxyEnabled(isEnabled: Boolean) = Unit
 
     override fun writeDebugMessage(message: String) {
-        Log.i(TAG, "SINGBOX_MSG: $message")
-        try {
-            java.io.File(filesDir, "singbox.log")
-                .appendText(simpleDateFormat.format(java.util.Date()) + " " + message + "\n")
-        } catch (_: Exception) {}
+        appendNativeLog(message)
+        // Avoid synchronous disk I/O on every routine debug message to prevent battery drain.
+        // Only persist error/fatal messages to disk for post-mortem diagnostics.
+        val lower = message.lowercase(java.util.Locale.US)
+        if (lower.contains("error") || lower.contains("fatal") || lower.contains("panic")) {
+            Log.e(TAG, "SINGBOX_ERR: $message")
+            try {
+                java.io.File(filesDir, "singbox.log")
+                    .appendText(simpleDateFormat.format(java.util.Date()) + " " + message + "\n")
+            } catch (_: Exception) {}
+        }
     }
 
     // --- libbox PlatformInterface ----------------------------------------

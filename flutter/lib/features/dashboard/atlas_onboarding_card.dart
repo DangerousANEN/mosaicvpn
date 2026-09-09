@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../core/utils/external_launcher.dart';
 import '../../core/models/subscription.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/services/android_mosaic_account_service.dart';
@@ -153,10 +153,7 @@ class _AtlasOnboardingCardState extends ConsumerState<AtlasOnboardingCard> {
   }
 
   Future<void> _openTelegramBot() async {
-    final uri = Uri.parse('https://t.me/mosaicvpnbot');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+    await ExternalLauncher.openTelegram('mosaicvpnbot');
   }
 
   @override

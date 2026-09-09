@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../core/utils/external_launcher.dart';
 
 import '../../core/models/models.dart';
 import '../../core/providers/vpn_providers.dart';
@@ -165,20 +165,74 @@ class UnifiedAccountPanel extends ConsumerWidget {
   }
 
   Future<void> _openCheckout(BuildContext context, WidgetRef ref) async {
+    final colors = ThemeColors.of(context);
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Wrap(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+              child: Text(
+                'Пополнение подписки',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: colors.textPrimary,
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.send_rounded, color: AtlasTheme.accent),
+              title: const Text('Пополнить в Telegram-боте'),
+              subtitle: const Text('Быстрая оплата через @mosaicvpnbot'),
+              onTap: () => Navigator.pop(sheetContext, 'telegram'),
+            ),
+            ListTile(
+              leading:
+                  const Icon(Icons.language_rounded, color: AtlasTheme.accent),
+              title: const Text('Оплатить на сайте MosaicVPN'),
+              subtitle: const Text('Личный кабинет sub.zxc1x1.ru'),
+              onTap: () => Navigator.pop(sheetContext, 'web'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.credit_card_outlined),
+              title: const Text('Прямой платёж картой / СБП'),
+              subtitle: const Text('Выбрать сумму и платёжный шлюз'),
+              onTap: () => Navigator.pop(sheetContext, 'direct'),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+
+    if (action == null || !context.mounted) return;
+
+    if (action == 'telegram') {
+      await ExternalLauncher.openTelegram('mosaicvpnbot');
+      return;
+    }
+
+    if (action == 'web') {
+      await ExternalLauncher.openUrl(
+          Uri.parse('https://sub.zxc1x1.ru/cabinet.html'));
+      return;
+    }
+
     final api = ref.read(daemonApiProvider);
     List<CheckoutProviderOption> providers;
     try {
       providers = await api.getCheckoutOptions();
     } catch (_) {
-      if (context.mounted) {
-        _notice(context, 'Способы оплаты временно недоступны.', error: true);
-      }
-      return;
+      providers = const [];
     }
     providers = providers.where((p) => p.available).toList();
     if (providers.isEmpty) {
       if (context.mounted) {
-        _notice(context, 'Сейчас нет доступных способов оплаты.', error: true);
+        // Fallback directly to Telegram
+        await ExternalLauncher.openTelegram('mosaicvpnbot');
       }
       return;
     }
@@ -194,8 +248,7 @@ class UnifiedAccountPanel extends ConsumerWidget {
       final checkout = await api.createCheckout(
           amountRub: result.amount, provider: result.provider.id);
       if (!context.mounted) return;
-      final opened = await launchUrl(checkout.checkoutUrl,
-          mode: LaunchMode.externalApplication);
+      final opened = await ExternalLauncher.openUrl(checkout.checkoutUrl);
       if (!opened && context.mounted) {
         _notice(context, 'Не удалось открыть оплату. Попробуйте ещё раз.',
             error: true);

@@ -19,40 +19,42 @@ class RoutingScreen extends ConsumerWidget {
     final c = ThemeColors.of(context);
     final rulesAsync = ref.watch(rulesProvider);
     final prefs = ref.watch(prefsProvider).valueOrNull;
+    final isMobile = MediaQuery.sizeOf(context).width < 640;
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(isMobile ? 16 : 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SectionHeader(
-            title: 'Routing Rules & Mode',
-            subtitle: 'Direct traffic through proxy, direct, or block',
+            title: 'Правила маршрутизации',
+            subtitle: 'Настройка перенаправления, прямого доступа и блокировок',
             action: ElevatedButton.icon(
               onPressed: () => _showAddDialog(context, ref),
               icon: const Icon(Icons.add, size: 18),
-              label: const Text('Add Rule'),
+              label: const Text('Добавить'),
             ),
           ),
           const SizedBox(height: 12),
 
           // Routing Mode bar (Single Source of Truth)
-          Row(
-            children: [
-              Text(
-                'Active Mode:',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: c.textSecondary,
-                ),
+          if (isMobile) ...[
+            Text(
+              'Режим маршрутизации:',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: c.textSecondary,
               ),
-              const SizedBox(width: 12),
-              SegmentedButton<String>(
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<String>(
                 segments: const [
-                  ButtonSegment(value: 'global', label: Text('Global (All VPN)')),
-                  ButtonSegment(value: 'rule', label: Text('Rule-based')),
-                  ButtonSegment(value: 'direct', label: Text('Direct (Bypass)')),
+                  ButtonSegment(value: 'global', label: Text('Весь VPN')),
+                  ButtonSegment(value: 'rule', label: Text('По правилам')),
+                  ButtonSegment(value: 'direct', label: Text('В обход')),
                 ],
                 selected: {prefs?.routingMode ?? 'rule'},
                 onSelectionChanged: (s) async {
@@ -66,8 +68,39 @@ class RoutingScreen extends ConsumerWidget {
                   }
                 },
               ),
-            ],
-          ),
+            ),
+          ] else
+            Row(
+              children: [
+                Text(
+                  'Активный режим:',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: c.textSecondary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'global', label: Text('Весь трафик (VPN)')),
+                    ButtonSegment(value: 'rule', label: Text('По правилам')),
+                    ButtonSegment(value: 'direct', label: Text('Прямой доступ')),
+                  ],
+                  selected: {prefs?.routingMode ?? 'rule'},
+                  onSelectionChanged: (s) async {
+                    final current = prefs ?? Preferences();
+                    final updated = current.copyWith(routingMode: s.first);
+                    try {
+                      await ref.read(daemonApiProvider).setPrefs(updated.toJson());
+                      ref.invalidate(prefsProvider);
+                    } catch (e) {
+                      debugPrint('routing mode switch failed: $e');
+                    }
+                  },
+                ),
+              ],
+            ),
           const SizedBox(height: 16),
           _RoutingPresetsSection(ref: ref),
           const SizedBox(height: 16),
@@ -318,16 +351,20 @@ class _RuleTile extends StatelessWidget {
             ? AtlasTheme.success
             : AtlasTheme.error;
 
+    final isMobile = MediaQuery.sizeOf(context).width < 640;
+
     return AtlasCard(
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // Drag handle
           Icon(Icons.drag_indicator, size: 18, color: c.textMuted),
+          const SizedBox(width: 8),
 
           // Priority
           Container(
-            width: 32,
-            height: 32,
+            width: 28,
+            height: 28,
             decoration: BoxDecoration(
               color: c.bgElevated,
               borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
@@ -337,28 +374,33 @@ class _RuleTile extends StatelessWidget {
                 '${rule.priority}',
                 style: TextStyle(
                   fontFamily: AtlasTheme.monoFamily,
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                   color: c.textSecondary,
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
 
           // Rule info
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
                   children: [
-                    Text(
-                      rule.name,
-                      style: const TextStyle(
-                        fontFamily: AtlasTheme.serifFamily,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                    Flexible(
+                      child: Text(
+                        rule.name,
+                        style: const TextStyle(
+                          fontFamily: AtlasTheme.serifFamily,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -385,6 +427,8 @@ class _RuleTile extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   rule.match.summary,
+                  maxLines: isMobile ? 1 : 2,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 11,
                     fontFamily: AtlasTheme.monoFamily,
@@ -394,10 +438,11 @@ class _RuleTile extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(width: 8),
 
           // Action badge
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: actionColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
@@ -406,18 +451,20 @@ class _RuleTile extends StatelessWidget {
             child: Text(
               rule.action.value.toUpperCase(),
               style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
                 color: actionColor,
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
 
           // Delete
           IconButton(
             icon: const Icon(Icons.delete_outline, size: 18),
-            tooltip: 'Delete rule',
+            tooltip: 'Удалить правило',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             onPressed: () async {
               final api = ref.read(daemonApiProvider);
               try {

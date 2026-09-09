@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:collection';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../services/android_vpn_service.dart';
+import '../platform/app_platform.dart';
+import 'app_lifecycle_provider.dart';
 import 'vpn_providers.dart';
 
 /// A single log line from the daemon / core.
@@ -70,6 +73,8 @@ class LogsState {
 class LogsNotifier extends StateNotifier<LogsState> {
   final Ref _ref;
   StreamSubscription? _sub;
+  Timer? _androidPollTimer;
+  int _lastAndroidSeq = 0;
 
   /// Internal mutable buffer — the single source of truth.
   /// state.entries is an unmodifiable view of this list.
@@ -80,6 +85,18 @@ class LogsNotifier extends StateNotifier<LogsState> {
   }
 
   void _subscribe() {
+    if (AppPlatform.isAndroid && AndroidVpnService.instance.isSupported) {
+      _pollAndroidLogs();
+      final isBg = _ref.read(isAppBackgroundedProvider);
+      final interval = isBg ? const Duration(seconds: 15) : const Duration(seconds: 2);
+      _androidPollTimer = Timer.periodic(interval, (_) {
+        final currentBg = _ref.read(isAppBackgroundedProvider);
+        if (currentBg) return; // Completely suspend polling while app is backgrounded
+        _pollAndroidLogs();
+      });
+      return;
+    }
+
     final api = _ref.read(daemonApiProvider);
     _sub = api.events().listen(
       (event) {
@@ -100,6 +117,39 @@ class LogsNotifier extends StateNotifier<LogsState> {
         ));
       },
     );
+  }
+
+  Future<void> _pollAndroidLogs() async {
+    try {
+      final res = await AndroidVpnService.instance.readNativeLogs(afterSeq: _lastAndroidSeq);
+      if (res.lines.isNotEmpty) {
+        _lastAndroidSeq = res.lastSeq;
+        for (final item in res.lines) {
+          final line = item.$2.trim();
+          if (line.isEmpty) continue;
+          final upper = line.toUpperCase();
+          final level = upper.contains('ERROR') || upper.contains('FATAL')
+              ? 'ERROR'
+              : upper.contains('WARN')
+                  ? 'WARN'
+                  : upper.contains('DEBUG')
+                      ? 'DEBUG'
+                      : 'INFO';
+          _addEntry(LogEntry(
+            timestamp: DateTime.now(),
+            level: level,
+            message: line,
+          ));
+        }
+      }
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _androidPollTimer?.cancel();
+    _sub?.cancel();
+    super.dispose();
   }
 
   /// Append a single entry to the internal buffer, trim in-place,
@@ -142,12 +192,6 @@ class LogsNotifier extends StateNotifier<LogsState> {
       autoScroll: state.autoScroll,
       levelFilter: state.levelFilter,
     );
-  }
-
-  @override
-  void dispose() {
-    _sub?.cancel();
-    super.dispose();
   }
 }
 

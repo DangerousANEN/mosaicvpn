@@ -11,6 +11,7 @@ import '../speedtest/speedtest_screen.dart';
 import '../logs/logs_screen.dart';
 import '../settings/settings_screen.dart';
 import '../groups/groups_screen.dart';
+import '../egresses/egresses_screen.dart';
 
 class MoreScreen extends StatelessWidget {
   const MoreScreen({super.key});
@@ -44,6 +45,12 @@ class MoreScreen extends StatelessWidget {
         subtitle: 'Routing rules and split tunneling',
         icon: Icons.hub_outlined,
         builder: (_) => const RoutingScreen(),
+      ),
+      _MoreItem(
+        title: 'Egresses (Прокси-порты)',
+        subtitle: 'Одновременные прокси для разных приложений и локальной сети (0.0.0.0)',
+        icon: Icons.account_tree_outlined,
+        builder: (_) => const EgressesScreen(),
       ),
       _MoreItem(
         title: s.t('activity'),

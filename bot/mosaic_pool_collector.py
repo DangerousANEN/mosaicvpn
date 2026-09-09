@@ -853,14 +853,18 @@ def upsert_nodes(nodes: list) -> dict:
                   AND ('auto-' || lower(country_code)) IN (SELECT id FROM mosaic_groups WHERE enabled IS TRUE)
             """, (HEALTH_TTL_HOURS,))
 
-            # Named country groups
+            # Named country groups (prioritize TCP / port 443 over UDP/Hysteria2)
             for group_id, cc in [
                 ('germany', 'DE'), ('netherlands', 'NL'), ('usa', 'US'),
                 ('canada', 'CA'), ('france', 'FR'), ('great-britain', 'GB')
             ]:
                 cur.execute("""
                     INSERT INTO mosaic_group_nodes(group_id, node_id, priority)
-                    SELECT %s, id, row_number() OVER (ORDER BY composite_score DESC NULLS LAST, latency_ms ASC)
+                    SELECT %s, id, row_number() OVER (
+                        ORDER BY (CASE WHEN protocol = 'hysteria2' THEN 1 ELSE 0 END),
+                                 (CASE WHEN (config->>'server_port' = '443' OR config->>'port' = '443') THEN 0 ELSE 1 END),
+                                 composite_score DESC NULLS LAST, latency_ms ASC
+                    )
                     FROM mosaic_nodes
                     WHERE enabled AND proxy_ok = true AND country_code = %s
                       AND last_checked_at >= now() - make_interval(hours => %s)
@@ -870,7 +874,11 @@ def upsert_nodes(nodes: list) -> dict:
             # Top 80 'all' group
             cur.execute("""
                 INSERT INTO mosaic_group_nodes(group_id, node_id, priority)
-                SELECT 'all', id, row_number() OVER (ORDER BY composite_score DESC NULLS LAST)
+                SELECT 'all', id, row_number() OVER (
+                    ORDER BY (CASE WHEN protocol = 'hysteria2' THEN 1 ELSE 0 END),
+                             (CASE WHEN (config->>'server_port' = '443' OR config->>'port' = '443') THEN 0 ELSE 1 END),
+                             composite_score DESC NULLS LAST
+                )
                 FROM mosaic_nodes
                 WHERE enabled AND proxy_ok = true
                   AND last_checked_at >= now() - make_interval(hours => %s)
@@ -880,7 +888,11 @@ def upsert_nodes(nodes: list) -> dict:
             # Quality groups
             cur.execute("""
                 INSERT INTO mosaic_group_nodes(group_id, node_id, priority)
-                SELECT 'min_latency', id, row_number() OVER (ORDER BY latency_ms ASC NULLS LAST, composite_score DESC)
+                SELECT 'min_latency', id, row_number() OVER (
+                    ORDER BY (CASE WHEN protocol = 'hysteria2' THEN 1 ELSE 0 END),
+                             (CASE WHEN (config->>'server_port' = '443' OR config->>'port' = '443') THEN 0 ELSE 1 END),
+                             latency_ms ASC NULLS LAST, composite_score DESC
+                )
                 FROM mosaic_nodes
                 WHERE enabled AND proxy_ok = true AND latency_ms > 0
                   AND last_checked_at >= now() - make_interval(hours => %s)
@@ -889,7 +901,11 @@ def upsert_nodes(nodes: list) -> dict:
 
             cur.execute("""
                 INSERT INTO mosaic_group_nodes(group_id, node_id, priority)
-                SELECT 'max_speed', id, row_number() OVER (ORDER BY speed_mbps DESC NULLS LAST, composite_score DESC)
+                SELECT 'max_speed', id, row_number() OVER (
+                    ORDER BY (CASE WHEN protocol = 'hysteria2' THEN 1 ELSE 0 END),
+                             (CASE WHEN (config->>'server_port' = '443' OR config->>'port' = '443') THEN 0 ELSE 1 END),
+                             speed_mbps DESC NULLS LAST, composite_score DESC
+                )
                 FROM mosaic_nodes
                 WHERE enabled AND proxy_ok = true
                   AND last_checked_at >= now() - make_interval(hours => %s)
@@ -898,7 +914,11 @@ def upsert_nodes(nodes: list) -> dict:
 
             cur.execute("""
                 INSERT INTO mosaic_group_nodes(group_id, node_id, priority)
-                SELECT 'stable', id, row_number() OVER (ORDER BY composite_score DESC NULLS LAST)
+                SELECT 'stable', id, row_number() OVER (
+                    ORDER BY (CASE WHEN protocol = 'hysteria2' THEN 1 ELSE 0 END),
+                             (CASE WHEN (config->>'server_port' = '443' OR config->>'port' = '443') THEN 0 ELSE 1 END),
+                             composite_score DESC NULLS LAST
+                )
                 FROM mosaic_nodes
                 WHERE enabled AND proxy_ok = true
                   AND failure_count = 0 AND success_rate >= 0.85
@@ -912,6 +932,7 @@ def upsert_nodes(nodes: list) -> dict:
                 FROM mosaic_nodes
                 WHERE enabled AND proxy_ok = true AND protocol = 'vless'
                   AND lower(config::text) LIKE '%%reality%%'
+                  AND (config->>'server_port' = '443' OR config->>'port' = '443')
                   AND last_checked_at >= now() - make_interval(hours => %s)
                 LIMIT 40
             """, (HEALTH_TTL_HOURS,))
@@ -923,6 +944,7 @@ def upsert_nodes(nodes: list) -> dict:
                     FROM mosaic_nodes
                     WHERE enabled AND proxy_ok = true AND protocol = 'vless'
                       AND lower(config::text) LIKE '%%reality%%'
+                      AND (config->>'server_port' = '443' OR config->>'port' = '443')
                       AND last_checked_at >= now() - make_interval(hours => %s)
                     LIMIT 40
                 """, (HEALTH_TTL_HOURS,))
@@ -934,6 +956,7 @@ def upsert_nodes(nodes: list) -> dict:
                     FROM mosaic_nodes
                     WHERE enabled AND proxy_ok = true AND protocol = 'vless'
                       AND lower(config::text) LIKE '%%reality%%'
+                      AND (config->>'server_port' = '443' OR config->>'port' = '443')
                       AND last_checked_at >= now() - make_interval(hours => %s)
                     LIMIT 40
                 """, (HEALTH_TTL_HOURS,))

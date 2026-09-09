@@ -57,4 +57,21 @@ class Profile {
             ? DateTime.tryParse(j['updated_at'] ?? '')
             : null,
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'icon': icon,
+        'color': color,
+        'server_id': serverID,
+        'subscription_id': subscriptionID,
+        'tunnel_mode': tunnelMode,
+        'kill_switch': killSwitch,
+        'allow_lan': allowLAN,
+        'dns': dns.toJson(),
+        'rule_ids': ruleIDs,
+        'auto_connect': autoConnect,
+        'created_at': createdAt.toIso8601String(),
+        'updated_at': updatedAt.toIso8601String(),
+      };
 }

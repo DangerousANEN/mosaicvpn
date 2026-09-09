@@ -83,4 +83,38 @@ class Rule {
         enabled: j['enabled'] ?? true,
         priority: j['priority'] ?? 0,
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'action': action.value,
+        'match': {
+          'domain_suffix': match.domainSuffix,
+          'domain': match.domain,
+          'ip_cidr': match.ipCIDR,
+          'process': match.process,
+          'geosite': match.geosite,
+          'geoip': match.geoip,
+          if (match.port != null) 'port': match.port,
+        },
+        'enabled': enabled,
+        'priority': priority,
+      };
+
+  Rule copyWith({
+    String? id,
+    String? name,
+    RuleAction? action,
+    RuleMatch? match,
+    bool? enabled,
+    int? priority,
+  }) =>
+      Rule(
+        id: id ?? this.id,
+        name: name ?? this.name,
+        action: action ?? this.action,
+        match: match ?? this.match,
+        enabled: enabled ?? this.enabled,
+        priority: priority ?? this.priority,
+      );
 }

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../core/utils/external_launcher.dart';
 
 import '../../core/providers/vpn_providers.dart';
 import '../../core/providers/routing_presets_provider.dart';
@@ -591,10 +591,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         const SizedBox(height: 12),
         OutlinedButton.icon(
           onPressed: () async {
-            final uri = Uri.parse('https://t.me/mosaicvpnbot');
-            if (await canLaunchUrl(uri)) {
-              await launchUrl(uri, mode: LaunchMode.externalApplication);
-            }
+            await ExternalLauncher.openTelegram('mosaicvpnbot');
           },
           style: OutlinedButton.styleFrom(
             foregroundColor: c.textPrimary,

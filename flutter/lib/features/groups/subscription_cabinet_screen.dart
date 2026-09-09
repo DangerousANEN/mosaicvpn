@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
+import '../../core/utils/external_launcher.dart';
 
 import '../../core/models/models.dart';
 import '../../core/platform/app_platform.dart';
@@ -296,13 +296,17 @@ class _CabinetUnavailableState extends ConsumerState<_CabinetUnavailable> {
   }
 
   Future<void> _openWebsiteCabinet() async {
-    final uri = Uri.parse('https://sub.zxc1x1.ru/cabinet.html');
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    final opened = await ExternalLauncher.openUrl(
+        Uri.parse('https://sub.zxc1x1.ru/cabinet.html'));
     if (!mounted || opened) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: const Text('Не удалось открыть сайт кабинета.'),
       backgroundColor: ThemeColors.of(context).danger,
     ));
+  }
+
+  Future<void> _openTelegramBot() async {
+    await ExternalLauncher.openTelegram('mosaicvpnbot');
   }
 
   Future<void> _attachByCode() async {
@@ -359,15 +363,24 @@ class _CabinetUnavailableState extends ConsumerState<_CabinetUnavailable> {
             style: TextStyle(color: c.textSecondary, fontSize: 12)),
         if (!widget.binding) ...[
           const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _busy ? null : _openWebsiteCabinet,
-              icon: const Icon(Icons.open_in_browser_outlined),
-              label: const Text('Открыть сайт и получить код'),
+          Row(children: [
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _busy ? null : _openTelegramBot,
+                icon: const Icon(Icons.send_rounded, size: 18),
+                label: const Text('Код в Telegram'),
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _busy ? null : _openWebsiteCabinet,
+                icon: const Icon(Icons.open_in_browser_outlined, size: 18),
+                label: const Text('Сайт кабинета'),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 12),
           TextField(
             controller: _code,
             textCapitalization: TextCapitalization.characters,

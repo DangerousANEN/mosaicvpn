@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/atlas_theme.dart';
 import '../../core/models/traffic_stats.dart';
+import '../../core/providers/app_lifecycle_provider.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/utils/formatters.dart';
 import '../../shared/widgets/atlas_widgets.dart';
@@ -34,6 +35,9 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       final stats = _lastStats;
       if (stats == null || !mounted) return;
+      // Skip updates when the screen is hidden or app is backgrounded
+      if (!TickerMode.valuesOf(context).enabled) return;
+      if (ref.read(isAppBackgroundedProvider)) return;
       setState(() => _addPoint(stats.uploadSpeed, stats.downloadSpeed));
     });
   }

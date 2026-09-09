@@ -14,6 +14,7 @@ import '../api/unavailable_daemon_api.dart';
 import '../config/app_config.dart';
 import '../platform/app_platform.dart';
 import '../models/models.dart';
+import 'app_lifecycle_provider.dart';
 import '../services/android_mosaic_account_service.dart';
 import '../services/android_vpn_service.dart';
 import '../services/daemon_launcher.dart';
@@ -524,7 +525,7 @@ class _ResolvedDaemonApi implements DaemonApiBase {
 
 final vpnStatusProvider = StreamProvider.autoDispose<VpnStatus>((ref) async* {
   final api = ref.watch(daemonApiProvider);
-  // Poll status every 2 seconds
+  final isBackgrounded = ref.watch(isAppBackgroundedProvider);
   final controller = StreamController<VpnStatus>();
   Timer? timer;
 
@@ -541,7 +542,12 @@ final vpnStatusProvider = StreamProvider.autoDispose<VpnStatus>((ref) async* {
   }
 
   fetch();
-  timer = Timer.periodic(AppConfig.statusPollInterval, (_) => fetch());
+  // In foreground: 2s poll for responsive state changes.
+  // In background/screen-off: slow down to 8s to prevent CPU wakeups and save battery.
+  final pollInterval = isBackgrounded
+      ? AppConfig.statusPollIntervalBackground
+      : AppConfig.statusPollInterval;
+  timer = Timer.periodic(pollInterval, (_) => fetch());
 
   ref.onDispose(() {
     timer?.cancel();
@@ -662,6 +668,7 @@ final rulesProvider = FutureProvider.autoDispose<List<Rule>>((ref) async {
 final connectionsProvider =
     StreamProvider.autoDispose<List<Connection>>((ref) async* {
   final api = ref.watch(daemonApiProvider);
+  final isBackgrounded = ref.watch(isAppBackgroundedProvider);
   final controller = StreamController<List<Connection>>();
   Timer? timer;
 
@@ -676,7 +683,10 @@ final connectionsProvider =
   }
 
   fetch();
-  timer = Timer.periodic(AppConfig.statsPollInterval, (_) => fetch());
+  final pollInterval = isBackgrounded
+      ? const Duration(seconds: 30)
+      : AppConfig.statsPollInterval;
+  timer = Timer.periodic(pollInterval, (_) => fetch());
 
   ref.onDispose(() {
     timer?.cancel();
@@ -691,6 +701,7 @@ final connectionsProvider =
 final trafficStatsProvider =
     StreamProvider.autoDispose<TrafficStats>((ref) async* {
   final api = ref.watch(daemonApiProvider);
+  final isBackgrounded = ref.watch(isAppBackgroundedProvider);
   final controller = StreamController<TrafficStats>();
   Timer? timer;
 
@@ -705,7 +716,10 @@ final trafficStatsProvider =
   }
 
   fetch();
-  timer = Timer.periodic(AppConfig.logsPollInterval, (_) => fetch());
+  final pollInterval = isBackgrounded
+      ? AppConfig.statsPollIntervalBackground
+      : AppConfig.logsPollInterval;
+  timer = Timer.periodic(pollInterval, (_) => fetch());
 
   ref.onDispose(() {
     timer?.cancel();

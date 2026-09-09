@@ -870,7 +870,10 @@ class _LazyTabStack extends StatelessWidget {
             Offstage(
               key: ValueKey('mosaic-tab-$index'),
               offstage: index != currentIndex,
-              child: pages[index],
+              child: TickerMode(
+                enabled: index == currentIndex,
+                child: pages[index],
+              ),
             ),
       ],
     );

@@ -1535,33 +1535,39 @@ class AndroidMosaicAccountService {
           'Подписка не содержит поддерживаемых серверов.');
     }
     const routeTag = 'mosaic-selected-route';
+    // Shard candidates to top 6 to prevent battery drain.
+    // Testing 40 candidates simultaneously over cellular radios keeps the modem
+    // at high-power state and consumes significant battery.
+    final effectiveOutbounds = outbounds.length > 6
+        ? outbounds.sublist(0, 6)
+        : outbounds;
     final tags =
-        outbounds.map((outbound) => outbound['tag'] as String).toList();
+        effectiveOutbounds.map((outbound) => outbound['tag'] as String).toList();
     final config = existingConfig == null
         ? <String, dynamic>{}
         : Map<String, dynamic>.from(existingConfig);
-    // Debug builds ship a verbose runtime log; libbox forwards these lines to
-    // the CommandServerHandler.writeDebugMessage callback, which persists them
-    // to files/singbox.log for post-mortem analysis.
-    config['log'] = {'level': 'debug'};
+    // Use 'warn' in production so sing-box only logs actionable warnings/errors.
+    // 'debug' generates hundreds of JNI events and string allocations per second,
+    // which drains battery and keeps the CPU core pinned.
+    config['log'] = {'level': 'warn'};
     config['inbounds'] = [
       {
         'type': 'tun',
-        'tag': 'mosaic-tun',
+        'tag': 'tun-in',
+        'interface_name': 'tun0',
         'address': ['172.19.0.1/30', 'fdfe:dcba:9876::1/126'],
-        'mtu': 1400,
         'auto_route': true,
-        'strict_route': false,
-        'stack': 'gvisor',
+        'strict_route': true,
         'endpoint_independent_nat': true,
-        // Exclave-style per-app split tunneling. include/exclude are mutually
-        // exclusive in sing-box; exclude (bypass) wins when both are supplied.
+        'stack': 'gvisor',
+        'sniff': true,
+        if (proxyPackages.isNotEmpty) 'include_package': proxyPackages,
         if (bypassPackages.isNotEmpty) 'exclude_package': bypassPackages,
-        if (bypassPackages.isEmpty && proxyPackages.isNotEmpty)
-          'include_package': proxyPackages,
       },
     ];
-    // A single-candidate config means the user picked a concrete physical
+    // Mosaic Direct is a single physical server; all Smart Groups carry multiple
+    // candidates. When there is only one outbound, skip urltest completely:
+    // sing-box does not need to health-check a candidate pool for a direct
     // route (e.g. Mosaic Direct). Routing through a urltest group there adds
     // a health-check dependency loop: the checker needs working outbound
     // connectivity to gstatic before any traffic is forwarded, and on a
@@ -1569,18 +1575,18 @@ class AndroidMosaicAccountService {
     // connection reset. Route straight to the selected outbound instead.
     // Also, when autoFailover is disabled (e.g. for competitive gaming),
     // we route straight to tags.first without urltest failover swapping.
-    final directSelection = outbounds.length == 1 || !autoFailover;
+    final directSelection = effectiveOutbounds.length == 1 || !autoFailover;
     config['outbounds'] = [
-      ...outbounds,
+      ...effectiveOutbounds,
       if (!directSelection)
         {
           'type': 'urltest',
           'tag': routeTag,
           'outbounds': tags,
           'url': 'https://www.gstatic.com/generate_204',
-          'interval': '3m',
+          'interval': '5m',
           'tolerance': 50,
-          'idle_timeout': '10m',
+          'idle_timeout': '15m',
           'interrupt_exist_connections': false,
         },
       {'type': 'direct', 'tag': 'direct'},
@@ -1612,14 +1618,10 @@ class AndroidMosaicAccountService {
 
     final effectiveFinal = directSelection ? tags.first : routeTag;
 
-    // A TUN config needs explicit resolvers and DNS hijack. Provide both
-    // secure remote DNS through the tunnel and direct/fallback resolvers.
-    // sing-box 1.13+ removed support for {outbound: "any"} DNS rules and
-    // rejects `detour: "direct"` on an empty direct outbound. Domain
-    // resolution for outbound servers uses `route.default_domain_resolver`
-    // instead, and DNS servers without an explicit detour use
-    // auto_detect_interface to bypass the TUN.
-    const dnsTag = 'dns-direct';
+    // A TUN config needs explicit resolvers and DNS hijack.
+    // For foreign / blocked services (like Telegram, Instagram, etc.), we route DNS
+    // through remote DNS via the tunnel so domestic ISP DNS poisoning does not blackhole them.
+    // Domestic domains bypass via dns-direct (Yandex 77.88.8.8) directly.
     config['dns'] = {
       'servers': [
         {
@@ -1627,7 +1629,13 @@ class AndroidMosaicAccountService {
           'tag': 'dns-direct',
           'server': '77.88.8.8',
           'server_port': 53,
-          // No detour — sing-box uses auto_detect_interface to bypass TUN
+        },
+        {
+          'type': 'tcp',
+          'tag': 'dns-remote',
+          'server': '1.1.1.1',
+          'server_port': 53,
+          'detour': effectiveFinal,
         },
         {
           'type': 'udp',
@@ -1636,7 +1644,17 @@ class AndroidMosaicAccountService {
           'server_port': 53,
         },
       ],
-      'final': dnsTag,
+      'rules': [
+        if (domainBypassList.isNotEmpty)
+          {
+            'domain_suffix': domainBypassList,
+            'server': 'dns-direct',
+          },
+        {
+          'server': 'dns-remote',
+        },
+      ],
+      'final': 'dns-remote',
       'strategy': 'prefer_ipv4',
     };
     final existingRoute = config['route'];
@@ -1664,7 +1682,7 @@ class AndroidMosaicAccountService {
       if (existingRules is List) ...existingRules,
     ];
     route['auto_detect_interface'] = true;
-    route['default_domain_resolver'] = dnsTag;
+    route['default_domain_resolver'] = 'dns-direct';
     route['final'] = effectiveFinal;
     config['route'] = route;
     return jsonEncode(config);

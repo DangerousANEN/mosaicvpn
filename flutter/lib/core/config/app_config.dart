@@ -28,8 +28,11 @@ class AppConfig {
 
   // ── Polling intervals ──
   static const Duration statusPollInterval = Duration(seconds: 2);
+  static const Duration statusPollIntervalBackground = Duration(seconds: 8);
   static const Duration statsPollInterval = Duration(seconds: 3);
-  static const Duration logsPollInterval = Duration(seconds: 1);
+  static const Duration statsPollIntervalBackground = Duration(seconds: 15);
+  static const Duration logsPollInterval = Duration(seconds: 2);
+  static const Duration logsPollIntervalBackground = Duration(seconds: 20);
 
   // ── MCP ──
   static const int defaultMcpPort = 9090;

@@ -118,6 +118,10 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   final SmartGroupSelector _smartGroupSelector = SmartGroupSelector();
   SmartGroupLatencyTest? _activeGroupLatencyTest;
   SmartGroupLatencyProgress? _groupLatencyProgress;
+  bool _isSweepTesting = false;
+  int _sweepDone = 0;
+  int _sweepTotal = 0;
+  bool _sweepCancelled = false;
   final Map<_RouteColumn, bool> _visibleColumns = {
     _RouteColumn.type: true,
     _RouteColumn.name: true,
@@ -241,6 +245,75 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                             ? null
                             : () => _openSubscriptionCabinet(selectedSource),
                       ),
+                      if (_isSweepTesting) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: colors.bgCard,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                                color: AtlasTheme.accent.withValues(alpha: .3)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'Проверка маршрутов: $_sweepDone / $_sweepTotal',
+                                      style: TextStyle(
+                                        color: colors.textPrimary,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: () {
+                                      setState(() {
+                                        _sweepCancelled = true;
+                                        _isSweepTesting = false;
+                                      });
+                                    },
+                                    style: TextButton.styleFrom(
+                                      visualDensity: VisualDensity.compact,
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 4),
+                                    ),
+                                    child: Text('Остановить',
+                                        style: TextStyle(
+                                            color: colors.danger,
+                                            fontSize: 13)),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: LinearProgressIndicator(
+                                  value: _sweepTotal == 0
+                                      ? null
+                                      : _sweepDone / _sweepTotal,
+                                  backgroundColor: colors.border,
+                                  valueColor: const AlwaysStoppedAnimation<Color>(
+                                      AtlasTheme.accent),
+                                  minHeight: 4,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 14),
                       if (selectedManifestAsync?.hasError == true &&
                           _isMosaicSubscription(selectedSource))
@@ -520,7 +593,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   /// shared group latency runner. Results stream into the same ping column
   /// used by per-route tests.
   Future<void> _testAllRoutesForSource(Subscription source) async {
-    if (_activeGroupLatencyTest != null) {
+    if (_activeGroupLatencyTest != null || _isSweepTesting) {
       _showMessage(
         'Сначала завершите или остановите активную проверку задержки.',
         ThemeColors.of(context).warning,
@@ -529,9 +602,6 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     }
     final api = ref.read(daemonApiProvider);
 
-    // Only user-visible routes take part in "test all": manifest routes for a
-    // Mosaic source, plain servers otherwise. Hidden Smart Group pool
-    // candidates are probed by their group runner, never one-by-one here.
     List<Server> scoped = const <Server>[];
     List<ManifestGroup> groups = const <ManifestGroup>[];
     if (_isMosaicSubscription(source) && source.id.isNotEmpty) {
@@ -561,13 +631,14 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       return;
     }
 
-    final progress =
-        ValueNotifier<ProgressValue>(ProgressValue(done: 0, total: total));
+    setState(() {
+      _isSweepTesting = true;
+      _sweepDone = 0;
+      _sweepTotal = total;
+      _sweepCancelled = false;
+    });
 
-    // Parallel sweep with cancellation. Four workers keep the burst modest
-    // while finishing an order of magnitude faster than the old serial loop.
     var done = 0;
-    var reachable = 0;
     var nextTask = 0;
     final tasks = <Future<bool> Function()>[
       for (final server in scoped)
@@ -581,7 +652,18 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
             }
             return !result.failed;
           } catch (_) {
-            return false; // unreachable route must not stop the sweep
+            if (mounted) {
+              setState(() {
+                _testResults[server.id] = TestResult(
+                  serverID: server.id,
+                  serverName: server.name,
+                  latencyMS: -1,
+                  error: 'unreachable',
+                  testedAt: DateTime.now(),
+                );
+              });
+            }
+            return false;
           }
         },
       for (final group in groups)
@@ -596,6 +678,17 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
               }
               return !result.failed && result.latencyMS >= 0;
             } catch (_) {
+              if (mounted) {
+                setState(() {
+                  _testResults[group.id] = TestResult(
+                    serverID: group.id,
+                    serverName: _groupTitle(group),
+                    latencyMS: -1,
+                    error: 'unreachable',
+                    testedAt: DateTime.now(),
+                  );
+                });
+              }
               return false;
             }
           }
@@ -625,67 +718,45 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
               }
               return true;
             }
+            if (mounted) {
+              setState(() {
+                _testResults[group.id] = TestResult(
+                  serverID: group.id,
+                  serverName: _groupTitle(group),
+                  latencyMS: -1,
+                  error: 'unreachable',
+                  testedAt: DateTime.now(),
+                );
+              });
+            }
             return false;
           } catch (_) {
+            if (mounted) {
+              setState(() {
+                _testResults[group.id] = TestResult(
+                  serverID: group.id,
+                  serverName: _groupTitle(group),
+                  latencyMS: -1,
+                  error: 'unreachable',
+                  testedAt: DateTime.now(),
+                );
+              });
+            }
             return false;
           }
         },
     ];
 
-    if (!mounted) return;
-    final progressColor = ThemeColors.of(context).textSecondary;
-
-    // Non-dismissable progress dialog with a stop button. Popping it sets
-    // the cancel flag; workers finish their current probe and exit the loop.
-    var cancelled = false;
-    unawaited(showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (dialogContext, setDialogState) => AlertDialog(
-            title: const Text('Проверка маршрутов'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ValueListenableBuilder<ProgressValue>(
-                  valueListenable: progress,
-                  builder: (_, value, __) => Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('${value.done}/${value.total}',
-                          style: TextStyle(color: progressColor)),
-                      const SizedBox(height: 8),
-                      LinearProgressIndicator(
-                        value:
-                            value.total == 0 ? null : value.done / value.total,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  cancelled = true;
-                  Navigator.of(dialogContext).pop();
-                },
-                child: const Text('Остановить'),
-              ),
-            ],
-          ),
-        );
-      },
-    ));
-
     Future<bool> worker() async {
-      while (!cancelled && nextTask < tasks.length) {
+      while (!_sweepCancelled && nextTask < tasks.length) {
         final task = tasks[nextTask++];
-        final ok = await task();
+        await task();
         done++;
-        if (ok) reachable++;
-        progress.value = ProgressValue(done: done, total: total);
+        if (mounted) {
+          setState(() {
+            _sweepDone = done;
+          });
+        }
       }
       return true;
     }
@@ -697,19 +768,13 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       worker(),
     ]);
 
-    if (mounted && Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
+    if (mounted) {
+      setState(() {
+        _isSweepTesting = false;
+        _groupLatencyProgress = null;
+      });
+      ref.invalidate(serversProvider);
     }
-    ref.invalidate(serversProvider);
-    if (!mounted) return;
-    final successColor = ThemeColors.of(context).success;
-    final warningColor = ThemeColors.of(context).warning;
-    _showMessage(
-      cancelled
-          ? 'Остановлено: отвечают $reachable из $total.'
-          : 'Готово: отвечают $reachable из $total маршрутов.',
-      reachable > 0 ? successColor : warningColor,
-    );
   }
 
   Future<void> _editSubscription(Subscription source) async {
@@ -887,6 +952,16 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       };
 
   Future<void> _connect(_RouteRow row) async {
+    final status = ref.read(vpnStatusProvider).valueOrNull;
+    final activeRouteID = status?.activeGroupId.isNotEmpty == true
+        ? status!.activeGroupId
+        : status?.server?.id;
+    final isConnectedToThis = status?.isConnected == true &&
+        (activeRouteID == row.id || activeRouteID == 'group:${row.id}');
+    if (isConnectedToThis) {
+      unawaited(_confirmDisconnectActiveRoute(row));
+      return;
+    }
     if (row.disabled) {
       _showMessage(
         row.disabledReason.isEmpty
@@ -990,8 +1065,10 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     final activeRouteID = status?.activeGroupId.isNotEmpty == true
         ? status!.activeGroupId
         : status?.server?.id;
-    if (status?.isConnected == true && activeRouteID == row.id) {
-      unawaited(_disconnectActiveRoute());
+    final isConnectedToThis = status?.isConnected == true &&
+        (activeRouteID == row.id || activeRouteID == 'group:${row.id}');
+    if (isConnectedToThis) {
+      unawaited(_confirmDisconnectActiveRoute(row));
       return;
     }
     if (row.disabled) return;
@@ -1001,6 +1078,33 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       return;
     }
     ref.read(selectedRouteIdProvider.notifier).set(row.id);
+  }
+
+  Future<void> _confirmDisconnectActiveRoute(_RouteRow row) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Отключить VPN?'),
+        content: Text(
+            'Маршрут «${row.name}» сейчас активен. Отключить соединение?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: ThemeColors.of(context).danger,
+            ),
+            child: const Text('Отключить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await _disconnectActiveRoute();
+    }
   }
 
   Future<void> _disconnectActiveRoute() async {
@@ -1264,17 +1368,17 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       final result = await runner.run(group, onProgress: (progress) {
         if (mounted) setState(() => _groupLatencyProgress = progress);
       });
-      if (result.latencyMs != null && result.latencyMs! > 0) {
-        if (mounted) {
-          setState(() {
-            _testResults[group.id] = TestResult(
-              serverID: group.id,
-              serverName: _groupTitle(group),
-              latencyMS: result.latencyMs!,
-              testedAt: DateTime.now(),
-            );
-          });
-        }
+      final ok = result.latencyMs != null && result.latencyMs! > 0;
+      if (mounted) {
+        setState(() {
+          _testResults[group.id] = TestResult(
+            serverID: group.id,
+            serverName: _groupTitle(group),
+            latencyMS: ok ? result.latencyMs! : -1,
+            error: ok ? '' : 'unreachable',
+            testedAt: DateTime.now(),
+          );
+        });
       }
       if (!mounted) return;
       _showMessage(
@@ -1286,6 +1390,17 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
             : ThemeColors.of(context).success,
       );
     } catch (error) {
+      if (mounted) {
+        setState(() {
+          _testResults[group.id] = TestResult(
+            serverID: group.id,
+            serverName: _groupTitle(group),
+            latencyMS: -1,
+            error: 'unreachable',
+            testedAt: DateTime.now(),
+          );
+        });
+      }
       if (!mounted) return;
       _showMessage(
         error.toString().replaceFirst('Bad state: ', ''),
@@ -1519,8 +1634,15 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
   }
 
   void _showMessage(String message, Color background) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: background),
+      SnackBar(
+        content: Text(message),
+        backgroundColor: background,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ),
     );
   }
 }
@@ -2166,6 +2288,7 @@ class _RouteTable extends StatelessWidget {
         activeId: activeId,
         connectingId: connectingId,
         onConnect: onConnect,
+        onPrimaryAction: onPrimaryAction,
         onTest: onTest,
         onDelete: onDelete,
         activeLatencyTestGroupId: activeLatencyTestGroupId,
@@ -2547,6 +2670,7 @@ class _MobileRouteList extends StatelessWidget {
     required this.activeId,
     required this.connectingId,
     required this.onConnect,
+    required this.onPrimaryAction,
     required this.onTest,
     required this.onDelete,
     required this.activeLatencyTestGroupId,
@@ -2558,6 +2682,7 @@ class _MobileRouteList extends StatelessWidget {
   final String? activeId;
   final String? connectingId;
   final ValueChanged<_RouteRow> onConnect;
+  final ValueChanged<_RouteRow> onPrimaryAction;
   final Future<void> Function(_RouteRow) onTest;
   final Future<void> Function(_RouteRow) onDelete;
   final String? activeLatencyTestGroupId;
@@ -2565,6 +2690,7 @@ class _MobileRouteList extends StatelessWidget {
   final Future<void> Function(_RouteRow, Offset) onRouteMenu;
 
   Future<void> _actions(BuildContext context, _RouteRow row) async {
+    final connected = activeId == row.id || activeId == 'group:${row.id}';
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -2572,8 +2698,10 @@ class _MobileRouteList extends StatelessWidget {
         child: Wrap(
           children: [
             ListTile(
-              leading: const Icon(Icons.play_circle_outline_rounded),
-              title: const Text('Подключиться'),
+              leading: Icon(connected
+                  ? Icons.stop_circle_outlined
+                  : Icons.play_circle_outline_rounded),
+              title: Text(connected ? 'Отключиться' : 'Подключиться'),
               enabled: !row.disabled,
               onTap: row.disabled
                   ? null
@@ -2658,11 +2786,33 @@ class _MobileRouteList extends StatelessWidget {
                   color: row.disabled ? colors.textMuted : colors.textPrimary,
                   fontWeight: FontWeight.w700,
                 )),
-            subtitle: Text(
-              '${row.type} · ${row.ping == null ? 'Не проверен' : '${row.ping} мс'}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: colors.textSecondary),
+            subtitle: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${row.type} · ',
+                  style: TextStyle(color: colors.textSecondary),
+                ),
+                Text(
+                  row.ping == null
+                      ? 'Не проверен'
+                      : row.ping! < 0
+                          ? 'Недоступен'
+                          : '${row.ping} мс',
+                  style: TextStyle(
+                    color: row.ping == null
+                        ? colors.textSecondary
+                        : row.ping! < 0
+                            ? AtlasTheme.error
+                            : row.ping! <= 150
+                                ? AtlasTheme.success
+                                : row.ping! <= 300
+                                    ? AtlasTheme.warning
+                                    : AtlasTheme.error,
+                    fontWeight: row.ping != null ? FontWeight.w600 : null,
+                  ),
+                ),
+              ],
             ),
             trailing: connecting
                 ? const SizedBox(
@@ -2680,7 +2830,9 @@ class _MobileRouteList extends StatelessWidget {
                       onPressed: () => _actions(context, row),
                     ),
                   ]),
-            onTap: row.disabled || connecting ? null : () => onConnect(row),
+            onTap: row.disabled || connecting
+                ? null
+                : () => onPrimaryAction(row),
             onLongPress: () => _actions(context, row),
           );
         },
