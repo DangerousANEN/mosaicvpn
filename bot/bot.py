@@ -1438,16 +1438,16 @@ def get_admin_balance_credit_history(limit=50):
 
 # Known manifest route IDs.  Kept in sync with _handle_provider_manifest.
 KNOWN_ROUTE_IDS = frozenset({
-    "min-latency", "stable", "max-speed", "germany", "usa", "netherlands", "france", "canada", "direct",
+    "min-latency", "stable", "max-speed", "compatibility", "germany", "usa", "netherlands", "france", "canada", "direct",
 })
 ROUTE_DB_GROUP_IDS = {
     "min-latency": "min_latency", "stable": "stable",
-    "max-speed": "max_speed", "germany": "germany",
+    "max-speed": "max_speed", "compatibility": "allowlist", "germany": "germany",
     "usa": "auto-us", "netherlands": "auto-nl", "france": "auto-fr",
     "canada": "canada",
 }
 DEFAULT_ROUTE_MIN_ELIGIBLE = {
-    "min-latency": 4, "stable": 4, "max-speed": 4,
+    "min-latency": 4, "stable": 4, "max-speed": 4, "compatibility": 2,
     "germany": 2, "usa": 2, "netherlands": 2, "france": 2, "canada": 2,
 }
 
@@ -1544,6 +1544,7 @@ def get_route_eligible_counts():
         """)
         raw = {str(group_id): int(count) for group_id, count in cursor.fetchall()}
         raw["stable"] = raw.get("stable") or raw.get("allowlist") or raw.get("min_latency", 20)
+        raw["compatibility"] = raw.get("allowlist") or raw.get("auto-whitelist", 0)
         raw["usa"] = raw.get("auto-us", 0)
         raw["netherlands"] = raw.get("auto-nl", 0)
         raw["france"] = raw.get("auto-fr", 0)
@@ -1601,6 +1602,39 @@ def apply_route_policies(groups, eligible_counts=None):
                     g["disabled_reason"] = ""
         result.append(g)
     return result
+
+
+def get_user_by_short_uuid(short_uuid):
+    """Lookup a user by their short_uuid in SQLite bot.db or PostgreSQL."""
+    if not short_uuid:
+        return None
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT telegram_id, username, short_uuid, language, trial_used, referrer_id FROM users WHERE short_uuid = ?", (short_uuid,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {"account_id": row[0], "telegram_id": row[0], "username": row[1], "short_uuid": row[2], "language": row[3], "trial_used": row[4], "referrer_id": row[5]}
+    # Fallback to Remnawave PostgreSQL users table if user registered via site/direct
+    try:
+        pg_conn = psycopg2.connect(
+            host=os.environ.get("MOSAIC_PG_HOST", "127.0.0.1"),
+            port=int(os.environ.get("MOSAIC_PG_PORT", 6767)),
+            user=os.environ.get("MOSAIC_PG_USER", "postgres"),
+            password=os.environ.get("MOSAIC_PG_PASSWORD", "postgres"),
+            database=os.environ.get("MOSAIC_PG_DATABASE", "postgres")
+        )
+        pg_cur = pg_conn.cursor()
+        pg_cur.execute("SELECT telegram_id, username, short_uuid FROM users WHERE short_uuid = %s", (short_uuid,))
+        p_row = pg_cur.fetchone()
+        pg_conn.close()
+        if p_row:
+            tg_id = p_row[0] or 0
+            u_name = p_row[1] or ""
+            return {"account_id": tg_id, "telegram_id": tg_id, "username": u_name, "short_uuid": p_row[2], "language": "ru", "trial_used": 1, "referrer_id": None}
+    except Exception as e:
+        logger.warning("get_user_by_short_uuid PG fallback error: %s", e)
+    return None
 
 
 def get_user(telegram_id):
@@ -4764,6 +4798,42 @@ def trigger_urgent_pool_refresh(reason):
         return False
 
 
+def _lcg_seed(opaque_id: str, group_id: str) -> int:
+    week_num = datetime.date.today().isocalendar()[1]
+    year = datetime.date.today().year
+    raw = f"{opaque_id}:{group_id}:{year}:{week_num}"
+    return int(hashlib.sha256(raw.encode()).hexdigest(), 16)
+
+
+def _lcg_shuffle_indices(seed: int, count: int) -> list:
+    A = 6364136223846793005
+    C = 1442695040888963407
+    M = 2 ** 64
+    indices = list(range(count))
+    state = seed % M
+    for i in range(count - 1, 0, -1):
+        state = (A * state + C) % M
+        j = state % (i + 1)
+        indices[i], indices[j] = indices[j], indices[i]
+    return indices
+
+
+def _shard_group_nodes(opaque_id: str, group_id: str, candidates: list, target: int = 6) -> list:
+    if not candidates:
+        return []
+    if len(candidates) <= target:
+        return list(candidates)
+    anchors = candidates[:2]
+    rest_nodes = candidates[2:]
+    need_extra = max(0, target - len(anchors))
+    if not rest_nodes or need_extra == 0:
+        return anchors
+    seed = _lcg_seed(opaque_id, group_id)
+    indices = _lcg_shuffle_indices(seed, len(rest_nodes))
+    selected_extra = [rest_nodes[i] for i in indices[:need_extra]]
+    return anchors + selected_extra
+
+
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
@@ -5295,6 +5365,12 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                 },
             },
             {
+                "id": "compatibility", "title": "Маршрут совместимости", "route_type": "smart_group",
+                "type": "urltest", "pool_id": "client-compatibility", "category": "smart",
+                "icon": "shield", "badge": "Adaptive", "description": "Оптимизированный маршрут с адаптивной TLS-маскировкой для стабильной связи в сотовых и нестабильных сетях.",
+                "client_policy": {**policy, "mode": "stability", "stability_weight": 0.40, "latency_weight": 0.35},
+            },
+            {
                 "id": "germany", "title": "Германия", "route_type": "smart_group",
                 "type": "urltest", "pool_id": "client-germany", "country_code": "DE", "category": "smart",
                 "icon": "flag_de", "badge": "Авто", "description": "Автоматический выбор среди подтверждённых маршрутов в Германии.",
@@ -5369,8 +5445,11 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": "subscription not found"})
             return
         profile = self.get_subscription_base_profile(opaque_id)
-        if not profile or profile.get("status") != "active":
+        if not profile:
             self._send_json(404, {"error": "subscription not found"})
+            return
+        if profile.get("status") != "active":
+            self._send_json(403, {"error": "subscription_expired", "status": profile.get("status")})
             return
         try:
             pg_conn = psycopg2.connect(
@@ -5378,98 +5457,108 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                 password=os.environ.get("MOSAIC_PG_PASSWORD", "postgres"), database=os.environ.get("MOSAIC_PG_DATABASE", "postgres")
             )
             cursor = pg_conn.cursor()
-            cursor.execute("""
-                SELECT mn.fingerprint, mn.config, mn.country_code, mn.speed_mbps,
-                       array_agg(DISTINCT gn.group_id ORDER BY gn.group_id)
-                FROM mosaic_group_nodes gn
-                JOIN mosaic_nodes mn ON mn.id = gn.node_id
-                WHERE gn.group_id = ANY(%s)
-                  AND mn.enabled IS TRUE
-                  AND mn.proxy_ok IS TRUE
-                  AND mn.last_checked_at >= now() - interval '6 hours'
-                GROUP BY mn.fingerprint, mn.config, mn.country_code, mn.speed_mbps
-                ORDER BY min(gn.priority), mn.speed_mbps DESC NULLS LAST
-                LIMIT 120
-            """, (["min_latency", "stable", "max_speed", "germany", "auto-de", "usa", "auto-us", "netherlands", "auto-nl", "france", "auto-fr", "canada", "auto-ca"],))
-            outbounds = []
-            for fingerprint, config, country_code, speed_mbps, group_ids in cursor.fetchall():
-                if not isinstance(config, dict):
-                    continue
-                outbound_type = str(config.get("type") or "").lower()
-                if outbound_type not in {"vless", "hysteria2", "shadowsocks", "naive", "wireguard"}:
-                    continue
-                outbound = dict(config)
-                outbound["tag"] = f"mosaic-candidate-{str(fingerprint)[:12]}"
-                outbound["mosaic_client_candidate"] = True
-                mapped_groups = set(group_ids or [])
-                if "auto-us" in mapped_groups:
-                    mapped_groups.add("usa")
-                if "auto-nl" in mapped_groups:
-                    mapped_groups.add("netherlands")
-                if "auto-fr" in mapped_groups:
-                    mapped_groups.add("france")
-                if "auto-de" in mapped_groups:
-                    mapped_groups.add("germany")
-                if "auto-ca" in mapped_groups:
-                    mapped_groups.add("canada")
-                # Every confirmed node is eligible for min-latency and stable fallback
-                mapped_groups.add("min_latency")
-                mapped_groups.add("stable")
-                mapped_groups_list = sorted(mapped_groups)
-                outbound["mosaic_candidate_groups"] = mapped_groups_list
-                # Android and desktop select the daemon-only candidates only
-                # through these opaque group memberships. They are stripped
-                # before the sing-box config reaches the runtime.
-                outbound["mosaic_group_ids"] = mapped_groups_list
-                outbound["mosaic_stable"] = True
-                outbound["mosaic_speed_eligible"] = "max_speed" in mapped_groups
-                if country_code:
-                    outbound["mosaic_country"] = str(country_code).upper()
-                if speed_mbps is not None:
-                    outbound["mosaic_speed_mbps"] = float(speed_mbps)
-                outbounds.append(outbound)
+            target_groups = [
+                ("min_latency", ["min_latency"]),
+                ("max_speed", ["max_speed"]),
+                ("stable", ["stable", "min_latency", "all"]),
+                ("compatibility", ["allowlist", "compatibility", "auto-whitelist"]),
+                ("germany", ["germany", "auto-de"]),
+                ("usa", ["usa", "auto-us"]),
+                ("netherlands", ["netherlands", "auto-nl"]),
+                ("france", ["france", "auto-fr"]),
+                ("canada", ["canada", "auto-ca"]),
+                ("great-britain", ["great-britain", "auto-gb"]),
+                ("singapore", ["singapore", "auto-sg"]),
+                ("japan", ["japan", "auto-jp"]),
+                ("finland", ["finland", "auto-fi"]),
+                ("poland", ["poland", "auto-pl"]),
+            ]
+
+            seen_nodes = {}
+            for gid, db_group_names in target_groups:
+                cursor.execute("""
+                    SELECT mn.fingerprint, mn.config, mn.country_code, mn.speed_mbps, mn.latency_ms,
+                           min(gn.priority) as best_priority
+                    FROM mosaic_group_nodes gn
+                    JOIN mosaic_nodes mn ON mn.id = gn.node_id
+                    WHERE gn.group_id = ANY(%s)
+                      AND mn.enabled IS TRUE
+                      AND mn.proxy_ok IS TRUE
+                      AND mn.last_checked_at >= now() - interval '6 hours'
+                    GROUP BY mn.fingerprint, mn.config, mn.country_code, mn.speed_mbps, mn.latency_ms, mn.composite_score
+                    ORDER BY best_priority ASC, COALESCE(mn.composite_score, 0) DESC, mn.latency_ms ASC NULLS LAST
+                    LIMIT 20
+                """, (db_group_names,))
+
+                cands = []
+                for fp, cfg, cc, spd, lat, prio in cursor.fetchall():
+                    if not isinstance(cfg, dict):
+                        continue
+                    server_host = str(cfg.get("server") or cfg.get("server_address") or "").lower()
+                    if server_host == "5.175.188.152" or "zxc1x1.ru" in server_host:
+                        continue
+                    ob_type = str(cfg.get("type") or "").lower()
+                    if ob_type not in {"vless", "trojan", "shadowsocks", "hysteria2", "naive", "wireguard"}:
+                        continue
+                    transport = cfg.get("transport")
+                    if isinstance(transport, dict) and str(transport.get("type") or "").lower() in {"xhttp", "splithttp"}:
+                        continue
+                    if ob_type in {"xhttp", "splithttp"}:
+                        continue
+                    cands.append({
+                        "fingerprint": fp,
+                        "config": cfg,
+                        "country_code": cc,
+                        "speed_mbps": spd,
+                        "latency_ms": lat,
+                    })
+
+                sharded = _shard_group_nodes(opaque_id, gid, cands, target=6)
+                for node_rec in sharded:
+                    fp = node_rec["fingerprint"]
+                    if fp not in seen_nodes:
+                        outbound = dict(node_rec["config"])
+                        outbound["tag"] = f"mosaic-candidate-{str(fp)[:12]}"
+                        outbound["mosaic_client_candidate"] = True
+                        outbound["mosaic_stable"] = True
+                        outbound["mosaic_group_ids"] = set()
+                        outbound["mosaic_candidate_groups"] = set()
+                        if node_rec["country_code"]:
+                            outbound["mosaic_country"] = str(node_rec["country_code"]).upper()
+                        if node_rec["speed_mbps"] is not None:
+                            outbound["mosaic_speed_mbps"] = float(node_rec["speed_mbps"])
+                        seen_nodes[fp] = outbound
+
+                    seen_nodes[fp]["mosaic_group_ids"].add(gid)
+                    seen_nodes[fp]["mosaic_candidate_groups"].add(gid)
+                    # Auto alias mapping
+                    alias_map = {
+                        "compatibility": "auto-whitelist",
+                        "germany": "auto-de",
+                        "usa": "auto-us",
+                        "netherlands": "auto-nl",
+                        "france": "auto-fr",
+                        "canada": "auto-ca",
+                        "great-britain": "auto-gb",
+                        "singapore": "auto-sg",
+                        "japan": "auto-jp",
+                        "finland": "auto-fi",
+                        "poland": "auto-pl",
+                    }
+                    if gid in alias_map:
+                        alias = alias_map[gid]
+                        seen_nodes[fp]["mosaic_group_ids"].add(alias)
+                        seen_nodes[fp]["mosaic_candidate_groups"].add(alias)
+
             cursor.close()
-            # Query vless_uuid for this subscriber to build a guaranteed anchor node
-            u_cursor = pg_conn.cursor()
-            u_cursor.execute("SELECT vless_uuid FROM users WHERE short_uuid = %s", (opaque_id,))
-            u_row = u_cursor.fetchone()
-            user_vless_uuid = str(u_row[0]) if (u_row and u_row[0]) else None
-            u_cursor.close()
             pg_conn.close()
 
-            if user_vless_uuid:
-                anchor_groups = [
-                    "auto-ca", "auto-de", "auto-fr", "auto-nl", "auto-us",
-                    "canada", "france", "germany", "max_speed", "min_latency",
-                    "netherlands", "stable", "usa"
-                ]
-                anchor_outbound = {
-                    "type": "vless",
-                    "tag": "mosaic-anchor-direct-ws",
-                    "server": "5.175.188.152",
-                    "server_port": 443,
-                    "uuid": user_vless_uuid,
-                    "tls": {
-                        "enabled": True,
-                        "server_name": "vk.com",
-                        "insecure": False
-                    },
-                    "transport": {
-                        "type": "ws",
-                        "path": "/mosaicws",
-                        "headers": {
-                            "Host": "vk.com"
-                        }
-                    },
-                    "mosaic_client_candidate": True,
-                    "mosaic_candidate_groups": anchor_groups,
-                    "mosaic_group_ids": anchor_groups,
-                    "mosaic_stable": True,
-                    "mosaic_speed_eligible": True,
-                    "mosaic_country": "DE",
-                    "mosaic_speed_mbps": 150.0
-                }
-                outbounds.insert(0, anchor_outbound)
+            outbounds = []
+            for outbound in seen_nodes.values():
+                outbound["mosaic_group_ids"] = sorted(outbound["mosaic_group_ids"])
+                outbound["mosaic_candidate_groups"] = sorted(outbound["mosaic_candidate_groups"])
+                outbound["mosaic_speed_eligible"] = "max_speed" in outbound["mosaic_group_ids"]
+                outbounds.append(outbound)
 
             if not outbounds:
                 trigger_urgent_pool_refresh("empty client candidate feed")
@@ -5824,6 +5913,15 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
     def _handle_billing_profile(self, query):
         token = query.get("token", [""])[0]
         session = get_web_session(token)
+        if not session:
+            # Check if token is actually a short_uuid (bearer capability from client)
+            user_by_uuid = get_user_by_short_uuid(token)
+            if user_by_uuid:
+                session = {
+                    "telegram_id": user_by_uuid["telegram_id"],
+                    "username": user_by_uuid["username"],
+                    "token": token,
+                }
         if not session:
             self._send_json(401, {"error": "invalid or expired session"})
             return

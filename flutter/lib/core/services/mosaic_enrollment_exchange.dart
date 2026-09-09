@@ -1,5 +1,7 @@
 import 'package:dio/dio.dart';
 
+import 'android_mosaic_account_service.dart';
+
 /// Verified, one-time website enrollment material returned by MosaicVPN.
 ///
 /// The browser URI itself carries no long-lived credential. This payload is
@@ -50,8 +52,10 @@ class MosaicEnrollmentExchange {
     if (!isSupportedCallback(callback)) return null;
     final code = callback.queryParameters['code'] ?? '';
     final state = callback.queryParameters['state'] ?? '';
-    if (!RegExp(r'^[A-Za-z0-9_-]{16,128}$').hasMatch(code) ||
-        !RegExp(r'^[A-Za-z0-9]{16,128}$').hasMatch(state)) {
+    final isBotPairing = RegExp(r'^[A-Za-z0-9_-]{8,128}$').hasMatch(code) && state.isEmpty;
+    final isWebAuth = RegExp(r'^[A-Za-z0-9_-]{16,128}$').hasMatch(code) &&
+        RegExp(r'^[A-Za-z0-9_-]{16,128}$').hasMatch(state);
+    if (!isBotPairing && !isWebAuth) {
       return null;
     }
     return '$code::$state';
@@ -70,6 +74,21 @@ class MosaicEnrollmentExchange {
     final separator = key.lastIndexOf('::');
     final code = key.substring(0, separator);
     final state = key.substring(separator + 2);
+
+    if (state.isEmpty) {
+      // Direct Bot-issued pairing code (8 characters, no browser auth state).
+      final session = await AndroidMosaicAccountService.instance.redeemTelegramCode(code);
+      final subscriptionUrl = session.subscriptionUrl?.trim().isNotEmpty == true
+          ? session.subscriptionUrl!.trim()
+          : 'https://sub.zxc1x1.ru/${Uri.encodeComponent(session.directToken)}';
+      return MosaicWebsiteEnrollment(
+        subscriptionUrl: subscriptionUrl,
+        subscriptionName: session.subscriptionName ?? 'MosaicVPN',
+        providerId: session.providerId ?? 'mosaicvpn',
+        providerAccountId: session.providerAccountId ?? session.username ?? 'mosaic-user',
+      );
+    }
+
     final response = await _dio.post<Map<String, dynamic>>(
       '/api/app-auth/exchange',
       data: {'code': code, 'state': state},

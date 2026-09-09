@@ -396,14 +396,14 @@ func SynthesizeManifest(subID string, rawServers []proto.Server) proto.Subscript
 		},
 		{
 			ID:          "auto-whitelist",
-			Title:       "🛡 Обход белых списков (РФ 4G / ТСПУ)",
+			Title:       "🛡 Маршрут совместимости",
 			Type:        "urltest",
 			Nodes:       whitelistNodes,
 			UserTier:    proto.TierFree,
-			Badge:       "Защита 4G",
+			Badge:       "Adaptive",
 			Category:    "whitelist",
 			Icon:        "shield",
-			Description: "Специальный маршрут VLESS Reality через SNI разрешённых гос-сервисов и банков РФ",
+			Description: "Специальный маршрут с адаптивной TLS-маскировкой для стабильной работы в сотовых и нестабильных сетях",
 		},
 	}
 

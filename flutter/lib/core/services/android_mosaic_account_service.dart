@@ -414,7 +414,8 @@ class AndroidMosaicAccountService {
   /// platform secure store. Despite its historical name, this service is also
   /// the shared Mosaic account authority for desktop browser enrollment.
   Future<AndroidMosaicSession> completeEnrollmentCallback(Uri callback) async {
-    final isBotPairingFallback = callback.scheme == 'mosaic' &&
+    final isBotPairingFallback = (callback.scheme == 'mosaic' ||
+            callback.scheme == 'mosaicvpn') &&
         callback.host == 'enroll' &&
         callback.path == '/callback';
     final isVerifiedWebsiteCallback = callback.scheme == 'https' &&
@@ -424,25 +425,17 @@ class AndroidMosaicAccountService {
         (callback.scheme == 'mosaicvpn' || callback.scheme == 'mosaic') &&
             callback.host == 'enroll' &&
             callback.path == '/callback';
-    if (isBotPairingFallback) {
-      final code = callback.queryParameters['code'] ?? '';
-      final state = callback.queryParameters['state'] ?? '';
-      if (code.isEmpty || state.isNotEmpty) {
-        throw const FormatException('Ссылка добавления подписки повреждена.');
-      }
-      return redeemTelegramCode(code);
-    }
-    if (!isVerifiedWebsiteCallback && !isCustomSchemeFallback) {
+    if (!isVerifiedWebsiteCallback && !isCustomSchemeFallback && !isBotPairingFallback) {
       throw const FormatException(
           'Получена неподдерживаемая ссылка добавления подписки.');
     }
     final code = callback.queryParameters['code'] ?? '';
     final state = callback.queryParameters['state'] ?? '';
-    if (isVerifiedWebsiteCallback && state.isEmpty && code.isNotEmpty) {
-      // Telegram inline buttons must use HTTPS. The bot-issued callback carries
-      // the same one-time 8-character pairing code as /link, but no browser
-      // state. Treat it as the Telegram pairing flow instead of requiring the
-      // browser-only app-auth state.
+    if ((isVerifiedWebsiteCallback || isCustomSchemeFallback || isBotPairingFallback) &&
+        state.isEmpty &&
+        code.isNotEmpty) {
+      // Telegram inline buttons or app links carry the one-time 8-character
+      // pairing code without browser state. Treat as Telegram pairing flow.
       return redeemTelegramCode(code);
     }
     if (code.isEmpty || state.isEmpty) {
@@ -906,7 +899,10 @@ class AndroidMosaicAccountService {
       final transportType = outbound['transport'] is Map
           ? (outbound['transport']['type']?.toString() ?? '').toLowerCase()
           : '';
-      if (transportType == 'xhttp') {
+      if (transportType == 'xhttp' ||
+          transportType == 'splithttp' ||
+          type == 'xhttp' ||
+          type == 'splithttp') {
         continue;
       }
       final matches = groupIDs.any((id) => normalize(id) == wanted);
@@ -1233,8 +1229,8 @@ class AndroidMosaicAccountService {
     if (value is! Map) return;
     final transport = Map<String, dynamic>.from(value);
     final type = transport['type']?.toString().toLowerCase();
-    if (type == 'xhttp') {
-      outbound['_mosaic_unsupported_transport'] = 'xhttp';
+    if (type == 'xhttp' || type == 'splithttp') {
+      outbound['_mosaic_unsupported_transport'] = type;
       return;
     }
     // sing-box rejects an unknown `host` field on ws/grpc/httpupgrade; the
@@ -1332,7 +1328,7 @@ class AndroidMosaicAccountService {
         // cannot speak it; silently relabelling it as `http` produces configs
         // that connect but never carry data. Skip such servers entirely so the
         // feed only offers routes this runtime can actually use.
-        if (transportType == 'xhttp') {
+        if (transportType == 'xhttp' || transportType == 'splithttp') {
           return null;
         }
         if (transportType != 'tcp') {
@@ -1582,15 +1578,42 @@ class AndroidMosaicAccountService {
           'tag': routeTag,
           'outbounds': tags,
           'url': 'https://www.gstatic.com/generate_204',
-          'interval': '1m',
-          'tolerance': 100,
+          'interval': '3m',
+          'tolerance': 50,
+          'idle_timeout': '10m',
           'interrupt_exist_connections': false,
         },
       {'type': 'direct', 'tag': 'direct'},
     ];
+    final domainBypassList = <String>[
+      if (bypassRussianSites) ...[
+        '.ru',
+        '.su',
+        '.xn--p1ai',
+        'gosuslugi.ru',
+        'sberbank.ru',
+        'tinkoff.ru',
+        't-bank.ru',
+        'vtb.ru',
+        'alfabank.ru',
+        'yandex.ru',
+        'ya.ru',
+        'vk.com',
+        'mail.ru',
+        'ozon.ru',
+        'wildberries.ru',
+        'avito.ru',
+        'kinopoisk.ru',
+        'mos.ru',
+        'nalog.gov.ru',
+      ],
+      ...customBypassDomains,
+    ];
+
     final effectiveFinal = directSelection ? tags.first : routeTag;
+
     // A TUN config needs explicit resolvers and DNS hijack. Provide both
-    // secure remote DNS and direct/fallback resolvers with IPv4 preference.
+    // secure remote DNS through the tunnel and direct/fallback resolvers.
     // sing-box 1.13+ removed support for {outbound: "any"} DNS rules and
     // rejects `detour: "direct"` on an empty direct outbound. Domain
     // resolution for outbound servers uses `route.default_domain_resolver`
@@ -1621,31 +1644,6 @@ class AndroidMosaicAccountService {
         ? Map<String, dynamic>.from(existingRoute)
         : <String, dynamic>{};
     final existingRules = route['rules'];
-
-    final domainBypassList = <String>[
-      if (bypassRussianSites) ...[
-        '.ru',
-        '.su',
-        '.xn--p1ai',
-        'gosuslugi.ru',
-        'sberbank.ru',
-        'tinkoff.ru',
-        't-bank.ru',
-        'vtb.ru',
-        'alfabank.ru',
-        'yandex.ru',
-        'ya.ru',
-        'vk.com',
-        'mail.ru',
-        'ozon.ru',
-        'wildberries.ru',
-        'avito.ru',
-        'kinopoisk.ru',
-        'mos.ru',
-        'nalog.gov.ru',
-      ],
-      ...customBypassDomains,
-    ];
 
     route['rules'] = [
       // Classify DNS and TCP streams before hijack-dns. Without sniffing,

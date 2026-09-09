@@ -2154,15 +2154,6 @@ func (s *Server) handleCandidateShard(w http.ResponseWriter, r *http.Request) {
 				valid = append(valid, srv.ID)
 			}
 		}
-		// If still empty, use any real server as anchor fallback
-		if len(valid) == 0 {
-			for _, srv := range s.store.Snapshot().Servers {
-				if !srv.IsVirtualGroup && srv.Protocol != "" {
-					valid = append(valid, srv.ID)
-					break
-				}
-			}
-		}
 	}
 	// Per-installation deterministic shuffling distributes clients over the
 	// eligible pool without sending the full pool to every client.

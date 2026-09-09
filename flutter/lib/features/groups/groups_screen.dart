@@ -389,12 +389,11 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
         ),
       );
     }
-    rows.addAll(
-      servers
-          .where((server) =>
-              server.subscriptionID == source.id &&
-              !source.hidePhysicalNodes)
-          .map(
+    if (!_isMosaicSubscription(source) && !source.hidePhysicalNodes) {
+      rows.addAll(
+        servers
+            .where((server) => server.subscriptionID == source.id)
+            .map(
             (server) => _RouteRow(
               id: server.id,
               type: server.protocol.displayName,
@@ -416,9 +415,10 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
               canTest: true,
               canDelete: source.id == 'local-default',
             ),
-          ),
-    );
-    return rows;
+            ),
+            );
+            }
+            return rows;
   }
 
   int _compareRows(_RouteRow left, _RouteRow right) {

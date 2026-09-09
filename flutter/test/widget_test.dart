@@ -7,6 +7,7 @@ import 'package:mosaic_vpn/core/api/mock_daemon_api.dart';
 import 'package:mosaic_vpn/core/models/models.dart';
 import 'package:mosaic_vpn/core/providers/vpn_providers.dart';
 import 'package:mosaic_vpn/core/platform/app_platform.dart';
+import 'package:mosaic_vpn/features/dashboard/atlas_route_picker_sheet.dart';
 
 /// Smoke tests for the shell that owns navigation.
 ///
@@ -26,9 +27,15 @@ final _mosaicTestManifest = ProviderManifest(
   groups: [
     ManifestGroup(
       id: 'provider:mosaic-test-subscription:rg-all',
-      title: '[SG] Минимальный пинг',
+      title: 'Минимальный пинг',
       description: 'Выбор маршрута с минимальной задержкой.',
       icon: 'lightning',
+    ),
+    ManifestGroup(
+      id: 'provider:mosaic-test-subscription:rg-de',
+      title: 'Германия',
+      description: 'Серверы в Германии.',
+      icon: 'globe',
     ),
   ],
 );
@@ -114,7 +121,7 @@ void main() {
     expect(find.text('Не подключено'), findsWidgets,
         reason: 'the primary desktop screen must be ConnectionDashboard');
     expect(find.text('ТЕКУЩИЙ МАРШРУТ'), findsOneWidget);
-    expect(find.text('[SG] Минимальный пинг'), findsOneWidget);
+    expect(find.text('Минимальный пинг'), findsOneWidget);
     expect(tester.takeException(), isNull,
         reason: 'English dashboard must render without an exception');
   });
@@ -125,7 +132,7 @@ void main() {
 
     expect(find.text('Not connected'), findsWidgets);
     expect(find.text('ТЕКУЩИЙ МАРШРУТ'), findsOneWidget);
-    expect(find.text('[SG] Минимальный пинг'), findsOneWidget);
+    expect(find.text('Минимальный пинг'), findsOneWidget);
     expect(find.text('Subscriptions'), findsWidgets);
     expect(tester.takeException(), isNull,
         reason: 'English dashboard must render without a framework exception');
@@ -137,12 +144,12 @@ void main() {
 
     await tester.tap(find.text('Выбрать'));
     await tester.pump(const Duration(milliseconds: 250));
-    expect(find.byType(Dialog), findsOneWidget);
-    expect(find.text('[SG] Минимальный пинг'), findsNWidgets(2));
-    await tester.tap(find.byIcon(Icons.close_rounded));
+    expect(find.byType(AtlasRoutePickerSheet), findsOneWidget);
+    expect(find.text('Минимальный пинг'), findsWidgets);
+    Navigator.of(tester.element(find.byType(AtlasRoutePickerSheet))).pop();
     await tester.pump(const Duration(milliseconds: 250));
 
-    await tester.tap(find.byIcon(Icons.unfold_more_rounded));
+    await tester.tap(find.byIcon(Icons.unfold_more_rounded).first);
     await tester.pump(const Duration(milliseconds: 250));
     expect(find.byType(Dialog), findsOneWidget);
     expect(find.text('Выберите подписку'), findsOneWidget);

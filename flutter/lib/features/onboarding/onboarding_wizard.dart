@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/providers/vpn_providers.dart';
 import '../../core/providers/routing_presets_provider.dart';
+import '../../core/services/android_mosaic_account_service.dart';
 import '../../core/services/ui_preferences_service.dart';
 import '../../core/theme/atlas_theme.dart';
 
@@ -96,12 +98,30 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   Future<void> _finish() async {
     await _applySelectedMode();
     final url = _subUrlController.text.trim();
-    if (url.isNotEmpty && (url.startsWith('http://') || url.startsWith('https://'))) {
+    if (url.isNotEmpty) {
       setState(() => _importing = true);
       try {
-        final api = ref.read(daemonApiProvider);
-        await api.addSubscription('Основная подписка', url, autoRefresh: true);
-        ref.invalidate(subscriptionsProvider);
+        if (RegExp(r'^[A-Za-z0-9_-]{8}$').hasMatch(url)) {
+          // Direct 8-character pairing code from Telegram bot
+          final session = await AndroidMosaicAccountService.instance.redeemTelegramCode(url);
+          final subUrl = session.subscriptionUrl?.trim().isNotEmpty == true
+              ? session.subscriptionUrl!.trim()
+              : 'https://sub.zxc1x1.ru/${Uri.encodeComponent(session.directToken)}';
+          final api = ref.read(daemonApiProvider);
+          await api.addSubscription('Основная подписка', subUrl, autoRefresh: true);
+          ref.invalidate(subscriptionsProvider);
+        } else if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mosaicvpn://')) {
+          if (url.startsWith('mosaicvpn://')) {
+            final uri = Uri.tryParse(url);
+            if (uri != null) {
+              await AndroidMosaicAccountService.instance.completeEnrollmentCallback(uri);
+            }
+          } else {
+            final api = ref.read(daemonApiProvider);
+            await api.addSubscription('Основная подписка', url, autoRefresh: true);
+            ref.invalidate(subscriptionsProvider);
+          }
+        }
       } catch (e) {
         // Non-blocking import failure: proceed anyway
       }
@@ -528,7 +548,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
               TextField(
                 controller: _subUrlController,
                 decoration: InputDecoration(
-                  hintText: 'https://sub.zxc1x1.ru/...',
+                  hintText: 'Ссылка https://... или код из бота',
                   hintStyle: TextStyle(color: c.textMuted, fontSize: 13),
                   filled: true,
                   fillColor: c.bgBase,
@@ -542,11 +562,11 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AtlasTheme.accent, width: 1.8),
+                    borderSide: const BorderSide(color: AtlasTheme.accent, width: 1.5),
                   ),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   suffixIcon: IconButton(
-                    icon: const Icon(Icons.paste_rounded, size: 19),
+                    icon: Icon(Icons.paste_rounded, size: 18, color: c.textMuted),
                     onPressed: () async {
                       final data = await Clipboard.getData(Clipboard.kTextPlain);
                       if (data?.text case final text? when text.isNotEmpty) {
@@ -566,6 +586,26 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                 ),
               ],
             ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () async {
+            final uri = Uri.parse('https://t.me/mosaicvpnbot');
+            if (await canLaunchUrl(uri)) {
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+            }
+          },
+          style: OutlinedButton.styleFrom(
+            foregroundColor: c.textPrimary,
+            side: BorderSide(color: c.border),
+            padding: const EdgeInsets.symmetric(vertical: 13),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+          icon: const Icon(Icons.send_rounded, size: 18, color: AtlasTheme.accent),
+          label: const Text(
+            'Получить ключ в Telegram-боте',
+            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
           ),
         ),
         const SizedBox(height: 20),

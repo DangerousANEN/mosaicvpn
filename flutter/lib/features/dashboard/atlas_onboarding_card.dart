@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/models/subscription.dart';
 import '../../core/providers/vpn_providers.dart';
+import '../../core/services/android_mosaic_account_service.dart';
 import '../../core/theme/atlas_theme.dart';
 
 class AtlasOnboardingCard extends ConsumerStatefulWidget {
@@ -49,7 +50,21 @@ class _AtlasOnboardingCardState extends ConsumerState<AtlasOnboardingCard> {
   Future<void> _addCandidate(String url) async {
     final api = ref.read(daemonApiProvider);
     try {
-      await api.addSubscription('Моя подписка', url, autoRefresh: true);
+      final trimmed = url.trim();
+      if (RegExp(r'^[A-Za-z0-9_-]{8}$').hasMatch(trimmed)) {
+        final session = await AndroidMosaicAccountService.instance.redeemTelegramCode(trimmed);
+        final subUrl = session.subscriptionUrl?.trim().isNotEmpty == true
+            ? session.subscriptionUrl!.trim()
+            : 'https://sub.zxc1x1.ru/${Uri.encodeComponent(session.directToken)}';
+        await api.addSubscription('Моя подписка', subUrl, autoRefresh: true);
+      } else if (trimmed.startsWith('mosaicvpn://')) {
+        final uri = Uri.tryParse(trimmed);
+        if (uri != null) {
+          await AndroidMosaicAccountService.instance.completeEnrollmentCallback(uri);
+        }
+      } else {
+        await api.addSubscription('Моя подписка', trimmed, autoRefresh: true);
+      }
       ref.invalidate(subscriptionsProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -138,7 +153,7 @@ class _AtlasOnboardingCardState extends ConsumerState<AtlasOnboardingCard> {
   }
 
   Future<void> _openTelegramBot() async {
-    final uri = Uri.parse('https://t.me/mosaicsup');
+    final uri = Uri.parse('https://t.me/mosaicvpnbot');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }

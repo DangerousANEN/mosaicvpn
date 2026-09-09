@@ -24,7 +24,9 @@
       var parameters = new URLSearchParams(window.location.search);
       var code = parameters.get('code') || '';
       var state = parameters.get('state') || '';
-      var valid = /^[A-Za-z0-9_-]{16,128}$/.test(code) && /^[A-Za-z0-9_-]{16,128}$/.test(state);
+      var isBotPairing = /^[A-Za-z0-9_-]{8,128}$/.test(code) && !state;
+      var isWebAuth = /^[A-Za-z0-9_-]{16,128}$/.test(code) && /^[A-Za-z0-9_-]{16,128}$/.test(state);
+      var valid = isBotPairing || isWebAuth;
       var link = document.getElementById('open-app');
       var message = document.getElementById('message');
       var eyebrow = document.getElementById('eyebrow');
@@ -36,7 +38,11 @@
         eyebrow.innerHTML = '<span class="dot"></span>Нужна новая ссылка';
         return;
       }
-      link.href = 'mosaicvpn://enroll/callback?code=' + encodeURIComponent(code) + '&state=' + encodeURIComponent(state);
+      var targetHref = 'mosaicvpn://enroll/callback?code=' + encodeURIComponent(code);
+      if (state) {
+        targetHref += '&state=' + encodeURIComponent(state);
+      }
+      link.href = targetHref;
       // Auto-hand-off: most users expect one click on the site to be enough.
       // Launch the protocol after a short beat; if nothing handled it, the
       // visible button and the note below remain as the manual fallback.

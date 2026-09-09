@@ -679,7 +679,7 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 
 		intervalSeconds := outboundIntHint(server, "mosaic_ping_interval")
 		if intervalSeconds <= 0 {
-			intervalSeconds = 15
+			intervalSeconds = 60
 		}
 		// urltest owns the active outbound locally. If its current candidate
 		// fails a probe, sing-box selects another direct candidate. Existing
@@ -690,7 +690,7 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 			"outbounds":                   nodeTags,
 			"url":                         targetURL,
 			"interval":                    fmt.Sprintf("%ds", intervalSeconds),
-			"tolerance":                   20,
+			"tolerance":                   50,
 			"idle_timeout":                "30m",
 			"interrupt_exist_connections": false,
 		}
@@ -817,8 +817,8 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 					"tag":                         egressOutboundTag,
 					"outbounds":                   groupNodes,
 					"url":                         "https://cp.cloudflare.com/generate_204",
-					"interval":                    "15s",
-					"tolerance":                   30,
+					"interval":                    "60s",
+					"tolerance":                   50,
 					"interrupt_exist_connections": false,
 				})
 			} else if eg.ServerID != "" {
@@ -950,7 +950,7 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 	// Egress routing rules must come BEFORE the final "proxy" fallback
 	// so traffic from egress inbounds goes to their dedicated outbounds.
 	if len(egressRouteRules) > 0 {
-		routeRules = append(egressRouteRules, routeRules...)
+		routeRules = append(routeRules, egressRouteRules...)
 	}
 
 	routeBlock := map[string]any{
