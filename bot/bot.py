@@ -2835,7 +2835,7 @@ def get_install_os_keyboard(lang):
 def get_install_android_keyboard(lang):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton(
-        "⬇️ Скачать APK v0.3.54 (53 МБ)" if lang == "ru" else "⬇️ Download APK v0.3.54 (53 MB)",
+        "⬇️ Скачать APK v0.3.55 (53 МБ)" if lang == "ru" else "⬇️ Download APK v0.3.55 (53 MB)",
         url="https://sub.zxc1x1.ru/assets/MosaicVPN-Android.apk",
         style="primary",
     ))
@@ -5439,7 +5439,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             "provider_name": "MosaicVPN",
             "user_tier": "standard",
             "app_update": {
-                "version": "0.3.54",
+                "version": "0.3.55",
                 "download_url": "https://sub.zxc1x1.ru/",
                 "changelog": "Добавлена поддержка REST API и MCP протокола, умные группы пула, блокировка рекламы AdBlock на уровне sing-box DNS, исправление замера задержек и синхронизация кабинета."
             },

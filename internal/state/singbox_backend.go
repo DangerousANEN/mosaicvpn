@@ -875,10 +875,6 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 		dnsRules := []any{}
 
 		if prefs.AdBlock {
-			servers = append(servers, map[string]any{
-				"tag":     "dns-block",
-				"address": "rcode://success",
-			})
 			dnsRules = append(dnsRules, map[string]any{
 				"domain_suffix": []string{
 					"an.yandex.ru",
@@ -907,7 +903,8 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 					"appsflyer.com",
 					"branch.io",
 				},
-				"server": "dns-block",
+				"action": "predefined",
+				"rcode":  "NOERROR",
 			})
 		}
 

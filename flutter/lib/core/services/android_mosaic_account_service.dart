@@ -1723,11 +1723,6 @@ class AndroidMosaicAccountService {
     // Domestic domains bypass via dns-direct (Yandex 77.88.8.8) directly.
     config['dns'] = {
       'servers': [
-        if (adBlock)
-          {
-            'tag': 'dns-block',
-            'address': 'rcode://success',
-          },
         {
           'type': 'udp',
           'tag': 'dns-direct',
@@ -1752,7 +1747,8 @@ class AndroidMosaicAccountService {
         if (adBlock)
           {
             'domain_suffix': adDomains,
-            'server': 'dns-block',
+            'action': 'predefined',
+            'rcode': 'NOERROR',
           },
         if (domainBypassList.isNotEmpty)
           {

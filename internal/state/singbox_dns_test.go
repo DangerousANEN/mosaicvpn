@@ -54,22 +54,20 @@ func TestAdBlockBuildSingBoxConfig(t *testing.T) {
 	if !ok {
 		t.Fatalf("dns section missing in config: %s", string(rawCfg))
 	}
-	servers, ok := dnsSection["servers"].([]any)
+	dnsRules, ok := dnsSection["rules"].([]any)
 	if !ok {
-		t.Fatalf("dns.servers missing: %s", string(rawCfg))
+		t.Fatalf("dns.rules missing: %s", string(rawCfg))
 	}
 
-	hasBlockServer := false
-	for _, s := range servers {
-		if smap, ok := s.(map[string]any); ok && smap["tag"] == "dns-block" {
-			hasBlockServer = true
-			if smap["address"] != "rcode://success" {
-				t.Fatalf("dns-block address = %v, want rcode://success", smap["address"])
-			}
+	hasAdBlockRule := false
+	for _, r := range dnsRules {
+		if rmap, ok := r.(map[string]any); ok && rmap["action"] == "predefined" && rmap["rcode"] == "NOERROR" {
+			hasAdBlockRule = true
+			break
 		}
 	}
-	if !hasBlockServer {
-		t.Fatalf("dns.servers does not contain dns-block: %#v", servers)
+	if !hasAdBlockRule {
+		t.Fatalf("dns.rules does not contain adblock predefined rule: %#v", dnsRules)
 	}
 }
 

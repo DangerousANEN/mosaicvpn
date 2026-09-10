@@ -46,7 +46,7 @@ class AppConfig {
 
   // ── App metadata ──
   static const String appName = 'MosaicVPN';
-  static const String appVersion = '0.3.54';
+  static const String appVersion = '0.3.55';
   static const String appAuthor = 'MosaicVPN';
 
   // ── Supported protocols ──

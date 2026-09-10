@@ -535,9 +535,9 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
       return 'Разрешите создание VPN-подключения в Android и повторите попытку.';
     }
     if (raw.contains('sing-box') || raw.contains('runtime')) {
-      return 'Нативный VPN runtime не подтвердил запуск. Откройте журнал подключения и повторите попытку.';
+      return raw.length > 200 ? raw.substring(0, 200) : raw;
     }
-    return AppStrings.of(context).t('connection_try_other_route');
+    return raw.length > 200 ? raw.substring(0, 200) : raw;
   }
 
   String? _selectedSubscriptionId(WidgetRef ref) =>
