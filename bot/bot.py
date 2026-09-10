@@ -2836,7 +2836,7 @@ def get_install_android_keyboard(lang):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton(
         "⬇️ Скачать APK v0.3.56 (53 МБ)" if lang == "ru" else "⬇️ Download APK v0.3.56 (53 MB)",
-        url="https://sub.zxc1x1.ru/assets/MosaicVPN-Android.apk",
+        url="https://sub.zxc1x1.ru/assets/MosaicVPN-Android-v0.3.56.apk",
         style="primary",
     ))
     markup.add(types.InlineKeyboardButton(
@@ -2923,7 +2923,7 @@ def get_download_keyboard(lang):
     def button(text, **kwargs):
         kwargs.setdefault("style", "primary")
         return types.InlineKeyboardButton(text, **kwargs)
-    markup.add(button("📱 Android", url="https://sub.zxc1x1.ru/assets/MosaicVPN-Android.apk", style="primary"))
+    markup.add(button("📱 Android", url="https://sub.zxc1x1.ru/assets/MosaicVPN-Android-v0.3.56.apk", style="primary"))
     markup.add(button("🪟 Windows (Setup)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.56/MosaicVPN-Setup-x64-v0.3.56.exe", style="primary"))
     markup.add(button("🐧 Linux (Debian/Ubuntu)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.56/MosaicVPN_0.3.56_amd64.deb", style="primary"))
     markup.add(button("📲 Добавить в клиент" if lang == "ru" else "📲 Add to Client", callback_data="home_add_client_menu", style="success"))
@@ -5441,7 +5441,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             "app_update": {
                 "version": "0.3.56",
                 "download_url": "https://sub.zxc1x1.ru/",
-                "changelog": "Добавлена поддержка REST API и MCP протокола, умные группы пула, блокировка рекламы AdBlock на уровне sing-box DNS, исправление замера задержек и синхронизация кабинета."
+                "changelog": "Кабинет и список маршрутов открываются мгновенно при запуске (кэш последней сессии), добавлено «Отключить» в меню станции, обновлены ссылки на настольные сборки Windows и Linux."
             },
             "groups": groups,
             # A direct route is deliberately separate from Smart Groups. Its

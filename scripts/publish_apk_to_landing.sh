@@ -27,7 +27,15 @@ URL="https://github.com/${REPO}/releases/download/${TAG}/${APK}"
 VPS="${MOSAIC_VPS:-root@5.175.188.152}"
 SSH_KEY="${MOSAIC_SSH_KEY:-$HOME/.ssh/id_ed25519_vitaly}"
 LANDING="/etc/letsencrypt/landing/assets"
-WORK="$(mktemp -d)"
+
+# NOTE: on Windows/MSYS the native curl.exe and scp.exe cannot resolve MSYS
+# paths like /tmp/... — `mktemp -d` returns exactly that and every write fails
+# with "No such file or directory". Use a native-resolvable scratch dir there.
+if [[ -n "${LOCALAPPDATA:-}" ]]; then
+  WORK="$(mktemp -d "${LOCALAPPDATA}/Temp/mosaic-apk-XXXXXX")"
+else
+  WORK="$(mktemp -d)"
+fi
 trap 'rm -rf "$WORK"' EXIT
 
 echo "==> Downloading CI artifact ${APK}"
@@ -54,9 +62,11 @@ ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$VPS" \
   "cp -p '${LANDING}/${APK}' '${LANDING}/MosaicVPN-Android.apk'"
 
 echo "==> Verifying what the site actually serves"
-LOCAL_MD5=$(md5sum "${WORK}/${APK}" | awk '{print $1}')
+# NOTE: GNU md5sum prefixes the hash with '\' when the filename contains a
+# backslash (every Windows path does), so strip it before comparing.
+LOCAL_MD5=$(md5sum "${WORK}/${APK}" | awk '{gsub(/^\\/,"",$1); print $1}')
 REMOTE_MD5=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$VPS" \
-  "md5sum '${LANDING}/MosaicVPN-Android.apk'" | awk '{print $1}')
+  "md5sum '${LANDING}/MosaicVPN-Android.apk'" | awk '{gsub(/^\\/,"",$1); print $1}')
 [[ "$LOCAL_MD5" == "$REMOTE_MD5" ]] \
   || fail "md5 mismatch: local=${LOCAL_MD5} remote=${REMOTE_MD5}"
 
