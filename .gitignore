@@ -95,3 +95,8 @@ artifacts/
 artifacts/
 bot/__pycache__/
 flutter/test/failures/
+
+# Build artefacts and local benchmark state — never commit these.
+# A stray `git add -A` once staged 228 MB of APKs into a release commit.
+*.apk
+bench_data_dir/
