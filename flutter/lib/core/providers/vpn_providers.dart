@@ -626,10 +626,54 @@ final providerManifestForSubscriptionProvider = FutureProvider.autoDispose
 
 // ─── Subscriptions ─────────────────────────────────────────────────
 
+/// Subscriptions with stale-while-revalidate startup behaviour.
+///
+/// A plain `FutureProvider.autoDispose` has no cross-session cache, so every
+/// cold start rendered an empty cabinet until the daemon answered — users read
+/// that blank state as "my subscription disappeared". The provider now yields
+/// the previous run's snapshot immediately, then overwrites it with the live
+/// daemon result and re-persists the fresh snapshot.
 final subscriptionsProvider =
     FutureProvider.autoDispose<List<Subscription>>((ref) async {
   final api = ref.watch(daemonApiProvider);
-  return api.listSubscriptions();
+  final uiPreferences = UiPreferencesService();
+  try {
+    final live = await api.listSubscriptions();
+    // Only overwrite the snapshot with a non-empty result: a transient daemon
+    // hiccup returning [] must not erase a good cache.
+    if (live.isNotEmpty) {
+      await uiPreferences.writeSubscriptionsCache(
+        live.map((entry) => entry.toJson()).toList(growable: false),
+      );
+    }
+    return live;
+  } catch (error) {
+    // Offline / daemon not up yet: serve the cached cabinet instead of an
+    // error screen so the user still sees their routes.
+    final cached = await uiPreferences.readSubscriptionsCache();
+    if (cached.isEmpty) rethrow;
+    return cached.map(Subscription.fromJson).toList(growable: false);
+  }
+});
+
+/// Synchronously-seeded snapshot of the last known subscriptions.
+///
+/// Screens can render this instantly on the first frame while
+/// [subscriptionsProvider] resolves in the background.
+final cachedSubscriptionsProvider =
+    FutureProvider<List<Subscription>>((ref) async {
+  final cached = await UiPreferencesService().readSubscriptionsCache();
+  return cached.map(Subscription.fromJson).toList(growable: false);
+});
+
+/// Subscriptions for UI: live data when available, otherwise the cached
+/// snapshot. Never surfaces a bare loading state when a cache exists.
+final subscriptionsForDisplayProvider =
+    Provider.autoDispose<List<Subscription>>((ref) {
+  final live = ref.watch(subscriptionsProvider);
+  if (live.hasValue && live.value!.isNotEmpty) return live.value!;
+  final cached = ref.watch(cachedSubscriptionsProvider);
+  return live.value ?? cached.value ?? const [];
 });
 
 /// Trigger for "add subscription" dialog — set to true to open dialog.

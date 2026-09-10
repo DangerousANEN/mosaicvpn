@@ -94,3 +94,4 @@ atlas_template.html
 artifacts/
 artifacts/
 bot/__pycache__/
+flutter/test/failures/

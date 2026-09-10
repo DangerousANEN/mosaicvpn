@@ -1614,6 +1614,18 @@ class _StationsPanelState extends ConsumerState<_StationsPanel> {
                       onSelected: (action) =>
                           _handleServerAction(context, ref, action, s),
                       itemBuilder: (context) => [
+                        if (isActive)
+                          const PopupMenuItem(
+                            value: 'disconnect',
+                            child: Row(
+                              children: [
+                                Icon(Icons.stop_circle_outlined, size: 14),
+                                SizedBox(width: 8),
+                                Text('Disconnect',
+                                    style: TextStyle(fontSize: 11)),
+                              ],
+                            ),
+                          ),
                         const PopupMenuItem(
                           value: 'ping',
                           child: Row(
@@ -1770,7 +1782,15 @@ class _StationsPanelState extends ConsumerState<_StationsPanel> {
   ) async {
     final api = ref.read(daemonApiProvider);
     try {
-      if (action == 'ping') {
+      if (action == 'disconnect') {
+        await api.disconnect();
+        ref.invalidate(vpnStatusProvider);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Отключено')),
+          );
+        }
+      } else if (action == 'ping') {
         await api.testServer(server.id);
         ref.invalidate(serversProvider);
       } else if (action == 'copy') {

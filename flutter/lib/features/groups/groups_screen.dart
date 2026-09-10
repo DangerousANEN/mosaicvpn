@@ -156,8 +156,9 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     // before its subscription list has refreshed. Route rows themselves always
     // use the selected subscription-scoped manifest below.
     final legacyManifestAsync = ref.watch(mosaicManifestProvider);
-    final subscriptions =
-        ref.watch(subscriptionsProvider).valueOrNull ?? const <Subscription>[];
+    // Stale-while-revalidate view: shows the previous session's subscriptions
+    // on the first frame so the routes inventory is never blank on cold start.
+    final subscriptions = ref.watch(subscriptionsForDisplayProvider);
     final servers = ref.watch(serversProvider).valueOrNull ?? const <Server>[];
     final localGroups = ref.watch(localServerGroupsProvider).valueOrNull ??
         const <ServerGroup>[];

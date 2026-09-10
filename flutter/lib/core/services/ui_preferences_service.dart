@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Persists presentation and selection preferences independently from the VPN runtime.
@@ -17,6 +19,44 @@ class UiPreferencesService {
   static const _bypassRussianSitesKey = 'ui.bypass_russian_sites';
   static const _adBlockKey = 'ui.ad_block';
   static const _dismissedHintsKey = 'ui.dismissed_hints';
+  static const _subscriptionsCacheKey = 'ui.subscriptions_cache_v1';
+
+  /// Reads the last known subscription list captured on a previous run.
+  ///
+  /// `subscriptionsProvider` is an autoDispose FutureProvider with no
+  /// cross-session cache, so every cold start shows an empty cabinet for as
+  /// long as the daemon fetch takes. Seeding the provider with this snapshot
+  /// renders the cabinet instantly (stale-while-revalidate); the live fetch
+  /// silently replaces it. Contains no credentials beyond the subscription
+  /// URLs already persisted by the daemon store.
+  Future<List<Map<String, dynamic>>> readSubscriptionsCache() async {
+    final preferences = await SharedPreferences.getInstance();
+    final raw = preferences.getString(_subscriptionsCacheKey);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<Map>()
+          .map((entry) => entry.cast<String, dynamic>())
+          .toList(growable: false);
+    } catch (_) {
+      // A corrupt snapshot must never block startup — drop it and refetch.
+      await preferences.remove(_subscriptionsCacheKey);
+      return const [];
+    }
+  }
+
+  Future<void> writeSubscriptionsCache(
+      List<Map<String, dynamic>> value) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setString(_subscriptionsCacheKey, jsonEncode(value));
+  }
+
+  Future<void> clearSubscriptionsCache() async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.remove(_subscriptionsCacheKey);
+  }
 
   Future<bool> readAdBlock() async {
     final preferences = await SharedPreferences.getInstance();

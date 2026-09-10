@@ -91,8 +91,10 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     // synthetic global Mosaic row made the Dashboard show a different number
     // of subscriptions and used unscoped group IDs that the daemon cannot
     // connect on multi-subscription installs.
-    final subscriptions =
-        ref.watch(subscriptionsProvider).valueOrNull ?? <Subscription>[];
+    // Reads through the stale-while-revalidate view so a cold start renders
+    // the previous session's routes instantly instead of an empty dashboard
+    // while the daemon fetch is still in flight.
+    final subscriptions = ref.watch(subscriptionsForDisplayProvider);
     final selectedSubscription = subscriptions.firstWhere(
       (subscription) => subscription.id == sharedSubId,
       orElse: () =>

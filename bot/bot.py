@@ -2835,7 +2835,7 @@ def get_install_os_keyboard(lang):
 def get_install_android_keyboard(lang):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton(
-        "⬇️ Скачать APK v0.3.55 (53 МБ)" if lang == "ru" else "⬇️ Download APK v0.3.55 (53 MB)",
+        "⬇️ Скачать APK v0.3.56 (53 МБ)" if lang == "ru" else "⬇️ Download APK v0.3.56 (53 MB)",
         url="https://sub.zxc1x1.ru/assets/MosaicVPN-Android.apk",
         style="primary",
     ))
@@ -2861,12 +2861,12 @@ def get_install_windows_keyboard(lang):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton(
         "⬇️ Скачать Setup.exe (24.7 МБ)" if lang == "ru" else "⬇️ Download Setup.exe (24.7 MB)",
-        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.54/MosaicVPN-Setup-x64-v0.3.54.exe",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.56/MosaicVPN-Setup-x64-v0.3.56.exe",
         style="primary",
     ))
     markup.add(types.InlineKeyboardButton(
         "📦 Скачать Portable .zip (36.8 МБ)" if lang == "ru" else "📦 Download Portable .zip (36.8 MB)",
-        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.54/MosaicVPN-Portable-x64-v0.3.54.zip",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.56/MosaicVPN-Portable-x64-v0.3.56.zip",
         style="primary",
     ))
     markup.add(types.InlineKeyboardButton(
@@ -2891,12 +2891,12 @@ def get_install_linux_keyboard(lang):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton(
         "📦 Ubuntu / Debian (.deb)" if lang == "ru" else "📦 Ubuntu / Debian (.deb)",
-        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.54/MosaicVPN_0.3.54_amd64.deb",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.56/MosaicVPN_0.3.56_amd64.deb",
         style="primary",
     ))
     markup.add(types.InlineKeyboardButton(
         "📦 Любой Linux (.tar.gz)" if lang == "ru" else "📦 Any Linux (.tar.gz)",
-        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.54/MosaicVPN-Portable-x86_64-v0.3.54.tar.gz",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.56/MosaicVPN-Portable-x86_64-v0.3.56.tar.gz",
         style="primary",
     ))
     markup.add(types.InlineKeyboardButton(
@@ -2924,8 +2924,8 @@ def get_download_keyboard(lang):
         kwargs.setdefault("style", "primary")
         return types.InlineKeyboardButton(text, **kwargs)
     markup.add(button("📱 Android", url="https://sub.zxc1x1.ru/assets/MosaicVPN-Android.apk", style="primary"))
-    markup.add(button("🪟 Windows (Setup)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.54/MosaicVPN-Setup-x64-v0.3.54.exe", style="primary"))
-    markup.add(button("🐧 Linux (Debian/Ubuntu)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.54/MosaicVPN_0.3.54_amd64.deb", style="primary"))
+    markup.add(button("🪟 Windows (Setup)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.56/MosaicVPN-Setup-x64-v0.3.56.exe", style="primary"))
+    markup.add(button("🐧 Linux (Debian/Ubuntu)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.56/MosaicVPN_0.3.56_amd64.deb", style="primary"))
     markup.add(button("📲 Добавить в клиент" if lang == "ru" else "📲 Add to Client", callback_data="home_add_client_menu", style="success"))
     # home_add_app alias supported
     return markup
@@ -3390,7 +3390,7 @@ def handle_install_linux(call):
         text = (
             "🐧 Установка для Linux\n\n"
             "📦 Ubuntu / Debian / Mint:\n"
-            "`sudo dpkg -i MosaicVPN_0.3.54_amd64.deb`\n\n"
+            "`sudo dpkg -i MosaicVPN_0.3.56_amd64.deb`\n\n"
             "📦 Любой другой дистрибутив:\n"
             "Скачайте .tar.gz, распакуйте и запустите `./mosaicvpn`."
         )
@@ -3398,7 +3398,7 @@ def handle_install_linux(call):
         text = (
             "🐧 Linux Installation\n\n"
             "📦 Ubuntu / Debian / Mint:\n"
-            "`sudo dpkg -i MosaicVPN_0.3.54_amd64.deb`\n\n"
+            "`sudo dpkg -i MosaicVPN_0.3.56_amd64.deb`\n\n"
             "📦 Any other distribution:\n"
             "Download .tar.gz, unpack and execute `./mosaicvpn`."
         )
@@ -5439,7 +5439,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             "provider_name": "MosaicVPN",
             "user_tier": "standard",
             "app_update": {
-                "version": "0.3.55",
+                "version": "0.3.56",
                 "download_url": "https://sub.zxc1x1.ru/",
                 "changelog": "Добавлена поддержка REST API и MCP протокола, умные группы пула, блокировка рекламы AdBlock на уровне sing-box DNS, исправление замера задержек и синхронизация кабинета."
             },
