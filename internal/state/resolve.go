@@ -43,6 +43,11 @@ type Resolution struct {
 	// Degraded is true when an earlier, more preferred step failed. The UI
 	// surfaces this so a silent downgrade to emergency stays visible.
 	Degraded bool
+	// Fallbacks lists further dialable nodes from the same group, best first
+	// and excluding ServerID. The runtime truth-check walks this list when a
+	// node starts but carries no traffic, so a black-holing server degrades
+	// into a slower connect rather than a visible failure.
+	Fallbacks []string
 	// Notes explain any downgrade in user-facing language.
 	Notes []string
 }
@@ -122,8 +127,13 @@ func Resolve(src GroupSource, explicitGroupID, explicitServerID string) (Resolut
 			rerr.Retryable = false
 			return Resolution{}, rerr
 		}
-		if id, err := pickNode(src, g); err == nil {
-			return Resolution{ServerID: id, GroupID: g.ID, Step: StepExplicit}, nil
+		if ranked, err := rankNodes(src, g); err == nil {
+			return Resolution{
+				ServerID:  ranked[0],
+				GroupID:   g.ID,
+				Step:      StepExplicit,
+				Fallbacks: ranked[1:],
+			}, nil
 		} else {
 			// An explicit choice that cannot be served is worth reporting even
 			// when a later step saves the connection.
@@ -137,13 +147,14 @@ func Resolve(src GroupSource, explicitGroupID, explicitServerID string) (Resolut
 	if last := src.LastGroup(); last != "" && last != explicitGroupID {
 		rerr.Tried = append(rerr.Tried, StepLastGood)
 		if g, ok := src.Group(last); ok {
-			if id, err := pickNode(src, g); err == nil {
+			if ranked, err := rankNodes(src, g); err == nil {
 				return Resolution{
-					ServerID: id,
-					GroupID:  g.ID,
-					Step:     StepLastGood,
-					Degraded: len(notes) > 0,
-					Notes:    notes,
+					ServerID:  ranked[0],
+					GroupID:   g.ID,
+					Step:      StepLastGood,
+					Degraded:  len(notes) > 0,
+					Fallbacks: ranked[1:],
+					Notes:     notes,
 				}, nil
 			} else {
 				rerr.Details = append(rerr.Details, fmt.Sprintf("последняя группа %q: %v", g.ID, err))
@@ -160,13 +171,14 @@ func Resolve(src GroupSource, explicitGroupID, explicitServerID string) (Resolut
 	if explicitGroupID != poolAutoID {
 		rerr.Tried = append(rerr.Tried, StepPoolAuto)
 		if g, ok := src.Group(poolAutoID); ok {
-			if id, err := pickNode(src, g); err == nil {
+			if ranked, err := rankNodes(src, g); err == nil {
 				return Resolution{
-					ServerID: id,
-					GroupID:  g.ID,
-					Step:     StepPoolAuto,
-					Degraded: len(notes) > 0,
-					Notes:    notes,
+					ServerID:  ranked[0],
+					GroupID:   g.ID,
+					Step:      StepPoolAuto,
+					Degraded:  len(notes) > 0,
+					Fallbacks: ranked[1:],
+					Notes:     notes,
 				}, nil
 			} else {
 				rerr.Details = append(rerr.Details, fmt.Sprintf("автоподбор: %v", err))
@@ -180,14 +192,15 @@ func Resolve(src GroupSource, explicitGroupID, explicitServerID string) (Resolut
 	// Step 4: emergency.
 	rerr.Tried = append(rerr.Tried, StepEmergency)
 	if g, ok := src.Group(emergencyID); ok {
-		if id, err := pickNode(src, g); err == nil {
+		if ranked, err := rankNodes(src, g); err == nil {
 			notes = append(notes, "Используется аварийный узел")
 			return Resolution{
-				ServerID: id,
-				GroupID:  g.ID,
-				Step:     StepEmergency,
-				Degraded: true,
-				Notes:    notes,
+				ServerID:  ranked[0],
+				GroupID:   g.ID,
+				Step:      StepEmergency,
+				Degraded:  true,
+				Fallbacks: ranked[1:],
+				Notes:     notes,
 			}, nil
 		} else {
 			rerr.Details = append(rerr.Details, fmt.Sprintf("аварийная группа: %v", err))
@@ -208,12 +221,16 @@ const (
 	emergencyID = "emergency"
 )
 
-// pickNode chooses the best node inside a group: alive, known to the server
-// list, lowest load-adjusted score. It mirrors the pool scoring formula so the
-// resolver and the pool agree on what "best" means.
-func pickNode(src GroupSource, g proto.ServerGroup) (string, error) {
+// rankNodes returns every dialable node in the group, best first: alive, known
+// to the server list, ordered by lowest load-adjusted score. It mirrors the
+// pool scoring formula so the resolver and the pool agree on what "best" means.
+//
+// It deliberately returns the whole ranking rather than just the winner: the
+// runtime truth-check needs the runners-up so a node that starts but carries
+// no traffic can fail over instead of ending the connection attempt.
+func rankNodes(src GroupSource, g proto.ServerGroup) ([]string, error) {
 	if len(g.Nodes) == 0 {
-		return "", errors.New("группа пуста")
+		return nil, errors.New("группа пуста")
 	}
 
 	type cand struct {
@@ -238,7 +255,7 @@ func pickNode(src GroupSource, g proto.ServerGroup) (string, error) {
 	}
 
 	if len(cands) == 0 {
-		return "", fmt.Errorf("нет живых узлов (мертвы: %d, неизвестны: %d)", dead, unknown)
+		return nil, fmt.Errorf("нет живых узлов (мертвы: %d, неизвестны: %d)", dead, unknown)
 	}
 
 	// Deterministic order: score, then ID as a tiebreaker so repeated calls in
@@ -249,7 +266,12 @@ func pickNode(src GroupSource, g proto.ServerGroup) (string, error) {
 		}
 		return cands[i].id < cands[j].id
 	})
-	return cands[0].id, nil
+
+	ids := make([]string, 0, len(cands))
+	for _, c := range cands {
+		ids = append(ids, c.id)
+	}
+	return ids, nil
 }
 
 // nodeScore ranks a node; lower is better. Same shape as the pool formula:

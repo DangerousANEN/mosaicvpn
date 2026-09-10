@@ -63,7 +63,20 @@ class VpnStatus {
       );
 
   bool get isConnected => state == 'connected';
-  bool get isConnecting => state == 'connecting';
+
+  /// True while the daemon is proving the tunnel actually carries traffic.
+  ///
+  /// The core can start cleanly and still move zero bytes (sing-box multiplex
+  /// against an Xray peer is the canonical case), so the daemon holds this
+  /// state until a real request succeeds. Showing it as connected would be a
+  /// lie the user cannot detect.
+  bool get isVerifying => state == 'verifying';
+
+  /// Verification is part of establishing the link, so every caller that
+  /// treats "connecting" as busy must treat "verifying" as busy too —
+  /// otherwise the UI briefly falls back to a disconnected look mid-connect.
+  bool get isConnecting => state == 'connecting' || state == 'verifying';
+
   bool get isDisconnected => state == 'disconnected';
   bool get hasError => state == 'error';
 

@@ -430,10 +430,20 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.mgr.Connect(r.Context(), res.ServerID); err != nil {
+	if connectedID, rejected, err := s.mgr.ConnectWithFallbacks(r.Context(), res.ServerID, res.Fallbacks); err != nil {
 		code, message, retryable := classifyConnectFailure(err)
 		writeConnectFailure(w, http.StatusBadRequest, code, message, retryable, err)
 		return
+	} else {
+		res.ServerID = connectedID
+		if len(rejected) > 0 {
+			// Be honest that the first choice(s) did not carry traffic, so the
+			// user understands why connection took a little longer.
+			res.Degraded = true
+			res.Notes = append(res.Notes, fmt.Sprintf(
+				"Первый маршрут не пропускал трафик, переключились на резервный (пропущено: %d).",
+				len(rejected)))
+		}
 	}
 	s.setActiveGroupID(res.GroupID)
 

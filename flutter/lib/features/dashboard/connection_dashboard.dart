@@ -1095,9 +1095,11 @@ class _ConnectionVisual extends StatelessWidget {
             : c.textMuted;
     final title = connected
         ? s.t('connected')
-        : connecting
-            ? s.t('status_connecting')
-            : s.t('status_disconnected');
+        : status.isVerifying
+            ? s.t('status_verifying')
+            : connecting
+                ? s.t('status_connecting')
+                : s.t('status_disconnected');
     final subtitle = connected
         ? '${status.server?.name ?? s.t('minimum_ping')}${status.latencyMS > 0 ? ' · ${status.latencyMS} ms' : ''}'
         : connecting

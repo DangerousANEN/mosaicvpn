@@ -89,8 +89,12 @@ type Manager struct {
 	cancel  context.CancelFunc
 	subs    []chan proto.Status
 	version string
-	pid     int
-	started time.Time
+	// verifyPolicy bounds the post-start truth-check. Tests and platform
+	// backends that cannot be probed over SOCKS fall through harmlessly
+	// because verifyActiveTunnel trusts backends without a proxy listener.
+	verifyPolicy VerifyPolicy
+	pid          int
+	started      time.Time
 }
 
 // New constructs a Manager around an existing store and backend.
@@ -157,6 +161,63 @@ func (m *Manager) Subscribe() (<-chan proto.Status, func()) {
 	return ch, cancel
 }
 
+// ErrTunnelUnverified reports that a backend started cleanly but the runtime
+// truth-check could not push real traffic through it. It is a distinct error
+// so callers can fail over to another candidate instead of surfacing a failure
+// the user cannot act on. See internal/state/verify.go.
+var ErrTunnelUnverified = errors.New("tunnel started but carried no traffic")
+
+// ConnectWithFallbacks connects to primary and, if the tunnel starts but fails
+// the runtime truth-check, walks the ranked fallbacks until one actually
+// carries traffic.
+//
+// This is the pragmatic half of the truth-check: detecting a black-holing node
+// is only useful if the user does not have to act on it. A node that validates,
+// starts and moves no data (the sing-box-multiplex-against-Xray shape) is
+// indistinguishable from a healthy one until real bytes are pushed, so the only
+// correct response is to try the next candidate automatically.
+//
+// It returns the ID that finally verified plus the candidates that were
+// rejected, so callers can surface an honest "switched route" note.
+func (m *Manager) ConnectWithFallbacks(ctx context.Context, primary string, fallbacks []string) (string, []string, error) {
+	return walkCandidates(ctx, primary, fallbacks, m.Connect)
+}
+
+// walkCandidates holds the failover algorithm, separated from Manager so it
+// can be tested against injected outcomes without standing up a real backend.
+func walkCandidates(
+	ctx context.Context,
+	primary string,
+	fallbacks []string,
+	connect func(context.Context, string) error,
+) (string, []string, error) {
+	candidates := append([]string{primary}, fallbacks...)
+	var rejected []string
+	var lastErr error
+
+	for _, id := range candidates {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return "", rejected, ctxErr
+		}
+		err := connect(ctx, id)
+		if err == nil {
+			return id, rejected, nil
+		}
+		lastErr = err
+		// Only a verification failure is worth failing over. A bad request or
+		// a missing server fails identically on every candidate, and retrying
+		// would just multiply the user's wait.
+		if !errors.Is(err, ErrTunnelUnverified) {
+			return "", rejected, err
+		}
+		rejected = append(rejected, id)
+		logx.Warn("candidate rejected by truth-check, trying next",
+			"server", id, "rejected_so_far", len(rejected),
+			"remaining", len(candidates)-len(rejected))
+	}
+	return "", rejected, lastErr
+}
+
 // Connect starts the backend against the supplied server. If the manager
 // is already connected, it will disconnect first.
 func (m *Manager) Connect(ctx context.Context, serverID string) error {
@@ -204,6 +265,47 @@ func (m *Manager) Connect(ctx context.Context, serverID string) error {
 		})
 		m.mu.Unlock()
 		return err
+	}
+
+	// The core started, but "started" is not "carries traffic". Announce an
+	// intermediate verifying state and prove the tunnel actually moves bytes
+	// before promising the user they are connected. See internal/state/verify.go
+	// for why a green shield over a dead tunnel is the worst outcome.
+	m.mu.Lock()
+	m.transitionLocked(proto.Status{
+		State:         proto.StateVerifying,
+		Server:        &server,
+		Since:         time.Now().UTC(),
+		TunnelMode:    m.st.TunnelMode,
+		KillSwitch:    m.st.KillSwitch,
+		DaemonVersion: m.st.DaemonVersion,
+		DaemonPID:     m.st.DaemonPID,
+	})
+	m.mu.Unlock()
+
+	if res := m.verifyActiveTunnel(cctx, m.verifyPolicy); !res.OK {
+		// Do not leave a black-holing core running: it would keep the system
+		// routes hijacked while moving no data.
+		reason := describeVerifyFailure(res)
+		logx.Warn("tunnel verification failed", "server", server.ID, "reason", reason)
+		_ = m.backend.Stop(context.Background())
+		m.mu.Lock()
+		if m.cancel != nil {
+			m.cancel()
+			m.cancel = nil
+		}
+		m.transitionLocked(proto.Status{
+			State:         proto.StateError,
+			LastError:     reason,
+			Server:        &server,
+			Since:         time.Now().UTC(),
+			TunnelMode:    m.st.TunnelMode,
+			KillSwitch:    m.st.KillSwitch,
+			DaemonVersion: m.st.DaemonVersion,
+			DaemonPID:     m.st.DaemonPID,
+		})
+		m.mu.Unlock()
+		return fmt.Errorf("%w: %s", ErrTunnelUnverified, reason)
 	}
 
 	m.mu.Lock()

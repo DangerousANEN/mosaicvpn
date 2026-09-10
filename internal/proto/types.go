@@ -689,8 +689,16 @@ type State string
 const (
 	StateDisconnected State = "disconnected"
 	StateConnecting   State = "connecting"
-	StateConnected    State = "connected"
-	StateError        State = "error"
+	// StateVerifying is entered after the core reports a successful start but
+	// before the session is announced as connected. During this window the
+	// daemon pushes real traffic through the tunnel to prove it actually
+	// carries data. A core can start cleanly and still move zero bytes — for
+	// example sing-box multiplex against an Xray server, which validates,
+	// connects, and silently drops every stream. Reporting "connected" in that
+	// state is worse than an error: the user believes they are protected.
+	StateVerifying State = "verifying"
+	StateConnected State = "connected"
+	StateError     State = "error"
 )
 
 // Status is the aggregate runtime state exposed by the daemon API.
@@ -939,16 +947,16 @@ type TrafficPoint struct {
 // TestResult is the outcome of a URL-test (latency probe) or IP-test
 // against a single server. Mirror of Throne's query test results.
 type TestResult struct {
-	ServerID   string    `json:"server_id"`
-	ServerName string    `json:"server_name,omitempty"`
-	LatencyMS  int       `json:"latency_ms"` // -1 on failure; median across samples when multi-sample
+	ServerID   string `json:"server_id"`
+	ServerName string `json:"server_name,omitempty"`
+	LatencyMS  int    `json:"latency_ms"` // -1 on failure; median across samples when multi-sample
 	// Extended fields populated by multi-sample probes. Zero when only one
 	// sample was taken (single-server quick test on older code paths).
-	P95LatencyMS int     `json:"p95_latency_ms,omitempty"`
-	JitterMS     int     `json:"jitter_ms,omitempty"`
-	LossPercent  float64 `json:"loss_percent,omitempty"`
-	ProbeKind    string  `json:"probe_kind,omitempty"`
-	Error        string  `json:"error,omitempty"`
+	P95LatencyMS int       `json:"p95_latency_ms,omitempty"`
+	JitterMS     int       `json:"jitter_ms,omitempty"`
+	LossPercent  float64   `json:"loss_percent,omitempty"`
+	ProbeKind    string    `json:"probe_kind,omitempty"`
+	Error        string    `json:"error,omitempty"`
 	TestedAt     time.Time `json:"tested_at"`
 	// IPInfo is populated during an IP test (the apparent egress IP).
 	IPInfo *IPInfo `json:"ip_info,omitempty"`

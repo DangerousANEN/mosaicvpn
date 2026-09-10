@@ -250,6 +250,19 @@ jobs:
             echo "ERROR: x86_64 libbox.so unexpectedly present in release APK" >&2
             exit 1
           fi
+          # Guard: the APK must actually carry the version of the tag being
+          # released. Gradle can serve a cached merged manifest after a pubspec
+          # bump and silently produce the PREVIOUS versionName, which then ships
+          # to users as if it were the new release.
+          aapt2="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/aapt2"
+          apk_version="$("$aapt2" dump badging "$apk" \
+            | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -1)"
+          want_version="${GITHUB_REF_NAME#v}"
+          if [ "$apk_version" != "$want_version" ]; then
+            echo "ERROR: APK versionName '$apk_version' does not match tag '$want_version'" >&2
+            exit 1
+          fi
+          echo "APK version $apk_version matches tag, ABIs verified."
 
       - name: Build branded debug APK
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}

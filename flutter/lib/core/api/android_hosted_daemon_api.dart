@@ -107,7 +107,70 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
             : 'Android VPN runtime не подтвердил подключение.',
       );
     }
+
+    // "The runtime reports connected" is not "traffic flows". A core can start
+    // cleanly and still move zero bytes — sing-box multiplex against an Xray
+    // peer is the canonical case: the config validates, the service reports
+    // connected, and every stream is silently dropped. Committing the route
+    // here would show a green shield over a dead tunnel, which for a VPN is
+    // worse than a visible error. So prove it carries traffic first.
+    final verified = await _verifyTunnelCarriesTraffic();
+    if (!verified) {
+      await vpn.stop();
+      throw StateError(
+        'Туннель запустился, но не пропускает трафик. '
+        'Маршрут отклонён — попробуйте другой.',
+      );
+    }
     _activeRoute = route;
+  }
+
+  /// Probes a small, highly-available endpoint through the live tunnel.
+  ///
+  /// On Android the runtime owns the system routes once the TUN is up, so a
+  /// plain request from this isolate already travels through the tunnel — no
+  /// SOCKS endpoint is needed, unlike the desktop daemon.
+  ///
+  /// Requires a real HTTP response: a TCP handshake or an ICMP echo can still
+  /// succeed against a proxy that black-holes payload.
+  Future<bool> _verifyTunnelCarriesTraffic({
+    int attempts = 3,
+    Duration perAttemptTimeout = const Duration(seconds: 6),
+    Duration backoff = const Duration(milliseconds: 1500),
+  }) async {
+    const targets = <String>[
+      'https://cp.cloudflare.com/generate_204',
+      'https://www.gstatic.com/generate_204',
+      'https://captive.apple.com/hotspot-detect.html',
+    ];
+
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      final target = targets[attempt % targets.length];
+      final client = HttpClient()
+        ..connectionTimeout = perAttemptTimeout
+        // A pooled connection could mask a tunnel that died since the last
+        // probe, so every attempt gets a fresh one.
+        ..maxConnectionsPerHost = 1;
+      try {
+        final request = await client
+            .getUrl(Uri.parse(target))
+            .timeout(perAttemptTimeout);
+        final response = await request.close().timeout(perAttemptTimeout);
+        await response.drain<void>();
+        // Any status proves bytes made a round trip and a real server answered;
+        // we are testing reachability, not the endpoint's own health.
+        return true;
+      } catch (_) {
+        // Fall through to the next attempt: a freshly started core may need a
+        // moment before its outbound is ready, so one failure proves nothing.
+      } finally {
+        client.close(force: true);
+      }
+      if (attempt < attempts - 1) {
+        await Future<void>.delayed(backoff);
+      }
+    }
+    return false;
   }
 
   /// Streams native runtime log lines into the shared logs screen. The libbox

@@ -320,13 +320,18 @@ class _ConnectionPanelState extends ConsumerState<_ConnectionPanel> {
   Widget build(BuildContext context) {
     c = ThemeColors.of(context);
     final status = widget.status;
+    // VERIFYING is deliberately distinct from CONNECTING: the tunnel is up but
+    // has not yet proven it carries traffic, and the user deserves to see that
+    // difference rather than a green shield over an unverified link.
     final stateText = status.isConnected
         ? 'CONNECTED'
-        : status.isConnecting
-            ? 'CONNECTING'
-            : status.hasError
-                ? 'ERROR'
-                : 'DISCONNECTED';
+        : status.isVerifying
+            ? 'VERIFYING'
+            : status.isConnecting
+                ? 'CONNECTING'
+                : status.hasError
+                    ? 'ERROR'
+                    : 'DISCONNECTED';
 
     final stateColor = status.isConnected
         ? AtlasTheme.success
