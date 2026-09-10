@@ -872,13 +872,58 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 	dnsServerTag := "dns-direct"
 	if dns.Mode != "disabled" {
 		servers := []any{}
+		dnsRules := []any{}
+
+		if prefs.AdBlock {
+			servers = append(servers, map[string]any{
+				"tag":     "dns-block",
+				"address": "rcode://success",
+			})
+			dnsRules = append(dnsRules, map[string]any{
+				"domain_suffix": []string{
+					"an.yandex.ru",
+					"yabs.yandex.ru",
+					"adfox.ru",
+					"mc.yandex.ru",
+					"top-fwz1.mail.ru",
+					"googleads.g.doubleclick.net",
+					"pagead2.googlesyndication.com",
+					"adservice.google.com",
+					"adservice.google.ru",
+					"ads.facebook.com",
+					"pixel.facebook.com",
+					"ads.tiktok.com",
+					"ads.twitter.com",
+					"unityads.unity3d.com",
+					"applovin.com",
+					"applvn.com",
+					"vungle.com",
+					"chartboost.com",
+					"ironsrc.com",
+					"inmobi.com",
+					"crashlytics.com",
+					"app-measurement.com",
+					"adjust.com",
+					"appsflyer.com",
+					"branch.io",
+				},
+				"server": "dns-block",
+			})
+		}
+
 		// Primary resolver (direct / real DNS). Preferences retain URL notation,
 		// but sing-box requires host, port and transport in separate fields.
 		primaryTag := "dns-primary"
-		servers = append(servers, singBoxDNSServer(primaryTag, dns.Direct, ""))
+		directDnsEndpoint := dns.Direct
+		if prefs.AdBlock && directDnsEndpoint == "" {
+			directDnsEndpoint = "udp://94.140.14.14:53"
+		}
+		servers = append(servers, singBoxDNSServer(primaryTag, directDnsEndpoint, ""))
 		// Proxied resolver is optional and uses the selected tunnel outbound.
 		if dns.Proxied != "" {
 			servers = append(servers, singBoxDNSServer("dns-proxied", dns.Proxied, "proxy"))
+		} else if prefs.AdBlock {
+			servers = append(servers, singBoxDNSServer("dns-proxied", "tls://94.140.14.14:853", "proxy"))
 		}
 		// FakeIP server (new format: standalone server object)
 		if dns.Mode == "fake-ip" {
@@ -892,7 +937,6 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 			}
 			servers = append(servers, fakeIPEntry)
 		}
-		dnsRules := []any{}
 		if dns.Mode == "fake-ip" {
 			dnsRules = append(dnsRules, map[string]any{
 				"query_type": []string{"A", "AAAA"},
@@ -928,6 +972,38 @@ func BuildSingBoxConfigWithServers(server proto.Server, socksPort, httpPort int,
 	routeRules := []any{
 		map[string]any{"action": "sniff"},
 		map[string]any{"protocol": "dns", "action": "hijack-dns"},
+	}
+	if prefs.AdBlock {
+		routeRules = append(routeRules, map[string]any{
+			"domain_suffix": []string{
+				"an.yandex.ru",
+				"yabs.yandex.ru",
+				"adfox.ru",
+				"mc.yandex.ru",
+				"top-fwz1.mail.ru",
+				"googleads.g.doubleclick.net",
+				"pagead2.googlesyndication.com",
+				"adservice.google.com",
+				"adservice.google.ru",
+				"ads.facebook.com",
+				"pixel.facebook.com",
+				"ads.tiktok.com",
+				"ads.twitter.com",
+				"unityads.unity3d.com",
+				"applovin.com",
+				"applvn.com",
+				"vungle.com",
+				"chartboost.com",
+				"ironsrc.com",
+				"inmobi.com",
+				"crashlytics.com",
+				"app-measurement.com",
+				"adjust.com",
+				"appsflyer.com",
+				"branch.io",
+			},
+			"outbound": "block",
+		})
 	}
 	if len(prefs.BypassProcesses) > 0 {
 		routeRules = append(routeRules, map[string]any{

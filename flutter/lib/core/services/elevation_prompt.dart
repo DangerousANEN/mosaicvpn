@@ -66,5 +66,13 @@ Future<bool> handleElevationRequired(BuildContext context) async {
 }
 
 /// True when the error is the daemon's machine-readable elevation demand.
-bool isElevationRequiredError(Object error) =>
-    error is DaemonApiException && error.code == 'elevation_required';
+bool isElevationRequiredError(Object error) {
+  if (error is DaemonApiException && error.code == 'elevation_required') {
+    return true;
+  }
+  final s = error.toString().toLowerCase();
+  return s.contains('elevation_required') ||
+      s.contains('права администратора') ||
+      s.contains('access is denied') ||
+      s.contains('отказано в доступе');
+}

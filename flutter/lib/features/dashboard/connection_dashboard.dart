@@ -237,7 +237,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                           fontWeight: FontWeight.w700,
                           letterSpacing: 1.8,
                           color: connected
-                              ? const Color(0xFF6E9E48)
+                              ? c.success
                               : connecting
                                   ? AtlasTheme.accent
                                   : c.textPrimary,
@@ -1179,14 +1179,15 @@ class _AtlasHeroCompassButtonState extends State<_AtlasHeroCompassButton> {
 
   @override
   Widget build(BuildContext context) {
+    final c = ThemeColors.of(context);
     final connected = widget.status.isConnected;
     final connecting = widget.status.isConnecting;
     final active = connected || connecting;
     final tint = connected
-        ? const Color(0xFF6E9E48)
+        ? c.success
         : connecting
             ? AtlasTheme.accent
-            : const Color(0xFFB85C38);
+            : AtlasTheme.accent;
 
     return Semantics(
       button: true,
@@ -1229,15 +1230,15 @@ class _AtlasHeroCompassButtonState extends State<_AtlasHeroCompassButton> {
                           gradient: RadialGradient(
                             colors: [
                               connected
-                                  ? const Color(0xFF1B281A)
+                                  ? c.successDim
                                   : connecting
-                                      ? const Color(0xFF281C16)
-                                      : const Color(0xFF1E212B),
+                                      ? c.warningDim
+                                      : c.bgElevated,
                               connected
-                                  ? const Color(0xFF101910)
+                                  ? c.bgInk
                                   : connecting
-                                      ? const Color(0xFF17100B)
-                                      : const Color(0xFF101218),
+                                      ? c.bgInk
+                                      : c.bgInk,
                             ],
                             radius: 0.85,
                           ),
@@ -1412,13 +1413,13 @@ class _AtlasRouteSelectorCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(18),
               border: Border.all(
                 color: connected
-                    ? const Color(0xFF6E9E48).withValues(alpha: .35)
+                    ? c.success.withValues(alpha: .35)
                     : c.border,
                 width: 1.2,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: .20),
+                  color: c.borderInk.withValues(alpha: .20),
                   blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),
@@ -1473,19 +1474,19 @@ class _AtlasRouteSelectorCard extends StatelessWidget {
                         horizontal: 9, vertical: 4),
                     decoration: BoxDecoration(
                       color:
-                          const Color(0xFF6E9E48).withValues(alpha: .15),
+                          c.success.withValues(alpha: .15),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color:
-                            const Color(0xFF6E9E48).withValues(alpha: .35),
+                            c.success.withValues(alpha: .35),
                       ),
                     ),
                     child: Text(
                       '${status.latencyMS} мс',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF6E9E48),
+                        color: c.success,
                       ),
                     ),
                   ),
@@ -1684,19 +1685,21 @@ class _DashboardNetworkStatsCard extends ConsumerWidget {
     final isConn = status.isConnected;
     final traffic = ref.watch(trafficStatsProvider).valueOrNull;
 
-    final ping = status.latencyMS > 0 ? '${status.latencyMS} мс' : (isConn ? '42 мс' : '—');
+    final ping = status.latencyMS > 0
+        ? '${status.latencyMS} мс'
+        : (isConn ? '—' : '—');
     final dlSpeed = traffic != null && traffic.downloadSpeed > 0
         ? formatSpeed(traffic.downloadSpeed * 8)
-        : (isConn ? '24.5 Mbps' : '0 Mbps');
+        : (isConn ? '—' : '0 Mbps');
     final ulSpeed = traffic != null && traffic.uploadSpeed > 0
         ? formatSpeed(traffic.uploadSpeed * 8)
-        : (isConn ? '8.2 Mbps' : '0 Mbps');
+        : (isConn ? '—' : '0 Mbps');
     final totalDown = traffic != null && traffic.totalDownload > 0
         ? formatBytes(traffic.totalDownload)
-        : (status.bytesIn > 0 ? formatBytes(status.bytesIn) : (isConn ? '12.4 MB' : '0 B'));
+        : (status.bytesIn > 0 ? formatBytes(status.bytesIn) : (isConn ? '—' : '0 B'));
     final totalUp = traffic != null && traffic.totalUpload > 0
         ? formatBytes(traffic.totalUpload)
-        : (status.bytesOut > 0 ? formatBytes(status.bytesOut) : (isConn ? '3.8 MB' : '0 B'));
+        : (status.bytesOut > 0 ? formatBytes(status.bytesOut) : (isConn ? '—' : '0 B'));
 
     return Container(
       margin: const EdgeInsets.only(top: 14),
@@ -1743,17 +1746,17 @@ class _DashboardNetworkStatsCard extends ConsumerWidget {
               color: c.bgCard.withValues(alpha: 0.5),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
               children: [
                 Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.data_usage_rounded, size: 14, color: c.textMuted),
                     const SizedBox(width: 6),
-                    Text(
-                      'Трафик сессии: ',
-                      style: TextStyle(fontSize: 11, color: c.textMuted),
-                    ),
                     Text(
                       '↓ $totalDown   ↑ $totalUp',
                       style: TextStyle(
@@ -1880,6 +1883,7 @@ class _QuickControlsRow extends ConsumerWidget {
     final c = ThemeColors.of(context);
     final autoFailover = ref.watch(autoFailoverProvider);
     final bypassRussian = ref.watch(bypassRussianSitesProvider);
+    final adBlock = ref.watch(adBlockFilterProvider);
 
     return Row(
       children: [
@@ -1957,6 +1961,50 @@ class _QuickControlsRow extends ConsumerWidget {
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
                           color: bypassRussian ? AtlasTheme.accent : c.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Material(
+            color: c.bgElevated,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () {
+                ref.read(adBlockFilterProvider.notifier).toggle();
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: adBlock ? AtlasTheme.warning : c.border,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.shield_outlined,
+                      size: 15,
+                      color: adBlock ? AtlasTheme.warning : c.textMuted,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        adBlock ? 'AdBlock: ВКЛ' : 'AdBlock: ВЫКЛ',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: adBlock ? AtlasTheme.warning : c.textSecondary,
                         ),
                       ),
                     ),

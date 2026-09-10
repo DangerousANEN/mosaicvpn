@@ -177,7 +177,7 @@ class _AtlasRoutePickerSheetState extends ConsumerState<AtlasRoutePickerSheet> {
             border: Border.all(color: c.border),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: .35),
+                color: c.borderInk.withValues(alpha: .35),
                 blurRadius: 30,
                 offset: const Offset(0, -6),
               ),

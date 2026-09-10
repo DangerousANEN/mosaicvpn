@@ -153,7 +153,7 @@ class _AtlasOnboardingCardState extends ConsumerState<AtlasOnboardingCard> {
   }
 
   Future<void> _openTelegramBot() async {
-    await ExternalLauncher.openTelegram('mosaicvpnbot');
+    await ExternalLauncher.openTelegram('mosaicvpnbot', startParam: 'app');
   }
 
   @override
@@ -264,7 +264,7 @@ class _AtlasOnboardingCardState extends ConsumerState<AtlasOnboardingCard> {
                               _addCandidate(_clipboardCandidate!),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: c.success,
-                            foregroundColor: Colors.white,
+                            foregroundColor: c.onAccent,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                             ),

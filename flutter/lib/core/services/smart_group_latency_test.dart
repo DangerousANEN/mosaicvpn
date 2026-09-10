@@ -68,27 +68,39 @@ class SmartGroupLatencyTest {
     }
 
     publish();
-    for (final candidateId in candidateIds) {
-      if (_cancelled) return publish(cancelled: true);
-      try {
-        final result = await api.probeGroupCandidate(
-          group.id,
-          candidateId,
-          probeMode: group.clientPolicy.probeMode,
-          probeSamples: group.clientPolicy.probeSamples,
-          probeUrl: group.clientPolicy.probeUrl,
-        );
-        if (result.successful && result.medianLatencyMs > 0) {
-          successful.add(result);
+    var nextIndex = 0;
+    const concurrency = 3;
+    final workerCount = candidateIds.length < concurrency ? candidateIds.length : concurrency;
+
+    Future<void> worker() async {
+      while (true) {
+        if (_cancelled) break;
+        final int index;
+        if (nextIndex >= candidateIds.length) break;
+        index = nextIndex++;
+        final candidateId = candidateIds[index];
+
+        try {
+          final result = await api.probeGroupCandidate(
+            group.id,
+            candidateId,
+            probeMode: group.clientPolicy.probeMode,
+            probeSamples: group.clientPolicy.probeSamples,
+            probeUrl: group.clientPolicy.probeUrl,
+          );
+          if (result.successful && result.medianLatencyMs > 0) {
+            successful.add(result);
+          }
+        } catch (_) {
+          // A failed opaque candidate contributes to the aggregate loss.
         }
-      } catch (_) {
-        // A failed opaque candidate contributes to the aggregate loss. Its
-        // endpoint and error details deliberately never leave the daemon.
+        completed += 1;
+        publish(cancelled: _cancelled);
       }
-      completed += 1;
-      publish();
     }
-    return publish();
+
+    await Future.wait(List.generate(workerCount, (_) => worker()));
+    return publish(cancelled: _cancelled);
   }
 
   SmartGroupLatencyProgress _aggregate(

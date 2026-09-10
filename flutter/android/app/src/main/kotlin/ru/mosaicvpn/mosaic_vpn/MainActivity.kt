@@ -42,6 +42,7 @@ class MainActivity : FlutterActivity() {
             "prepare" -> prepareVpnPermission(result)
             "start" -> {
                 val config = call.argument<String>("config")
+                val routeTitle = call.argument<String>("routeTitle").orEmpty()
                 if (config.isNullOrBlank()) {
                     result.error("invalid_config", "A non-empty sing-box configuration is required", null)
                     return
@@ -51,7 +52,7 @@ class MainActivity : FlutterActivity() {
                     return
                 }
                 try {
-                    MosaicVpnService.start(this, config)
+                    MosaicVpnService.start(this, config, routeTitle)
                     result.success(MosaicVpnService.status())
                 } catch (error: Exception) {
                     result.error("start_failed", error.message, null)

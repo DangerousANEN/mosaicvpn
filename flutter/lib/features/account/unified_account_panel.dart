@@ -211,7 +211,7 @@ class UnifiedAccountPanel extends ConsumerWidget {
     if (action == null || !context.mounted) return;
 
     if (action == 'telegram') {
-      await ExternalLauncher.openTelegram('mosaicvpnbot');
+      await ExternalLauncher.openTelegram('mosaicvpnbot', startParam: 'app');
       return;
     }
 
@@ -232,7 +232,7 @@ class UnifiedAccountPanel extends ConsumerWidget {
     if (providers.isEmpty) {
       if (context.mounted) {
         // Fallback directly to Telegram
-        await ExternalLauncher.openTelegram('mosaicvpnbot');
+        await ExternalLauncher.openTelegram('mosaicvpnbot', startParam: 'app');
       }
       return;
     }

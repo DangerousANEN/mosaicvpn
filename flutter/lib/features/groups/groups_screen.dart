@@ -74,6 +74,8 @@ class _RouteRow {
     this.disabledReason = '',
     this.canTest = false,
     this.canDelete = false,
+    this.isTesting = false,
+    this.testingProgress,
   });
 
   final String id;
@@ -95,6 +97,8 @@ class _RouteRow {
   final String disabledReason;
   final bool canTest;
   final bool canDelete;
+  final bool isTesting;
+  final String? testingProgress;
 }
 
 /// A single route inventory. A user first chooses a subscription/source and
@@ -443,7 +447,17 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
               icon: _groupIcon(group.icon),
               disabled: group.disabled,
               disabledReason: group.disabledReason,
-              canTest: group.routeType != 'direct',
+              canTest: true,
+              isTesting: (_activeGroupLatencyTest != null &&
+                      _groupLatencyProgress?.groupId == group.id) ||
+                  _testingRoutes.contains(group.id) ||
+                  _isSweepTesting,
+              testingProgress: (_activeGroupLatencyTest != null &&
+                      _groupLatencyProgress?.groupId == group.id &&
+                      _groupLatencyProgress != null &&
+                      _groupLatencyProgress!.total > 0)
+                  ? '${((_groupLatencyProgress!.completed / _groupLatencyProgress!.total) * 100).round()}%'
+                  : null,
             ),
           ));
     }
@@ -487,6 +501,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
               icon: Icons.dns_outlined,
               canTest: true,
               canDelete: source.id == 'local-default',
+              isTesting: _testingRoutes.contains(server.id) || _isSweepTesting,
             ),
             ),
             );
@@ -1285,6 +1300,8 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       // A single-server direct route has no candidate feed: probing it with
       // the Smart Group runner used to report misleading group errors.
       if (!row.isSmartGroup) {
+        _testingRoutes.add(row.id);
+        if (mounted) setState(() {});
         try {
           final result =
               await ref.read(daemonApiProvider).testDirectRoute(group.id);
@@ -1311,6 +1328,9 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
             'Не удалось проверить маршрут. Повторите после обновления источника.',
             ThemeColors.of(context).danger,
           );
+        } finally {
+          _testingRoutes.remove(row.id);
+          if (mounted) setState(() {});
         }
         return;
       }
@@ -2435,6 +2455,39 @@ class _RouteTable extends StatelessWidget {
   Widget _pingCell(BuildContext context, _RouteRow row) {
     final colors = ThemeColors.of(context);
     final width = _effectiveWidth(_RouteColumn.ping);
+
+    if (row.isTesting) {
+      final percent = row.testingProgress;
+      return SizedBox(
+        width: width,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AtlasTheme.accent,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                percent ?? 'Тест…',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: AtlasTheme.accent,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     if (row.ping == null) {
       return SizedBox(
           width: width,

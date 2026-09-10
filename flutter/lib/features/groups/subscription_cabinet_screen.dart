@@ -22,7 +22,9 @@ final subscriptionCabinetAccountProvider = FutureProvider.autoDispose
     .family<UnifiedAccount?, Subscription>((ref, subscription) async {
   if (AppPlatform.isAndroid) {
     return AndroidMosaicAccountService.instance
-        .getUnifiedAccount(subscriptionID: subscription.id);
+        .getUnifiedAccount(
+            subscriptionID: subscription.id,
+            subscriptionUrl: subscription.url);
   }
   return ref.watch(daemonApiProvider).getUnifiedAccount();
 });
@@ -306,7 +308,7 @@ class _CabinetUnavailableState extends ConsumerState<_CabinetUnavailable> {
   }
 
   Future<void> _openTelegramBot() async {
-    await ExternalLauncher.openTelegram('mosaicvpnbot');
+    await ExternalLauncher.openTelegram('mosaicvpnbot', startParam: 'app');
   }
 
   Future<void> _attachByCode() async {
@@ -361,53 +363,51 @@ class _CabinetUnavailableState extends ConsumerState<_CabinetUnavailable> {
         const SizedBox(height: 5),
         Text(bindingText,
             style: TextStyle(color: c.textSecondary, fontSize: 12)),
-        if (!widget.binding) ...[
-          const SizedBox(height: 14),
-          Row(children: [
-            Expanded(
-              child: FilledButton.icon(
-                onPressed: _busy ? null : _openTelegramBot,
-                icon: const Icon(Icons.send_rounded, size: 18),
-                label: const Text('Код в Telegram'),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: _busy ? null : _openWebsiteCabinet,
-                icon: const Icon(Icons.open_in_browser_outlined, size: 18),
-                label: const Text('Сайт кабинета'),
-              ),
-            ),
-          ]),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _code,
-            textCapitalization: TextCapitalization.characters,
-            maxLength: 10,
-            decoration: const InputDecoration(
-              labelText: 'Код из сайта или Telegram',
-              hintText: 'AB23CD45',
-              helperText: 'Код действует 10 минут и используется один раз.',
-              counterText: '',
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
+        const SizedBox(height: 14),
+        Row(children: [
+          Expanded(
             child: FilledButton.icon(
-              onPressed: _busy ? null : _attachByCode,
-              icon: _busy
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.key_outlined),
-              label: Text(_busy ? 'Подключаем…' : 'Подключить профиль по коду'),
+              onPressed: _busy ? null : _openTelegramBot,
+              icon: const Icon(Icons.send_rounded, size: 18),
+              label: const Text('Код в Telegram'),
             ),
           ),
-        ],
+          const SizedBox(width: 8),
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _busy ? null : _openWebsiteCabinet,
+              icon: const Icon(Icons.open_in_browser_outlined, size: 18),
+              label: const Text('Сайт кабинета'),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _code,
+          textCapitalization: TextCapitalization.characters,
+          maxLength: 10,
+          decoration: const InputDecoration(
+            labelText: 'Код из сайта или Telegram',
+            hintText: 'AB23CD45',
+            helperText: 'Код действует 10 минут и используется один раз.',
+            counterText: '',
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: _busy ? null : _attachByCode,
+            icon: _busy
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.key_outlined),
+            label: Text(_busy ? 'Подключаем…' : 'Подключить профиль по коду'),
+          ),
+        ),
       ]),
     );
   }

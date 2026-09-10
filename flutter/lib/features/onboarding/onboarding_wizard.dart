@@ -39,6 +39,7 @@ class OnboardingWizard extends ConsumerStatefulWidget {
 class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   int _step = 0;
   String _selectedMode = 'smart'; // 'smart', 'gamer', 'full'
+  bool _adBlock = true;
   final TextEditingController _subUrlController = TextEditingController();
   bool _importing = false;
   String? _importError;
@@ -73,6 +74,12 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
 
   Future<void> _applySelectedMode() async {
     final prefs = UiPreferencesService();
+    await prefs.writeAdBlock(_adBlock);
+    try {
+      final daemonApi = ref.read(daemonApiProvider);
+      final currentPrefs = await daemonApi.getPrefs();
+      await daemonApi.setPrefs(currentPrefs.copyWith(adBlock: _adBlock).toJson());
+    } catch (_) {}
     if (_selectedMode == 'smart') {
       await prefs.writeBypassRussianSites(true);
       await prefs.writeAutoFailover(true);
@@ -176,7 +183,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                   ),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.shield_rounded, size: 16, color: Colors.white),
+                child: Icon(Icons.shield_rounded, size: 16, color: AtlasTheme.onAccent),
               ),
               const SizedBox(width: 8),
               Text(
@@ -284,7 +291,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         _buildFeatureRow(
           c,
           icon: Icons.flash_on_rounded,
-          iconColor: const Color(0xFFFBBF24),
+          iconColor: c.warning,
           title: 'Максимальная скорость',
           desc: 'Магистральные каналы 1 Гбит/с без очередей и замедлений YouTube.',
         ),
@@ -292,7 +299,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         _buildFeatureRow(
           c,
           icon: Icons.account_balance_rounded,
-          iconColor: const Color(0xFF60A5FA),
+          iconColor: c.info,
           title: 'Умный обход сайтов РФ',
           desc: 'Банки, Госуслуги и доставка работают напрямую без выключения VPN.',
         ),
@@ -398,7 +405,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           c,
           id: 'gamer',
           tag: 'ДЛЯ ГЕЙМЕРОВ',
-          tagColor: const Color(0xFFF59E0B),
+          tagColor: c.warning,
           icon: Icons.sports_esports_rounded,
           title: 'Игровой режим',
           subtitle:
@@ -414,6 +421,61 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           title: 'Полная изоляция',
           subtitle:
               '100% трафика всех приложений и браузеров направляется через зашифрованный туннель.',
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: c.bgCard,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: c.border),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AtlasTheme.accent.withValues(alpha: .15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.block_rounded,
+                  size: 20,
+                  color: AtlasTheme.accent,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Блокировка рекламы (AdBlock)',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: c.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Удаляет рекламу, баннеры и трекеры на уровне DNS',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: c.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: _adBlock,
+                activeThumbColor: c.textPrimary,
+                activeTrackColor: AtlasTheme.accent,
+                onChanged: (v) => setState(() => _adBlock = v),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -591,7 +653,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         const SizedBox(height: 12),
         OutlinedButton.icon(
           onPressed: () async {
-            await ExternalLauncher.openTelegram('mosaicvpnbot');
+            await ExternalLauncher.openTelegram('mosaicvpnbot', startParam: 'app');
           },
           style: OutlinedButton.styleFrom(
             foregroundColor: c.textPrimary,
@@ -689,10 +751,10 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
               elevation: 0,
             ),
             child: _importing
-                ? const SizedBox(
+                ? SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AtlasTheme.onAccent),
                   )
                 : Row(
                     mainAxisSize: MainAxisSize.min,

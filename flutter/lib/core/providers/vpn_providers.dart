@@ -1013,6 +1013,41 @@ class BypassRussianSitesNotifier extends StateNotifier<bool> {
   }
 }
 
+final adBlockFilterProvider =
+    StateNotifierProvider<AdBlockFilterNotifier, bool>((ref) {
+  return AdBlockFilterNotifier(UiPreferencesService(), ref);
+});
+
+class AdBlockFilterNotifier extends StateNotifier<bool> {
+  final UiPreferencesService _preferences;
+  final Ref _ref;
+
+  AdBlockFilterNotifier(this._preferences, this._ref) : super(false) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    final value = await _preferences.readAdBlock();
+    if (mounted) state = value;
+  }
+
+  Future<void> set(bool value) async {
+    state = value;
+    await _preferences.writeAdBlock(value);
+    try {
+      final api = _ref.read(daemonApiProvider);
+      final currentPrefs = await api.getPrefs();
+      if (currentPrefs.adBlock != value) {
+        await api.setPrefs(currentPrefs.copyWith(adBlock: value).toJson());
+      }
+    } catch (_) {}
+  }
+
+  Future<void> toggle() async {
+    await set(!state);
+  }
+}
+
 class SelectedRouteNotifier extends StateNotifier<String?> {
   final UiPreferencesService _preferences;
   bool _loaded = false;

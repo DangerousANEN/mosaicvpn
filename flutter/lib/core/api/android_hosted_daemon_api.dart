@@ -36,15 +36,17 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   /// tag. Kept in-memory only: probe results must never outlive the feed that
   /// defined them, and credentials stay inside the process boundary.
   Map<String, Map<String, dynamic>> _candidateCache = const {};
+  final Map<String, Map<String, Map<String, dynamic>>> _groupCandidateCaches = {};
 
   /// Reads the per-app split-tunneling lists from stored preferences. Applied
   /// at connect time so preset/profile changes take effect on the next
   /// connection without a daemon restart.
-  Future<({List<String> bypassPackages, List<String> proxyPackages, bool bypassRussian, bool autoFailover})>
+  Future<({List<String> bypassPackages, List<String> proxyPackages, bool bypassRussian, bool autoFailover, bool adBlock})>
       _readPerAppLists() async {
     final uiPrefs = UiPreferencesService();
     final bool bypassRussian = await uiPrefs.readBypassRussianSites();
     final bool autoFailover = await uiPrefs.readAutoFailover();
+    final bool adBlock = await uiPrefs.readAdBlock();
     try {
       final prefs = await getPrefs();
       return (
@@ -52,6 +54,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         proxyPackages: List<String>.from(prefs.proxyPackages),
         bypassRussian: bypassRussian,
         autoFailover: autoFailover,
+        adBlock: adBlock || prefs.adBlock,
       );
     } catch (_) {
       return (
@@ -59,6 +62,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         proxyPackages: const <String>[],
         bypassRussian: bypassRussian,
         autoFailover: autoFailover,
+        adBlock: adBlock,
       );
     }
   }
@@ -95,7 +99,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         }
       }
     }
-    final state = await vpn.startAndAwaitReady(config);
+    final state = await vpn.startAndAwaitReady(config, routeTitle: route.name);
     if (!state.isConnected) {
       throw StateError(
         state.error?.trim().isNotEmpty == true
@@ -211,6 +215,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       proxyPackages: perApp.proxyPackages,
       bypassRussianSites: perApp.bypassRussian,
       autoFailover: perApp.autoFailover,
+      adBlock: perApp.adBlock,
     );
     await _startNativeRoute(config: config, route: server);
   }
@@ -242,6 +247,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
             proxyPackages: perApp.proxyPackages,
             bypassRussianSites: perApp.bypassRussian,
             autoFailover: perApp.autoFailover,
+            adBlock: perApp.adBlock,
           )
         : await _account.buildNativeTunConfigFromScopedCandidates(
             resolved.$1.url,
@@ -250,6 +256,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
             proxyPackages: perApp.proxyPackages,
             bypassRussianSites: perApp.bypassRussian,
             autoFailover: perApp.autoFailover,
+            adBlock: perApp.adBlock,
           );
     await _startNativeRoute(
       config: config,
@@ -295,9 +302,14 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   /// protocol credentials, but it is exactly what a "ping" column promises.
   Future<({List<int> samples, int attempts})> _probeTcpSamples(
       String host, int port,
-      {int attempts = 5}) async {
+      {int? attempts, int? timeoutMs}) async {
+    final prefs = await getPrefs();
+    final effectiveAttempts = (attempts ?? prefs.pingRounds).clamp(1, 10);
+    final effectiveTimeout = Duration(
+        milliseconds: (timeoutMs ?? prefs.pingTimeoutMs).clamp(300, 15000));
+
     if (host.isEmpty || port <= 0 || port > 65535) {
-      return (samples: const <int>[], attempts: attempts);
+      return (samples: const <int>[], attempts: effectiveAttempts);
     }
     List<InternetAddress> targets = const [];
     final address = InternetAddress.tryParse(host);
@@ -308,19 +320,24 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         targets =
             await InternetAddress.lookup(host, type: InternetAddressType.any);
       } on SocketException {
-        return (samples: const <int>[], attempts: attempts);
+        return (samples: const <int>[], attempts: effectiveAttempts);
       }
     }
     final samples = <int>[];
-    for (var attempt = 0; attempt < attempts; attempt++) {
+    for (var attempt = 0; attempt < effectiveAttempts; attempt++) {
       for (final target in targets) {
         final watch = Stopwatch()..start();
         try {
           final socket = await Socket.connect(target, port,
-              timeout: const Duration(seconds: 4));
+              timeout: effectiveTimeout);
           watch.stop();
           socket.destroy();
-          samples.add(watch.elapsedMilliseconds.clamp(1, 60000));
+          final elapsed = watch.elapsedMilliseconds;
+          // Sub-5ms response from a non-loopback address is an anomaly (e.g. immediate RST,
+          // local gateway rejection, or synthetic stub). We reject it to avoid false 1-2ms readings.
+          if (elapsed >= 5 || target.isLoopback) {
+            samples.add(elapsed.clamp(1, 60000));
+          }
           break;
         } on SocketException {
           watch.stop();
@@ -329,27 +346,34 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         }
       }
     }
-    return (samples: samples, attempts: attempts);
+    return (samples: samples, attempts: effectiveAttempts);
   }
 
   Future<({List<int> samples, int attempts})> _probeHttpSamples(
     String rawUrl, {
-    int attempts = 5,
+    int? attempts,
+    int? timeoutMs,
   }) async {
+    final prefs = await getPrefs();
+    final effectiveAttempts = (attempts ?? prefs.pingRounds).clamp(1, 10);
+    final effectiveTimeout = Duration(
+        milliseconds: (timeoutMs ?? prefs.pingTimeoutMs).clamp(300, 15000));
+
     final uri = Uri.tryParse(rawUrl);
-    if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
-      return (samples: const <int>[], attempts: attempts);
+    if (uri == null || (uri.scheme != 'https' && uri.scheme != 'http') || uri.host.isEmpty) {
+      return (samples: const <int>[], attempts: effectiveAttempts);
     }
     final samples = <int>[];
-    for (var attempt = 0; attempt < attempts; attempt++) {
+    for (var attempt = 0; attempt < effectiveAttempts; attempt++) {
       final client = HttpClient()
-        ..connectionTimeout = const Duration(seconds: 4);
+        ..badCertificateCallback = ((_, __, ___) => true)
+        ..connectionTimeout = effectiveTimeout;
       final watch = Stopwatch()..start();
       try {
         final request =
-            await client.getUrl(uri).timeout(const Duration(seconds: 4));
+            await client.getUrl(uri).timeout(effectiveTimeout);
         final response =
-            await request.close().timeout(const Duration(seconds: 4));
+            await request.close().timeout(effectiveTimeout);
         await response.drain<void>();
         watch.stop();
         samples.add(watch.elapsedMilliseconds.clamp(1, 60000));
@@ -359,7 +383,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         client.close(force: true);
       }
     }
-    return (samples: samples, attempts: attempts);
+    return (samples: samples, attempts: effectiveAttempts);
   }
 
   Future<int?> _probeTcpLatency(String host, int port) async {
@@ -420,25 +444,35 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       throw StateError(
           'Это Smart Group. Используйте проверку задержки для групп.');
     }
+    final prefs = await getPrefs();
     final uris = await _account.fetchSubscriptionShareUris(resolved.$1.url);
-    // Probe the actual transport, not just TCP/443. Direct WS can share a
-    // healthy TLS port with another route while its path is broken or slow.
     final directUri = uris.cast<String?>().firstWhere(
           (value) =>
               value != null &&
               value.contains('type=ws') &&
               value.contains('mosaicws'),
-          orElse: () => null,
+          orElse: () => uris.cast<String?>().firstWhere(
+            (value) => value != null && value.isNotEmpty,
+            orElse: () => null,
+          ),
         );
     final endpoint = directUri == null ? null : _endpointOfShareUri(directUri);
-    final httpSamples = directUri == null
-        ? (samples: const <int>[], attempts: 3)
-        : await _probeHttpSamples(
-            'https://${endpoint!.$1}:${endpoint.$2}/mosaicws',
-            attempts: 3);
-    final latency = httpSamples.samples.isEmpty
+    final latency = endpoint == null
         ? null
-        : httpSamples.samples[httpSamples.samples.length ~/ 2];
+        : (prefs.pingMethod == 'url'
+            ? (await _probeHttpSamples(
+                'https://${endpoint.$1}:${endpoint.$2}/mosaicws',
+                attempts: prefs.pingRounds,
+                timeoutMs: prefs.pingTimeoutMs,
+              )).samples.isNotEmpty
+                ? (await _probeHttpSamples(
+                    'https://${endpoint.$1}:${endpoint.$2}/mosaicws',
+                    attempts: prefs.pingRounds,
+                    timeoutMs: prefs.pingTimeoutMs,
+                  )).samples.first
+                : await _probeTcpLatency(endpoint.$1, endpoint.$2)
+            : await _probeTcpLatency(endpoint.$1, endpoint.$2));
+
     if (latency != null && latency > 0) {
       _lastMeasuredLatencyMS = latency;
       _lastLatencyProbeAt = DateTime.now();
@@ -485,16 +519,18 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     if (outbounds.isEmpty) {
       throw StateError('Для этой Smart Group нет доступных кандидатов.');
     }
-    _candidateCache = {
+    final map = {
       for (final outbound in outbounds)
         if (outbound['tag']?.toString().isNotEmpty == true)
           outbound['tag'].toString(): outbound,
     };
+    _candidateCache = map;
+    _groupCandidateCaches[groupID] = map;
     return SmartGroupCandidateShard(
       groupId: groupID,
       version: DateTime.now().millisecondsSinceEpoch.toString(),
       expiresAt: DateTime.now().add(const Duration(minutes: 30)),
-      candidateIds: _candidateCache.keys.toList(growable: false),
+      candidateIds: map.keys.toList(growable: false),
     );
   }
 
@@ -509,25 +545,40 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     int? probeSamples,
     String? probeUrl,
   }) async {
-    final outbound = _candidateCache[candidateID];
+    final outbound = _groupCandidateCaches[groupID]?[candidateID] ?? _candidateCache[candidateID];
     if (outbound == null) {
       throw StateError(
           'Кандидат устарел. Запустите проверку задержки ещё раз.');
     }
     final host = outbound['server']?.toString() ?? '';
     final port = int.tryParse(outbound['server_port']?.toString() ?? '') ?? 443;
-    final attempts = (probeSamples ?? 5).clamp(3, 20);
-    final requestedMode = (probeMode ?? 'auto').toLowerCase();
-    final effectiveMode = requestedMode == 'http_get' ? 'http_get' : 'tcp';
+    final prefs = await getPrefs();
+    final attempts = (probeSamples ?? prefs.pingRounds).clamp(1, 10);
+    final requestedMode = (probeMode ?? prefs.pingMethod).toLowerCase();
+    final effectiveMode = requestedMode == 'tcp'
+        ? 'tcp'
+        : (requestedMode == 'http' || requestedMode == 'url' || requestedMode == 'http_get')
+            ? 'http_get'
+            : 'tcp';
+    final targetProbeUrl = probeUrl?.isNotEmpty == true
+        ? probeUrl!
+        : (prefs.testUrl.isNotEmpty
+            ? prefs.testUrl
+            : 'https://1.1.1.1/cdn-cgi/trace');
     final probe = effectiveMode == 'http_get'
         ? await _probeHttpSamples(
-            probeUrl?.isNotEmpty == true
-                ? probeUrl!
-                : 'https://1.1.1.1/cdn-cgi/trace',
+            targetProbeUrl,
             attempts: attempts,
+            timeoutMs: prefs.pingTimeoutMs,
           )
-        : await _probeTcpSamples(host, port, attempts: attempts);
-    final observed = probe.samples;
+        : await _probeTcpSamples(host, port,
+            attempts: attempts, timeoutMs: prefs.pingTimeoutMs);
+        final observed = probe.samples.where((s) => s >= 5).toList();
+        if (observed.isEmpty && probe.samples.isNotEmpty) {
+          // If socket immediately closed / returned false-positive sub-5ms loopback/instant reset
+          // keep real timing or mark empty
+          observed.addAll(probe.samples);
+        }
     final ordered = [...observed]..sort();
     final median = ordered.isEmpty ? 0 : ordered[ordered.length ~/ 2];
     final p95Index = ordered.isEmpty
@@ -790,6 +841,9 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       subscriptionUrl: session.subscriptionUrl?.trim().isNotEmpty == true
           ? session.subscriptionUrl!.trim()
           : 'https://sub.zxc1x1.ru/${Uri.encodeComponent(session.directToken)}',
+      sessionToken: session.sessionToken,
+      directToken: session.directToken,
+      username: session.username,
     );
   }
 

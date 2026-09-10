@@ -531,24 +531,73 @@ class AndroidMosaicAccountService {
     );
   }
 
-  Future<UnifiedAccount?> getUnifiedAccount({String? subscriptionID}) async {
+  Future<UnifiedAccount?> getUnifiedAccount({
+    String? subscriptionID,
+    String? subscriptionUrl,
+  }) async {
     final session = subscriptionID?.trim().isNotEmpty == true
         ? await restoreBinding(subscriptionID!)
         : await restoreSession();
-    if (session == null) return null;
+    String? token = session?.sessionToken;
+    if (token == null || token.isEmpty) {
+      if (subscriptionUrl != null && subscriptionUrl.isNotEmpty) {
+        final uri = Uri.tryParse(subscriptionUrl.trim());
+        if (uri != null && uri.pathSegments.isNotEmpty) {
+          token = uri.pathSegments.last;
+        }
+      }
+    }
+    if (token == null || token.isEmpty) return null;
     try {
-      final payload = await _getAccountJson(
+      final response = await _dio.get<Map<String, dynamic>>(
         '/api/billing/profile',
-        subscriptionID: subscriptionID,
+        queryParameters: {'token': token},
       );
+      final payload = Map<String, dynamic>.from(response.data ?? const {});
+      if (payload.isEmpty || payload['error'] != null) {
+        if (subscriptionID != null) {
+          await clearBinding(subscriptionID);
+        }
+        return null;
+      }
       if (payload['linked'] == false) return null;
       final account = UnifiedAccount.fromJson(payload['account'] is Map
           ? Map<String, dynamic>.from(payload['account'] as Map)
           : payload);
       await _cacheUnifiedAccount(account);
       return account;
-    } on DioException {
-      // Offline mode may show the last verified display snapshot, never tokens.
+    } on DioException catch (dioErr) {
+      if (dioErr.response?.statusCode == 401) {
+        if (subscriptionID != null) {
+          await clearBinding(subscriptionID);
+        }
+        if (subscriptionUrl != null && subscriptionUrl.isNotEmpty) {
+          final uri = Uri.tryParse(subscriptionUrl.trim());
+          if (uri != null && uri.pathSegments.isNotEmpty) {
+            final shortUuid = uri.pathSegments.last;
+            if (shortUuid != token) {
+              try {
+                final fallbackRes = await _dio.get<Map<String, dynamic>>(
+                  '/api/billing/profile',
+                  queryParameters: {'token': shortUuid},
+                );
+                final fallbackPayload =
+                    Map<String, dynamic>.from(fallbackRes.data ?? const {});
+                if (fallbackPayload.isNotEmpty &&
+                    fallbackPayload['error'] == null) {
+                  final fallbackAccount = UnifiedAccount.fromJson(
+                      fallbackPayload['account'] is Map
+                          ? Map<String, dynamic>.from(
+                              fallbackPayload['account'] as Map)
+                          : fallbackPayload);
+                  await _cacheUnifiedAccount(fallbackAccount);
+                  return fallbackAccount;
+                }
+              } catch (_) {}
+            }
+          }
+        }
+      }
       return readCachedUnifiedAccount();
     }
   }
@@ -754,6 +803,7 @@ class AndroidMosaicAccountService {
     List<String> customBypassDomains = const [],
     List<String> customProxyDomains = const [],
     bool autoFailover = true,
+    bool adBlock = false,
   }) async {
     final cleanUrl = subscriptionUrl.trim().replaceAll(RegExp(r'\.+$'), '');
     final uri = Uri.tryParse(cleanUrl);
@@ -787,6 +837,7 @@ class AndroidMosaicAccountService {
       customBypassDomains: customBypassDomains,
       customProxyDomains: customProxyDomains,
       autoFailover: autoFailover,
+      adBlock: adBlock,
     );
   }
 
@@ -802,6 +853,7 @@ class AndroidMosaicAccountService {
     List<String> customBypassDomains = const [],
     List<String> customProxyDomains = const [],
     bool autoFailover = true,
+    bool adBlock = false,
   }) async {
     List<Map<String, dynamic>> outbounds;
     try {
@@ -821,6 +873,7 @@ class AndroidMosaicAccountService {
         customBypassDomains: customBypassDomains,
         customProxyDomains: customProxyDomains,
         autoFailover: autoFailover,
+        adBlock: adBlock,
       );
     }
     return _buildTunConfig(
@@ -831,6 +884,7 @@ class AndroidMosaicAccountService {
       customBypassDomains: customBypassDomains,
       customProxyDomains: customProxyDomains,
       autoFailover: autoFailover,
+      adBlock: adBlock,
     );
   }
 
@@ -1029,6 +1083,7 @@ class AndroidMosaicAccountService {
     List<String> customBypassDomains = const [],
     List<String> customProxyDomains = const [],
     bool autoFailover = true,
+    bool adBlock = false,
   }) {
     final outbound = _outboundFromShareUri(shareUri);
     if (outbound == null) {
@@ -1044,6 +1099,7 @@ class AndroidMosaicAccountService {
       customBypassDomains: customBypassDomains,
       customProxyDomains: customProxyDomains,
       autoFailover: autoFailover,
+      adBlock: adBlock,
     );
   }
 
@@ -1059,6 +1115,7 @@ class AndroidMosaicAccountService {
     List<String> customBypassDomains = const [],
     List<String> customProxyDomains = const [],
     bool autoFailover = true,
+    bool adBlock = false,
   }) =>
       _withAndroidTunInbound(
         payload,
@@ -1069,6 +1126,7 @@ class AndroidMosaicAccountService {
         customBypassDomains: customBypassDomains,
         customProxyDomains: customProxyDomains,
         autoFailover: autoFailover,
+        adBlock: adBlock,
       );
 
   static String _withAndroidTunInbound(
@@ -1080,6 +1138,7 @@ class AndroidMosaicAccountService {
     List<String> customBypassDomains = const [],
     List<String> customProxyDomains = const [],
     bool autoFailover = true,
+    bool adBlock = false,
   }) {
     final normalized = _decodeSubscriptionPayload(payload);
     Map<String, dynamic>? config;
@@ -1109,6 +1168,7 @@ class AndroidMosaicAccountService {
         customBypassDomains: customBypassDomains,
         customProxyDomains: customProxyDomains,
         autoFailover: autoFailover,
+        adBlock: adBlock,
       );
     }
     final rawOutbounds = config['outbounds'];
@@ -1217,6 +1277,7 @@ class AndroidMosaicAccountService {
       customBypassDomains: customBypassDomains,
       customProxyDomains: customProxyDomains,
       autoFailover: autoFailover,
+      adBlock: adBlock,
     );
   }
 
@@ -1529,7 +1590,8 @@ class AndroidMosaicAccountService {
       bool bypassRussianSites = true,
       List<String> customBypassDomains = const [],
       List<String> customProxyDomains = const [],
-      bool autoFailover = true}) {
+      bool autoFailover = true,
+      bool adBlock = false}) {
     if (outbounds.isEmpty) {
       throw const FormatException(
           'Подписка не содержит поддерживаемых серверов.');
@@ -1541,8 +1603,16 @@ class AndroidMosaicAccountService {
     final effectiveOutbounds = outbounds.length > 6
         ? outbounds.sublist(0, 6)
         : outbounds;
-    final tags =
-        effectiveOutbounds.map((outbound) => outbound['tag'] as String).toList();
+    final cleanEffectiveOutbounds = effectiveOutbounds.map((ob) {
+      final clean = Map<String, dynamic>.from(ob);
+      clean.removeWhere((k, _) =>
+          k.toString().startsWith('mosaic_') ||
+          k.toString().startsWith('_mosaic_'));
+      return clean;
+    }).toList();
+    final tags = cleanEffectiveOutbounds
+        .map((outbound) => outbound['tag'] as String)
+        .toList();
     final config = existingConfig == null
         ? <String, dynamic>{}
         : Map<String, dynamic>.from(existingConfig);
@@ -1558,9 +1628,7 @@ class AndroidMosaicAccountService {
         'address': ['172.19.0.1/30', 'fdfe:dcba:9876::1/126'],
         'auto_route': true,
         'strict_route': true,
-        'endpoint_independent_nat': true,
         'stack': 'gvisor',
-        'sniff': true,
         if (proxyPackages.isNotEmpty) 'include_package': proxyPackages,
         if (bypassPackages.isNotEmpty) 'exclude_package': bypassPackages,
       },
@@ -1575,21 +1643,22 @@ class AndroidMosaicAccountService {
     // connection reset. Route straight to the selected outbound instead.
     // Also, when autoFailover is disabled (e.g. for competitive gaming),
     // we route straight to tags.first without urltest failover swapping.
-    final directSelection = effectiveOutbounds.length == 1 || !autoFailover;
+    final directSelection = cleanEffectiveOutbounds.length == 1 || !autoFailover;
     config['outbounds'] = [
-      ...effectiveOutbounds,
+      ...cleanEffectiveOutbounds,
       if (!directSelection)
         {
           'type': 'urltest',
           'tag': routeTag,
           'outbounds': tags,
           'url': 'https://www.gstatic.com/generate_204',
-          'interval': '5m',
+          'interval': '3m',
           'tolerance': 50,
-          'idle_timeout': '15m',
+          'idle_timeout': '10m',
           'interrupt_exist_connections': false,
         },
       {'type': 'direct', 'tag': 'direct'},
+      if (adBlock) {'type': 'block', 'tag': 'block'},
     ];
     final domainBypassList = <String>[
       if (bypassRussianSites) ...[
@@ -1618,22 +1687,57 @@ class AndroidMosaicAccountService {
 
     final effectiveFinal = directSelection ? tags.first : routeTag;
 
+    final String directDnsServer = adBlock ? '94.140.14.14' : '77.88.8.8';
+    final String remoteDnsServer = adBlock ? '94.140.14.14' : '1.1.1.1';
+    const adDomains = [
+      'an.yandex.ru',
+      'yabs.yandex.ru',
+      'adfox.ru',
+      'mc.yandex.ru',
+      'top-fwz1.mail.ru',
+      'googleads.g.doubleclick.net',
+      'pagead2.googlesyndication.com',
+      'adservice.google.com',
+      'adservice.google.ru',
+      'ads.facebook.com',
+      'pixel.facebook.com',
+      'ads.tiktok.com',
+      'ads.twitter.com',
+      'unityads.unity3d.com',
+      'applovin.com',
+      'applvn.com',
+      'vungle.com',
+      'chartboost.com',
+      'ironsrc.com',
+      'inmobi.com',
+      'crashlytics.com',
+      'app-measurement.com',
+      'adjust.com',
+      'appsflyer.com',
+      'branch.io',
+    ];
+
     // A TUN config needs explicit resolvers and DNS hijack.
     // For foreign / blocked services (like Telegram, Instagram, etc.), we route DNS
     // through remote DNS via the tunnel so domestic ISP DNS poisoning does not blackhole them.
     // Domestic domains bypass via dns-direct (Yandex 77.88.8.8) directly.
     config['dns'] = {
       'servers': [
+        if (adBlock)
+          {
+            'tag': 'dns-block',
+            'address': 'rcode://success',
+          },
         {
           'type': 'udp',
           'tag': 'dns-direct',
-          'server': '77.88.8.8',
+          'server': directDnsServer,
           'server_port': 53,
         },
         {
           'type': 'tcp',
           'tag': 'dns-remote',
-          'server': '1.1.1.1',
+          'server': remoteDnsServer,
           'server_port': 53,
           'detour': effectiveFinal,
         },
@@ -1645,6 +1749,11 @@ class AndroidMosaicAccountService {
         },
       ],
       'rules': [
+        if (adBlock)
+          {
+            'domain_suffix': adDomains,
+            'server': 'dns-block',
+          },
         if (domainBypassList.isNotEmpty)
           {
             'domain_suffix': domainBypassList,
@@ -1654,7 +1763,7 @@ class AndroidMosaicAccountService {
           'server': 'dns-remote',
         },
       ],
-      'final': 'dns-remote',
+      'final': 'dns-direct',
       'strategy': 'prefer_ipv4',
     };
     final existingRoute = config['route'];
@@ -1669,6 +1778,11 @@ class AndroidMosaicAccountService {
       // connections lose their SNI/Host before reaching camouflage servers.
       {'action': 'sniff'},
       {'protocol': 'dns', 'action': 'hijack-dns'},
+      if (adBlock)
+        {
+          'domain_suffix': adDomains,
+          'outbound': 'block',
+        },
       if (domainBypassList.isNotEmpty)
         {
           'domain_suffix': domainBypassList,

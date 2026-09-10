@@ -160,6 +160,8 @@ class AppStrings {
     'allow_lan_description': 'Keep access to printers and other local devices',
     'block_ipv6': 'Block IPv6',
     'block_ipv6_description': 'Disable IPv6 to avoid unintended direct traffic',
+    'ad_block': 'Ad & Tracker Blocking',
+    'ad_block_description': 'Block advertising networks, tracking scripts and telemetry via secure DNS',
     'tun_stack': 'VPN network stack',
     'tun_stack_description': 'Compatibility mode for the virtual adapter',
     'proxy': 'Proxy',
@@ -321,7 +323,7 @@ class AppStrings {
     'minimum_ping': 'Минимальный пинг',
     'stable_connection': 'Стабильное соединение',
     'maximum_speed': 'Максимальная скорость',
-    'allowlist_access': 'Маршрут совместимости',
+    'allowlist_access': '📡 Мобильный (Free LTE)',
     'germany': 'Германия',
     'canada': 'Канада',
     'connection_failed':
@@ -329,7 +331,8 @@ class AppStrings {
     'minimum_ping_description': 'Самый быстрый отклик',
     'stable_connection_description': 'Приоритет стабильным узлам',
     'maximum_speed_description': 'Приоритет свежей скорости',
-    'allowlist_access_description': 'Маршруты для сетевой совместимости',
+    'allowlist_access_description':
+        'Оптимизированный маршрут для сотовых сетей (LTE/5G) и публичного Wi-Fi',
     'germany_description': 'Проверенные узлы Германии',
     'canada_description': 'Проверенные узлы Канады',
     'daemon_configuration': 'Конфигурация демона',
@@ -357,6 +360,9 @@ class AppStrings {
     'block_ipv6': 'Блокировать IPv6',
     'block_ipv6_description':
         'Отключать IPv6 для предотвращения непреднамеренного прямого трафика',
+    'ad_block': 'Блокировка рекламы',
+    'ad_block_description':
+        'Блокировать рекламу, баннеры, счетчики и трекеры через безопасный DNS',
     'tun_stack': 'Сетевой стек VPN',
     'tun_stack_description': 'Режим совместимости виртуального адаптера',
     'proxy': 'Прокси',

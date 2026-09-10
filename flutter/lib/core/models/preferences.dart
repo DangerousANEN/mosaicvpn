@@ -15,6 +15,7 @@ class Preferences {
   /// per-app split tunneling). Empty means "no per-package proxy rules".
   final List<String> proxyPackages;
   final bool blockIPv6;
+  final bool adBlock;
   final String dnsMode; // "fake-ip" | "real-ip"
   final String dnsProxied;
   final String dnsDirect;
@@ -40,6 +41,8 @@ class Preferences {
 
   // ── Phase 2 additions ──────────────────────────────────────────────
   final String pingMethod; // "url" | "tcp" | "icmp" (q2)
+  final int pingRounds; // 1..10, default: 3
+  final int pingTimeoutMs; // 300..15000, default: 2500
   final String routingMode; // "global" | "rule" | "direct" (Phase 2.5)
   final String
       tlsFingerprint; // "chrome" | "firefox" | "safari" | "random" | "none"
@@ -88,6 +91,7 @@ class Preferences {
     this.bypassProcesses = const [],
     this.proxyPackages = const [],
     this.blockIPv6 = false,
+    this.adBlock = false,
     this.dnsMode = 'fake-ip',
     this.dnsProxied = 'https://1.1.1.1/dns-query',
     this.dnsDirect = 'udp://77.88.8.8',
@@ -112,6 +116,8 @@ class Preferences {
     this.alwaysRunAsAdmin = false,
     // ── Phase 2 defaults ──
     this.pingMethod = 'url',
+    this.pingRounds = 3,
+    this.pingTimeoutMs = 2500,
     this.routingMode = 'rule',
     this.tlsFingerprint = 'chrome',
     this.muxEnabled = false,
@@ -155,6 +161,7 @@ class Preferences {
         bypassProcesses: (j['bypass_processes'] as List?)?.cast<String>() ?? [],
         proxyPackages: (j['proxy_packages'] as List?)?.cast<String>() ?? [],
         blockIPv6: j['block_ipv6'] ?? false,
+        adBlock: j['ad_block'] ?? false,
         dnsMode: j['dns_mode'] ?? 'fake-ip',
         dnsProxied: j['dns_proxied'] ?? 'https://1.1.1.1/dns-query',
         dnsDirect: j['dns_direct'] ?? 'udp://77.88.8.8',
@@ -179,6 +186,8 @@ class Preferences {
         testUrl: j['test_url'] ?? 'http://cp.cloudflare.com/generate_204',
         alwaysRunAsAdmin: j['always_run_as_admin'] ?? false,
         pingMethod: j['ping_method'] ?? 'url',
+        pingRounds: (j['ping_rounds'] as num?)?.toInt() ?? 3,
+        pingTimeoutMs: (j['ping_timeout_ms'] as num?)?.toInt() ?? 2500,
         routingMode: j['routing_mode'] ?? 'rule',
         tlsFingerprint: j['tls_fingerprint'] ?? 'chrome',
         muxEnabled: j['mux_enabled'] ?? false,
@@ -223,6 +232,7 @@ class Preferences {
         'bypass_processes': bypassProcesses,
         'proxy_packages': proxyPackages,
         'block_ipv6': blockIPv6,
+        'ad_block': adBlock,
         'dns_mode': dnsMode,
         'dns_proxied': dnsProxied,
         'dns_direct': dnsDirect,
@@ -246,6 +256,8 @@ class Preferences {
         'test_url': testUrl,
         'always_run_as_admin': alwaysRunAsAdmin,
         'ping_method': pingMethod,
+        'ping_rounds': pingRounds,
+        'ping_timeout_ms': pingTimeoutMs,
         'routing_mode': routingMode,
         'tls_fingerprint': tlsFingerprint,
         'mux_enabled': muxEnabled,
@@ -288,6 +300,7 @@ class Preferences {
     List<String>? bypassProcesses,
     List<String>? proxyPackages,
     bool? blockIPv6,
+    bool? adBlock,
     String? dnsMode,
     String? dnsProxied,
     String? dnsDirect,
@@ -311,6 +324,8 @@ class Preferences {
     String? testUrl,
     bool? alwaysRunAsAdmin,
     String? pingMethod,
+    int? pingRounds,
+    int? pingTimeoutMs,
     String? routingMode,
     String? tlsFingerprint,
     bool? muxEnabled,
@@ -352,6 +367,7 @@ class Preferences {
         bypassProcesses: bypassProcesses ?? this.bypassProcesses,
         proxyPackages: proxyPackages ?? this.proxyPackages,
         blockIPv6: blockIPv6 ?? this.blockIPv6,
+        adBlock: adBlock ?? this.adBlock,
         dnsMode: dnsMode ?? this.dnsMode,
         dnsProxied: dnsProxied ?? this.dnsProxied,
         dnsDirect: dnsDirect ?? this.dnsDirect,
@@ -375,6 +391,8 @@ class Preferences {
         testUrl: testUrl ?? this.testUrl,
         alwaysRunAsAdmin: alwaysRunAsAdmin ?? this.alwaysRunAsAdmin,
         pingMethod: pingMethod ?? this.pingMethod,
+        pingRounds: pingRounds ?? this.pingRounds,
+        pingTimeoutMs: pingTimeoutMs ?? this.pingTimeoutMs,
         routingMode: routingMode ?? this.routingMode,
         tlsFingerprint: tlsFingerprint ?? this.tlsFingerprint,
         muxEnabled: muxEnabled ?? this.muxEnabled,

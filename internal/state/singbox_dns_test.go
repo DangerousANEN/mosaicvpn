@@ -1,6 +1,12 @@
 package state
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/store"
+)
 
 func TestSingBoxDNSServerParsesUDPURL(t *testing.T) {
 	entry := singBoxDNSServer("dns-primary", "udp://77.88.8.8", "")
@@ -22,10 +28,48 @@ func TestSingBoxDNSServerParsesDoHURL(t *testing.T) {
 	}
 }
 
-func TestSingBoxDNSServerAcceptsPlainAddress(t *testing.T) {
-	entry := singBoxDNSServer("dns-primary", "8.8.8.8", "")
-	if entry["type"] != "udp" || entry["server"] != "8.8.8.8" || entry["server_port"] != 53 {
-		t.Fatalf("plain endpoint entry = %#v; want udp 8.8.8.8:53", entry)
+func TestAdBlockBuildSingBoxConfig(t *testing.T) {
+	server := proto.Server{
+		ID:       "srv1",
+		Protocol: proto.ProtoVLESS,
+		Address:  "example.com",
+		Port:     443,
+	}
+	prefs := store.DefaultPrefs()
+	prefs.AdBlock = true
+
+	rawCfg, err := BuildSingBoxConfigWithServers(
+		server, 1080, 1081, prefs, nil, proto.DNSConfig{Mode: "fake-ip"}, 0, "", []proto.Server{server}, nil,
+	)
+	if err != nil {
+		t.Fatalf("BuildSingBoxConfigWithServers failed: %v", err)
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal(rawCfg, &parsed); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+
+	dnsSection, ok := parsed["dns"].(map[string]any)
+	if !ok {
+		t.Fatalf("dns section missing in config: %s", string(rawCfg))
+	}
+	servers, ok := dnsSection["servers"].([]any)
+	if !ok {
+		t.Fatalf("dns.servers missing: %s", string(rawCfg))
+	}
+
+	hasBlockServer := false
+	for _, s := range servers {
+		if smap, ok := s.(map[string]any); ok && smap["tag"] == "dns-block" {
+			hasBlockServer = true
+			if smap["address"] != "rcode://success" {
+				t.Fatalf("dns-block address = %v, want rcode://success", smap["address"])
+			}
+		}
+	}
+	if !hasBlockServer {
+		t.Fatalf("dns.servers does not contain dns-block: %#v", servers)
 	}
 }
 

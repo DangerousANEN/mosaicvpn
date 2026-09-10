@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.IpPrefix
@@ -12,6 +13,7 @@ import android.net.VpnService
 import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
+import android.service.quicksettings.TileService
 import android.util.Log
 import io.nekohasekai.libbox.CommandServer
 import io.nekohasekai.libbox.CommandServerHandler
@@ -47,12 +49,15 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         const val ACTION_START = "ru.mosaicvpn.mosaic_vpn.action.START"
         const val ACTION_STOP = "ru.mosaicvpn.mosaic_vpn.action.STOP"
         const val EXTRA_CONFIG = "singbox_config"
+        const val EXTRA_ROUTE_TITLE = "route_title"
         private const val TAG = "MosaicVpnService"
 
         private val simpleDateFormat =
             java.text.SimpleDateFormat("MM-dd HH:mm:ss.SSS", java.util.Locale.US)
 
         @Volatile private var runtimeState: String = "disconnected"
+        @Volatile var currentRouteTitle: String = ""
+            private set
 
         /// Recent native runtime log lines with monotonic sequence numbers,
         /// newest last. The Flutter logs screen reads this because the libbox
@@ -93,12 +98,16 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             "error" to runtimeError,
         )
 
-        fun start(context: Context, config: String) {
+        fun start(context: Context, config: String, routeTitle: String = "") {
             runtimeState = "connecting"
             runtimeError = null
+            if (routeTitle.isNotBlank()) {
+                currentRouteTitle = routeTitle
+            }
             val intent = Intent(context, MosaicVpnService::class.java)
                 .setAction(ACTION_START)
                 .putExtra(EXTRA_CONFIG, config)
+                .putExtra(EXTRA_ROUTE_TITLE, routeTitle)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
@@ -112,6 +121,7 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             if (runtimeState == "disconnected") return
             runtimeState = "disconnected"
             runtimeError = null
+            currentRouteTitle = ""
             val intent = Intent(context, MosaicVpnService::class.java)
                 .setAction(ACTION_STOP)
             runCatching { context.startService(intent) }
@@ -261,6 +271,14 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             runtimeState = "connected"
             runtimeError = null
             updateNotification("Подключено")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                try {
+                    TileService.requestListeningState(
+                        this,
+                        ComponentName(this, MosaicVpnTileService::class.java)
+                    )
+                } catch (_: Exception) {}
+            }
         } catch (error: Exception) {
             Log.e(TAG, "Unable to start sing-box runtime", error)
             appendNativeLog("error: ${error.message ?: "Unable to start VPN runtime"}")
@@ -291,6 +309,14 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             stopForeground(STOP_FOREGROUND_REMOVE)
             if (releaseService) stopSelf()
             shuttingDown = false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                try {
+                    TileService.requestListeningState(
+                        this,
+                        ComponentName(this, MosaicVpnTileService::class.java)
+                    )
+                } catch (_: Exception) {}
+            }
         }
     }
 
@@ -324,14 +350,15 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             Intent(this, MosaicVpnService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        return Notification.Builder(this, CHANNEL)
+        val title = if (currentRouteTitle.isNotBlank()) "MosaicVPN • $currentRouteTitle" else "MosaicVPN"
+        val builder = Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_warning)
-            .setContentTitle("MosaicVPN")
+            .setContentTitle(title)
             .setContentText(detail)
             .setContentIntent(openIntent)
             .addAction(Notification.Action.Builder(null, "Отключить", stopIntent).build())
             .setOngoing(true)
-            .build()
+        return builder.build()
     }
 
     private fun updateNotification(detail: String) {

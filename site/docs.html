@@ -375,19 +375,19 @@
       </table>
     </div>
 
-    <h3>Поля узла</h3>
-    <div class="tbl-wrap">
-      <table>
-        <thead>
-          <tr><th>Поле</th><th>Тип</th><th>Применяется</th></tr>
-        </thead>
-        <tbody>
-          <tr><td class="mono">id</td><td class="mono">string</td><td>Всегда. Должен совпадать с ID сервера в подписке</td></tr>
-          <tr><td class="mono">weight</td><td class="mono">int</td><td>Только для <code>weighted_round_robin</code></td></tr>
-          <tr><td class="mono">priority</td><td class="mono">int</td><td>Только для <code>fallback</code>: меньше — раньше</td></tr>
-        </tbody>
-      </table>
-    </div>
+    <h3>Умные группы пула (Стратифицированный пул)</h3>
+    <p>
+      Начиная с версии 1.1, клиент поддерживает динамический многоуровневый выбор из публичного пула
+      нод (Stratified Fair Allocation). Каждая группа ранжирует ноды по комбинированному скору
+      (задержка + джиттер + потеря пакетов + аптайм) и применяет адаптивный failover:
+    </p>
+    <ul>
+      <li><code>stable</code> (Оптимальный маршрут) — взвешенная балансировка между проверенными узлами Европы.</li>
+      <li><code>compatibility</code> (Маршрут совместимости / Adaptive TLS) — устойчивый профиль VLESS Reality на порту 443 с CDN-маскировкой для сотовых сетей.</li>
+      <li><code>max-speed</code> (Максимальная скорость) — выбор наименее загруженных нод с широким каналом.</li>
+      <li><code>min-latency</code> (Минимальный пинг) — динамический urltest с порогом толерантности 50 мс.</li>
+      <li>Географические кластеры: <code>germany</code>, <code>finland</code>, <code>great-britain</code>, <code>france</code>, <code>usa</code>, <code>canada</code>, <code>japan</code>, <code>singapore</code>.</li>
+    </ul>
   </div>
 </section>
 
@@ -445,6 +445,17 @@
         остаются у вас на сервере — клиент их не видит и не хранит.
       </p>
     </div>
+
+    <h3>Единый кабинет и привязка устройств (Web & App)</h3>
+    <p>
+      Личный кабинет доступен как через встроенный в клиент интерфейс, так и на сайте (<code>/cabinet.html</code>).
+      Архитектура сессий построена на криптографическом обмене кодами (OAuth-style enrollment flow):
+    </p>
+    <ul>
+      <li><strong>Синхронизация через deep link</strong>: сайт инициирует привязку по схеме <code>mosaicvpn://enroll/callback?code=...&state=...</code>. Приложение подтверждает токен через API сервера и мгновенно активирует подписку без ручного ввода ключей.</li>
+      <li><strong>Кэширование Stale-While-Revalidate</strong>: профиль и лимиты кэшируются локально (в <code>localStorage</code> на вебе и в <code>SharedPreferences</code> в приложении), гарантируя мгновенную отрисовку баланса и активных дней даже при медленном соединении.</li>
+      <li><strong>Многоуровневый биллинг</strong>: интеграция с Telegram Bot API (<code>@mosaicvpnbot</code>) для моментальной оплаты картами и USDT без комиссии сети.</li>
+    </ul>
 
     <h3>Свои блоки в интерфейсе</h3>
     <p>
@@ -615,6 +626,76 @@
         Запросы требуют токен из lockfile — это осознанное ограничение безопасности.
       </p>
     </div>
+
+    <h3>REST API & MCP (Model Context Protocol) для скриптов и агентов</h3>
+    <p>
+      Для автоматизации из bash/python-скриптов и AI-агентов (Cursor, Claude Code, Windsurf)
+      клиент предоставляет прямой REST API мост и полноценный MCP-сервер.
+      Эндпоинты доступны по пути <code>/mcp/v1/*</code> и поддерживают как стандартный заголовок
+      <code>Authorization: Bearer &lt;token&gt;</code>, так и заголовок <code>X-MCP-Token</code> или параметр <code>?token=</code>.
+      Для локальных GET-запросов на петлевом интерфейсе (127.0.0.1) действует безопасный read-only доступ без передачи токена.
+    </p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Метод и путь</th><th>Параметры</th><th>Описание</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="mono">GET /mcp/v1/status</td><td>—</td><td>Статус туннеля, активная нода/группа, трафик и аптайм</td></tr>
+          <tr><td class="mono">GET /mcp/v1/servers</td><td>—</td><td>Список всех доступных серверов подписок</td></tr>
+          <tr><td class="mono">GET /mcp/v1/groups</td><td>—</td><td>Список Smart-групп (min-latency, stable, max-speed, страны)</td></tr>
+          <tr><td class="mono">POST /mcp/v1/connect</td><td><code>server_id</code>, <code>group_id</code>, <code>country_code</code></td><td>Мгновенное подключение к серверу или смарт-группе</td></tr>
+          <tr><td class="mono">POST /mcp/v1/disconnect</td><td>—</td><td>Остановка активного VPN туннеля</td></tr>
+          <tr><td class="mono">GET /mcp/v1/egresses</td><td>—</td><td>Список локальных прокси-слушателей (SOCKS5/HTTP)</td></tr>
+          <tr><td class="mono">POST /mcp/v1/egresses</td><td><code>name</code>, <code>protocol</code>, <code>listen</code></td><td>Создание нового локального egress-порта с горячей перезагрузкой</td></tr>
+          <tr><td class="mono">DELETE /mcp/v1/egresses/{id}</td><td>—</td><td>Удаление egress-слушателя с синхронизацией sing-box</td></tr>
+          <tr><td class="mono">POST /mcp/v1/egresses/{id}/toggle</td><td><code>active</code> (optional)</td><td>Включение / отключение egress-прокси без разрыва VPN</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h4>Пример: Управление egresses и туннелем из Python</h4>
+<pre><code>import requests
+
+BASE = "http://127.0.0.1:51734/mcp/v1"
+HEADERS = {"X-MCP-Token": "ваш_токен_из_lockfile"}
+
+# 1. Подключиться к маршруту с минимальным пингом
+requests.post(f"{BASE}/connect", json={"group_id": "min-latency"}, headers=HEADERS)
+
+# 2. Создать выделенный локальный SOCKS5 порт для парсера или Telegram-бота
+res = requests.post(f"{BASE}/egresses", json={
+    "name": "Scraper Egress",
+    "protocol": "socks",
+    "listen": "127.0.0.1:1082"
+}, headers=HEADERS).json()
+
+egress_id = res["data"]["egress"]["id"]
+print(f"Egress поднят на 127.0.0.1:1082 (ID: {egress_id})")
+
+# 3. Временно отключить egress при необходимости
+requests.post(f"{BASE}/egresses/{egress_id}/toggle", json={"active": False}, headers=HEADERS)
+</code></pre>
+
+    <h4>Интеграция с Claude Code, Cursor и Windsurf (MCP JSON-RPC 2.0)</h4>
+    <p>
+      Для подключения к AI-ассистентам добавьте MCP-сервер Mosaic в конфигурационный файл <code>mcpServers</code>:
+    </p>
+<pre><code>{
+  "mcpServers": {
+    "mosaic-vpn": {
+      "url": "http://127.0.0.1:51734/mcp",
+      "headers": {
+        "Authorization": "Bearer ваш_токен_из_lockfile"
+      }
+    }
+  }
+}</code></pre>
+    <p>
+      Агентам становятся доступны нативные функции: <code>mosaic_status</code>, <code>mosaic_connect</code> (с поддержкой <code>group_id</code>),
+      <code>mosaic_disconnect</code>, <code>mosaic_list_egresses</code>, <code>mosaic_add_egress</code>, <code>mosaic_toggle_egress</code>, <code>mosaic_test_url</code>.
+    </p>
   </div>
 </section>
 

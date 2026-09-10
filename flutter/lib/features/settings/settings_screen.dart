@@ -20,6 +20,7 @@ import '../../core/services/tray_service.dart';
 import '../../core/services/autostart_service.dart';
 import '../../core/config/app_config.dart';
 import '../../core/utils/daemon_error_message.dart';
+import '../../core/services/app_update_service.dart';
 import '../../shared/widgets/atlas_widgets.dart';
 import '../../shared/widgets/skeleton_loader.dart';
 import 'split_tunnel_screen.dart';
@@ -300,6 +301,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: 'DNS',
             children: [
               _SettingTile(
+                label: s.t('ad_block'),
+                description: s.t('ad_block_description'),
+                tooltip:
+                    'Блокирует рекламу, баннеры, трекеры и счетчики аналитики на уровне DNS запросов sing-box без снижения скорости интернета.',
+                difficulty: 1,
+                child: Switch(
+                  value: prefs.adBlock,
+                  onChanged: (v) => _update(prefs, adBlock: v),
+                ),
+              ),
+              _SettingTile(
                 label: s.t('dns'),
                 description: s.t('dns_mode_description'),
                 tooltip:
@@ -438,53 +450,53 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // ── Startup ──
           _SettingsGroup(
-            title: 'Startup',
+            title: 'Запуск и автозагрузка',
             children: [
               _SettingTile(
-                label: 'Auto-start',
-                description: 'How the daemon starts with the system',
+                label: 'Автозапуск',
+                description: 'Как служба запускается вместе с системой',
                 child: SegmentedButton<String>(
                   segments: const [
-                    ButtonSegment(value: 'service', label: Text('Service')),
-                    ButtonSegment(value: 'user', label: Text('User')),
-                    ButtonSegment(value: 'manual', label: Text('Manual')),
+                    ButtonSegment(value: 'service', label: Text('Служба')),
+                    ButtonSegment(value: 'user', label: Text('Автозагрузка')),
+                    ButtonSegment(value: 'manual', label: Text('Вручную')),
                   ],
                   selected: {prefs.autoStart},
                   onSelectionChanged: (s) => _update(prefs, autoStart: s.first),
                 ),
               ),
               _SettingTile(
-                label: 'Auto-connect',
-                description: 'Connect automatically when daemon starts',
+                label: 'Автоподключение',
+                description: 'Подключаться автоматически при старте приложения',
                 child: Switch(
                   value: prefs.autoConnect,
                   onChanged: (v) => _update(prefs, autoConnect: v),
                 ),
               ),
               _SettingTile(
-                label: 'Show on Launch',
-                description: 'Open the UI automatically on launch',
+                label: 'Показывать окно при запуске',
+                description: 'Автоматически открывать интерфейс при старте',
                 child: Switch(
                   value: prefs.showOnLaunch,
                   onChanged: (v) => _update(prefs, showOnLaunch: v),
                 ),
               ),
               _SettingTile(
-                label: 'Advanced Mode (Продвинутый режим)',
+                label: 'Продвинутый режим (Advanced)',
                 description:
-                    'Show advanced tabs (Profiles, Routes, Egresses, Activity, Stats, Cores, Logs)',
+                    'Отображать расширенные вкладки (Маршруты, Выходы, Активность, Статистика, Ядра, Логи)',
                 tooltip:
-                    'When disabled (default), MosaicVPN hides complex developer tools and keeps a clean 4-tab layout (Dashboard, Stations, Subscriptions, Settings).',
+                    'В выключенном состоянии интерфейс упрощен до 4 основных разделов.',
                 child: Switch(
                   value: prefs.advancedMode,
                   onChanged: (v) => _update(prefs, advancedMode: v),
                 ),
               ),
               _SettingTile(
-                label: 'Run as Administrator',
-                description: 'Always prompt UAC elevation on startup',
+                label: 'Запуск от имени администратора',
+                description: 'Запрашивать права администратора при каждом запуске',
                 tooltip:
-                    'Required for TUN mode. When enabled, Windows will show a UAC prompt each time MosaicVPN starts. Disable if you only use Proxy mode.',
+                    'Необходимо для режима TUN на Windows.',
                 difficulty: 1,
                 child: Switch(
                   value: prefs.alwaysRunAsAdmin,
@@ -578,11 +590,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // ── Testing ──
           _SettingsGroup(
-            title: 'Testing & Diagnostics',
+            title: 'Тестирование и диагностика',
             children: [
               _SettingTile(
-                label: 'Latency Test URL',
-                description: 'HTTP URL used to test connection ping/latency',
+                label: 'URL проверки задержки',
+                description: 'Эндпоинт HTTP для проверки доступности и задержки',
                 child: SizedBox(
                   width: 250,
                   child: TextFormField(
@@ -603,10 +615,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: 'MCP (Model Context Protocol)',
             children: [
               _SettingTile(
-                label: 'Enable MCP',
-                description: 'Remote control API for automation',
+                label: 'Включить MCP',
+                description: 'API удаленного управления для скриптов и ИИ',
                 tooltip:
-                    'MCP lets AI assistants (Claude, GPT, etc.) and scripts control MosaicVPN remotely — connect, switch servers, view status, manage egresses. Disable if you don\'t use AI automation.',
+                    'Позволяет ИИ-ассистентам и скриптам управлять соединением MosaicVPN. Если не используется — рекомендуется оставить выключенным.',
                 difficulty: 2,
                 child: Switch(
                   value: prefs.mcpEnabled,
@@ -614,10 +626,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ),
               _SettingTile(
-                label: 'MCP Address',
-                description: 'Listen address for MCP server',
+                label: 'Адрес прослушивания MCP',
+                description: 'Сетевой интерфейс для входящих запросов',
                 tooltip:
-                    'Address the MCP server listens on. 127.0.0.1:9090 = local only. 0.0.0.0:9090 = accept from LAN. Use 127.0.0.1 unless you need remote access.',
+                    '127.0.0.1:9090 — только локальные подключения. 0.0.0.0:9090 — доступ из локальной сети.',
                 difficulty: 3,
                 child: SizedBox(
                   width: 200,
@@ -630,16 +642,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ),
               _SettingTile(
-                label: 'MCP Permission',
-                description: 'read (view) · connect (view+connect) · full',
+                label: 'Права доступа MCP',
+                description: 'read (только чтение) · connect · full (полный доступ)',
                 tooltip:
-                    'Read = AI can only view status. Connect = AI can connect/disconnect servers. Full = AI can change settings, manage egresses, edit subscriptions.',
+                    'Read — только просмотр статуса. Connect — подключение/смена серверов. Full — изменение настроек и профилей.',
                 difficulty: 3,
                 child: SegmentedButton<String>(
                   segments: const [
-                    ButtonSegment(value: 'read', label: Text('Read')),
-                    ButtonSegment(value: 'connect', label: Text('Connect')),
-                    ButtonSegment(value: 'full', label: Text('Full')),
+                    ButtonSegment(value: 'read', label: Text('Чтение')),
+                    ButtonSegment(value: 'connect', label: Text('Подключение')),
+                    ButtonSegment(value: 'full', label: Text('Полный')),
                   ],
                   selected: {prefs.mcpPermission},
                   onSelectionChanged: (s) =>
@@ -811,13 +823,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // ── Phase 2: Routing & compatibility ──
           _SettingsGroup(
-            title: 'Routing & compatibility',
+            title: 'Маршрутизация и совместимость',
             children: [
               _SettingTile(
-                label: 'Routing Mode',
-                description: 'Active: ${prefs.routingMode.toUpperCase()}',
+                label: 'Режим маршрутизации',
+                description: 'Текущий: ${prefs.routingMode.toUpperCase()}',
                 tooltip:
-                    'Managed via Routes tab. Global: all traffic uses the selected route. Rule: route by GeoIP/GeoSite rules. Direct: use the local network connection.',
+                    'Global: весь трафик через выбранный маршрут. Rule: по правилам GeoIP/GeoSite. Direct: локальное прямое подключение.',
                 difficulty: 2,
                 child: Container(
                   padding:
@@ -930,14 +942,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // ── Phase 2: MUX ──
           _SettingsGroup(
-            title: 'Multiplexing (MUX)',
+            title: 'Мультиплексирование соединений (MUX)',
             children: [
               _SettingTile(
-                label: 'Enable MUX',
+                label: 'Включить MUX',
                 description:
-                    'Multiplex multiple connections over a single TCP channel',
+                    'Объединение множества соединений в один TCP-канал',
                 tooltip:
-                    'Can reduce latency on fast connections but break some protocols. Off = each conn = new TCP.',
+                    'Снижает задержки рукопожатий на стабильных соединениях.',
                 difficulty: 3,
                 child: Switch(
                   value: prefs.muxEnabled,
@@ -946,8 +958,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
               if (prefs.muxEnabled)
                 _SettingTile(
-                  label: 'Concurrency',
-                  description: 'Number of multiplexed streams (0 = auto)',
+                  label: 'Параллельные потоки',
+                  description: 'Количество мультиплексированных потоков (0 = авто)',
                   child: SizedBox(
                     width: 200,
                     child: TextFormField(
@@ -955,7 +967,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           const SpellCheckConfiguration.disabled(),
                       initialValue: prefs.muxConcurrency.toString(),
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(hintText: '0 = auto'),
+                      decoration: const InputDecoration(hintText: '0 = авто'),
                       onChanged: (v) {
                         final n = int.tryParse(v);
                         if (n != null) _update(prefs, muxConcurrency: n);
@@ -970,7 +982,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // ── Phase 2: Split Tunneling ──
           _SettingsGroup(
-            title: 'Split Tunneling',
+            title: 'Раздельное туннелирование (Split Tunneling)',
             children: [
               if (Platform.isAndroid)
                 _SettingTile(
@@ -1056,23 +1068,90 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // ── Phase 2: Network & Speed Test ──
           _SettingsGroup(
-            title: 'Network & Speed Test',
+            title: 'Сеть и тестирование задержки',
             children: [
               _SettingTile(
-                label: 'Ping Method',
-                description: 'How server latency is measured',
+                label: 'Метод проверки пинга',
+                description: 'Тип соединения при измерении задержки',
                 tooltip:
-                    'URL: HTTP HEAD timing (most compatible). TCP: raw socket connect (faster, no HTTP). ICMP: ping packet (most accurate, needs admin).',
+                    'HTTP: запрос к тестовому URL. TCP: прямое TCP-рукопожатие с сокетом ноды (быстро и точно). ICMP: эхо-пакет.',
                 difficulty: 2,
                 child: SegmentedButton<String>(
                   segments: const [
-                    ButtonSegment(value: 'url', label: Text('HTTP')),
+                    ButtonSegment(value: 'url', label: Text('HTTP/URL')),
                     ButtonSegment(value: 'tcp', label: Text('TCP')),
                     ButtonSegment(value: 'icmp', label: Text('ICMP')),
                   ],
                   selected: {prefs.pingMethod},
                   onSelectionChanged: (s) =>
                       _update(prefs, pingMethod: s.first),
+                ),
+              ),
+              _SettingTile(
+                label: 'Количество раундов пинга',
+                description: 'Число попыток для усреднения задержки (1–10)',
+                tooltip: 'Больше раундов повышают точность, но увеличивают время проверки.',
+                difficulty: 1,
+                child: SizedBox(
+                  width: 120,
+                  child: TextFormField(
+                    key: ValueKey('ping_rounds_${prefs.pingRounds}'),
+                    spellCheckConfiguration:
+                        const SpellCheckConfiguration.disabled(),
+                    initialValue: prefs.pingRounds.toString(),
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(suffixText: 'раз'),
+                    onChanged: (v) {
+                      final n = int.tryParse(v);
+                      if (n != null && n >= 1 && n <= 10) {
+                        _update(prefs, pingRounds: n);
+                      }
+                    },
+                  ),
+                ),
+              ),
+              _SettingTile(
+                label: 'Таймаут проверки задержки',
+                description: 'Максимальное время ожидания ответа узла в мс',
+                tooltip: 'По умолчанию 2500 мс. Уменьшите для быстрого пропуска неотвечающих нод.',
+                difficulty: 1,
+                child: SizedBox(
+                  width: 140,
+                  child: TextFormField(
+                    key: ValueKey('ping_timeout_${prefs.pingTimeoutMs}'),
+                    spellCheckConfiguration:
+                        const SpellCheckConfiguration.disabled(),
+                    initialValue: prefs.pingTimeoutMs.toString(),
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(suffixText: 'мс'),
+                    onChanged: (v) {
+                      final n = int.tryParse(v);
+                      if (n != null && n >= 300 && n <= 15000) {
+                        _update(prefs, pingTimeoutMs: n);
+                      }
+                    },
+                  ),
+                ),
+              ),
+              _SettingTile(
+                label: 'Тестовый ресурс (URL пинга)',
+                description: 'Адрес для проверки доступности и задержки по HTTP',
+                tooltip: 'Используется при методе URL/HTTP. По умолчанию http://cp.cloudflare.com/generate_204',
+                difficulty: 2,
+                child: SizedBox(
+                  width: 280,
+                  child: TextFormField(
+                    key: ValueKey('test_url_${prefs.testUrl}'),
+                    spellCheckConfiguration:
+                        const SpellCheckConfiguration.disabled(),
+                    initialValue: prefs.testUrl,
+                    decoration: const InputDecoration(hintText: 'https://...'),
+                    onChanged: (v) {
+                      if (v.trim().isNotEmpty) {
+                        _update(prefs, testUrl: v.trim());
+                      }
+                    },
+                  ),
                 ),
               ),
               _SettingTile(
@@ -1181,19 +1260,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // ── Phase 2: Interface & Geo ──
           _SettingsGroup(
-            title: 'Interface & Geo',
+            title: 'Интерфейс и базы GeoIP',
             children: [
               _SettingTile(
-                label: 'Compact Mode',
-                description: 'Denser UI for small displays',
+                label: 'Компактный режим',
+                description: 'Более плотный интерфейс для небольших экранов',
                 child: Switch(
                   value: prefs.compactMode,
                   onChanged: (v) => _update(prefs, compactMode: v),
                 ),
               ),
               _SettingTile(
-                label: 'Auto-update GeoIP/GeoSite',
-                description: 'Download latest routing rule sets weekly',
+                label: 'Автообновление GeoIP/GeoSite',
+                description: 'Еженедельно загружать свежие базы маршрутов',
                 child: Switch(
                   value: prefs.autoUpdateGeo,
                   onChanged: (v) => _update(prefs, autoUpdateGeo: v),
@@ -1204,20 +1283,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // ── Phase 2.5: Backup & Restore ──
           _SettingsGroup(
-            title: 'Backup & Restore',
+            title: 'Резервное копирование и восстановление',
             children: [
               _SettingTile(
-                label: 'Auto-backup',
-                description: 'Periodically save config snapshot',
+                label: 'Автобэкап',
+                description: 'Периодически сохранять снимок конфигурации',
                 child: Switch(
                   value: prefs.backupEnabled,
                   onChanged: (v) => _update(prefs, backupEnabled: v),
                 ),
               ),
               _SettingTile(
-                label: 'Backup folder',
+                label: 'Папка резервных копий',
                 description: prefs.backupPath.isEmpty
-                    ? 'Choose where snapshots are saved'
+                    ? 'Выберите папку для сохранения снимков'
                     : prefs.backupPath,
                 child: TextButton.icon(
                   icon: const Icon(Icons.folder_open_outlined, size: 18),
@@ -1292,10 +1371,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             children: [
               _SettingTile(
                 label: 'MosaicVPN',
-                description: 'v${AppConfig.appVersion}',
-                child: IconButton(
-                  icon: const Icon(Icons.info_outline, size: 20),
-                  onPressed: () => _showAboutDialog(context),
+                description: 'Версия v${AppConfig.appVersion} · Сборка готова к работе',
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.end,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.sync_rounded, size: 16),
+                      label: const Text('Обновления'),
+                      onPressed: () async {
+                        final scaffoldMessenger = ScaffoldMessenger.of(context);
+                        scaffoldMessenger.showSnackBar(
+                          const SnackBar(
+                            content: Text('Проверка обновлений MosaicVPN...'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                        final update = await AppUpdateService.instance.checkForUpdate();
+                        if (!context.mounted) return;
+                        if (update != null) {
+                          AppUpdateService.instance.checkAndShowPrompt(context);
+                        } else {
+                          scaffoldMessenger.showSnackBar(
+                            const SnackBar(
+                              content: Text('У вас установлена самая актуальная версия (v${AppConfig.appVersion})!'),
+                              duration: Duration(seconds: 3),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.info_outline, size: 20),
+                      tooltip: 'О приложении',
+                      onPressed: () => _showAboutDialog(context),
+                    ),
+                  ],
                 ),
               ),
               _SettingTile(
@@ -1448,6 +1561,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       bool? killSwitch,
       bool? allowLAN,
       bool? blockIPv6,
+      bool? adBlock,
       String? dnsMode,
       String? dnsProxied,
       String? dnsDirect,
@@ -1469,6 +1583,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       String? shareAddr,
       // ── Phase 2 fields ──
       String? pingMethod,
+      int? pingRounds,
+      int? pingTimeoutMs,
       String? routingMode,
       String? tlsFingerprint,
       bool? muxEnabled,
@@ -1508,6 +1624,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       killSwitch: killSwitch,
       allowLAN: allowLAN,
       blockIPv6: blockIPv6,
+      adBlock: adBlock,
       dnsMode: dnsMode,
       dnsProxied: dnsProxied,
       dnsDirect: dnsDirect,
@@ -1528,6 +1645,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       shareLAN: shareLAN,
       shareAddr: shareAddr,
       pingMethod: pingMethod,
+      pingRounds: pingRounds,
+      pingTimeoutMs: pingTimeoutMs,
       routingMode: routingMode,
       tlsFingerprint: tlsFingerprint,
       muxEnabled: muxEnabled,
@@ -1608,6 +1727,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         before.killSwitch != after.killSwitch ||
         before.allowLAN != after.allowLAN ||
         before.blockIPv6 != after.blockIPv6 ||
+        before.adBlock != after.adBlock ||
         before.dnsMode != after.dnsMode ||
         before.dnsProxied != after.dnsProxied ||
         before.dnsProvider != after.dnsProvider ||

@@ -37,6 +37,7 @@ import '../features/account/unified_account_panel.dart'
     show unifiedAccountProvider;
 import '../features/groups/groups_screen.dart';
 import '../features/more/more_screen.dart';
+import '../core/services/app_update_service.dart';
 
 /// Root shell with bottom navigation (and sidebar on desktop/wide screens) and tab caching via IndexedStack.
 ///
@@ -169,6 +170,9 @@ class _AppShellState extends ConsumerState<AppShell>
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _completeWebsiteEnrollment();
+      if (mounted) {
+        AppUpdateService.instance.checkAndShowPrompt(context);
+      }
     });
   }
 

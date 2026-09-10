@@ -140,6 +140,7 @@ type Prefs struct {
 	AllowLAN            bool     `json:"allow_lan"`
 	BypassProcesses     []string `json:"bypass_processes,omitempty"`
 	BlockIPv6           bool     `json:"block_ipv6"`
+	AdBlock             bool     `json:"ad_block"`
 	DNSMode             string   `json:"dns_mode"` // "fake-ip" | "real-ip"
 	DNSProxied          string   `json:"dns_proxied"`
 	DNSDirect           string   `json:"dns_direct"`

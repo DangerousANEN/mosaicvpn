@@ -15,7 +15,18 @@ class UiPreferencesService {
   static const _lastConnectedRouteIdKey = 'ui.last_connected_route_id';
   static const _autoFailoverKey = 'ui.auto_failover';
   static const _bypassRussianSitesKey = 'ui.bypass_russian_sites';
+  static const _adBlockKey = 'ui.ad_block';
   static const _dismissedHintsKey = 'ui.dismissed_hints';
+
+  Future<bool> readAdBlock() async {
+    final preferences = await SharedPreferences.getInstance();
+    return preferences.getBool(_adBlockKey) ?? false;
+  }
+
+  Future<void> writeAdBlock(bool value) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(_adBlockKey, value);
+  }
 
   Future<bool> readAutoFailover() async {
     final preferences = await SharedPreferences.getInstance();

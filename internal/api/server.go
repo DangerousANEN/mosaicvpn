@@ -148,9 +148,9 @@ func (s *Server) Listen(ctx context.Context) (string, func(context.Context) erro
 
 func (s *Server) routes() {
 	mcpServer := mcp.NewServer(s.store, s.mgr)
+	mcpServer.SetToken(s.token)
 	s.mux.Handle("/mcp", mcpServer)
-	s.mux.Handle("POST /mcp", mcpServer)
-	s.mux.Handle("GET /mcp", mcpServer)
+	s.mux.Handle("/mcp/", mcpServer)
 
 	s.mux.HandleFunc("GET /v1/status", s.handleStatus)
 	s.mux.HandleFunc("POST /v1/connect", s.handleConnect)

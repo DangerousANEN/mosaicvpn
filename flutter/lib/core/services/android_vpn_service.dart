@@ -71,10 +71,14 @@ class AndroidVpnService {
     return (await _channel.invokeMethod<bool>('prepare')) ?? false;
   }
 
-  Future<AndroidVpnRuntimeState> start(String singBoxConfig) async {
+  Future<AndroidVpnRuntimeState> start(
+    String singBoxConfig, {
+    String? routeTitle,
+  }) async {
     _ensureSupported();
     final raw = await _channel.invokeMapMethod<Object?, Object?>('start', {
       'config': singBoxConfig,
+      if (routeTitle != null && routeTitle.isNotEmpty) 'routeTitle': routeTitle,
     });
     return AndroidVpnRuntimeState.fromMap(raw ?? const {});
   }
@@ -84,10 +88,11 @@ class AndroidVpnService {
   /// must not treat the initial `connecting` reply as a ready tunnel.
   Future<AndroidVpnRuntimeState> startAndAwaitReady(
     String singBoxConfig, {
+    String? routeTitle,
     Duration timeout = const Duration(seconds: 12),
   }) async {
     await validateConfig(singBoxConfig);
-    var state = await start(singBoxConfig);
+    var state = await start(singBoxConfig, routeTitle: routeTitle);
     final deadline = DateTime.now().add(timeout);
     while (state.isBusy && DateTime.now().isBefore(deadline)) {
       await Future<void>.delayed(const Duration(milliseconds: 180));

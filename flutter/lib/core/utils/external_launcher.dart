@@ -8,12 +8,20 @@ class ExternalLauncher {
   /// then fallback to browser URL (https://t.me/...), handling platform quirks.
   static Future<bool> openTelegram(String username, {String? startParam}) async {
     final cleanUsername = username.replaceAll('@', '').trim();
-    final param = (startParam != null && startParam.isNotEmpty)
-        ? '?start=$startParam'
-        : '';
 
-    final nativeUri = Uri.parse('tg://resolve?domain=$cleanUsername${param.replaceAll('?', '&')}');
-    final webUri = Uri.parse('https://t.me/$cleanUsername$param');
+    final nativeUri = Uri(
+      scheme: 'tg',
+      host: 'resolve',
+      queryParameters: {
+        'domain': cleanUsername,
+        if (startParam != null && startParam.isNotEmpty) 'start': startParam,
+      },
+    );
+    final webUri = Uri.https(
+      't.me',
+      '/$cleanUsername',
+      (startParam != null && startParam.isNotEmpty) ? {'start': startParam} : null,
+    );
 
     try {
       // 1. Try native telegram scheme first
