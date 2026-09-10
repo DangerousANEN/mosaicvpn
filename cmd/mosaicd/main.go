@@ -23,6 +23,7 @@ import (
 	"github.com/pupspochta-cpu/mosaicvpn/internal/api"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/billing"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/logx"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/netmemory"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/paths"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/single"
@@ -80,6 +81,21 @@ func run(dataDirOverride string) error {
 		backend = state.NewUnavailableBackend(state.ErrRuntimeUnavailable)
 	}
 	mgr := state.New(store, backend, Version)
+
+	// Adaptive per-network route memory: the truth-check's verdict is recorded
+	// against a salted fingerprint of the current network, so a route blocked
+	// by one operator stops being tried first there without penalising it
+	// everywhere else. Restore what previous sessions learned.
+	routeMem := netmemory.New()
+	if saved := store.RouteMemory(); saved != nil {
+		routeMem.Load(saved)
+	}
+	mgr.EnableRouteMemory(routeMem, nil)
+	// Roaming devices accumulate networks; drop knowledge older than 30 days so
+	// the ledger cannot grow without bound.
+	if dropped := mgr.PruneRouteMemory(30 * 24 * time.Hour); dropped > 0 {
+		logx.Info("pruned stale route memory", "entries", dropped)
+	}
 
 	apiSrv := api.NewServer(store, mgr, nil)
 	// Official builds pair against MosaicVPN by default. Self-hosted operators

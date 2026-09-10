@@ -494,6 +494,17 @@ class DaemonApi implements DaemonApiBase {
     return r.data;
   }
 
+  @override
+  Future<Map<String, dynamic>> runDiagnostics() async {
+    // The daemon bounds this at 30s; allow a little more so a slow-but-working
+    // run reports its findings instead of surfacing a client-side timeout.
+    final r = await _dio.post(
+      '/v1/diag/run',
+      options: Options(receiveTimeout: const Duration(seconds: 45)),
+    );
+    return Map<String, dynamic>.from(r.data as Map);
+  }
+
   // ─── Egresses (multi-proxy listeners) ──────────────────────────────
 
   @override

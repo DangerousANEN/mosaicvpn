@@ -261,6 +261,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/import/link", s.handleImportLink)
 
 	s.mux.HandleFunc("GET /v1/diag", s.handleDiag)
+	// Active diagnostics: unlike /v1/diag (a state dump), this actually probes
+	// the connection so a user can self-serve the common failures instead of
+	// opening a support thread.
+	s.mux.HandleFunc("POST /v1/diag/run", s.handleDiagRun)
 	s.mux.HandleFunc("GET /v1/events", s.handleEvents)
 
 	// Egresses (multi-proxy listeners)
@@ -1316,6 +1320,16 @@ func (s *Server) handleDiag(w http.ResponseWriter, _ *http.Request) {
 		ServerCount:   len(snap.Servers),
 		RuleCount:     len(snap.Rules),
 	})
+}
+
+// handleDiagRun executes the active connection diagnostics.
+//
+// Bounded by its own timeout so a hung network cannot leave the request
+// pending forever — the user is waiting on this with a spinner.
+func (s *Server) handleDiagRun(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	writeJSON(w, http.StatusOK, s.mgr.RunDiagnostics(ctx))
 }
 
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {

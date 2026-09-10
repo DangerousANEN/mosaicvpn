@@ -125,6 +125,178 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     _activeRoute = route;
   }
 
+  /// Runs the same diagnostic suite as the desktop daemon, natively.
+  ///
+  /// Android has no loopback daemon, so without this the call would fall
+  /// through to [UnavailableDaemonApi.noSuchMethod] and throw — leaving the
+  /// feature broken on the platform most users are on. Once the TUN is up the
+  /// runtime owns the system routes, so ordinary requests from this isolate
+  /// already travel through the tunnel and need no SOCKS endpoint.
+  @override
+  Future<Map<String, dynamic>> runDiagnostics() async {
+    final connected = _activeRoute != null &&
+        (await AndroidVpnService.instance.status()).isConnected;
+
+    final checks = await Future.wait<Map<String, dynamic>>([
+      _diagClockSkew(),
+      _diagDns(),
+      _diagTraffic(connected),
+      _diagMtu(connected),
+    ]);
+
+    final failures =
+        checks.where((c) => c['severity'] == 'fail').length;
+    final warnings =
+        checks.where((c) => c['severity'] == 'warn').length;
+
+    return {
+      'generated_at': DateTime.now().toUtc().toIso8601String(),
+      'healthy': failures == 0,
+      'summary': failures > 0
+          ? 'Найдено проблем: $failures'
+          : warnings > 0
+              ? 'Предупреждений: $warnings'
+              : 'Всё в порядке',
+      'checks': checks,
+    };
+  }
+
+  Map<String, dynamic> _check(
+    String id,
+    String title,
+    String severity,
+    String detail, {
+    String? hint,
+    int durationMs = 0,
+  }) =>
+      {
+        'id': id,
+        'title': title,
+        'ok': severity == 'ok',
+        'severity': severity,
+        'detail': detail,
+        if (hint != null) 'hint': hint,
+        'duration_ms': durationMs,
+      };
+
+  /// A skewed clock fails TLS certificate validation with an error that talks
+  /// about certificates, not time — sending users down the wrong path.
+  Future<Map<String, dynamic>> _diagClockSkew() async {
+    final sw = Stopwatch()..start();
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+    try {
+      final req = await client
+          .headUrl(Uri.parse('https://cloudflare.com'))
+          .timeout(const Duration(seconds: 8));
+      final resp = await req.close().timeout(const Duration(seconds: 8));
+      await resp.drain<void>();
+      final dateHeader = resp.headers.value('date');
+      if (dateHeader == null) {
+        return _check('clock', 'Системное время', 'warn',
+            'сервер не сообщил время',
+            durationMs: sw.elapsedMilliseconds);
+      }
+      final serverTime = HttpDate.parse(dateHeader);
+      final skew = DateTime.now().toUtc().difference(serverTime.toUtc()).abs();
+      if (skew > const Duration(minutes: 5)) {
+        return _check('clock', 'Системное время', 'fail',
+            'расхождение ${skew.inSeconds} с — TLS-соединения будут отклоняться',
+            hint: 'Включите автоматическую установку даты и времени.',
+            durationMs: sw.elapsedMilliseconds);
+      }
+      if (skew > const Duration(seconds: 60)) {
+        return _check('clock', 'Системное время', 'warn',
+            'расхождение ${skew.inSeconds} с',
+            hint: 'Стоит включить синхронизацию времени.',
+            durationMs: sw.elapsedMilliseconds);
+      }
+      return _check('clock', 'Системное время', 'ok',
+          'точность ${skew.inSeconds} с',
+          durationMs: sw.elapsedMilliseconds);
+    } catch (_) {
+      return _check('clock', 'Системное время', 'warn',
+          'не удалось сверить время (нет соединения)',
+          durationMs: sw.elapsedMilliseconds);
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<Map<String, dynamic>> _diagDns() async {
+    final sw = Stopwatch()..start();
+    try {
+      final addrs = await InternetAddress.lookup('cloudflare.com')
+          .timeout(const Duration(seconds: 6));
+      if (addrs.isEmpty) {
+        return _check('dns', 'DNS', 'fail', 'ответ пустой',
+            hint: 'Попробуйте другой DNS-сервер в настройках.',
+            durationMs: sw.elapsedMilliseconds);
+      }
+      return _check('dns', 'DNS', 'ok',
+          'разрешается (${addrs.length} адрес(ов))',
+          durationMs: sw.elapsedMilliseconds);
+    } catch (_) {
+      return _check('dns', 'DNS', 'fail', 'имена не разрешаются',
+          hint: 'Проверьте сеть или смените DNS в настройках приложения.',
+          durationMs: sw.elapsedMilliseconds);
+    }
+  }
+
+  Future<Map<String, dynamic>> _diagTraffic(bool connected) async {
+    if (!connected) {
+      return _check('traffic', 'Трафик через туннель', 'ok',
+          'проверка пропущена: VPN отключён');
+    }
+    final sw = Stopwatch()..start();
+    final ok = await _verifyTunnelCarriesTraffic(attempts: 2);
+    if (ok) {
+      return _check('traffic', 'Трафик через туннель', 'ok',
+          'данные проходят, ${sw.elapsedMilliseconds} мс',
+          durationMs: sw.elapsedMilliseconds);
+    }
+    return _check('traffic', 'Трафик через туннель', 'fail',
+        'туннель подключён, но данные не проходят',
+        hint: 'Переподключитесь — приложение выберет другой маршрут.',
+        durationMs: sw.elapsedMilliseconds);
+  }
+
+  /// An oversized MTU lets small requests through while large transfers hang,
+  /// which users report as "slow" rather than "broken".
+  Future<Map<String, dynamic>> _diagMtu(bool connected) async {
+    if (!connected) {
+      return _check('mtu', 'Размер пакета (MTU)', 'ok',
+          'проверка пропущена: VPN отключён');
+    }
+    final sw = Stopwatch()..start();
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 12);
+    try {
+      final req = await client
+          .getUrl(Uri.parse('https://speed.cloudflare.com/__down?bytes=200000'))
+          .timeout(const Duration(seconds: 12));
+      final resp = await req.close().timeout(const Duration(seconds: 12));
+      var total = 0;
+      await for (final chunk in resp) {
+        total += chunk.length;
+      }
+      if (total < 100000) {
+        return _check('mtu', 'Размер пакета (MTU)', 'warn',
+            'передача оборвалась на $total байт',
+            hint: 'Уменьшите MTU в настройках подключения.',
+            durationMs: sw.elapsedMilliseconds);
+      }
+      return _check('mtu', 'Размер пакета (MTU)', 'ok',
+          'крупные пакеты проходят',
+          durationMs: sw.elapsedMilliseconds);
+    } catch (_) {
+      return _check('mtu', 'Размер пакета (MTU)', 'warn',
+          'крупные передачи не проходят — возможна проблема с MTU',
+          hint: 'Уменьшите MTU в настройках подключения (например, до 1280).',
+          durationMs: sw.elapsedMilliseconds);
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   /// Probes a small, highly-available endpoint through the live tunnel.
   ///
   /// On Android the runtime owns the system routes once the TUN is up, so a

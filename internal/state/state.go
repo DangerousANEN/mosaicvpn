@@ -23,6 +23,7 @@ import (
 
 	"github.com/pupspochta-cpu/mosaicvpn/internal/elevate"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/logx"
+	"github.com/pupspochta-cpu/mosaicvpn/internal/netmemory"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/store"
 )
@@ -93,8 +94,14 @@ type Manager struct {
 	// backends that cannot be probed over SOCKS fall through harmlessly
 	// because verifyActiveTunnel trusts backends without a proxy listener.
 	verifyPolicy VerifyPolicy
-	pid          int
-	started      time.Time
+	// routeMemory remembers which routes actually carried traffic, keyed by
+	// network. It is fed by the truth-check, which is the strongest signal we
+	// have, and consulted when ranking candidates. Nil disables the feature.
+	routeMemory *netmemory.Memory
+	// netFingerprint identifies the current network; overridable for tests.
+	netFingerprint func() string
+	pid            int
+	started        time.Time
 }
 
 // New constructs a Manager around an existing store and backend.
@@ -180,6 +187,10 @@ var ErrTunnelUnverified = errors.New("tunnel started but carried no traffic")
 // It returns the ID that finally verified plus the candidates that were
 // rejected, so callers can surface an honest "switched route" note.
 func (m *Manager) ConnectWithFallbacks(ctx context.Context, primary string, fallbacks []string) (string, []string, error) {
+	// Consult what we remember about this specific network before dialling:
+	// the resolver ranks by latency and load, which cannot know that a route
+	// is blocked by this particular operator.
+	primary, fallbacks = m.applyRouteMemory(primary, fallbacks)
 	return walkCandidates(ctx, primary, fallbacks, m.Connect)
 }
 
@@ -283,7 +294,12 @@ func (m *Manager) Connect(ctx context.Context, serverID string) error {
 	})
 	m.mu.Unlock()
 
-	if res := m.verifyActiveTunnel(cctx, m.verifyPolicy); !res.OK {
+	verifyResult := m.verifyActiveTunnel(cctx, m.verifyPolicy)
+	verifyLatency := verifyResult.LatencyMS
+	if res := verifyResult; !res.OK {
+		// Remember that this route did not carry traffic on this network, so
+		// the next attempt ranks it below routes with a proven record.
+		m.rememberOutcome(serverID, false, 0)
 		// Do not leave a black-holing core running: it would keep the system
 		// routes hijacked while moving no data.
 		reason := describeVerifyFailure(res)
@@ -307,6 +323,10 @@ func (m *Manager) Connect(ctx context.Context, serverID string) error {
 		m.mu.Unlock()
 		return fmt.Errorf("%w: %s", ErrTunnelUnverified, reason)
 	}
+
+	// The tunnel proved itself: remember that this route works on this
+	// network so it ranks first next time we are here.
+	m.rememberOutcome(serverID, true, verifyLatency)
 
 	m.mu.Lock()
 	m.transitionLocked(proto.Status{

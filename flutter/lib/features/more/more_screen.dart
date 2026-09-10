@@ -7,6 +7,7 @@ import '../profiles/profiles_screen.dart';
 import '../routing/routing_screen.dart';
 import '../connections/connections_screen.dart';
 import '../stats/stats_screen.dart';
+import '../diagnostics/diagnostics_screen.dart';
 import '../speedtest/speedtest_screen.dart';
 import '../logs/logs_screen.dart';
 import '../settings/settings_screen.dart';
@@ -63,6 +64,12 @@ class MoreScreen extends StatelessWidget {
         subtitle: 'Traffic statistics and graphs',
         icon: Icons.bar_chart_outlined,
         builder: (_) => const StatsScreen(),
+      ),
+      _MoreItem(
+        title: s.t('diagnostics'),
+        subtitle: 'Clock, DNS, tunnel traffic, IPv6 leak and MTU',
+        icon: Icons.health_and_safety_outlined,
+        builder: (_) => const DiagnosticsScreen(),
       ),
       _MoreItem(
         title: s.t('speed'),

@@ -64,6 +64,7 @@ void main() {
     // are not built at all on a 390x844 viewport — each one must be scrolled
     // into view before it can be found.
     const expectedSubtitles = <String>[
+      'Clock, DNS, tunnel traffic, IPv6 leak and MTU',
       'Subscription-scoped profiles, traffic and payments',
       'Subscriptions, smart groups and your own nodes',
       'Named configurations and presets',

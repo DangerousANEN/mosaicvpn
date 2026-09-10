@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pupspochta-cpu/mosaicvpn/internal/netmemory"
 	"github.com/pupspochta-cpu/mosaicvpn/internal/proto"
 )
 
@@ -37,6 +38,11 @@ type State struct {
 	ActiveProfileID string               `json:"active_profile_id,omitempty"`
 	Egresses        []proto.Egress       `json:"egresses,omitempty"`
 	AntiDPI         proto.AntiDPIConfig  `json:"anti_dpi,omitempty"`
+	// RouteMemory remembers, per network fingerprint, which routes actually
+	// carried traffic. Fed by the runtime truth-check so the client can rank
+	// routes by proven behaviour on THIS network instead of latency alone.
+	// The network key is a salted hash, never a raw SSID or address.
+	RouteMemory map[string]map[string]netmemory.RouteStat `json:"route_memory,omitempty"`
 	// ActiveManifest is retained as a legacy compatibility view. New code must
 	// resolve manifests by provider subscription ID through ProviderManifests.
 	ActiveManifest    *proto.SubscriptionManifest            `json:"active_manifest,omitempty"`
@@ -742,6 +748,28 @@ func (s *Store) SetLastGroup(id string) error {
 		st.LastGroupID = id
 		return nil
 	})
+}
+
+// SaveRouteMemory persists the per-network route ledger.
+//
+// Called after a connection attempt resolves, so the knowledge survives a
+// restart — a ledger that only lives in RAM would relearn every block from
+// scratch on each launch, which is exactly when the user least wants to wait.
+func (s *Store) SaveRouteMemory(data map[string]map[string]netmemory.RouteStat) error {
+	if data == nil {
+		return nil
+	}
+	return s.Update(func(st *State) error {
+		st.RouteMemory = data
+		return nil
+	})
+}
+
+// RouteMemory returns the persisted ledger, or nil when nothing is stored.
+func (s *Store) RouteMemory() map[string]map[string]netmemory.RouteStat {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.state.RouteMemory
 }
 
 // LastGroup returns the last group that produced a working connection.

@@ -167,6 +167,12 @@ abstract class DaemonApiBase {
 
   Future<Map<String, dynamic>> getDiag();
 
+  /// Runs active connection diagnostics: clock skew, DNS, real traffic through
+  /// the tunnel, IPv6 leak and MTU. Unlike [getDiag] (a state dump) this
+  /// actually probes the connection, so a user can self-diagnose the common
+  /// failures instead of opening a support thread.
+  Future<Map<String, dynamic>> runDiagnostics();
+
   // ─── Egresses ─────────────────────────────────────────────────────
 
   Future<List<Egress>> listEgresses();

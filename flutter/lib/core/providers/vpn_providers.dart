@@ -427,6 +427,10 @@ class _ResolvedDaemonApi implements DaemonApiBase {
       (await _backend()).importLink(link);
   @override
   Future<Map<String, dynamic>> getDiag() async => (await _backend()).getDiag();
+
+  @override
+  Future<Map<String, dynamic>> runDiagnostics() async =>
+      (await _backend()).runDiagnostics();
   @override
   Future<List<Egress>> listEgresses() async =>
       (await _backend()).listEgresses();

@@ -1518,6 +1518,60 @@ class MockDaemonApi implements DaemonApiBase {
   // ─── Diag ─────────────────────────────────────────────────────────
 
   @override
+  Future<Map<String, dynamic>> runDiagnostics() async {
+    await _delayVoid();
+    // Mirrors the daemon's report shape so UI work can proceed against the
+    // mock without a running daemon.
+    return {
+      'generated_at': DateTime.now().toUtc().toIso8601String(),
+      'healthy': true,
+      'summary': 'Всё в порядке',
+      'checks': [
+        {
+          'id': 'clock',
+          'title': 'Системное время',
+          'ok': true,
+          'severity': 'ok',
+          'detail': 'точность 0s',
+          'duration_ms': 120,
+        },
+        {
+          'id': 'dns',
+          'title': 'DNS',
+          'ok': true,
+          'severity': 'ok',
+          'detail': 'разрешается (2 адрес(ов))',
+          'duration_ms': 15,
+        },
+        {
+          'id': 'traffic',
+          'title': 'Трафик через туннель',
+          'ok': true,
+          'severity': 'ok',
+          'detail': 'данные проходят, задержка 42 мс',
+          'duration_ms': 210,
+        },
+        {
+          'id': 'ipv6',
+          'title': 'Утечка IPv6',
+          'ok': true,
+          'severity': 'ok',
+          'detail': 'IPv6 не обходит туннель',
+          'duration_ms': 30,
+        },
+        {
+          'id': 'mtu',
+          'title': 'Размер пакета (MTU)',
+          'ok': true,
+          'severity': 'ok',
+          'detail': 'крупные пакеты проходят',
+          'duration_ms': 480,
+        },
+      ],
+    };
+  }
+
+  @override
   Future<Map<String, dynamic>> getDiag() async {
     await _delayVoid();
     return {
