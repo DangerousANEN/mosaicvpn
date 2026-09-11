@@ -1090,9 +1090,11 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     if (row.disabled) return;
     final currentSelectedId = ref.read(selectedRouteIdProvider);
     if (currentSelectedId == row.id) {
+      unawaited(HapticFeedback.mediumImpact());
       _connect(row);
       return;
     }
+    unawaited(HapticFeedback.selectionClick());
     ref.read(selectedRouteIdProvider.notifier).set(row.id);
   }
 
@@ -2307,6 +2309,7 @@ class _RouteTable extends StatelessWidget {
       return _MobileRouteList(
         rows: rows,
         activeId: activeId,
+        selectedId: selectedId,
         connectingId: connectingId,
         onConnect: onConnect,
         onPrimaryAction: onPrimaryAction,
@@ -2444,7 +2447,7 @@ class _RouteTable extends StatelessWidget {
                     }
                   },
                   child: _cell(
-                      context, row, column, connected, connecting, widths),
+                      context, row, column, connected, connecting, selected, widths),
                 ),
               ))
           .toList(growable: false),
@@ -2519,7 +2522,7 @@ class _RouteTable extends StatelessWidget {
   }
 
   Widget _cell(BuildContext context, _RouteRow row, _RouteColumn column,
-      bool connected, bool connecting, Map<_RouteColumn, double> widths) {
+      bool connected, bool connecting, bool selected, Map<_RouteColumn, double> widths) {
     final colors = ThemeColors.of(context);
     final width = widths[column] ?? _effectiveWidth(column);
     final disabledColor = AtlasTheme.error;
@@ -2580,16 +2583,28 @@ class _RouteTable extends StatelessWidget {
       _RouteColumn.traffic => text(row.traffic),
       _RouteColumn.action => SizedBox(
           width: width,
-          child: IconButton(
-            tooltip: connected ? 'Отключить' : 'Подключиться',
-            onPressed: row.disabled || connecting ? null : () => onConnect(row),
-            icon: Icon(
-              connected
-                  ? Icons.check_circle_outline_rounded
-                  : Icons.play_circle_outline_rounded,
-              color: connected ? AtlasTheme.success : AtlasTheme.accent,
-            ),
-          ),
+          child: selected && !connected && !connecting
+              ? Tooltip(
+                  message: 'Нажмите для подключения',
+                  child: IconButton(
+                    onPressed: () => onConnect(row),
+                    icon: const Icon(
+                      Icons.play_circle_fill_rounded,
+                      color: AtlasTheme.accent,
+                    ),
+                  ),
+                )
+              : IconButton(
+                  tooltip: connected ? 'Отключить' : 'Подключиться',
+                  onPressed:
+                      row.disabled || connecting ? null : () => onConnect(row),
+                  icon: Icon(
+                    connected
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.play_circle_outline_rounded,
+                    color: connected ? AtlasTheme.success : AtlasTheme.accent,
+                  ),
+                ),
         ),
     };
   }
@@ -2718,10 +2733,112 @@ class _RouteTableLayout {
   final Map<_RouteColumn, double> widths;
 }
 
+/// Animated pulsing badge indicating that the route is selected and a second tap will connect.
+class _PulsingConnectBadge extends StatefulWidget {
+  const _PulsingConnectBadge({
+    required this.onTap,
+    this.compact = false,
+  });
+
+  final VoidCallback onTap;
+  final bool compact;
+
+  @override
+  State<_PulsingConnectBadge> createState() => _PulsingConnectBadgeState();
+}
+
+class _PulsingConnectBadgeState extends State<_PulsingConnectBadge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _scale;
+  late final Animation<double> _glow;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+    _scale = Tween<double>(begin: 0.96, end: 1.04).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+    _glow = Tween<double>(begin: 0.18, end: 0.42).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: _scale.value,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: widget.onTap,
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: EdgeInsets.symmetric(
+                  horizontal: widget.compact ? 8 : 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: AtlasTheme.accent.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: AtlasTheme.accent,
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AtlasTheme.accent.withValues(alpha: _glow.value),
+                      blurRadius: 8,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.touch_app_rounded,
+                      size: 14,
+                      color: AtlasTheme.accent,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      widget.compact ? 'Подключить' : 'Нажмите для запуска',
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: AtlasTheme.accent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _MobileRouteList extends StatelessWidget {
   const _MobileRouteList({
     required this.rows,
     required this.activeId,
+    required this.selectedId,
     required this.connectingId,
     required this.onConnect,
     required this.onPrimaryAction,
@@ -2734,6 +2851,7 @@ class _MobileRouteList extends StatelessWidget {
 
   final List<_RouteRow> rows;
   final String? activeId;
+  final String? selectedId;
   final String? connectingId;
   final ValueChanged<_RouteRow> onConnect;
   final ValueChanged<_RouteRow> onPrimaryAction;
@@ -2827,67 +2945,104 @@ class _MobileRouteList extends StatelessWidget {
           final row = rows[index];
           final connected = activeId == row.id || activeId == 'group:${row.id}';
           final connecting = connectingId == row.id;
-          return ListTile(
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-            enabled: !row.disabled && !connecting,
-            leading: Icon(row.icon,
-                color: row.disabled ? colors.textMuted : colors.textSecondary),
-            title: Text(row.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: row.disabled ? colors.textMuted : colors.textPrimary,
-                  fontWeight: FontWeight.w700,
-                )),
-            subtitle: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '${row.type} · ',
-                  style: TextStyle(color: colors.textSecondary),
-                ),
-                Text(
-                  row.ping == null
-                      ? 'Не проверен'
-                      : row.ping! < 0
-                          ? 'Недоступен'
-                          : '${row.ping} мс',
-                  style: TextStyle(
-                    color: row.ping == null
-                        ? colors.textSecondary
-                        : row.ping! < 0
-                            ? AtlasTheme.error
-                            : row.ping! <= 150
-                                ? AtlasTheme.success
-                                : row.ping! <= 300
-                                    ? AtlasTheme.warning
-                                    : AtlasTheme.error,
-                    fontWeight: row.ping != null ? FontWeight.w600 : null,
-                  ),
-                ),
-              ],
+          final selected = selectedId == row.id && !connected && !connecting;
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            decoration: BoxDecoration(
+              color: selected
+                  ? AtlasTheme.accent.withValues(alpha: 0.10)
+                  : connected
+                      ? AtlasTheme.success.withValues(alpha: 0.08)
+                      : null,
+              borderRadius: BorderRadius.circular(12),
+              border: selected
+                  ? Border.all(color: AtlasTheme.accent, width: 1.5)
+                  : null,
             ),
-            trailing: connecting
-                ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Row(mainAxisSize: MainAxisSize.min, children: [
-                    if (connected)
-                      const Icon(Icons.check_circle_rounded,
-                          color: AtlasTheme.success, size: 20),
-                    IconButton(
-                      tooltip: 'Действия маршрута',
-                      icon: const Icon(Icons.more_vert_rounded),
-                      onPressed: () => _actions(context, row),
-                    ),
-                  ]),
-            onTap: row.disabled || connecting
-                ? null
-                : () => onPrimaryAction(row),
-            onLongPress: () => _actions(context, row),
+            child: Material(
+              color: Colors.transparent,
+              child: ListTile(
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                enabled: !row.disabled && !connecting,
+                leading: Icon(row.icon,
+                    color: row.disabled
+                        ? colors.textMuted
+                        : (selected ? AtlasTheme.accent : colors.textSecondary)),
+                title: Text(row.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: row.disabled
+                          ? colors.textMuted
+                          : (selected ? AtlasTheme.accent : colors.textPrimary),
+                      fontWeight: FontWeight.w700,
+                    )),
+                subtitle: selected
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.touch_app_rounded,
+                              size: 13,
+                              color: AtlasTheme.accent,
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                'Нажмите ещё раз для подключения',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: AtlasTheme.accent,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          '${row.type} · ${row.ping == null ? 'Не проверен' : row.ping! < 0 ? 'Недоступен' : '${row.ping} мс'}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: colors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                trailing: connecting
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Row(mainAxisSize: MainAxisSize.min, children: [
+                        if (connected)
+                          const Icon(Icons.check_circle_rounded,
+                              color: AtlasTheme.success, size: 20)
+                        else if (selected)
+                          _PulsingConnectBadge(
+                            compact: true,
+                            onTap: () => onPrimaryAction(row),
+                          ),
+                        IconButton(
+                          tooltip: 'Действия маршрута',
+                          icon: const Icon(Icons.more_vert_rounded),
+                          onPressed: () => _actions(context, row),
+                        ),
+                      ]),
+                onTap: row.disabled || connecting
+                    ? null
+                    : () => onPrimaryAction(row),
+                onLongPress: () => _actions(context, row),
+              ),
+            ),
           );
         },
       ),

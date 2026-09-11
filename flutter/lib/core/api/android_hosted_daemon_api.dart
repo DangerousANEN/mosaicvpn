@@ -306,12 +306,16 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   /// Requires a real HTTP response: a TCP handshake or an ICMP echo can still
   /// succeed against a proxy that black-holes payload.
   Future<bool> _verifyTunnelCarriesTraffic({
-    int attempts = 3,
-    Duration perAttemptTimeout = const Duration(seconds: 6),
-    Duration backoff = const Duration(milliseconds: 1500),
+    int attempts = 4,
+    Duration perAttemptTimeout = const Duration(seconds: 5),
+    Duration backoff = const Duration(milliseconds: 1200),
   }) async {
+    // Give the freshly raised TUN interface and urltest group a brief moment to settle.
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+
     const targets = <String>[
       'https://cp.cloudflare.com/generate_204',
+      'http://1.1.1.1/generate_204',
       'https://www.gstatic.com/generate_204',
       'https://captive.apple.com/hotspot-detect.html',
     ];
@@ -493,17 +497,42 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
             autoFailover: perApp.autoFailover,
             adBlock: perApp.adBlock,
           );
-    await _startNativeRoute(
-      config: config,
-      route: Server(
-        id: group.id,
-        name: group.title.isEmpty ? group.id : group.title,
-        protocol: Protocol.custom,
-        tag: group.id,
-        outboundTag: group.id,
-        subscriptionID: resolved.$1.id,
-      ),
+
+    final routeServer = Server(
+      id: group.id,
+      name: group.title.isEmpty ? group.id : group.title,
+      protocol: Protocol.custom,
+      tag: group.id,
+      outboundTag: group.id,
+      subscriptionID: resolved.$1.id,
     );
+
+    try {
+      await _startNativeRoute(
+        config: config,
+        route: routeServer,
+      );
+    } on StateError catch (e) {
+      if (group.routeType != 'direct' &&
+          e.message.contains('Туннель запустился, но не пропускает трафик')) {
+        // Fallback to the provider direct physical route so user connectivity is preserved.
+        final directConfig =
+            await _account.buildNativeTunConfigFromSubscriptionUrl(
+          resolved.$1.url,
+          bypassPackages: perApp.bypassPackages,
+          proxyPackages: perApp.proxyPackages,
+          bypassRussianSites: perApp.bypassRussian,
+          autoFailover: perApp.autoFailover,
+          adBlock: perApp.adBlock,
+        );
+        await _startNativeRoute(
+          config: directConfig,
+          route: routeServer,
+        );
+        return;
+      }
+      rethrow;
+    }
   }
 
   @override

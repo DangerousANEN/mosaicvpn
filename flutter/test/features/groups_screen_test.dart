@@ -168,5 +168,73 @@ void main() {
       expect(find.text('Нет подключённых источников'), findsOneWidget);
       expect(find.textContaining('DioException'), findsNothing);
     });
+
+    testWidgets(
+        'first tap on route selects it and shows pulsing prompt; mobile view shows badge',
+        (tester) async {
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final mosaic = Subscription(
+        id: 'mosaic-url',
+        name: 'MosaicVPN',
+        url: 'https://sub.zxc1x1.ru/example',
+        source: 'url',
+        hidePhysicalNodes: true,
+      );
+
+      await tester.pumpWidget(_harness(
+        size: const Size(400, 800),
+        manifest: ProviderManifest(
+          providerName: 'MosaicVPN',
+          groups: [_group('rg-all', 'Минимальный пинг')],
+        ),
+        subscriptions: [mosaic],
+      ));
+      await tester.pumpAndSettle();
+
+      // Before tap: prompt is not visible
+      expect(find.text('Нажмите ещё раз для подключения'), findsNothing);
+
+      // First tap selects the route
+      await tester.tap(find.text('Минимальный пинг'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Animated prompt and badge appear
+      expect(find.text('Нажмите ещё раз для подключения'), findsOneWidget);
+      expect(find.text('Подключить'), findsOneWidget);
+    });
+
+    testWidgets('desktop view: selecting a route updates state and prompts user',
+        (tester) async {
+      final mosaic = Subscription(
+        id: 'mosaic-url',
+        name: 'MosaicVPN',
+        url: 'https://sub.zxc1x1.ru/example',
+        source: 'url',
+        hidePhysicalNodes: true,
+      );
+
+      await tester.pumpWidget(_harness(
+        size: const Size(900, 900),
+        manifest: ProviderManifest(
+          providerName: 'MosaicVPN',
+          groups: [_group('rg-all', 'Минимальный пинг')],
+        ),
+        subscriptions: [mosaic],
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Минимальный пинг'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.byTooltip('Нажмите для подключения'), findsOneWidget);
+    });
   });
 }

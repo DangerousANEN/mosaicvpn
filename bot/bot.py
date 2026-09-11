@@ -33,6 +33,17 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = os.environ.get("MOSAIC_BOT_TOKEN", "")
 CRYPTO_PAY_TOKEN = os.environ.get("MOSAIC_CRYPTO_PAY_TOKEN", "")
 
+# PostgreSQL credentials
+PG_PASSWORD = os.environ.get("MOSAIC_PG_PASSWORD", "")
+if not PG_PASSWORD and os.environ.get("MOSAIC_PG_PASSWORD_FILE"):
+    try:
+        with open(os.environ["MOSAIC_PG_PASSWORD_FILE"]) as _f:
+            PG_PASSWORD = _f.read().strip()
+    except Exception as _e:
+        logger.warning(f"Failed to read MOSAIC_PG_PASSWORD_FILE: {_e}")
+if not PG_PASSWORD:
+    PG_PASSWORD = "postgres"
+
 # Lava Business API: separate stores for Telegram and web checkout.
 # Secrets are read only from the VPS environment; never put them in source or frontend.
 LAVA_API_BASE = os.environ.get("MOSAIC_LAVA_API_BASE", "https://api.lava.ru/business").rstrip("/")
@@ -1531,7 +1542,7 @@ def set_route_policy(route_id, disabled, reason, icon, min_eligible, admin_teleg
 def get_route_eligible_counts():
     """Count recently proxy-verified members for published Smart Groups."""
     conn = psycopg2.connect(host="127.0.0.1", port=6767, user="postgres",
-                            password=os.environ.get("MOSAIC_PG_PASSWORD", "postgres"), database=os.environ.get("MOSAIC_PG_DATABASE", "postgres"))
+                            password=PG_PASSWORD, database=os.environ.get("MOSAIC_PG_DATABASE", "postgres"))
     try:
         cursor = conn.cursor()
         cursor.execute("""
@@ -1621,7 +1632,7 @@ def get_user_by_short_uuid(short_uuid):
             host=os.environ.get("MOSAIC_PG_HOST", "127.0.0.1"),
             port=int(os.environ.get("MOSAIC_PG_PORT", 6767)),
             user=os.environ.get("MOSAIC_PG_USER", "postgres"),
-            password=os.environ.get("MOSAIC_PG_PASSWORD", "postgres"),
+            password=PG_PASSWORD,
             database=os.environ.get("MOSAIC_PG_DATABASE", "postgres")
         )
         pg_cur = pg_conn.cursor()
@@ -5471,7 +5482,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         try:
             pg_conn = psycopg2.connect(
                 host="127.0.0.1", port=6767, user="postgres",
-                password=os.environ.get("MOSAIC_PG_PASSWORD", "postgres"), database=os.environ.get("MOSAIC_PG_DATABASE", "postgres")
+                password=PG_PASSWORD, database=os.environ.get("MOSAIC_PG_DATABASE", "postgres")
             )
             cursor = pg_conn.cursor()
             target_groups = [
@@ -6113,7 +6124,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         try:
             pg_conn = psycopg2.connect(
                 host="127.0.0.1", port=6767, user="postgres",
-                password=os.environ.get("MOSAIC_PG_PASSWORD", "postgres"), database=os.environ.get("MOSAIC_PG_DATABASE", "postgres")
+                password=PG_PASSWORD, database=os.environ.get("MOSAIC_PG_DATABASE", "postgres")
             )
             cursor = pg_conn.cursor()
             cursor.execute(
@@ -6165,7 +6176,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                 host="127.0.0.1",
                 port=6767,
                 user="postgres",
-                password=os.environ.get("MOSAIC_PG_PASSWORD", "postgres"),
+                password=PG_PASSWORD,
                 database=os.environ.get("MOSAIC_PG_DATABASE", "postgres")
             )
             cursor = pg_conn.cursor()
