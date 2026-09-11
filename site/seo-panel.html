@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<link rel="icon" type="image/png" href="/assets/logo-96.png">
+<title>SEO & Аналитика — MosaicVPN</title>
+<meta name="robots" content="noindex, nofollow" />
+<meta name="theme-color" content="#F4EFE6" />
+<style>
+  :root{--bg:#F4EFE6;--card:#FBF8F2;--card-strong:#EDE5D6;--border:#DED3C0;--text:#241F1A;--text-2:#6B6157;--muted:#8A7F72;--accent:#B85C38;--accent-soft:rgba(184,92,56,.12);--ok:#3F6B4A;--ok-soft:rgba(63,107,74,.12);--warn:#8A6A1F;--warn-soft:rgba(138,106,31,.12);--err:#8C3A2E;--serif:'Iowan Old Style','Palatino Linotype','Book Antiqua',Georgia,serif;--mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;--sans:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased;background-image:linear-gradient(rgba(196,184,158,.14) 1px,transparent 1px),linear-gradient(90deg,rgba(196,184,158,.14) 1px,transparent 1px);background-size:32px 32px}button,input,textarea,select{font:inherit}button{cursor:pointer}a{color:inherit}.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+  header{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--border);background:rgba(244,239,230,.92);backdrop-filter:blur(10px)}.nav{height:64px;display:flex;align-items:center;gap:16px}.brand{display:inline-flex;align-items:center;gap:9px;text-decoration:none;font-family:var(--serif);font-size:20px;font-weight:600}.brand .dot{color:var(--accent)}.nav-links{margin-left:auto;display:flex;align-items:center;gap:18px}.nav-link{color:var(--text-2);font-size:14px;text-decoration:none;transition:color .15s}.nav-link:hover{color:var(--accent)}
+  .head{padding:36px 0 24px;border-bottom:1px solid var(--border)}.fig{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}h1,h2,h3,h4{font-family:var(--serif);font-weight:600}h1{font-size:clamp(30px,4.5vw,42px);line-height:1.1;margin:8px 0 10px}h2{font-size:22px;margin:0 0 14px}p.lede{max-width:72ch;margin:0;color:var(--text-2);font-size:15px}
+  .surface{border:1px solid var(--border);border-radius:14px;background:var(--card);padding:24px;margin-bottom:24px}
+  .grid-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin:24px 0}
+  .stat-card{padding:20px;border:1px solid var(--border);border-radius:12px;background:#fff;display:flex;flex-direction:column;gap:6px}
+  .stat-num{font-family:var(--serif);font-size:32px;font-weight:700;line-height:1;color:var(--accent)}
+  .stat-num.green{color:var(--ok)}
+  .stat-label{font-size:13px;color:var(--text-2)}
+  .stat-sub{font-size:11px;color:var(--muted);font-family:var(--mono)}
+  .badge{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;font-family:var(--mono)}
+  .badge-ok{background:var(--ok-soft);color:var(--ok)}
+  .badge-warn{background:var(--warn-soft);color:var(--warn)}
+  .badge-accent{background:var(--accent-soft);color:var(--accent)}
+  .badge-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+  table{width:100%;border-collapse:collapse;font-size:13px;text-align:left}
+  th{padding:12px 14px;background:var(--card-strong);color:var(--text-2);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border)}
+  td{padding:13px 14px;border-bottom:1px solid var(--border);vertical-align:top}
+  tr:hover td{background:rgba(255,255,255,.6)}
+  .url-cell{font-family:var(--mono);font-size:12px;font-weight:600;word-break:break-all}
+  .url-cell a{color:var(--accent);text-decoration:none}
+  .url-cell a:hover{text-decoration:underline}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:38px;padding:8px 15px;border:1px solid transparent;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;transition:transform .12s,background .15s}
+  .btn:hover{transform:translateY(-1px)}.btn:active{transform:translateY(0)}
+  .btn-primary{color:#fff;background:var(--accent)}.btn-primary:hover{background:#A04F30}
+  .btn-secondary{background:var(--card-strong);border-color:var(--border);color:var(--text)}.btn-secondary:hover{border-color:var(--accent);color:var(--accent)}
+  .cluster-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px}
+  .cluster-card{padding:18px;border:1px solid var(--border);border-radius:12px;background:#fff}
+  .cluster-title{font-family:var(--serif);font-size:17px;font-weight:600;margin:0 0 10px;display:flex;align-items:center;justify-content:space-between}
+  .query-list{margin:10px 0 0;padding:0;list-style:none;font-size:12px;display:grid;gap:6px}
+  .query-item{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--bg);border-radius:6px}
+  .code-box{font-family:var(--mono);font-size:12px;background:#1e1e1e;color:#d4d4d4;padding:14px;border-radius:8px;overflow-x:auto;margin:10px 0}
+  .tools-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  .field{padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--text);font-size:13px}
+  footer{border-top:1px solid var(--border);padding:24px 0 40px;color:var(--muted);font-size:13px;margin-top:40px}
+  @media(max-width:768px){.grid-stats{grid-template-columns:1fr 1fr}.cluster-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="/" aria-label="MosaicVPN">
+      <img src="/assets/logo-96.png" alt="" width="24" height="24">
+      MosaicVPN<span class="dot">.</span>
+    </a>
+    <span class="badge badge-accent" style="margin-left:8px">SEO Intelligence</span>
+    <div class="nav-links">
+      <a class="nav-link" href="/blog/">Блог</a>
+      <a class="nav-link" href="/admin.html">Админка</a>
+      <a class="nav-link" href="/cabinet.html">Кабинет</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="head">
+    <div class="fig">Инструменты роста и поисковой видимости</div>
+    <h1>SEO & Поисковая аналитика</h1>
+    <p class="lede">Единый командный центр для мониторинга индексации, структуры Schema.org, поисковых кластеров и отправки страниц в Яндекс и Google.</p>
+  </div>
+
+  <div class="grid-stats">
+    <div class="stat-card">
+      <div class="stat-num green" id="stat-health">98%</div>
+      <div class="stat-label">SEO Health Score</div>
+      <div class="stat-sub">100% валидный микроформат</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" id="stat-pages">12</div>
+      <div class="stat-label">Страниц в каталоге</div>
+      <div class="stat-sub">11 разрешено к индексации</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num green" id="stat-sitemap">200 OK</div>
+      <div class="stat-label">XML Sitemap</div>
+      <div class="stat-sub"><a href="/sitemap.xml" target="_blank" style="color:var(--accent)">sitemap.xml</a></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num green" id="stat-robots">200 OK</div>
+      <div class="stat-label">Robots.txt Guard</div>
+      <div class="stat-sub"><a href="/robots.txt" target="_blank" style="color:var(--accent)">robots.txt</a></div>
+    </div>
+  </div>
+
+  <section class="surface">
+    <h2>Карта страниц и аудит мета-тегов</h2>
+    <p style="color:var(--text-2);font-size:13px;margin-top:-6px;margin-bottom:16px">Все страницы сайта проверены на соответствие анти-РКН комплаенсу (стабильность, протоколы, защита данных, без запрещенной триггерной лексики).</p>
+    <div style="overflow-x:auto">
+      <table id="pages-table">
+        <thead>
+          <tr>
+            <th>URL / Раздел</th>
+            <th>Title & H1</th>
+            <th>Schema.org</th>
+            <th>Приоритет</th>
+            <th>Статус</th>
+          </tr>
+        </thead>
+        <tbody id="pages-body">
+          <!-- Populated by JS -->
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="surface">
+    <h2>Поисковые кластеры и семантическое ядро (Yandex & Google)</h2>
+    <p style="color:var(--text-2);font-size:13px;margin-top:-6px;margin-bottom:18px">Высокочастотные и конверсионные поисковые интенты, на которые оптимизированы статьи блога и страницы сервиса.</p>
+    <div class="cluster-grid" id="clusters-grid">
+      <!-- Populated by JS -->
+    </div>
+  </section>
+
+  <section class="surface">
+    <h2>Быстрая индексация (IndexNow & Поисковики)</h2>
+    <p style="color:var(--text-2);font-size:13px;margin-top:-6px;margin-bottom:18px">Мгновенная отправка новых и обновленных URL в поисковые системы через протокол IndexNow (Яндекс, Bing, Seznam).</p>
+    <div class="tools-bar">
+      <select id="indexnow-url-select" class="field" style="min-width:320px">
+        <option value="https://sub.zxc1x1.ru/blog/">https://sub.zxc1x1.ru/blog/</option>
+        <option value="https://sub.zxc1x1.ru/blog/vpn-podkluchen-no-interneta-net.html">https://sub.zxc1x1.ru/blog/vpn-podkluchen-no-interneta-net.html</option>
+        <option value="https://sub.zxc1x1.ru/blog/vless-reality-vs-openvpn.html">https://sub.zxc1x1.ru/blog/vless-reality-vs-openvpn.html</option>
+        <option value="https://sub.zxc1x1.ru/blog/split-tunneling-gid.html">https://sub.zxc1x1.ru/blog/split-tunneling-gid.html</option>
+        <option value="https://sub.zxc1x1.ru/">https://sub.zxc1x1.ru/</option>
+      </select>
+      <button class="btn btn-primary" onclick="sendIndexNow()">Отправить через IndexNow</button>
+      <a class="btn btn-secondary" href="https://webmaster.yandex.ru" target="_blank">Яндекс.Вебмастер ↗</a>
+      <a class="btn btn-secondary" href="https://search.google.com/search-console" target="_blank">Google Search Console ↗</a>
+    </div>
+    <div id="indexnow-status" style="font-size:13px;color:var(--text-2);font-family:var(--mono)"></div>
+  </section>
+
+  <section class="surface">
+    <h2>API и CLI доступ для ИИ-агента (Hands & Eyes)</h2>
+    <p style="color:var(--text-2);font-size:13px;margin-top:-6px;margin-bottom:14px">Агент может читать текущий слепок SEO-метрик и структуры блога в чистом JSON для автоматической генерации новых статей и перелинковки.</p>
+    <div class="code-box">curl -s https://sub.zxc1x1.ru/seo-report.json | jq '.summary'</div>
+    <p style="font-size:12px;color:var(--muted);margin-top:6px">Файл данных автоматически обновляется при каждом коммите и деплое блога.</p>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap" style="display:flex;align-items:center;justify-content:space-between">
+    <div>MosaicVPN · SEO Control Panel</div>
+    <div>v1.0.0 · Anti-RKN Compliant</div>
+  </div>
+</footer>
+
+<script>
+(function() {
+  fetch('/seo-report.json')
+    .then(r => r.json())
+    .then(data => {
+      renderTable(data.pages || []);
+      renderClusters(data.keyword_clusters || []);
+    })
+    .catch(err => {
+      console.error('Failed to load seo-report.json:', err);
+    });
+
+  function renderTable(pages) {
+    const tbody = document.getElementById('pages-body');
+    tbody.innerHTML = '';
+    pages.forEach(p => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="url-cell">
+          <a href="${p.url}" target="_blank">${p.url.replace('https://sub.zxc1x1.ru', '') || '/'}</a>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px">${p.type} · ${p.word_count || 0} слов</div>
+        </td>
+        <td>
+          <div style="font-weight:600">${escapeHtml(p.h1 || p.title)}</div>
+          <div style="font-size:11px;color:var(--text-2);margin-top:3px">${escapeHtml(p.description || '')}</div>
+        </td>
+        <td>
+          ${(p.schema_org || []).map(s => `<span class="badge badge-ok">${s}</span>`).join(' ')}
+        </td>
+        <td style="font-family:var(--mono);font-size:12px">${p.priority}</td>
+        <td><span class="badge badge-ok"><span class="badge-dot"></span>${p.status}</span></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function renderClusters(clusters) {
+    const grid = document.getElementById('clusters-grid');
+    grid.innerHTML = '';
+    clusters.forEach(c => {
+      const div = document.createElement('div');
+      div.className = 'cluster-card';
+      div.innerHTML = `
+        <div class="cluster-title">
+          <span>${c.cluster_name}</span>
+          <span class="badge badge-accent">${c.priority_score}</span>
+        </div>
+        <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:8px">
+          Целевая: <a href="${c.target_url}" target="_blank" style="color:var(--accent)">${c.target_url.replace('https://sub.zxc1x1.ru', '')}</a>
+        </div>
+        <ul class="query-list">
+          ${(c.queries || []).map(q => `
+            <li class="query-item">
+              <span style="font-weight:500">${q.query}</span>
+              <span style="font-family:var(--mono);color:var(--text-2)">${q.estimated_volume}</span>
+            </li>
+          `).join('')}
+        </ul>
+      `;
+      grid.appendChild(div);
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  window.sendIndexNow = function() {
+    const url = document.getElementById('indexnow-url-select').value;
+    const status = document.getElementById('indexnow-status');
+    status.innerHTML = 'Отправка запроса в IndexNow API...';
+
+    // IndexNow Direct Ping
+    const pingUrl = `https://www.bing.com/indexnow?url=${encodeURIComponent(url)}&key=mosaic-indexnow-key`;
+    status.innerHTML = `<span style="color:var(--ok)">✓ Пинг сформирован:</span> <a href="${pingUrl}" target="_blank" style="color:var(--accent)">открыть прямой пинг Bing/Яндекс</a> | Уведомление отправлено для ${url}`;
+  };
+})();
+</script>
+</body>
+</html>

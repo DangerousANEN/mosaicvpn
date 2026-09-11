@@ -1,0 +1,18 @@
+[Unit]
+Description=MosaicVPN Telegram Bot & Cabinet API Daemon
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/mosaic-bot
+# Credentials live here (chmod 600), never in the Git source tree.
+EnvironmentFile=/etc/mosaic-bot.env
+ExecStart=/opt/mosaic-bot/venv/bin/python /opt/mosaic-bot/bot.py
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

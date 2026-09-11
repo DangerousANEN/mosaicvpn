@@ -1,3 +1,9 @@
+# Backups & Private DB snapshots
+backups/
+*.sql.gz
+*.sql
+*.sha256
+
 # Binaries / test outputs
 bin/
 dist/
@@ -5,6 +11,9 @@ dist/
 *.test
 *.out
 coverage.out
+
+# Root test screenshots
+/*.png
 
 # Editor / OS noise
 .vscode/

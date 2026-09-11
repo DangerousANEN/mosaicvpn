@@ -12,6 +12,9 @@ Allow: /delivery.html
 
 # Service and private areas
 Disallow: /admin.html
+Disallow: /seo.html
+Disallow: /seo-panel.html
+Disallow: /seo-report.json
 Disallow: /cabinet.html
 Disallow: /enroll/
 Disallow: /api/
