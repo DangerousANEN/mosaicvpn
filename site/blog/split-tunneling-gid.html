@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ru" dir="ltr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Split Tunneling: как открывать Сбербанк и Госуслуги без отключения VPN</title>
+<meta name="description" content="Полное руководство по раздельному туннелированию (Split Tunneling). Как настроить правила маршрутизации, чтобы банковские и государственные приложения работали напрямую." />
+<meta name="keywords" content="раздельное туннелирование, split tunneling как настроить, сбербанк не работает с vpn, госуслуги через vpn, исключения vpn" />
+<meta name="robots" content="index, follow" />
+<link rel="canonical" href="https://sub.zxc1x1.ru/blog/split-tunneling-gid.html" />
+<meta name="theme-color" content="#F4EFE6" />
+
+<meta property="og:type" content="article" />
+<meta property="og:title" content="Split Tunneling: как открывать Сбербанк и Госуслуги без отключения VPN" />
+<meta property="og:description" content="Защищайте сетевой трафик, не выключая туннель для российских банков и сервисов." />
+<meta property="og:url" content="https://sub.zxc1x1.ru/blog/split-tunneling-gid.html" />
+<meta property="og:image" content="https://sub.zxc1x1.ru/assets/logo-96.png" />
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Split Tunneling: как открывать Сбербанк и Госуслуги без отключения VPN",
+  "description": "Руководство по настройке избирательной маршрутизации сетевого трафика для банков и локальных сервисов.",
+  "inLanguage": "ru",
+  "author": {
+    "@type": "Organization",
+    "name": "MosaicVPN Engineering"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "MosaicVPN",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://sub.zxc1x1.ru/assets/logo-96.png"
+    }
+  },
+  "datePublished": "2026-09-11",
+  "dateModified": "2026-09-11"
+}
+</script>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Почему банковские приложения блокируют вход через зарубежные IP?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Антифрод-системы банков оценивают геолокацию запроса. При обнаружении иностранного IP-адреса банк в целях предотвращения мошенничества блокирует вход или требует подтверждения по SMS."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Безопасно ли использовать Split Tunneling?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Да, трафик к доверенным сервисам идет по прямому каналу через локального провайдера с сохранением их собственного банковского TLS-шифрования, а весь остальной интернет надежно защищен внешним туннелем."
+      }
+    }
+  ]
+}
+</script>
+
+<link rel="icon" type="image/png" href="/assets/logo-96.png" />
+<link rel="stylesheet" href="/assets/common.css" />
+
+<style>
+  :root{
+    --bg:#F4EFE6; --card:#EDE5D6; --elev:#E4DAC6; --ink:#2B2620; --hover:#D9CFB8;
+    --border:#C4B89E; --border-light:#D4C9B0; --border-ink:#5C4E3A;
+    --text:#2B2620; --text-2:#6B5D4A; --muted:#9A8B72; --on-ink:#F4EFE6;
+    --accent:#B85C38; --accent-hi:#D4724A; --success:#5B7A3A; --warn:#C47830;
+    --serif:'Iowan Old Style','Palatino Linotype','Book Antiqua',Georgia,serif;
+    --mono:'JetBrains Mono','SFMono-Regular',Consolas,'Liberation Mono',monospace;
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    --maxw:820px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--text); font-family:var(--sans);
+    line-height:1.7; -webkit-font-smoothing:antialiased;
+    background-image:
+      linear-gradient(rgba(196,184,158,.14) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(196,184,158,.14) 1px, transparent 1px);
+    background-size:32px 32px;
+  }
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 24px}
+  a{color:var(--accent); text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  header{
+    position:sticky; top:0; z-index:50; backdrop-filter:blur(8px);
+    background:rgba(244,239,230,.86); border-bottom:1px solid var(--border);
+  }
+  .nav{display:flex; align-items:center; gap:16px; height:64px}
+  .logo{font-family:var(--serif); font-weight:700; font-size:20px; display:flex; align-items:center; gap:8px; color:var(--ink)}
+  .logo img{width:28px; height:28px; border-radius:4px}
+  .nav-links{margin-left:auto; display:flex; gap:20px; font-size:14px; color:var(--text-2)}
+
+  .article-header{padding:48px 0 24px}
+  .breadcrumbs{font-family:var(--mono); font-size:12px; color:var(--muted); margin-bottom:16px}
+  .breadcrumbs a{color:var(--text-2)}
+  h1{font-family:var(--serif); font-size:34px; line-height:1.25; color:var(--ink); margin-bottom:16px}
+  .meta{font-family:var(--mono); font-size:13px; color:var(--muted); display:flex; gap:16px; margin-bottom:32px}
+
+  .content h2{font-family:var(--serif); font-size:24px; color:var(--ink); margin:36px 0 16px}
+  .content h3{font-family:var(--serif); font-size:19px; color:var(--ink); margin:24px 0 12px}
+  .content p{margin-bottom:18px; font-size:16px; color:var(--text)}
+  .content ul, .content ol{margin:0 0 20px 24px}
+  .content li{margin-bottom:8px}
+
+  .callout{background:var(--card); border-left:4px solid var(--accent); padding:16px 20px; border-radius:0 6px 6px 0; margin:24px 0}
+  .callout p{margin:0; font-size:15px; color:var(--text-2)}
+
+  .product-cta{background:var(--ink); color:var(--on-ink); border-radius:8px; padding:32px; text-align:center; margin:48px 0}
+  .product-cta h3{font-family:var(--serif); font-size:22px; margin-bottom:8px; color:#fff}
+  .product-cta p{color:var(--elev); font-size:14px; max-width:500px; margin:0 auto 20px}
+  .btn{display:inline-block; background:var(--accent); color:#fff; padding:12px 24px; border-radius:6px; font-weight:600; font-size:14px}
+  .btn:hover{background:var(--accent-hi); text-decoration:none}
+
+  footer{border-top:1px solid var(--border); padding:32px 0; font-size:13px; color:var(--muted); text-align:center}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a href="/" class="logo">
+      <img src="/assets/logo-96.png" alt="MosaicVPN" />
+      MosaicVPN
+    </a>
+    <div class="nav-links">
+      <a href="/blog/">Все статьи</a>
+      <a href="/docs.html">Документация</a>
+      <a href="https://t.me/mosaicvpn_bot" target="_blank">Бот</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <article>
+    <div class="article-header">
+      <div class="breadcrumbs">
+        <a href="/">Главная</a> / <a href="/blog/">Блог</a> / Настройка
+      </div>
+      <h1>Split Tunneling: как открывать Сбербанк и Госуслуги без отключения VPN</h1>
+      <div class="meta">
+        <span>Время чтения: ~5 минут</span>
+        <span>Обновлено: 11 сентября 2026</span>
+        <span>Инженерная команда MosaicVPN</span>
+      </div>
+    </div>
+
+    <div class="content">
+      <p>Главное неудобство повседневного использования VPN — конфликт с локальными российскими сервисами. Вы включаете защиту соединения для безопасного серфинга, но когда нужно перевести деньги через Сбербанк, Т-Банк, оплатить парковку или зайти на портал Госуслуг — приложение выдает ошибку сети или подозрительной геолокации.</p>
+
+      <p>В результате большинству людей приходится постоянно включать и выключать защиту руками 10–15 раз за день. Решение этой проблемы — технология <strong>Split Tunneling (Раздельное туннелирование)</strong>.</p>
+
+      <h2>Что такое Split Tunneling и как оно работает?</h2>
+      <p>Раздельное туннелирование делит исходящий сетевой поток на две независимые ветки прямо в операционной системе:</p>
+      <ul>
+        <li><strong>Защищенный маршрут:</strong> весь общий интернет, поисковики, зарубежные ресурсы и рабочий трафик направляются через зашифрованный протокол VLESS.</li>
+        <li><strong>Прямой локальный маршрут (Bypass / Direct):</strong> запросы к доверенным адресам (.ru, .рф, IP-подсетям банков и государственных порталов) идут напрямую через вашего сотового или домашнего провайдера.</li>
+      </ul>
+
+      <h2>Почему банки блокируют вход через защищенное соединение?</h2>
+      <p>Системы безопасности финансовых платформ постоянно отслеживают параметры подключения клиента:</p>
+      <ol>
+        <li><strong>Гео-аномалии:</strong> Если 5 минут назад вы оплачивали кофе в Новосибирске, а сейчас пытаетесь перевести 50 000 рублей с IP-адреса дата-центра в Франкфурте, банковский алгоритм расценивает это как потенциальный взлом.</li>
+        <li><strong>Репутация IP-адресов дата-центров:</strong> Банки знают диапазоны автономных систем (ASN) хостинг-провайдеров и часто превентивно отсекают запросы, поступающие не от домашних провайдеров связи.</li>
+      </ol>
+
+      <h2>Как это устроено в MosaicVPN</h2>
+      <p>В нашем клиенте на базе ядра sing-box разделение потоков работает автоматически и бесшовно:</p>
+      <ul>
+        <li><strong>Умная маршрутизация по правилам:</strong> Клиент содержит встроенную базу правил доменов и IP-подсетей, направляя российские банковские сервисы в прямой шлюз без участия пользователя.</li>
+        <li><strong>Выбор приложений на Android:</strong> В настройках MosaicVPN можно выбрать конкретные приложения, чей трафик никогда не будет перенаправляться в туннель.</li>
+        <li><strong>Отсутствие утечек DNS:</strong> Для прямого трафика используются локальные резолверы, а для защищенного — изолированные защищенные DNS.</li>
+      </ul>
+
+      <div class="product-cta">
+        <h3>Забудьте о ручном переключении</h3>
+        <p>MosaicVPN позволяет держать защиту включенной 24/7. Банки, маркетплейсы и локальные сервисы продолжают открываться мгновенно.</p>
+        <a href="https://t.me/mosaicvpn_bot" class="btn" target="_blank">Попробовать MosaicVPN за 1 ₽/день</a>
+      </div>
+    </div>
+  </article>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>© 2026 MosaicVPN. Инженерная защита сетевых данных. <a href="/privacy.html">Конфиденциальность</a> · <a href="/blog/">Блог</a></p>
+  </div>
+</footer>
+
+</body>
+</html>

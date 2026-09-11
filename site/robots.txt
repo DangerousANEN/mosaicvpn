@@ -1,0 +1,23 @@
+User-agent: *
+Allow: /
+Allow: /blog/
+Allow: /docs.html
+Allow: /manual.html
+Allow: /contacts.html
+Allow: /offer.html
+Allow: /privacy.html
+Allow: /terms.html
+Allow: /refund.html
+Allow: /delivery.html
+
+# Service and private areas
+Disallow: /admin.html
+Disallow: /cabinet.html
+Disallow: /enroll/
+Disallow: /api/
+
+# Clean parameters for Yandex
+Clean-param: utm_source&utm_medium&utm_campaign&utm_content&utm_term /
+
+# Sitemap location
+Sitemap: https://sub.zxc1x1.ru/sitemap.xml

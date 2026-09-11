@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="ru" dir="ltr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VPN подключен, но интернета нет: 7 частых причин и пошаговая диагностика</title>
+<meta name="description" content="Разбор ситуации, когда статус VPN показывает «Подключено», но сайты не открываются. Проверяем DNS, MTU, синхронизацию времени и маршруты." />
+<meta name="keywords" content="vpn подключен но интернета нет, vpn не грузит сайты, почему vpn подключен но не работает, ошибка mtu vpn, утечка dns" />
+<meta name="robots" content="index, follow" />
+<link rel="canonical" href="https://sub.zxc1x1.ru/blog/vpn-podkluchen-no-interneta-net.html" />
+<meta name="theme-color" content="#F4EFE6" />
+
+<!-- Open Graph -->
+<meta property="og:type" content="article" />
+<meta property="og:title" content="VPN подключен, но интернета нет: 7 частых причин и пошаговая диагностика" />
+<meta property="og:description" content="Полный чек-лист инженера: как найти причину, почему туннель активен, но трафик не проходит." />
+<meta property="og:url" content="https://sub.zxc1x1.ru/blog/vpn-podkluchen-no-interneta-net.html" />
+<meta property="og:image" content="https://sub.zxc1x1.ru/assets/logo-96.png" />
+
+<!-- Schema.org TechArticle -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "VPN подключен, но интернета нет: 7 частых причин и пошаговая диагностика",
+  "description": "Технический разбор причин отсутствия трафика при активном статусе VPN соединения.",
+  "inLanguage": "ru",
+  "author": {
+    "@type": "Organization",
+    "name": "MosaicVPN Engineering"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "MosaicVPN",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://sub.zxc1x1.ru/assets/logo-96.png"
+    }
+  },
+  "datePublished": "2026-09-11",
+  "dateModified": "2026-09-11"
+}
+</script>
+
+<!-- Schema.org FAQPage -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Почему VPN пишет «Подключено», но страницы не загружаются?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "В большинстве случаев само сетевое соединение (рукопожатие со шлюзом) установлено, но трафик стопорится из-за отсутствия DNS-резолвинга, слишком большого пакета MTU, фрагментируемого оператором, или рассинхронизации системного времени более чем на 90 секунд."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Как быстро проверить, дело в DNS или в самом соединении?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Попробуйте открыть в браузере прямой IP-адрес, например 1.1.1.1 или 8.8.8.8. Если страница Cloudflare открывается, значит туннель работает, а проблема заключается в зависшем DNS-сервере."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Какой оптимальный размер MTU для мобильных сетей?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Рекомендуемое стабильное значение MTU для мобильных сетей LTE/5G составляет от 1280 до 1360 байт, что предотвращает фрагментацию зашифрованных сетевых пакетов."
+      }
+    }
+  ]
+}
+</script>
+
+<link rel="icon" type="image/png" href="/assets/logo-96.png" />
+<link rel="stylesheet" href="/assets/common.css" />
+
+<style>
+  :root{
+    --bg:#F4EFE6; --card:#EDE5D6; --elev:#E4DAC6; --ink:#2B2620; --hover:#D9CFB8;
+    --border:#C4B89E; --border-light:#D4C9B0; --border-ink:#5C4E3A;
+    --text:#2B2620; --text-2:#6B5D4A; --muted:#9A8B72; --on-ink:#F4EFE6;
+    --accent:#B85C38; --accent-hi:#D4724A; --success:#5B7A3A; --warn:#C47830;
+    --serif:'Iowan Old Style','Palatino Linotype','Book Antiqua',Georgia,serif;
+    --mono:'JetBrains Mono','SFMono-Regular',Consolas,'Liberation Mono',monospace;
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    --maxw:820px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--text); font-family:var(--sans);
+    line-height:1.7; -webkit-font-smoothing:antialiased;
+    background-image:
+      linear-gradient(rgba(196,184,158,.14) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(196,184,158,.14) 1px, transparent 1px);
+    background-size:32px 32px;
+  }
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 24px}
+  a{color:var(--accent); text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  header{
+    position:sticky; top:0; z-index:50; backdrop-filter:blur(8px);
+    background:rgba(244,239,230,.86); border-bottom:1px solid var(--border);
+  }
+  .nav{display:flex; align-items:center; gap:16px; height:64px}
+  .logo{font-family:var(--serif); font-weight:700; font-size:20px; display:flex; align-items:center; gap:8px; color:var(--ink)}
+  .logo img{width:28px; height:28px; border-radius:4px}
+  .nav-links{margin-left:auto; display:flex; gap:20px; font-size:14px; color:var(--text-2)}
+
+  .article-header{padding:48px 0 24px}
+  .breadcrumbs{font-family:var(--mono); font-size:12px; color:var(--muted); margin-bottom:16px}
+  .breadcrumbs a{color:var(--text-2)}
+  h1{font-family:var(--serif); font-size:34px; line-height:1.25; color:var(--ink); margin-bottom:16px}
+  .meta{font-family:var(--mono); font-size:13px; color:var(--muted); display:flex; gap:16px; margin-bottom:32px}
+
+  .content h2{font-family:var(--serif); font-size:24px; color:var(--ink); margin:36px 0 16px}
+  .content h3{font-family:var(--serif); font-size:19px; color:var(--ink); margin:24px 0 12px}
+  .content p{margin-bottom:18px; font-size:16px; color:var(--text)}
+  .content ul, .content ol{margin:0 0 20px 24px}
+  .content li{margin-bottom:8px}
+
+  .callout{background:var(--card); border-left:4px solid var(--accent); padding:16px 20px; border-radius:0 6px 6px 0; margin:24px 0}
+  .callout p{margin:0; font-size:15px; color:var(--text-2)}
+
+  pre{background:var(--card); border:1px solid var(--border); padding:16px; border-radius:6px; font-family:var(--mono); font-size:13px; overflow-x:auto; margin-bottom:20px}
+  code{background:var(--card); padding:2px 6px; border-radius:4px; font-family:var(--mono); font-size:13px}
+
+  .product-cta{background:var(--ink); color:var(--on-ink); border-radius:8px; padding:32px; text-align:center; margin:48px 0}
+  .product-cta h3{font-family:var(--serif); font-size:22px; margin-bottom:8px; color:#fff}
+  .product-cta p{color:var(--elev); font-size:14px; max-width:500px; margin:0 auto 20px}
+  .btn{display:inline-block; background:var(--accent); color:#fff; padding:12px 24px; border-radius:6px; font-weight:600; font-size:14px}
+  .btn:hover{background:var(--accent-hi); text-decoration:none}
+
+  footer{border-top:1px solid var(--border); padding:32px 0; font-size:13px; color:var(--muted); text-align:center}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a href="/" class="logo">
+      <img src="/assets/logo-96.png" alt="MosaicVPN" />
+      MosaicVPN
+    </a>
+    <div class="nav-links">
+      <a href="/blog/">Все статьи</a>
+      <a href="/docs.html">Документация</a>
+      <a href="https://t.me/mosaicvpn_bot" target="_blank">Бот</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <article>
+    <div class="article-header">
+      <div class="breadcrumbs">
+        <a href="/">Главная</a> / <a href="/blog/">Блог</a> / Диагностика
+      </div>
+      <h1>VPN подключен, но интернета нет: 7 частых причин и пошаговая диагностика</h1>
+      <div class="meta">
+        <span>Время чтения: ~6 минут</span>
+        <span>Обновлено: 11 сентября 2026</span>
+        <span>Инженерная команда MosaicVPN</span>
+      </div>
+    </div>
+
+    <div class="content">
+      <p>Один из самых частых запросов пользователей сетевых клиентов: приложение показывает статус <strong>«Подключено» (Зеленый индикатор)</strong>, значок ключа или защищенного соединения висит в строке состояния, но при этом ни один сайт не открывается, а мессенджеры бесконечно крутят иконку соединения.</p>
+
+      <p>Почему это происходит? Статус «Подключено» чаще всего означает лишь то, что локальный интерфейс TUN успешно создан, а ядро обменялось базовым TCP-рукопожатием с удаленным сервером. Но сам сквозной сетевой поток при этом может блокироваться или теряться. Ниже — 7 конкретных инженерных причин и способы их быстрого устранения.</p>
+
+      <h2>1. Зависший или заблокированный DNS-резолвер</h2>
+      <p>Когда вы вводите адрес сайта (например, <code>github.com</code>), системе необходимо преобразовать доменное имя в цифровой IP-адрес. Если туннель направляет DNS-запросы на несуществующий или неотвечающий IP, браузер выдаст ошибку <code>ERR_NAME_NOT_RESOLVED</code>.</p>
+      <div class="callout">
+        <p><strong>Быстрый тест:</strong> Попробуйте вбить в адресную строку браузера прямой адрес <code>1.1.1.1</code>. Если сайт Cloudflare открылся — туннель полностью исправен, а проблема исключительно в DNS-сервере вашего провайдера или профиля.</p>
+      </div>
+      <p><strong>Решение:</strong> Укажите в настройках приложения или сетевого адаптера независимые защищенные DNS, например <code>1.1.1.1</code> или <code>8.8.8.8</code>.</p>
+
+      <h2>2. Несовпадение системного времени (Time Drift)</h2>
+      <p>Современные защищенные протоколы (TLS 1.3, VLESS Reality, WireGuard) используют временные метки (timestamp) для защиты от атак повторного воспроизведения (replay attack). Если системные часы вашего телефона или компьютера спешат или отстают более чем на <strong>90 секунд</strong>, удаленный сервер молча отбрасывает сессию.</p>
+      <p><strong>Решение:</strong> Зайдите в настройки системы (Дата и время) и включите переключатель <em>«Устанавливать время автоматически по сети (NTP)»</em>.</p>
+
+      <h2>3. Проблема размера MTU (Maximum Transmission Unit)</h2>
+      <p>При использовании шифрования каждый сетевой пакет увеличивается в размере из-за заголовков туннеля. Если MTU установлен в стандартные 1500 байт, пакет превышает лимит провайдера (особенно в сетях 4G/LTE) и отбрасывается маршрутизаторами.</p>
+      <p>Внешне это выглядит так: мелкие текстовые запросы проходят, а загрузка страниц и картинок замирает навсегда.</p>
+      <p><strong>Решение:</strong> Ограничить MTU в настройках клиента значением <strong>1280</strong> или <strong>1360</strong> байт.</p>
+
+      <h2>4. Зависший локальный DNS-кэш на компьютере</h2>
+      <p>Операционные системы Windows и macOS сохраняют кэш неудачных запросов. Если при первом запуске произошел сбой, браузер продолжит пытаться стучаться по старому пути.</p>
+      <p><strong>Решение:</strong> Откройте терминал или командную строку и сбросьте кэш:</p>
+      <pre><code># В Windows:
+ipconfig /flushdns
+
+# В macOS:
+sudo killall -HUP mDNSResponder</code></pre>
+
+      <h2>5. Конфликт нескольких защитных программ</h2>
+      <p>Одновременная работа сторонних антивирусов со встроенным сетевым экраном (Kaspersky, AdGuard, Dr.Web) и клиента туннелирования приводит к перехвату WFP (Windows Filtering Platform) или сокетов TUN. Сетевой трафик просто зацикливается.</p>
+      <p><strong>Решение:</strong> Добавьте исполняемый файл клиента в исключения фильтрации антивируса или временно приостановите фильтрацию трафика в сторонней утилите.</p>
+
+      <h2>6. Разрыв соединения при переходе Wi-Fi ↔ LTE</h2>
+      <p>При выходе из дома телефон переключается с домашней сети Wi-Fi на базовую станцию сотового оператора. Если протокол не поддерживает бесшовный роуминг сессий, сокет умирает, а операционная система продолжает слать пакеты в старый маршрут.</p>
+
+      <h2>7. Устаревший протокол, распознаваемый фильтрами провайдеров</h2>
+      <p>Классические протоколы (OpenVPN, IPsec) имеют легко детектируемые сигнатуры пакетов в открытом заголовке. Провайдеры могут пропускать первоначальное рукопожатие, но полностью глушить полезную нагрузку.</p>
+      <p>Именно поэтому современные решения переходят на <strong>VLESS Reality</strong> на базе ядра <strong>sing-box</strong>, которое делает защищенное соединение неотличимым от обычного просмотра сайтов по HTTPS.</p>
+
+      <div class="product-cta">
+        <h3>Устали от зависающих соединений?</h3>
+        <p>В MosaicVPN встроена автоматическая диагностика сети в один клик, адаптивная память маршрутов и защита от сбоев DNS. Всего 1 рубль в сутки.</p>
+        <a href="https://t.me/mosaicvpn_bot" class="btn" target="_blank">Попробовать 3 дня бесплатно</a>
+      </div>
+    </div>
+  </article>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>© 2026 MosaicVPN. Инженерная защита сетевых данных. <a href="/privacy.html">Конфиденциальность</a> · <a href="/blog/">Блог</a></p>
+  </div>
+</footer>
+
+</body>
+</html>

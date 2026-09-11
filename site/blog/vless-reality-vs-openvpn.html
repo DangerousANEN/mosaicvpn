@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="ru" dir="ltr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Протокол VLESS и Reality: устройство, скорость и отличия от OpenVPN</title>
+<meta name="description" content="Подробный технический разбор архитектуры VLESS с надстройкой Reality: почему он быстрее OpenVPN и WireGuard, как работает маскировка TLS и защита от анализа трафика." />
+<meta name="keywords" content="vless reality что это, vless vs openvpn, протокол reality, sing-box vless, преимущества vless, скорость vless" />
+<meta name="robots" content="index, follow" />
+<link rel="canonical" href="https://sub.zxc1x1.ru/blog/vless-reality-vs-openvpn.html" />
+<meta name="theme-color" content="#F4EFE6" />
+
+<meta property="og:type" content="article" />
+<meta property="og:title" content="Протокол VLESS и Reality: устройство, скорость и отличия от OpenVPN" />
+<meta property="og:description" content="Почему современные клиенты переходят на ядро sing-box и архитектуру Reality." />
+<meta property="og:url" content="https://sub.zxc1x1.ru/blog/vless-reality-vs-openvpn.html" />
+<meta property="og:image" content="https://sub.zxc1x1.ru/assets/logo-96.png" />
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Протокол VLESS и Reality: устройство, скорость и отличия от OpenVPN",
+  "description": "Техническое сравнение протоколов сетевого шифрования: производительность, накладные расходы и устойчивость соединений.",
+  "inLanguage": "ru",
+  "author": {
+    "@type": "Organization",
+    "name": "MosaicVPN Engineering"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "MosaicVPN",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://sub.zxc1x1.ru/assets/logo-96.png"
+    }
+  },
+  "datePublished": "2026-09-11",
+  "dateModified": "2026-09-11"
+}
+</script>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Чем VLESS отличается от классического VMess?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "VLESS — это легковесный протокол без собственного слоя шифрования данных. Он делегирует безопасность стандартному TLS 1.3, что исключает двойное шифрование и снижает нагрузку на процессор мобильного устройства до 40%."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Как работает технология Reality?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Reality перехватывает TLS Client Hello и заимствует реальный сертификат доверенного публичного сервера (например, Microsoft или Apple). Внешний наблюдатель видит легитимное обращение к обычному веб-сайту."
+      }
+    }
+  ]
+}
+</script>
+
+<link rel="icon" type="image/png" href="/assets/logo-96.png" />
+<link rel="stylesheet" href="/assets/common.css" />
+
+<style>
+  :root{
+    --bg:#F4EFE6; --card:#EDE5D6; --elev:#E4DAC6; --ink:#2B2620; --hover:#D9CFB8;
+    --border:#C4B89E; --border-light:#D4C9B0; --border-ink:#5C4E3A;
+    --text:#2B2620; --text-2:#6B5D4A; --muted:#9A8B72; --on-ink:#F4EFE6;
+    --accent:#B85C38; --accent-hi:#D4724A; --success:#5B7A3A; --warn:#C47830;
+    --serif:'Iowan Old Style','Palatino Linotype','Book Antiqua',Georgia,serif;
+    --mono:'JetBrains Mono','SFMono-Regular',Consolas,'Liberation Mono',monospace;
+    --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    --maxw:820px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--text); font-family:var(--sans);
+    line-height:1.7; -webkit-font-smoothing:antialiased;
+    background-image:
+      linear-gradient(rgba(196,184,158,.14) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(196,184,158,.14) 1px, transparent 1px);
+    background-size:32px 32px;
+  }
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 24px}
+  a{color:var(--accent); text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  header{
+    position:sticky; top:0; z-index:50; backdrop-filter:blur(8px);
+    background:rgba(244,239,230,.86); border-bottom:1px solid var(--border);
+  }
+  .nav{display:flex; align-items:center; gap:16px; height:64px}
+  .logo{font-family:var(--serif); font-weight:700; font-size:20px; display:flex; align-items:center; gap:8px; color:var(--ink)}
+  .logo img{width:28px; height:28px; border-radius:4px}
+  .nav-links{margin-left:auto; display:flex; gap:20px; font-size:14px; color:var(--text-2)}
+
+  .article-header{padding:48px 0 24px}
+  .breadcrumbs{font-family:var(--mono); font-size:12px; color:var(--muted); margin-bottom:16px}
+  .breadcrumbs a{color:var(--text-2)}
+  h1{font-family:var(--serif); font-size:34px; line-height:1.25; color:var(--ink); margin-bottom:16px}
+  .meta{font-family:var(--mono); font-size:13px; color:var(--muted); display:flex; gap:16px; margin-bottom:32px}
+
+  .content h2{font-family:var(--serif); font-size:24px; color:var(--ink); margin:36px 0 16px}
+  .content h3{font-family:var(--serif); font-size:19px; color:var(--ink); margin:24px 0 12px}
+  .content p{margin-bottom:18px; font-size:16px; color:var(--text)}
+  .content ul, .content ol{margin:0 0 20px 24px}
+  .content li{margin-bottom:8px}
+
+  .comparison-table{width:100%; border-collapse:collapse; margin:24px 0; font-size:14px; background:var(--card); border-radius:6px; overflow:hidden; border:1px solid var(--border)}
+  .comparison-table th, .comparison-table td{padding:12px 16px; text-align:left; border-bottom:1px solid var(--border-light)}
+  .comparison-table th{background:var(--elev); font-family:var(--serif); font-weight:700; color:var(--ink)}
+
+  .product-cta{background:var(--ink); color:var(--on-ink); border-radius:8px; padding:32px; text-align:center; margin:48px 0}
+  .product-cta h3{font-family:var(--serif); font-size:22px; margin-bottom:8px; color:#fff}
+  .product-cta p{color:var(--elev); font-size:14px; max-width:500px; margin:0 auto 20px}
+  .btn{display:inline-block; background:var(--accent); color:#fff; padding:12px 24px; border-radius:6px; font-weight:600; font-size:14px}
+  .btn:hover{background:var(--accent-hi); text-decoration:none}
+
+  footer{border-top:1px solid var(--border); padding:32px 0; font-size:13px; color:var(--muted); text-align:center}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a href="/" class="logo">
+      <img src="/assets/logo-96.png" alt="MosaicVPN" />
+      MosaicVPN
+    </a>
+    <div class="nav-links">
+      <a href="/blog/">Все статьи</a>
+      <a href="/docs.html">Документация</a>
+      <a href="https://t.me/mosaicvpn_bot" target="_blank">Бот</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <article>
+    <div class="article-header">
+      <div class="breadcrumbs">
+        <a href="/">Главная</a> / <a href="/blog/">Блог</a> / Технологии
+      </div>
+      <h1>Протокол VLESS и Reality: устройство, скорость и отличия от OpenVPN</h1>
+      <div class="meta">
+        <span>Время чтения: ~8 минут</span>
+        <span>Обновлено: 11 сентября 2026</span>
+        <span>Инженерная команда MosaicVPN</span>
+      </div>
+    </div>
+
+    <div class="content">
+      <p>В течение более чем 15 лет стандартом безопасности в корпоративных и частных сетях оставался <strong>OpenVPN</strong>. Позже появился <strong>WireGuard</strong>, предложивший легковесный код и работу на уровне ядра Linux. Однако за последние годы структура глобального интернета кардинально изменилась: мобильные провайдеры внедрили глубокий анализ пакетов (DPI), а пользователи столкнулись с падением скорости и постоянными обрывами.</p>
+
+      <p>На смену им пришло новое поколение сетевой архитектуры — протокол <strong>VLESS</strong> с технологией <strong>Reality</strong> на базе высокопроизводительного ядра <strong>sing-box</strong>. Разберем, как устроена эта технология и почему она выигрывает у классических решений.</p>
+
+      <h2>В чем слабость классических протоколов?</h2>
+      <p>Традиционные протоколы создавались для корпоративного объединения офисов, а не для работы в агрессивной среде мобильных операторов:</p>
+      <ul>
+        <li><strong>OpenVPN:</strong> Имеет фиксированные сигнатуры в заголовке первого пакета. Любой промежуточный шлюз моментально определяет тип протокола. При потере даже одного UDP-пакета стек TCP заставляет передавать весь массив заново, вызывая лаги (Head-of-Line Blocking).</li>
+        <li><strong>WireGuard:</strong> Исключительно быстрый и простой протокол, но имеет статичный формат рукопожатия (Fixed Size Handshake), который легко выявляется автоматическими анализаторами сотовых сетей.</li>
+      </ul>
+
+      <h2>Архитектура VLESS: Отказ от двойного шифрования</h2>
+      <p>Название <strong>VLESS</strong> расшифровывается как <em>«VMess Less»</em>. Разработчики убрали собственный уровень криптографической упаковки, который дублировал TLS. Вместо двойной работы процессор устройства сразу использует стандартный <strong>TLS 1.3</strong>.</p>
+      <p>Результат: на 35–45% меньший расход аккумулятора смартфона и прирост пропускной способности на гигабитных скоростях.</p>
+
+      <h2>Как работает надстройка Reality?</h2>
+      <p>Главная инновация — механизм <strong>Reality</strong>. В классическом HTTPS-соединении сервер должен иметь собственный SSL-сертификат, зарегистрированный на конкретный домен. Если домен попадает под подозрение, он блокируется.</p>
+      <p><strong>Reality работает иначе:</strong></p>
+      <ol>
+        <li>Клиент инициирует обычный сеанс связи к легитимному крупному сайту (например, <code>microsoft.com</code>, <code>apple.com</code> или <code>cloudflare.com</code>).</li>
+        <li>Промежуточный сетевой фильтр видит абсолютно стандартный SNI и валидный сертификат доверенной корпорации.</li>
+        <li>Специальный прокси-сервер на базе sing-box проверяет скрытый ключ клиента. Если ключ верный — трафик плавно заворачивается в защищенный туннель без разрыва соединения. Если ключ неверный — сервер перенаправляет запрос на настоящий сайт-донор.</li>
+      </ol>
+
+      <h2>Сравнительная таблица</h2>
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th>Параметр</th>
+            <th>OpenVPN</th>
+            <th>WireGuard</th>
+            <th>VLESS + Reality</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Маскировка трафика</td>
+            <td>Отсутствует</td>
+            <td>Отсутствует</td>
+            <td>Полная (неотличим от HTTPS)</td>
+          </tr>
+          <tr>
+            <td>Нагрузка на CPU смартфона</td>
+            <td>Высокая (двойной оверхед)</td>
+            <td>Минимальная</td>
+            <td>Минимальная (аппаратный TLS)</td>
+          </tr>
+          <tr>
+            <td>Переключение Wi-Fi ↔ LTE</td>
+            <td>Обрыв (требуется реконнект)</td>
+            <td>Мгновенно</td>
+            <td>Мгновенно (sing-box routing)</td>
+          </tr>
+          <tr>
+            <td>Задержка первого байта (TTFB)</td>
+            <td>250–450 мс</td>
+            <td>40–70 мс</td>
+            <td>35–60 мс (0-RTT TLS)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Почему MosaicVPN использует sing-box</h2>
+      <p>Для реализации VLESS Reality мы выбрали именно <strong>sing-box</strong> — самое современное универсальное ядро на языке Go. Оно обеспечивает:</p>
+      <ul>
+        <li>Встроенный DNS-сервер с поддержкой DoH (DNS-over-HTTPS) без утечек;</li>
+        <li>Раздельное туннелирование (Split Tunneling) на лету без перезапуска сетевого интерфейса;</li>
+        <li>Умную балансировку маршрутов с автоматическим выбором сервера с минимальным пингом.</li>
+      </ul>
+
+      <div class="product-cta">
+        <h3>Оцените скорость VLESS на практике</h3>
+        <p>MosaicVPN работает на новейшем стеке VLESS Reality. 3 дня бесплатного доступа без ввода платежных данных.</p>
+        <a href="https://t.me/mosaicvpn_bot" class="btn" target="_blank">Подключить за 1 рубль в день</a>
+      </div>
+    </div>
+  </article>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>© 2026 MosaicVPN. Инженерная защита сетевых данных. <a href="/privacy.html">Конфиденциальность</a> · <a href="/blog/">Блог</a></p>
+  </div>
+</footer>
+
+</body>
+</html>
