@@ -141,6 +141,16 @@ class AndroidVpnService {
     return (lines: lines, lastSeq: last);
   }
 
+  /// Appends a diagnostic log line directly into the native log buffer so that
+  /// all traffic verification, DNS checks, and runtime lifecycle events appear
+  /// immediately on the in-app Logs screen.
+  Future<void> appendNativeLog(String line) async {
+    if (!isSupported || line.trim().isEmpty) return;
+    try {
+      await _channel.invokeMethod<bool>('appendLog', {'line': line});
+    } catch (_) {}
+  }
+
   Future<void> validateConfig(String singBoxConfig) async {
     _ensureSupported();
     await _channel

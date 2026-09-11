@@ -230,9 +230,11 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                       Text(
                         connected
                             ? 'ЗАЩИЩЕНО'
-                            : connecting
-                                ? 'ПОДКЛЮЧЕНИЕ…'
-                                : 'ОТКЛЮЧЕНО',
+                            : status.isVerifying
+                                ? 'ПРОВЕРКА СВЯЗИ…'
+                                : connecting
+                                    ? 'ПОДКЛЮЧЕНИЕ…'
+                                    : 'ОТКЛЮЧЕНО',
                         style: TextStyle(
                           fontFamily: AtlasTheme.serifFamily,
                           fontSize: 24,
@@ -240,18 +242,22 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                           letterSpacing: 1.8,
                           color: connected
                               ? c.success
-                              : connecting
-                                  ? AtlasTheme.accent
-                                  : c.textPrimary,
+                              : status.isVerifying
+                                  ? AtlasTheme.warning
+                                  : connecting
+                                      ? AtlasTheme.accent
+                                      : c.textPrimary,
                         ),
                       ),
                       const SizedBox(height: 5),
                       Text(
                         connected
                             ? 'VLESS • TLS • Защита активна'
-                            : connecting
-                                ? 'Установка защищённого соединения…'
-                                : 'Нажмите на компас для подключения',
+                            : status.isVerifying
+                                ? 'Верификация сквозного трафика…'
+                                : connecting
+                                    ? 'Установка защищённого соединения…'
+                                    : 'Нажмите на компас для подключения',
                         style: TextStyle(
                           fontSize: 13,
                           color: c.textSecondary,
@@ -401,9 +407,11 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
         label: Text(
           _busy
               ? AppStrings.of(context).t('searching_route')
-              : status.isConnected
-                  ? AppStrings.of(context).t('disconnect_action')
-                  : AppStrings.of(context).t('connect_action'),
+              : status.isVerifying
+                  ? 'Проверка…'
+                  : status.isConnected
+                      ? AppStrings.of(context).t('disconnect_action')
+                      : AppStrings.of(context).t('connect_action'),
         ),
       ),
     );

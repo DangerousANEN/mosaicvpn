@@ -1619,7 +1619,9 @@ class AndroidMosaicAccountService {
     // Use 'warn' in production so sing-box only logs actionable warnings/errors.
     // 'debug' generates hundreds of JNI events and string allocations per second,
     // which drains battery and keeps the CPU core pinned.
-    config['log'] = {'level': 'warn'};
+    // Provide structured diagnostic logging so the in-app logs screen and
+    // truth-check probes have complete visibility into routing and handshakes.
+    config['log'] = {'level': 'info', 'timestamp': true};
     config['inbounds'] = [
       {
         'type': 'tun',

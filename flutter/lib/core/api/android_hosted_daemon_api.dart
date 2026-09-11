@@ -80,7 +80,11 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     required Server route,
   }) async {
     final vpn = AndroidVpnService.instance;
+    await vpn.appendNativeLog(
+      '[ROUTE] Initializing route: "${route.name}" (id: ${route.id}, tag: ${route.tag})',
+    );
     if (!await vpn.requestPermission()) {
+      await vpn.appendNativeLog('[ROUTE] ERROR: VPN permission not granted by user.');
       throw StateError(
         'Разрешение на создание VPN-подключения не получено. '
         'Разрешите VPN в системном окне Android и повторите попытку.',
@@ -89,6 +93,9 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     final currentStatus = await vpn.status();
     if (currentStatus.isConnected || currentStatus.isBusy) {
       if (_activeRoute?.id != route.id) {
+        await vpn.appendNativeLog(
+          '[ROUTE] Active route changing from "${_activeRoute?.name}" to "${route.name}". Stopping previous tunnel...',
+        );
         await vpn.stop();
         var loops = 0;
         while (loops < 15) {
@@ -99,7 +106,13 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         }
       }
     }
+    await vpn.appendNativeLog(
+      '[ROUTE] Starting sing-box native core for "${route.name}"...',
+    );
     final state = await vpn.startAndAwaitReady(config, routeTitle: route.name);
+    await vpn.appendNativeLog(
+      '[ROUTE] sing-box startup state: isConnected=${state.isConnected}, error=${state.error ?? "none"}',
+    );
     if (!state.isConnected) {
       throw StateError(
         state.error?.trim().isNotEmpty == true
@@ -116,12 +129,18 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     // worse than a visible error. So prove it carries traffic first.
     final verified = await _verifyTunnelCarriesTraffic();
     if (!verified) {
+      await vpn.appendNativeLog(
+        '[ROUTE] ERROR: Tunnel verification failed for "${route.name}". Stopping VPN to prevent dead tunnel.',
+      );
       await vpn.stop();
       throw StateError(
         'Туннель запустился, но не пропускает трафик. '
         'Маршрут отклонён — попробуйте другой.',
       );
     }
+    await vpn.appendNativeLog(
+      '[ROUTE] Tunnel verification PASSED for "${route.name}". Committing active route.',
+    );
     _activeRoute = route;
   }
 
@@ -310,6 +329,11 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     Duration perAttemptTimeout = const Duration(seconds: 5),
     Duration backoff = const Duration(milliseconds: 1200),
   }) async {
+    final vpn = AndroidVpnService.instance;
+    await vpn.appendNativeLog(
+      '[TRUTH-CHECK] Starting tunnel payload verification (attempts: $attempts, timeout: ${perAttemptTimeout.inSeconds}s)',
+    );
+
     // Give the freshly raised TUN interface and urltest group a brief moment to settle.
     await Future<void>.delayed(const Duration(milliseconds: 600));
 
@@ -322,6 +346,10 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
 
     for (var attempt = 0; attempt < attempts; attempt++) {
       final target = targets[attempt % targets.length];
+      final sw = Stopwatch()..start();
+      await vpn.appendNativeLog(
+        '[TRUTH-CHECK] Attempt ${attempt + 1}/$attempts: probing $target...',
+      );
       final client = HttpClient()
         ..connectionTimeout = perAttemptTimeout
         // A pooled connection could mask a tunnel that died since the last
@@ -332,11 +360,18 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
             .getUrl(Uri.parse(target))
             .timeout(perAttemptTimeout);
         final response = await request.close().timeout(perAttemptTimeout);
+        final status = response.statusCode;
         await response.drain<void>();
         // Any status proves bytes made a round trip and a real server answered;
         // we are testing reachability, not the endpoint's own health.
+        await vpn.appendNativeLog(
+          '[TRUTH-CHECK] SUCCESS! Target $target answered HTTP $status in ${sw.elapsedMilliseconds}ms. Tunnel confirmed healthy.',
+        );
         return true;
-      } catch (_) {
+      } catch (err) {
+        await vpn.appendNativeLog(
+          '[TRUTH-CHECK] Attempt ${attempt + 1}/$attempts FAILED ($target in ${sw.elapsedMilliseconds}ms): $err',
+        );
         // Fall through to the next attempt: a freshly started core may need a
         // moment before its outbound is ready, so one failure proves nothing.
       } finally {
@@ -346,6 +381,9 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         await Future<void>.delayed(backoff);
       }
     }
+    await vpn.appendNativeLog(
+      '[TRUTH-CHECK] ALL $attempts ATTEMPTS FAILED! Tunnel carries 0 payload bytes (black-holed or handshake blocked).',
+    );
     return false;
   }
 
@@ -507,6 +545,11 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       subscriptionID: resolved.$1.id,
     );
 
+    final vpn = AndroidVpnService.instance;
+    await vpn.appendNativeLog(
+      '[SMART-GROUP] Launching group "${group.title}" (${group.id}) [routeType=${group.routeType}]',
+    );
+
     try {
       await _startNativeRoute(
         config: config,
@@ -515,6 +558,9 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     } on StateError catch (e) {
       if (group.routeType != 'direct' &&
           e.message.contains('Туннель запустился, но не пропускает трафик')) {
+        await vpn.appendNativeLog(
+          '[SMART-GROUP] WARN: Candidate pool failed traffic verification. Activating fallback to direct physical route...',
+        );
         // Fallback to the provider direct physical route so user connectivity is preserved.
         final directConfig =
             await _account.buildNativeTunConfigFromSubscriptionUrl(
@@ -528,6 +574,9 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         await _startNativeRoute(
           config: directConfig,
           route: routeServer,
+        );
+        await vpn.appendNativeLog(
+          '[SMART-GROUP] SUCCESS: Fallback to direct physical route succeeded.',
         );
         return;
       }

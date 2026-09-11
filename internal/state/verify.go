@@ -123,8 +123,8 @@ func verifyTunnel(ctx context.Context, socks string, policy VerifyPolicy) Verify
 			}
 		}
 		lastErr = err
-		logx.Debug("tunnel verification attempt failed",
-			"attempt", attempt, "target", target, "err", err)
+		logx.Warn("tunnel verification attempt failed",
+			"attempt", attempt, "target", target, "latency_ms", time.Since(start).Milliseconds(), "err", err)
 
 		if attempt < policy.Attempts {
 			select {

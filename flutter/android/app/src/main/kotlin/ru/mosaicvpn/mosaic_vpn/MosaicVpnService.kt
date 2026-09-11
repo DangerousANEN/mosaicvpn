@@ -63,7 +63,7 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         /// newest last. The Flutter logs screen reads this because the libbox
         /// event stream is not wired on Android; without it the screen stayed
         /// empty.
-        private const val NATIVE_LOG_LIMIT = 400
+        private const val NATIVE_LOG_LIMIT = 1500
         private val recentLogs = ArrayDeque<Pair<Long, String>>()
         private val logSeqCounter = java.util.concurrent.atomic.AtomicLong(0)
 
