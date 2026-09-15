@@ -505,7 +505,7 @@
     } else {
       state.checkoutDays = Math.max(1, Math.round((state.checkoutDays || 30 * daily) / daily));
     }
-    var presets = [7, 30, 90, 365];
+    var presets = [3, 7, 30];
     var presetsBox = document.getElementById('plan-presets');
     presetsBox.innerHTML = '';
     presets.forEach(function (d) {
@@ -513,14 +513,40 @@
       b.type = 'button';
       b.className = 'btn btn-outline';
       b.dataset.days = String(d);
-      b.textContent = d + (d === 365 ? ' дней (год)' : ' дней');
+      b.textContent = d + ' дн. — ' + (d * daily) + ' ₽';
       b.style.minHeight = '38px';
       b.addEventListener('click', function () {
         state.checkoutDays = d;
+        var customInput = document.getElementById('custom-days-input');
+        if (customInput) customInput.value = '';
         updatePlanUI(daily);
       });
       presetsBox.appendChild(b);
     });
+
+    // Custom amount input
+    var customWrap = document.createElement('div');
+    customWrap.style.cssText = 'display:flex; align-items:center; gap:6px;';
+    var customInput = document.createElement('input');
+    customInput.type = 'number';
+    customInput.id = 'custom-days-input';
+    customInput.min = '1';
+    customInput.max = '3650';
+    customInput.placeholder = 'Своё кол-во';
+    customInput.style.cssText = 'width:120px; height:38px; padding:4px 8px; border:1px solid var(--border); border-radius:8px; background:var(--elev); color:var(--text); font-size:14px;';
+    var customLabel = document.createElement('span');
+    customLabel.textContent = 'дней';
+    customLabel.style.cssText = 'font-size:14px; color:var(--muted);';
+    customInput.addEventListener('input', function () {
+      var v = parseInt(customInput.value, 10);
+      if (!isNaN(v) && v >= 1) {
+        state.checkoutDays = Math.min(v, 3650);
+        updatePlanUI(daily);
+      }
+    });
+    customWrap.appendChild(customInput);
+    customWrap.appendChild(customLabel);
+    presetsBox.appendChild(customWrap);
 
     var methods = lava.methods.slice();
     if (methods.length > 0) state.checkoutMethod = state.checkoutMethod && methods.indexOf(state.checkoutMethod) >= 0 ? state.checkoutMethod : methods[0];
@@ -551,13 +577,24 @@
     var planEl = document.getElementById('plan-days-price');
     var perDayEl = document.getElementById('plan-per-day-val');
     var btn = document.getElementById('btn-checkout');
-    if (planEl) planEl.textContent = days + ' дней доступа — ' + rub + ' ₽';
+    if (planEl) planEl.textContent = 'Пополнить на ' + rub + ' ₽ — хватит на ' + days + ' дн.';
     if (perDayEl) perDayEl.textContent = String(daily);
-    if (btn) btn.textContent = 'Оплатить ' + rub + ' ₽';
+    if (btn) btn.textContent = 'Пополнить на ' + rub + ' ₽';
     Array.prototype.forEach.call(document.querySelectorAll('#plan-presets button'), function (b) {
-      b.classList.toggle('btn-primary', Number(b.dataset.days) === days);
-      b.classList.toggle('btn-outline', Number(b.dataset.days) !== days);
+      var isPreset = Number(b.dataset.days) === days;
+      b.classList.toggle('btn-primary', isPreset);
+      b.classList.toggle('btn-outline', !isPreset);
     });
+    // Deselect presets if custom value doesn't match any
+    var customInput = document.getElementById('custom-days-input');
+    if (customInput && customInput.value && parseInt(customInput.value, 10) === days) {
+      Array.prototype.forEach.call(document.querySelectorAll('#plan-presets button[data-days]'), function (b) {
+        if (Number(b.dataset.days) !== days) {
+          b.classList.remove('btn-primary');
+          b.classList.add('btn-outline');
+        }
+      });
+    }
   }
 
   function updateMethodUI() {

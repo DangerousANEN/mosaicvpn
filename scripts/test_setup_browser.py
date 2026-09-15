@@ -407,21 +407,33 @@ def run_all_tests():
         assert not page.is_visible("#payment-unavailable-notice") or page.locator("#payment-unavailable-notice").evaluate("el => el.classList.contains('hidden')"), "Unavailable notice should be hidden when provider available"
         print("Payment form visible, unavailable notice hidden — correct.")
 
-        # Verify plan presets rendered (7, 30, 90, 365 days)
+        # Verify plan presets rendered (3, 7, 30 days + custom input)
         presets = page.query_selector_all("#plan-presets button")
         preset_days = [btn.get_attribute("data-days") for btn in presets]
         print(f"Plan presets: {preset_days}")
-        assert "7" in preset_days and "30" in preset_days and "90" in preset_days and "365" in preset_days, f"Missing presets: {preset_days}"
+        assert "3" in preset_days and "7" in preset_days and "30" in preset_days, f"Missing presets: {preset_days}"
+        assert "90" not in preset_days and "365" not in preset_days, f"Old presets still present: {preset_days}"
+
+        # Verify custom input exists
+        custom_input = page.locator("#custom-days-input")
+        assert custom_input.count() > 0, "Custom days input should exist"
 
         # By default 30 days should be selected
         btn30 = page.locator("#plan-presets button[data-days='30']")
         assert "btn-primary" in (btn30.get_attribute("class") or ""), "30-day preset should be default selected"
 
-        # Click 90-day preset and verify button text updates
-        page.click("#plan-presets button[data-days='90']")
+        # Click 7-day preset and verify button text updates
+        page.click("#plan-presets button[data-days='7']")
         btn_text = page.locator("#btn-checkout").inner_text()
-        print(f"Checkout button after 90d: {btn_text}")
-        assert "90" in btn_text, f"Button should show 90 RUB: {btn_text}"
+        print(f"Checkout button after 7d: {btn_text}")
+        assert "7" in btn_text, f"Button should show 7 RUB: {btn_text}"
+
+        # Test custom input: type 15 days
+        page.fill("#custom-days-input", "15")
+        time.sleep(0.3)
+        btn_text2 = page.locator("#btn-checkout").inner_text()
+        print(f"Checkout button after custom 15d: {btn_text2}")
+        assert "15" in btn_text2, f"Button should show 15 RUB for custom: {btn_text2}"
 
         # Verify payment methods rendered (card, sbp)
         methods = page.query_selector_all("#payment-methods button")
