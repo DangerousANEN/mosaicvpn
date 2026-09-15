@@ -18,6 +18,12 @@ class SmartGroupRuntimeController {
 
   bool get isRunning => _monitor?.isRunning ?? false;
 
+  /// Pauses quality probing (app backgrounded). Saves battery on mobile.
+  void pause() => _monitor?.pause();
+
+  /// Resumes quality probing (app foregrounded).
+  void resume() => _monitor?.resume();
+
   void start({
     required DaemonApiBase api,
     required SmartGroupSelector selector,

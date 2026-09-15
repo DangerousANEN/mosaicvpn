@@ -37,7 +37,11 @@ import '../features/account/unified_account_panel.dart'
     show unifiedAccountProvider;
 import '../features/groups/groups_screen.dart';
 import '../features/more/more_screen.dart';
+import '../features/onboarding/onboarding_wizard.dart';
 import '../core/services/app_update_service.dart';
+import '../core/config/app_config.dart';
+import '../core/utils/external_launcher.dart';
+import 'app.dart' show onboardingProvider;
 
 /// Root shell with bottom navigation (and sidebar on desktop/wide screens) and tab caching via IndexedStack.
 ///
@@ -56,8 +60,9 @@ class _AppShellState extends ConsumerState<AppShell>
   bool _autoConnectTriggered = false;
   bool _quitting = false;
   bool _trayQuickPanelVisible = false;
-  bool _enrollmentCompleting = false;
-  final Set<String> _completedDesktopEnrollmentCallbacks = <String>{};
+  final Set<String> _completedEnrollmentCallbacks = <String>{};
+  final List<Uri> _enrollmentQueue = <Uri>[];
+  bool _isProcessingEnrollmentQueue = false;
   StreamSubscription<Uri>? _enrollmentCallbackSubscription;
   StreamSubscription<Uri>? _desktopEnrollmentCallbackSubscription;
   final SmartGroupSelector _smartGroupSelector = SmartGroupSelector();
@@ -89,6 +94,39 @@ class _AppShellState extends ConsumerState<AppShell>
           activeIcon: Icons.more_horiz,
           label: s.t('more')),
     ];
+  }
+
+  static double _computeOptimalNavFontSize({
+    required List<String> labels,
+    required double slotWidth,
+    required TextScaler textScaler,
+    double maxFontSize = 11.0,
+    double minFontSize = 7.5,
+  }) {
+    for (double fs = maxFontSize; fs >= minFontSize; fs -= 0.5) {
+      bool allFit = true;
+      for (final label in labels) {
+        final scaledFs = textScaler.scale(fs);
+        final tp = TextPainter(
+          text: TextSpan(
+            text: label,
+            style: TextStyle(
+              fontSize: scaledFs,
+              letterSpacing: fs <= 8.5 ? -0.3 : (fs <= 9.5 ? -0.2 : 0.0),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+          maxLines: 1,
+        )..layout();
+        if (tp.width > slotWidth) {
+          allFit = false;
+          break;
+        }
+      }
+      if (allFit) return fs;
+    }
+    return minFontSize;
   }
 
   /// Full list of desktop/sidebar destinations resolved from the active locale.
@@ -157,19 +195,19 @@ class _AppShellState extends ConsumerState<AppShell>
         onQuit: _quitApplication,
       );
       // app_links delivers both the startup URI and later Windows/Linux
-      // protocol launches. Android keeps its dedicated native callback slots
-      // to prevent an auth callback from colliding with enrollment.
-      _desktopEnrollmentCallbackSubscription =
-          AppLinks().uriLinkStream.listen(_completeDesktopWebsiteEnrollment);
+      // protocol launches.
     }
+    _desktopEnrollmentCallbackSubscription =
+        AppLinks().uriLinkStream.listen(_enqueueEnrollment);
+    AppLinks().getInitialLink().then((uri) {
+      if (uri != null) _enqueueEnrollment(uri);
+    });
     if (AppPlatform.isAndroid) {
       _enrollmentCallbackSubscription =
-          AndroidVpnService.instance.enrollmentCallbacks.listen((_) {
-        _completeWebsiteEnrollment();
-      });
+          AndroidVpnService.instance.enrollmentCallbacks.listen(_enqueueEnrollment);
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _completeWebsiteEnrollment();
+      _pollAndroidEnrollmentCallbacks();
       if (mounted) {
         AppUpdateService.instance.checkAndShowPrompt(context);
       }
@@ -200,72 +238,71 @@ class _AppShellState extends ConsumerState<AppShell>
     }
   }
 
-  /// Completes an explicit browser-to-app enrollment when Android returns via
-  /// `mosaicvpn://enroll/callback`. The method is safe on normal launches: no
-  /// pending callback simply returns without changing the selected screen.
-  Future<void> _completeWebsiteEnrollment() async {
-    if (!AppPlatform.isAndroid || _enrollmentCompleting) return;
-    // daemonApiProvider returns a lazy delegating wrapper (_ResolvedDaemonApi),
-    // so `is AndroidHostedDaemonApi` NEVER matched here and every browser
-    // enrollment was silently dropped before any exchange request left the
-    // device. The hosted facade is an explicit singleton on Android: use it
-    // directly and let its own pending-callback check decide whether there is
-    // anything to exchange.
-    await _completeEnrollmentWith(AndroidHostedDaemonApi.instance);
-  }
-
-  Future<void> _completeEnrollmentWith(AndroidHostedDaemonApi api) async {
-    try {
-      _enrollmentCompleting = true;
-      final subscription = await api.completeWebsiteEnrollmentIfPresent();
-      if (subscription == null || !mounted) return;
-      ref.invalidate(subscriptionsProvider);
-      ref.invalidate(mosaicManifestProvider);
-      ref.invalidate(unifiedAccountProvider);
-      setState(() => _currentIndex = 1);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(
-                'Подписка «${subscription.name}» добавлена в приложение.')),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            error.toString().replaceFirst('Bad state: ', ''),
-          ),
-        ),
-      );
-    } finally {
-      _enrollmentCompleting = false;
-    }
-  }
-
-  /// Receives a desktop callback after the Windows/Linux launcher passes it
-  /// into the existing MosaicVPN process. Unlike a manual URL import, this
-  /// preserves the provider identity and the secure hosted cabinet session.
-  Future<void> _completeDesktopWebsiteEnrollment(Uri callback) async {
-    if (!AppPlatform.isDesktop || _enrollmentCompleting) return;
+  /// Enqueues a deep link enrollment URI, ignoring duplicates to prevent
+  /// burning one-time exchange codes on repeated cold/warm deliveries.
+  void _enqueueEnrollment(Uri callback) {
+    if (!MosaicEnrollmentExchange.isSupportedCallback(callback)) return;
     final callbackKey = MosaicEnrollmentExchange.callbackDeliveryKey(callback);
     if (callbackKey != null &&
-        _completedDesktopEnrollmentCallbacks.contains(callbackKey)) {
-      // Windows can deliver a protocol invocation more than once to an already
-      // running application. The first delivery has already installed the same
-      // source; do not re-redeem its one-time browser code and create a 409.
+        _completedEnrollmentCallbacks.contains(callbackKey)) {
       ref.invalidate(subscriptionsProvider);
       ref.invalidate(mosaicManifestProvider);
       ref.invalidate(unifiedAccountProvider);
       if (mounted) setState(() => _currentIndex = 1);
       return;
     }
+    // Prevent duplicate entries in the pending queue
+    final isAlreadyQueued = _enrollmentQueue.any((pending) {
+      final key = MosaicEnrollmentExchange.callbackDeliveryKey(pending);
+      return (key != null && key == callbackKey) || pending == callback;
+    });
+    if (!isAlreadyQueued) {
+      _enrollmentQueue.add(callback);
+    }
+    _drainEnrollmentQueue();
+  }
+
+  Future<void> _pollAndroidEnrollmentCallbacks() async {
+    if (!AppPlatform.isAndroid) return;
     try {
-      _enrollmentCompleting = true;
+      while (true) {
+        final callback =
+            await AndroidVpnService.instance.consumeEnrollmentCallback();
+        if (callback == null) break;
+        _enqueueEnrollment(callback);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _drainEnrollmentQueue() async {
+    if (_isProcessingEnrollmentQueue) return;
+    _isProcessingEnrollmentQueue = true;
+    try {
+      while (_enrollmentQueue.isNotEmpty) {
+        final callback = _enrollmentQueue.removeAt(0);
+        await _processSingleEnrollment(callback);
+      }
+    } finally {
+      _isProcessingEnrollmentQueue = false;
+    }
+  }
+
+  Future<void> _processSingleEnrollment(Uri callback) async {
+    final callbackKey = MosaicEnrollmentExchange.callbackDeliveryKey(callback);
+    if (callbackKey != null &&
+        _completedEnrollmentCallbacks.contains(callbackKey)) {
+      ref.invalidate(subscriptionsProvider);
+      ref.invalidate(mosaicManifestProvider);
+      ref.invalidate(unifiedAccountProvider);
+      if (mounted) setState(() => _currentIndex = 1);
+      return;
+    }
+
+    try {
+      // 1. Redeem one-time code and persist account credentials
       final enrollment = await AndroidMosaicAccountService.instance
           .completeEnrollmentCallback(callback);
-      if (callbackKey != null) {
-        _completedDesktopEnrollmentCallbacks.add(callbackKey);
-      }
+
       final providerId = enrollment.providerId?.trim().isNotEmpty == true
           ? enrollment.providerId!.trim()
           : 'mosaicvpn';
@@ -277,7 +314,11 @@ class _AppShellState extends ConsumerState<AppShell>
               true
           ? enrollment.subscriptionUrl!.trim()
           : 'https://sub.zxc1x1.ru/${Uri.encodeComponent(enrollment.directToken)}';
-      final api = ref.read(daemonApiProvider);
+
+      // 2. Durable save: persist subscription into the active daemon / local store
+      final api = AppPlatform.isAndroid
+          ? AndroidHostedDaemonApi.instance
+          : ref.read(daemonApiProvider);
       final subscription = await api.enrollProviderSubscription(
         providerId: providerId,
         providerAccountId: providerAccountId,
@@ -289,6 +330,12 @@ class _AppShellState extends ConsumerState<AppShell>
         directToken: enrollment.directToken,
         username: enrollment.username,
       );
+
+      // 3. Mark callback delivery completed to protect against burn-before-durable-save
+      if (callbackKey != null) {
+        _completedEnrollmentCallbacks.add(callbackKey);
+      }
+
       if (!mounted) return;
       ref.invalidate(subscriptionsProvider);
       ref.invalidate(mosaicManifestProvider);
@@ -297,18 +344,31 @@ class _AppShellState extends ConsumerState<AppShell>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'MosaicVPN добавлен: ${subscription.serverCount} маршрутов и кабинет подключены.',
+            AppPlatform.isDesktop
+                ? 'MosaicVPN добавлен: ${subscription.serverCount} маршрутов и кабинет подключены.'
+                : 'Подписка «${subscription.name}» добавлена в приложение.',
           ),
         ),
       );
     } catch (error) {
+      if (callbackKey != null) {
+        _completedEnrollmentCallbacks.add(callbackKey);
+      }
       if (!mounted) return;
+      ref.invalidate(subscriptionsProvider);
+      ref.invalidate(mosaicManifestProvider);
+      ref.invalidate(unifiedAccountProvider);
+      final errStr = error.toString();
+      // If code was already redeemed on server, gracefully navigate instead of crashing
+      if (errStr.contains('409') || errStr.contains('used')) {
+        setState(() => _currentIndex = 1);
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(error.toString().replaceFirst('Bad state: ', ''))),
+          content: Text(errStr.replaceFirst('Bad state: ', '')),
+        ),
       );
-    } finally {
-      _enrollmentCompleting = false;
     }
   }
 
@@ -316,7 +376,13 @@ class _AppShellState extends ConsumerState<AppShell>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _completeWebsiteEnrollment();
+      _pollAndroidEnrollmentCallbacks();
+      // Resume quality monitoring probes when the app comes to the foreground.
+      SmartGroupRuntimeController.instance.resume();
+    } else if (state == AppLifecycleState.paused ||
+               state == AppLifecycleState.inactive) {
+      // Pause quality monitoring probes to save battery when the app leaves.
+      SmartGroupRuntimeController.instance.pause();
     }
   }
 
@@ -547,33 +613,67 @@ class _AppShellState extends ConsumerState<AppShell>
                     ),
               bottomNavigationBar: isWide
                   ? null
-                  : Container(
-                      decoration: BoxDecoration(
-                        color: c.bgInk,
-                        border: Border(
-                          top: BorderSide(color: c.borderInk, width: 1),
-                        ),
-                      ),
-                      child: BottomNavigationBar(
-                        currentIndex: activeIndex,
-                        onTap: (index) => setState(() => _currentIndex = index),
-                        type: BottomNavigationBarType.fixed,
-                        backgroundColor: Colors.transparent,
-                        elevation: 0,
-                        selectedItemColor: AtlasTheme.accent,
-                        unselectedItemColor: c.textMuted,
-                        selectedFontSize: 11,
-                        unselectedFontSize: 11,
-                        items: _mainDestinations(context)
-                            .map(
-                              (dest) => BottomNavigationBarItem(
-                                icon: Icon(dest.icon),
-                                activeIcon: Icon(dest.activeIcon),
-                                label: dest.label,
-                              ),
-                            )
-                            .toList(),
-                      ),
+                  : Builder(
+                      builder: (context) {
+                        final destinations = _mainDestinations(context);
+                        final screenWidth = MediaQuery.sizeOf(context).width;
+                        final slotWidth = screenWidth / destinations.length;
+                        final incomingScaler = MediaQuery.textScalerOf(context);
+                        final clampedScaler =
+                            incomingScaler.clamp(maxScaleFactor: 1.15);
+                        final optimalFontSize = _computeOptimalNavFontSize(
+                          labels: destinations.map((d) => d.label).toList(),
+                          slotWidth: slotWidth - 2.0,
+                          textScaler: clampedScaler,
+                        );
+                        final letterSpacing = optimalFontSize <= 8.5
+                            ? -0.3
+                            : (optimalFontSize <= 9.5 ? -0.2 : 0.0);
+                        final labelStyle = TextStyle(
+                          fontSize: optimalFontSize,
+                          letterSpacing: letterSpacing,
+                          fontWeight: FontWeight.w500,
+                        );
+
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: c.bgInk,
+                            border: Border(
+                              top: BorderSide(color: c.borderInk, width: 1),
+                            ),
+                          ),
+                          child: MediaQuery(
+                            data: MediaQuery.of(context).copyWith(
+                              textScaler: clampedScaler,
+                            ),
+                            child: BottomNavigationBar(
+                              currentIndex: activeIndex,
+                              onTap: (index) =>
+                                  setState(() => _currentIndex = index),
+                              type: BottomNavigationBarType.fixed,
+                              backgroundColor: Colors.transparent,
+                              elevation: 0,
+                              selectedItemColor: AtlasTheme.accent,
+                              unselectedItemColor: c.textMuted,
+                              selectedFontSize: optimalFontSize,
+                              unselectedFontSize: optimalFontSize,
+                              selectedLabelStyle: labelStyle.copyWith(
+                                  fontWeight: FontWeight.w600),
+                              unselectedLabelStyle: labelStyle,
+                              items: destinations
+                                  .map(
+                                    (dest) => BottomNavigationBarItem(
+                                      icon: Icon(dest.icon),
+                                      activeIcon: Icon(dest.activeIcon),
+                                      label: dest.label,
+                                      tooltip: dest.label,
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          ),
+                        );
+                      },
                     ),
             ),
             if (AppPlatform.isDesktop && _trayQuickPanelVisible)

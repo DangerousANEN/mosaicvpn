@@ -46,13 +46,14 @@ class MonitorConfig {
   /// Provider-set windows must not let a remote manifest trigger arbitrarily
   /// aggressive or arbitrarily slow probing.
   factory MonitorConfig.fromPolicy(ManifestClientPolicy policy) {
-    // probe interval: clamp policy TTL-derived hint (TTL/10) to [15s, 5min]
-    final rawIntervalSeconds = max(15, min(300, policy.probeTtlSeconds ~/ 10));
+    // probe interval: clamp policy TTL-derived hint (TTL/10) to [20s, 5min]
+    // Raised minimum from 15 to 20 to reduce battery drain on mobile.
+    final rawIntervalSeconds = max(20, min(300, policy.probeTtlSeconds ~/ 10));
     return MonitorConfig(
       probeInterval: Duration(seconds: rawIntervalSeconds),
       degradationWindowCount: policy.maxFailoverTries.clamp(2, 6),
       failoverCooldown: Duration(
-        seconds: max(60, min(600, rawIntervalSeconds * policy.maxFailoverTries)),
+        seconds: max(90, min(600, rawIntervalSeconds * policy.maxFailoverTries)),
       ),
       // Provider weights inform the min-improvement threshold.
       minMaterialImprovement:
@@ -126,6 +127,7 @@ class SmartGroupQualityMonitor {
   Timer? _timer;
   bool _running = false;
   bool _disposed = false;
+  bool _paused = false;
   int _generation = 0;
 
   String _groupId = '';
@@ -141,6 +143,24 @@ class SmartGroupQualityMonitor {
   // ─── Public surface ────────────────────────────────────────────────
 
   bool get isRunning => _running && !_disposed;
+
+  /// Pauses probe windows while the app is backgrounded. Existing in-flight
+  /// probes run to completion but no new timer is scheduled until [resume].
+  /// This is the primary battery-saving mechanism on mobile.
+  void pause() {
+    _paused = true;
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  /// Resumes probe windows after the app returns to the foreground.
+  void resume() {
+    if (!_paused) return;
+    _paused = false;
+    if (_running && !_disposed) {
+      _scheduleNext(_generation);
+    }
+  }
 
   /// Fired on each failover evaluation (pass or fail).
   void Function(FailoverEvent)? onFailoverEvent;
@@ -194,7 +214,7 @@ class SmartGroupQualityMonitor {
   }
 
   void _scheduleNext(int gen) {
-    if (!_isCurrent(gen)) return;
+    if (!_isCurrent(gen) || _paused) return;
     _timer?.cancel();
     _timer = Timer(_config.probeInterval, () => _runWindow(gen));
   }
@@ -228,7 +248,7 @@ class SmartGroupQualityMonitor {
         return;
       }
 
-      final concurrency = group.clientPolicy.maxParallelProbes.clamp(1, 8);
+      final concurrency = group.clientPolicy.maxParallelProbes.clamp(1, 4);
       final results = await _probeCandidates(shard.candidateIds, concurrency);
       if (!_isCurrent(gen)) return;
 
@@ -283,7 +303,9 @@ class SmartGroupQualityMonitor {
     }
 
     final alternatives = results.entries
-        .where((entry) => entry.key != activeId && entry.value.successful)
+        .where((entry) =>
+            entry.key != activeId &&
+            SmartGroupSelector.isEligibleWinner(entry.value))
         .toList()
       ..sort((left, right) => _scoreResult(right.value, group.clientPolicy)
           .compareTo(_scoreResult(left.value, group.clientPolicy)));
@@ -355,17 +377,40 @@ class SmartGroupQualityMonitor {
 
   double _scoreResult(
       SmartGroupProbeResult? result, ManifestClientPolicy policy) {
-    if (result == null || !result.successful || result.successes == 0) {
+    if (result == null || !SmartGroupSelector.isEligibleWinner(result)) {
       return double.negativeInfinity;
     }
-    final reliability = 1 - (result.lossPercent.clamp(0.0, 100.0) / 100);
+    final sampleRatio = result.samples > 0
+        ? (result.successes / result.samples).clamp(0.0, 1.0)
+        : 1.0;
+    final lossRate = (result.lossPercent.clamp(0.0, 100.0) / 100.0);
+    final reliability = (1.0 - lossRate) * sampleRatio;
     final latency = result.medianLatencyMs <= 0
         ? 0.0
         : 1 / (1 + result.medianLatencyMs / 150);
-    final stability = 1 / (1 + result.jitterMs / 100);
-    return reliability * policy.lossWeight +
-        latency * policy.latencyWeight +
-        stability * policy.stabilityWeight;
+    final stability = 1.0 /
+        (1.0 +
+            (result.jitterMs / 50.0) +
+            (result.lossPercent > 0 ? 0.5 : 0.0));
+
+    double lw = policy.lossWeight;
+    double latw = policy.latencyWeight;
+    double stabw = policy.stabilityWeight;
+    double spw = policy.speedWeight;
+
+    if (policy.mode == 'stability') {
+      stabw = max(stabw, 0.40);
+      lw = max(lw, 0.35);
+      latw = min(latw, 0.25);
+    } else if (policy.mode == 'latency') {
+      latw = max(latw, 0.50);
+      lw = max(lw, 0.30);
+    }
+
+    final total = lw + latw + stabw + spw;
+    return total > 0
+        ? (reliability * lw + latency * latw + stability * stabw) / total
+        : 0.0;
   }
 
   /// Probes candidate IDs with bounded concurrency and returns per-candidate
@@ -376,6 +421,7 @@ class SmartGroupQualityMonitor {
   ) async {
     final results = <String, SmartGroupProbeResult>{};
     var nextIndex = 0;
+    final expectedSamples = _group?.clientPolicy.probeSamples ?? 3;
 
     final workers = List<Future<void>>.generate(concurrency, (_) async {
       while (true) {
@@ -383,15 +429,20 @@ class SmartGroupQualityMonitor {
         if (index >= candidateIds.length) return;
         final candidateId = candidateIds[index];
         try {
-          final result =
-              await api.probeGroupCandidate(_groupId, candidateId);
+          final result = await api.probeGroupCandidate(
+            _groupId,
+            candidateId,
+            probeMode: _group?.clientPolicy.probeMode,
+            probeSamples: _group?.clientPolicy.probeSamples,
+            probeUrl: _group?.clientPolicy.probeUrl,
+          );
           results[candidateId] = result;
         } catch (_) {
           results[candidateId] = SmartGroupProbeResult(
             groupId: _groupId,
             candidateId: candidateId,
             successful: false,
-            samples: 1,
+            samples: expectedSamples,
             successes: 0,
             lossPercent: 100,
             medianLatencyMs: 0,

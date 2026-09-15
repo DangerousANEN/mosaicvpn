@@ -27,12 +27,19 @@ class AppConfig {
   static const Duration healthCheckTimeout = Duration(milliseconds: 450);
 
   // ── Polling intervals ──
+  /// Status polling: responsive in foreground for instant UI state changes,
+  /// heavily throttled in background to save battery & CPU wakeups.
   static const Duration statusPollInterval = Duration(seconds: 2);
-  static const Duration statusPollIntervalBackground = Duration(seconds: 8);
-  static const Duration statsPollInterval = Duration(seconds: 3);
-  static const Duration statsPollIntervalBackground = Duration(seconds: 15);
-  static const Duration logsPollInterval = Duration(seconds: 2);
-  static const Duration logsPollIntervalBackground = Duration(seconds: 20);
+  static const Duration statusPollIntervalBackground = Duration(seconds: 20);
+  /// Traffic stats: less critical, wider gaps acceptable.
+  static const Duration statsPollInterval = Duration(seconds: 5);
+  static const Duration statsPollIntervalBackground = Duration(seconds: 30);
+  /// Logs: purely diagnostic, no need for tight polling.
+  static const Duration logsPollInterval = Duration(seconds: 3);
+  static const Duration logsPollIntervalBackground = Duration(seconds: 30);
+  /// When the app is fully backgrounded (Doze/standby), ALL polling should
+  /// pause entirely to avoid CPU wakeups. This flag is checked by providers.
+  static const bool suspendPollingInDoze = true;
 
   // ── MCP ──
   static const int defaultMcpPort = 9090;
@@ -43,6 +50,10 @@ class AppConfig {
   static const int defaultSocksPort = 1080;
   static const String defaultHttpHost = '127.0.0.1';
   static const int defaultHttpPort = 2080;
+
+  // ── Web endpoints ──
+  static const String websiteBaseUrl = 'https://sub.zxc1x1.ru';
+  static const String websiteSetupUrl = 'https://sub.zxc1x1.ru/setup.html';
 
   // ── App metadata ──
   static const String appName = 'MosaicVPN';

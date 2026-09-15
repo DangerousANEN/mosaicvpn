@@ -15,6 +15,7 @@ class SmartGroupLatencyProgress {
     this.jitterMs,
     this.lossPercent,
     this.cancelled = false,
+    this.unverified = false,
   });
 
   final String groupId;
@@ -25,6 +26,7 @@ class SmartGroupLatencyProgress {
   final int? jitterMs;
   final double? lossPercent;
   final bool cancelled;
+  final bool unverified;
 
   String get label => '$completed/$total';
 }
@@ -58,18 +60,24 @@ class SmartGroupLatencyTest {
     }
 
     final successful = <SmartGroupProbeResult>[];
+    var unverifiedCount = 0;
     var completed = 0;
     SmartGroupLatencyProgress publish({bool cancelled = false}) {
       final aggregate = _aggregate(
-          group.id, completed, candidateIds.length, successful,
-          cancelled: cancelled);
+        group.id,
+        completed,
+        candidateIds.length,
+        successful,
+        unverifiedCount: unverifiedCount,
+        cancelled: cancelled,
+      );
       onProgress(aggregate);
       return aggregate;
     }
 
     publish();
     var nextIndex = 0;
-    const concurrency = 3;
+    final concurrency = group.clientPolicy.maxParallelProbes.clamp(1, 4);
     final workerCount = candidateIds.length < concurrency ? candidateIds.length : concurrency;
 
     Future<void> worker() async {
@@ -90,6 +98,8 @@ class SmartGroupLatencyTest {
           );
           if (result.successful && result.medianLatencyMs > 0) {
             successful.add(result);
+          } else if (result.isUnverified || result.samples == 0) {
+            unverifiedCount++;
           }
         } catch (_) {
           // A failed opaque candidate contributes to the aggregate loss.
@@ -108,16 +118,19 @@ class SmartGroupLatencyTest {
     int completed,
     int total,
     List<SmartGroupProbeResult> successful, {
+    int unverifiedCount = 0,
     required bool cancelled,
   }) {
     if (successful.isEmpty) {
+      final isUnverified = unverifiedCount > 0 && unverifiedCount == completed;
       return SmartGroupLatencyProgress(
         groupId: groupId,
         completed: completed,
         total: total,
         successful: 0,
-        lossPercent: completed == 0 ? null : 100,
+        lossPercent: completed == 0 || isUnverified ? null : 100,
         cancelled: cancelled,
+        unverified: isUnverified,
       );
     }
     final latency = successful
