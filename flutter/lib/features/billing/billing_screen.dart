@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/models.dart';
 import '../../core/providers/billing_provider.dart';
+import '../../core/providers/vpn_providers.dart';
 import '../../core/theme/atlas_theme.dart';
+import '../../core/utils/external_launcher.dart';
 import '../../core/utils/formatters.dart';
 import '../../shared/widgets/atlas_widgets.dart';
 import '../../shared/widgets/skeleton_loader.dart';
@@ -437,15 +439,72 @@ class MainStateHelper {
   static const MainAxisAlignment spaceBetween = MainAxisAlignment.spaceBetween;
 }
 
-/// CryptoBot Top-Up Action Card.
-class _TopupActionCard extends ConsumerWidget {
+/// Website Top-Up Action Card (card / SBP via LAVA gateway).
+///
+/// Opens the payment URL in Custom Tabs (Android) or external browser (desktop).
+/// Return from the payment page is NOT proof of payment — the profile is
+/// re-read from the server to show the honest balance after return.
+class _TopupActionCard extends ConsumerStatefulWidget {
   final BillingProfile profile;
 
   const _TopupActionCard({required this.profile});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_TopupActionCard> createState() => _TopupActionCardState();
+}
+
+class _TopupActionCardState extends ConsumerState<_TopupActionCard> {
+  static const _presets = [3, 7, 30];
+  int _selectedDays = 30;
+  bool _busy = false;
+  String? _error;
+
+  Future<void> _topUp() async {
+    setState(() { _busy = true; _error = null; });
+    try {
+      final api = ref.read(daemonApiProvider);
+      final options = await api.getCheckoutOptions();
+      final lava = options.where((o) => o.available).toList();
+      if (lava.isEmpty) {
+        setState(() => _error = 'Онлайн-оплата временно недоступна.');
+        return;
+      }
+      final session = await api.createCheckout(
+        amountRub: _selectedDays,
+        provider: lava.first.id,
+      );
+      final url = session.checkoutUrl;
+      if (url.scheme != 'https') {
+        setState(() => _error = 'Недопустимый адрес платёжного шлюза.');
+        return;
+      }
+      // Open in Custom Tabs (Android) or external browser (desktop).
+      // Return from the payment page is NOT proof of payment.
+      final opened = await ExternalLauncher.openUrl(url);
+      if (!opened && mounted) {
+        setState(() => _error = 'Не удалось открыть браузер.');
+        return;
+      }
+      // After the user returns from the browser, re-read profile (honest).
+      if (mounted) {
+        // Small delay for the user to complete and return
+        await Future<void>.delayed(const Duration(seconds: 2));
+        ref.read(billingNotifierProvider.notifier).refreshProfile();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = 'Ошибка: ${e.toString().length > 80 ? e.toString().substring(0, 80) : e}');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
+    final dailyPrice = widget.profile.pricePerDayRub;
+    final totalRub = _selectedDays * (dailyPrice > 0 ? dailyPrice : 1);
 
     return AtlasCard(
       child: Column(
@@ -468,7 +527,7 @@ class _TopupActionCard extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'CryptoBot Top-Up',
+                      'Пополнить баланс',
                       style: TextStyle(
                         fontFamily: AtlasTheme.serifFamily,
                         fontSize: 16,
@@ -478,7 +537,7 @@ class _TopupActionCard extends ConsumerWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Instantly extend your subscription via Telegram CryptoBot (USDT, TON, BTC).',
+                      'Карта или СБП · ${dailyPrice > 0 ? dailyPrice : 1} ₽/день',
                       style: TextStyle(fontSize: 13, color: c.textSecondary),
                     ),
                   ],
@@ -486,25 +545,42 @@ class _TopupActionCard extends ConsumerWidget {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
+          // Presets + custom
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              for (final d in _presets)
+                ChoiceChip(
+                  label: Text('$d дн. · ${d * (dailyPrice > 0 ? dailyPrice : 1)} ₽'),
+                  selected: _selectedDays == d,
+                  selectedColor: c.accent.withValues(alpha: 0.2),
+                  onSelected: (_) => setState(() => _selectedDays = d),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (_error != null) ...[
+            Text(
+              _error!,
+              style: TextStyle(color: c.danger, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+          ],
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               ElevatedButton.icon(
-                onPressed: profile.linked
-                    ? () => showTopupDialog(context, ref)
-                    : () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Please link your Telegram account first to top up.',
-                            ),
-                          ),
-                        );
-                        showLinkAccountDialog(context, ref);
-                      },
-                icon: const Icon(Icons.add_card, size: 18),
-                label: const Text('Top Up Balance'),
+                onPressed: _busy ? null : _topUp,
+                icon: _busy
+                    ? const SizedBox(
+                        width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.payment, size: 18),
+                label: Text(_busy
+                    ? 'Перенаправление…'
+                    : 'Пополнить на $totalRub ₽'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: c.accent,
                   foregroundColor: c.textOnInk,

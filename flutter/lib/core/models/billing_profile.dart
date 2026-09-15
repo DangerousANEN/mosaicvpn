@@ -14,6 +14,8 @@ class BillingProfile {
   final DateTime? expireAt;
   final int daysLeft;
   final String description;
+  /// Daily price in RUB (1 RUB = 1 day by default). Used for the top-up card.
+  final int pricePerDayRub;
 
   BillingProfile({
     this.linked = false,
@@ -29,6 +31,7 @@ class BillingProfile {
     this.expireAt,
     this.daysLeft = 0,
     this.description = '',
+    this.pricePerDayRub = 1,
   }) : squadName = squadName ?? tag;
 
   factory BillingProfile.fromJson(Map<String, dynamic> j) {
@@ -74,6 +77,9 @@ class BillingProfile {
       expireAt: expireDate,
       daysLeft: daysLeft,
       description: (j['description'] ?? '').toString(),
+      pricePerDayRub: ((j['billing'] as Map?)?['price_per_day_rub'] as num?)?.toInt()
+          ?? (j['price_per_day_rub'] as num?)?.toInt()
+          ?? 1,
     );
   }
 
