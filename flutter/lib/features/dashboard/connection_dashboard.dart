@@ -432,10 +432,12 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
       if (status.isConnected || status.isConnecting) {
         final wasSameRoute = _sameActiveRoute(status, selected);
         SmartGroupRuntimeController.instance.stop();
+        _smartGroupSelector.cancel();
         await api.disconnect();
         // The daemon stop is asynchronous. Do not race the next connect with
         // the old runtime; wait for the authoritative state transition.
         await _waitForDisconnected(api);
+        _smartGroupSelector.resetCancel();
         if (wasSameRoute) {
           ref.invalidate(vpnStatusProvider);
           return;
@@ -1730,7 +1732,10 @@ class _DashboardNetworkStatsCard extends ConsumerWidget {
                 c: c,
                 icon: Icons.speed_rounded,
                 iconColor: AtlasTheme.accent,
-                label: 'Пинг',
+                label: 'Отклик',
+                tooltip: AppPlatform.isAndroid
+                    ? 'Замер времени полного HTTPS-запроса через туннель (DNS+TCP+TLS+HTTP), а не сетевой ICMP RTT узла'
+                    : 'Замер времени HTTPS-запроса через туннель (DNS+TCP+TLS+HTTP), а не ICMP пинг',
                 value: ping,
               ),
               _divider(c),
@@ -1808,47 +1813,56 @@ class _DashboardNetworkStatsCard extends ConsumerWidget {
     required Color iconColor,
     required String label,
     required String value,
+    String? tooltip,
   }) {
+    final content = Row(
+      children: [
+        Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: iconColor.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, size: 15, color: iconColor),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(fontSize: 10, color: c.textMuted),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontFamily: AtlasTheme.monoFamily,
+                  fontWeight: FontWeight.w700,
+                  color: c.textPrimary,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
     return Expanded(
-      child: Row(
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: iconColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, size: 15, color: iconColor),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(fontSize: 10, color: c.textMuted),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontFamily: AtlasTheme.monoFamily,
-                    fontWeight: FontWeight.w700,
-                    color: c.textPrimary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+      child: tooltip != null
+          ? Tooltip(
+              message: tooltip,
+              triggerMode: TooltipTriggerMode.tap,
+              child: content,
+            )
+          : content,
     );
   }
 }
