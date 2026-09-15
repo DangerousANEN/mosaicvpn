@@ -21,6 +21,7 @@ import '../core/services/mosaic_enrollment_exchange.dart';
 import '../core/services/tray_service.dart';
 import '../core/services/smart_group_selector.dart';
 import '../core/services/smart_group_runtime_controller.dart';
+import '../core/services/local_rest_api.dart';
 import '../core/services/ui_preferences_service.dart';
 import '../shared/widgets/mosaic_tray_quick_panel.dart';
 import '../features/dashboard/connection_dashboard.dart';
@@ -211,12 +212,20 @@ class _AppShellState extends ConsumerState<AppShell>
       if (mounted) {
         AppUpdateService.instance.checkAndShowPrompt(context);
       }
+      // Start the local REST API for scripted VPN control (desktop only).
+      // On Android the VPN service runs in a separate process, so the REST
+      // API would not reach the daemon; scripts use adb or intents instead.
+      if (AppPlatform.isDesktop) {
+        final api = ref.read(daemonApiProvider);
+        LocalRestApi.instance.start(api: api);
+      }
     });
   }
 
   @override
   void dispose() {
     SmartGroupRuntimeController.instance.stop();
+    unawaited(LocalRestApi.instance.stop());
     _enrollmentCallbackSubscription?.cancel();
     _desktopEnrollmentCallbackSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);

@@ -155,7 +155,10 @@ class ManifestClientPolicy {
     this.speedProbe = const SpeedProbePolicy(),
     this.probeMode = 'auto',
     this.probeSamples = 5,
-    this.probeUrl = '',
+    /// Default probe URL uses direct IP to avoid DNS cold-start delays.
+    /// 1.1.1.1/generate_204 returns HTTP 204 without DNS resolution,
+    /// giving a clean transport-level RTT measurement.
+    this.probeUrl = 'http://1.1.1.1/generate_204',
   });
 
   factory ManifestClientPolicy.fromJson(Map<String, dynamic>? json) {
@@ -179,7 +182,7 @@ class ManifestClientPolicy {
           value['speed_probe'] as Map<String, dynamic>?),
       probeMode: value['probe_mode']?.toString() ?? 'auto',
       probeSamples: boundedInt('probe_samples', 5, 3, 20),
-      probeUrl: value['probe_url']?.toString() ?? '',
+      probeUrl: value['probe_url']?.toString() ?? 'http://1.1.1.1/generate_204',
     );
   }
 }
