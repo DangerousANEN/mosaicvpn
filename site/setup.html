@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="ru" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Быстрый старт — MosaicVPN</title>
+  <meta name="description" content="Простое подключение MosaicVPN: регистрация по email или через Telegram, выбор платформы и быстрый запуск приложения." />
+  <link rel="icon" type="image/png" href="/assets/logo-96.png">
+  <link rel="preload" as="image" href="/assets/logo-96.png">
+  <meta name="theme-color" content="#F4EFE6" />
+
+  <link rel="stylesheet" href="/assets/common.css">
+  <link rel="stylesheet" href="/assets/setup.css">
+</head>
+<body>
+  <!-- Header with Brand Navigation -->
+  <header>
+    <div class="wrap nav">
+      <a class="brand" href="/">
+        <img src="/assets/logo-96.png" alt="MosaicVPN" width="28" height="28" style="display:block">
+        <span>MosaicVPN</span>
+      </a>
+      <div id="account-info" class="hidden" style="margin-left:auto; display:flex; align-items:center; gap:12px;">
+        <span id="user-email" style="font-size:13px; font-weight:600; color:var(--text-2);"></span>
+        <button id="btn-logout" class="btn btn-outline" style="min-height:36px; padding:6px 12px; font-size:13px;">Выйти</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="setup-container">
+      
+      <!-- Stepper / Progress -->
+      <nav class="steps-nav" aria-label="Этапы настройки">
+        <div id="ind-step-1" class="step-indicator active">
+          <div class="step-num">1</div>
+          <span class="step-label">Аккаунт</span>
+        </div>
+        <div id="ind-step-2" class="step-indicator">
+          <div class="step-num">2</div>
+          <span class="step-label">Доступ</span>
+        </div>
+        <div id="ind-step-3" class="step-indicator">
+          <div class="step-num">3</div>
+          <span class="step-label">Запуск</span>
+        </div>
+      </nav>
+
+      <!-- Gift / Invite Alert (if #gift=... was passed) -->
+      <div id="gift-notice" class="alert alert-info hidden" role="status"></div>
+      <div id="gift-redeem-success" class="alert alert-success hidden" role="status"></div>
+
+      <!-- Authenticated Profile Summary Bar (visible across steps once logged in) -->
+      <div id="profile-summary-card" class="profile-meta-card hidden">
+        <div class="profile-meta-main">
+          <div id="user-display-email" class="profile-email"></div>
+          <div id="user-display-id" class="profile-id"></div>
+        </div>
+        <span id="account-status-badge" class="status-badge"></span>
+      </div>
+
+      <!-- STEP 1: AUTHENTICATION (Email/Pass Primary, Telegram Optional) -->
+      <section id="step-auth" class="card-box" aria-labelledby="auth-title">
+        <div class="card-header">
+          <h1 id="auth-title" class="card-title">Создание аккаунта</h1>
+          <p class="card-desc">Войдите или зарегистрируйтесь по email. Новым пользователям доступен пробный период.</p>
+        </div>
+
+        <div class="tab-group" role="tablist">
+          <button id="tab-register" class="tab-btn active" role="tab" aria-selected="true" type="button">Регистрация</button>
+          <button id="tab-login" class="tab-btn" role="tab" aria-selected="false" type="button">Вход</button>
+        </div>
+
+        <!-- Form: Register -->
+        <form id="form-register" novalidate>
+          <div class="form-group">
+            <label class="form-label" for="reg-email">Ваш Email</label>
+            <input id="reg-email" class="field" type="email" autocomplete="email" placeholder="name@example.com" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="reg-password">Пароль</label>
+            <input id="reg-password" class="field" type="password" autocomplete="new-password" placeholder="От 10 символов" minlength="10" required>
+            <small class="form-help">Минимум 10 символов для надёжной защиты.</small>
+          </div>
+          <div id="reg-error" class="alert alert-danger hidden" role="alert"></div>
+          <button id="btn-register" class="btn btn-primary btn-block" type="submit">Создать аккаунт</button>
+        </form>
+
+        <!-- Form: Login -->
+        <form id="form-login" class="hidden" novalidate>
+          <div class="form-group">
+            <label class="form-label" for="login-email">Ваш Email</label>
+            <input id="login-email" class="field" type="email" autocomplete="email" placeholder="name@example.com" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="login-password">Пароль</label>
+            <input id="login-password" class="field" type="password" autocomplete="current-password" placeholder="Ваш пароль" required>
+          </div>
+          <div id="login-error" class="alert alert-danger hidden" role="alert"></div>
+          <button id="btn-login" class="btn btn-primary btn-block" type="submit">Войти</button>
+        </form>
+
+
+      </section>
+
+
+      <!-- STEP 2: SUBSCRIPTION / ACCESS STATUS & HONEST PAYMENT -->
+      <section id="step-access" class="card-box hidden" aria-labelledby="access-title">
+        <div class="card-header">
+          <h2 id="access-title" class="card-title">Статус подписки</h2>
+          <p class="card-desc">Для полноценного подключения требуется активная подписка.</p>
+        </div>
+
+        <div class="profile-meta-card">
+          <div class="profile-meta-main">
+            <div id="user-id" class="profile-id">ID аккаунта: —</div>
+          </div>
+          <span id="account-status" class="status-badge">Проверка...</span>
+        </div>
+
+        <!-- If Active -->
+        <div id="payment-active-notice" class="alert alert-success hidden">
+          Подписка активна! Вы можете перейти к установке приложения.
+        </div>
+
+        <!-- Honest Payment Unavailable Notice -->
+        <div id="payment-unavailable-notice" class="alert alert-warn hidden provider-unavailable">
+          <div>
+            <strong>Оплата на сайте временно настраивается</strong>
+            <p style="margin:4px 0 0; font-size:13px;">
+              Приём банковских карт и СБП прямо на сайте проходит согласование интернет-эквайринга.
+              Вы можете продолжить установку приложения и использовать доступные дни пробного периода.
+            </p>
+          </div>
+        </div>
+
+        <!-- Payment Form (if provider available) -->
+        <div id="payment-form-container" class="hidden">
+          <form id="payment-form">
+            <div class="form-group">
+              <label class="form-label">Тарифный план</label>
+              <div style="background:var(--elev); padding:12px; border-radius:10px; border:1px solid var(--border); font-size:14px;">
+                <strong id="plan-days-price">30 дней доступа — 30 ₽</strong> <span id="plan-per-day">(<span id="plan-per-day-val">1</span> ₽ в сутки)</span>
+              </div>
+              <div id="plan-presets" style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;" role="group" aria-label="Длительность подписки"></div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Способ оплаты</label>
+              <div id="payment-methods" style="display:flex; gap:8px; flex-wrap:wrap;" role="group" aria-label="Способ оплаты"></div>
+            </div>
+            <label class="checkbox-label">
+              <input id="terms-agree" type="checkbox" required>
+              <span>Я принимаю <a href="/terms.html" target="_blank">условия оферты</a> и подтверждаю согласие с правилами сервиса.</span>
+            </label>
+            <button id="btn-checkout" class="btn btn-primary btn-block" type="submit">Оплатить 30 ₽</button>
+            <p id="checkout-hint" style="font-size:12px; color:var(--muted); margin:8px 0 0;">
+              После оплаты доступ обновится автоматически — статус проверяется после возврата на сайт.
+            </p>
+          </form>
+        </div>
+
+        <div style="margin-top:20px;">
+          <button id="btn-to-setup" class="btn btn-outline btn-block" type="button">Продолжить установку без оплаты</button>
+        </div>
+      </section>
+
+
+      <!-- STEP 3: PLATFORM DETECTION, DOWNLOADS & APP LAUNCH -->
+      <section id="step-setup" class="card-box hidden" aria-labelledby="setup-title">
+        <div class="card-header">
+          <h2 id="setup-title" class="card-title">Установка и запуск</h2>
+          <p class="card-desc">Выберите ваше устройство, загрузите приложение и подключите настроенный профиль.</p>
+        </div>
+
+        <!-- Platform Switcher -->
+        <div class="platform-grid" role="tablist" aria-label="Выбор операционной системы">
+          <button id="platform-tab-android" class="platform-card-btn" data-platform="android" role="tab" type="button">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.6 9.5c-.5 0-.9.4-.9.9v4.4c0 .5.4.9.9.9s.9-.4.9-.9v-4.4c0-.5-.4-.9-.9-.9Zm-11.2 0c-.5 0-.9.4-.9.9v4.4c0 .5.4.9.9.9s.9-.4.9-.9v-4.4c0-.5-.4-.9-.9-.9Zm1.5 0v6.2c0 .4.3.8.8.8h.8v2.1c0 .5.4.9.9.9s.9-.4.9-.9v-2.1h1.4v2.1c0 .5.4.9.9.9s.9-.4.9-.9v-2.1h.8c.4 0 .8-.3.8-.8V9.5H7.9Zm6.6-4.9.7-1.2a.2.2 0 0 0-.1-.3.2.2 0 0 0-.3.1l-.7 1.2a4.9 4.9 0 0 0-3.8 0l-.7-1.2a.2.2 0 0 0-.3-.1.2.2 0 0 0-.1.3l.7 1.2A4.2 4.2 0 0 0 7.9 8.4h8.2a4.2 4.2 0 0 0-1.6-3.8ZM10 6.9a.4.4 0 1 1 0-.8.4.4 0 0 1 0 .8Zm4 0a.4.4 0 1 1 0-.8.4.4 0 0 1 0 .8Z"/></svg>
+            Android
+          </button>
+          <button id="platform-tab-windows" class="platform-card-btn" data-platform="windows" role="tab" type="button">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.5 10 4.6v6.9H3V5.5Zm0 13L10 19.4v-6.8H3v5.9Zm8-14.1L21 3v8.5h-10V4.4Zm0 15.2L21 21v-8.4h-10v7Z"/></svg>
+            Windows
+          </button>
+          <button id="platform-tab-linux" class="platform-card-btn" data-platform="linux" role="tab" type="button">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2c-2.2 0-3.6 1.8-3.5 4.2.1 1.6-.2 2.5-1 3.7-1.1 1.7-1.9 3.2-1.9 4.9 0 .9.3 1.6.8 2.2-.4.5-.6 1-.5 1.5.2 1 1.3 1.5 3 1.7 1 .1 1.7.5 2.4.9.6.4 1.2.6 1.9.6s1.3-.2 1.9-.6c.7-.4 1.4-.8 2.4-.9 1.7-.2 2.8-.7 3-1.7.1-.5-.1-1-.5-1.5.5-.6.8-1.3.8-2.2 0-1.7-.8-3.2-1.9-4.9-.8-1.2-1.1-2.1-1-3.7C15.6 3.8 14.2 2 12 2Zm-1.6 4.1c.4 0 .7.4.7.9s-.3.9-.7.9-.7-.4-.7-.9.3-.9.7-.9Zm3.2 0c.4 0 .7.4.7.9s-.3.9-.7.9-.7-.4-.7-.9.3-.9.7-.9ZM12 9.4c.9 0 1.8.4 1.8.9 0 .3-.4.6-.9.8-.3.1-.6.3-.9.3s-.6-.2-.9-.3c-.5-.2-.9-.5-.9-.8 0-.5.9-.9 1.8-.9Z"/></svg>
+            Linux
+          </button>
+          <button id="platform-tab-apple" class="platform-card-btn" data-platform="apple" role="tab" type="button">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.63-.77 1.06-1.85.94-2.93-.93.04-2.03.62-2.68 1.39-.58.66-1.08 1.76-.94 2.81 1.03.08 2.06-.52 2.68-1.27Z"/></svg>
+            Apple
+          </button>
+        </div>
+
+        <!-- Download Details -->
+        <div id="dl-content-box" style="margin-bottom:24px;">
+          <div style="background:var(--elev); border:1px solid var(--border); border-radius:12px; padding:18px;">
+            <h3 id="dl-title" style="font-family:var(--serif); font-size:18px; margin-bottom:6px;"></h3>
+            <p id="dl-description" style="font-size:13.5px; color:var(--text-2); margin-bottom:14px;"></p>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <a id="dl-btn-primary" class="btn btn-primary" href="#"></a>
+              <a id="dl-btn-secondary" class="btn btn-secondary hidden" href="#"></a>
+            </div>
+            <div id="dl-notes" class="text-muted" style="font-size:12px; margin-top:10px; font-family:var(--mono);"></div>
+          </div>
+        </div>
+
+        <!-- Apple In-Development Notice -->
+        <div id="apple-status-note" class="alert alert-info hidden"></div>
+
+        <!-- Connect to Application -->
+        <div style="border-top:1px solid var(--border); padding-top:20px;">
+          <h3 style="font-family:var(--serif); font-size:20px; margin-bottom:8px;">Перенос профиля в приложение</h3>
+          <p style="font-size:14px; color:var(--text-2); margin-bottom:16px;">
+            После установки нажмите кнопку ниже, чтобы получить ссылку и одноразовый код для добавления профиля в MosaicVPN.
+          </p>
+
+          <button id="btn-issue-enrollment" class="btn btn-accent btn-block" type="button">Подготовить ссылку подключения</button>
+
+          <div id="enrollment-box" class="hidden" style="margin-top:16px;">
+            <div id="enrollment-ready-status" class="alert alert-info" role="status" style="margin-bottom:12px; font-weight:600;">
+              Ссылка для подключения сформирована. Откройте MosaicVPN, чтобы завершить добавление профиля.
+            </div>
+            
+            <a id="btn-open-app" class="btn btn-primary btn-block" href="#" style="margin-bottom:10px;">
+              Открыть MosaicVPN
+            </a>
+            
+            <div style="background:#fff; border:1px solid var(--border); border-radius:10px; padding:12px; margin-top:12px; text-align:center;">
+              <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">Одноразовый код для ручного ввода:</div>
+              <strong id="enrollment-code-val" style="font-family:var(--mono); font-size:20px; letter-spacing:0.1em; color:var(--accent);"></strong>
+              <div style="margin-top:8px;">
+                <button id="btn-copy-code" class="btn btn-secondary" style="min-height:38px; padding:6px 14px; font-size:13px;" type="button">Скопировать код</button>
+              </div>
+              <div style="font-size:11px; color:var(--muted); margin-top:6px;">
+                Одноразовый код действует ограниченное время и сохраняет профиль в клиенте только после активации.
+              </div>
+            </div>
+
+            <p style="font-size:12px; color:var(--muted); margin-top:10px; text-align:center;">
+              Не срабатывает перенаправление? <a id="manual-callback-link" href="#" target="_blank" style="text-decoration:underline; color:var(--accent);">Открыть страницу подтверждения</a>
+            </p>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <div class="wrap">
+      <p>© MosaicVPN · Защита соединения и шифрование данных</p>
+      <div style="display:flex; justify-content:center; flex-wrap:wrap; gap:8px 14px; margin-top:8px; font-size:13px;">
+        <a href="/terms.html">Оферта</a>
+        <a href="/privacy.html">Конфиденциальность</a>
+        <a href="/contacts.html">Контакты</a>
+        <a href="/cabinet.html">Личный кабинет</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/assets/setup.js"></script>
+</body>
+</html>
