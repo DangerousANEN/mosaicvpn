@@ -466,11 +466,13 @@ class _EgressTile extends ConsumerWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
-                Row(
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 4,
                   children: [
                     // Type badge
                     _TypeBadge(type: egress.type),
-                    const SizedBox(width: 8),
                     // Route target: group or server
                     if (egress.groupID != null && egress.groupName != null)
                       Tooltip(
@@ -571,27 +573,32 @@ class _EgressTile extends ConsumerWidget {
           ),
 
           // Address:port
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                '${egress.listen}:${egress.port}',
-                style: TextStyle(
-                  fontFamily: AtlasTheme.monoFamily,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: c.textPrimary,
-                ),
-              ),
-              if (egress.active && egress.connections > 0)
-                Text(
-                  '${egress.connections} conn · ↑${formatBytes(egress.upload)} ↓${formatBytes(egress.download)}',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: c.textMuted,
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    '${egress.listen}:${egress.port}',
+                    style: TextStyle(
+                      fontFamily: AtlasTheme.monoFamily,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: c.textPrimary,
+                    ),
                   ),
                 ),
-            ],
+                if (egress.active && egress.connections > 0)
+                  Text(
+                    '${egress.connections} conn · ↑${formatBytes(egress.upload)} ↓${formatBytes(egress.download)}',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: c.textMuted,
+                    ),
+                  ),
+              ],
+            ),
           ),
           const SizedBox(width: 12),
 

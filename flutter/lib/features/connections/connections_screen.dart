@@ -53,8 +53,7 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
           // q6: Search + filter bar
           Row(
             children: [
-              SizedBox(
-                width: 240,
+              Expanded(
                 child: TextField(
                   onChanged: (v) =>
                       setState(() => _searchQuery = v.toLowerCase()),

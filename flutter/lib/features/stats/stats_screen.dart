@@ -66,6 +66,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
   Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
     final statsAsync = ref.watch(trafficStatsProvider);
+    final isMobile = MediaQuery.sizeOf(context).width < 640;
 
     // Cache latest stats for the timer (fires once per change, NOT during build).
     // No per-tick setState here — the timer in initState drives chart updates.
@@ -74,7 +75,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     });
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(isMobile ? 16 : 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -113,10 +114,11 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
           statsAsync.when(
             data: (stats) => GridView.count(
               shrinkWrap: true,
-              crossAxisCount: 4,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: isMobile ? 2 : 4,
               mainAxisSpacing: 12,
               crossAxisSpacing: 12,
-              childAspectRatio: 2.2,
+              childAspectRatio: isMobile ? 2.4 : 2.2,
               children: [
                 StatTile(
                   label: 'Total Upload',
@@ -144,10 +146,11 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
             ),
             loading: () => GridView.count(
               shrinkWrap: true,
-              crossAxisCount: 4,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: isMobile ? 2 : 4,
               mainAxisSpacing: 12,
               crossAxisSpacing: 12,
-              childAspectRatio: 2.2,
+              childAspectRatio: isMobile ? 2.4 : 2.2,
               children: List.generate(4, (_) => const _SkeletonTile()),
             ),
             error: (e, _) => Center(
@@ -171,21 +174,24 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      const Text(
-                        'Throughput',
-                        style: TextStyle(
-                          fontFamily: AtlasTheme.serifFamily,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      children: [
+                        const Text(
+                          'Throughput',
+                          style: TextStyle(
+                            fontFamily: AtlasTheme.serifFamily,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                      const Spacer(),
-                      _legendDot(AtlasTheme.accent, 'Upload'),
-                      const SizedBox(width: 16),
-                      _legendDot(AtlasTheme.success, 'Download'),
-                    ],
+                        const SizedBox(width: 24),
+                        _legendDot(AtlasTheme.accent, 'Upload'),
+                        const SizedBox(width: 16),
+                        _legendDot(AtlasTheme.success, 'Download'),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Expanded(
@@ -318,28 +324,32 @@ class _SkeletonTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
     return AtlasCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 80,
-            height: 12,
-            decoration: BoxDecoration(
-              color: c.border,
-              borderRadius: BorderRadius.circular(4),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 80,
+              height: 12,
+              decoration: BoxDecoration(
+                color: c.border,
+                borderRadius: BorderRadius.circular(4),
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            width: 120,
-            height: 20,
-            decoration: BoxDecoration(
-              color: c.border,
-              borderRadius: BorderRadius.circular(4),
+            const SizedBox(height: 8),
+            Container(
+              width: 120,
+              height: 20,
+              decoration: BoxDecoration(
+                color: c.border,
+                borderRadius: BorderRadius.circular(4),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
