@@ -3,8 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../api/daemon_api_base.dart';
-import '../models/models.dart';
-import '../platform/app_platform.dart';
 import 'smart_group_selector.dart';
 
 /// Lightweight localhost-only REST API for scripted VPN control.
@@ -30,6 +28,9 @@ class LocalRestApi {
   HttpServer? _server;
   DaemonApiBase? _api;
   SmartGroupSelector? _selector;
+
+  /// Exposed for scripted diagnostics via the local REST surface.
+  SmartGroupSelector? get selector => _selector;
 
   bool get isRunning => _server != null;
   int get port => _server?.port ?? defaultPort;
@@ -148,7 +149,7 @@ class LocalRestApi {
         'address': s.address,
         'tag': s.tag,
         'protocol': s.protocol,
-        'latency_ms': s.latencyMs,
+        'latency_ms': s.lastTestMS,
       }).toList(),
     });
   }
@@ -165,9 +166,9 @@ class LocalRestApi {
     _sendJson(request, 200, {
       'count': results.length,
       'results': results.map((r) => {
-        'id': r.id,
-        'success': r.success,
-        'latency_ms': r.latencyMs,
+        'id': r.serverID,
+        'success': !r.failed,
+        'latency_ms': r.latencyMS,
         'error': r.error,
       }).toList(),
     });
@@ -235,9 +236,9 @@ class LocalRestApi {
     // Test all servers and pick the one with lowest latency + no errors
     final results = await api.testAllServers();
     final successful = results
-        .where((r) => r.success && r.latencyMs > 0)
+        .where((r) => !r.failed && r.latencyMS > 0)
         .toList()
-      ..sort((a, b) => a.latencyMs.compareTo(b.latencyMs));
+      ..sort((a, b) => a.latencyMS.compareTo(b.latencyMS));
 
     if (successful.isEmpty) {
       _sendJson(request, 404, {'error': 'no reachable servers found'});
@@ -247,15 +248,15 @@ class LocalRestApi {
     final best = successful.first;
     // Connect to the most stable server
     try {
-      await api.connect(best.id);
+      await api.connect(best.serverID);
       await Future<void>.delayed(const Duration(milliseconds: 600));
       final status = await api.getStatus();
       _sendJson(request, 200, {
         'ok': true,
         'connected': status.isConnected,
         'selected_server': {
-          'id': best.id,
-          'latency_ms': best.latencyMs,
+          'id': best.serverID,
+          'latency_ms': best.latencyMS,
         },
         'candidates_tested': results.length,
         'candidates_reachable': successful.length,
@@ -264,7 +265,7 @@ class LocalRestApi {
       _sendJson(request, 502, {
         'ok': false,
         'error': e.toString(),
-        'selected_server_id': best.id,
+        'selected_server_id': best.serverID,
       });
     }
   }

@@ -38,11 +38,7 @@ import '../features/account/unified_account_panel.dart'
     show unifiedAccountProvider;
 import '../features/groups/groups_screen.dart';
 import '../features/more/more_screen.dart';
-import '../features/onboarding/onboarding_wizard.dart';
 import '../core/services/app_update_service.dart';
-import '../core/config/app_config.dart';
-import '../core/utils/external_launcher.dart';
-import 'app.dart' show onboardingProvider;
 
 /// Root shell with bottom navigation (and sidebar on desktop/wide screens) and tab caching via IndexedStack.
 ///

@@ -1,19 +1,25 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/daemon_api_exception.dart';
+import '../providers/vpn_providers.dart';
 import '../theme/atlas_theme.dart';
-import 'desktop_instance_lock.dart';
-import 'elevation_service.dart';
+import 'daemon_launcher.dart';
 
 /// Throne-style UAC recovery for TUN mode on Windows.
 ///
-/// When the daemon answers `elevation_required`, the user is shown the
-/// familiar "restart as administrator?" dialog. Accepting relaunches the
-/// same executable elevated and resumes the interrupted connection; the
-/// old instance exits only after UAC confirmed the launch.
-Future<bool> handleElevationRequired(BuildContext context) async {
+/// When the daemon answers `elevation_required`, the user is asked to elevate
+/// the DAEMON (mosaicd), not the GUI: TUN is created by the daemon process,
+/// so a GUI-only UAC restart leaves the old non-elevated daemon in place and
+/// TUN fails again with the same error (live-verified 2026-09-17). The GUI
+/// keeps its window; after the elevated daemon is verified running the
+/// interrupted connection is resumed.
+Future<bool> handleElevationRequired(
+  BuildContext context,
+  WidgetRef ref,
+) async {
   if (!Platform.isWindows) return false;
 
   final c = ThemeColors.of(context);
@@ -46,23 +52,24 @@ Future<bool> handleElevationRequired(BuildContext context) async {
   );
   if (confirm != true) return false;
 
-  // Release the GUI instance lock BEFORE the elevated relaunch: the fresh
-  // process starts while this one is still tearing down, and a held lock
-  // would make it exit silently (Throne avoids this by quitting fast).
-  try {
-    await DesktopInstanceLock.instance.release();
-  } catch (_) {
-    // The OS drops the lock during teardown anyway.
-  }
-
-  final launched =
-      await ElevationService.instance.relaunchElevated(connectOnStart: true);
-  if (launched) {
-    // Give the UAC-elevated process a moment to take over, then yield.
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    exit(0);
-  }
-  return false;
+  // Elevate the DAEMON (mosaicd), not the GUI. The elevated daemon binds a
+  // NEW ephemeral port/token, so the check callback re-resolves the endpoint
+  // from the lockfile. On success the caller resumes the connection.
+  final api = ref.read(daemonApiProvider);
+  final ok = await DaemonLauncher.instance.ensureDaemonElevated(
+    () async {
+      try {
+        final status = await api.getStatus().timeout(
+              const Duration(seconds: 2),
+            );
+        return status.daemonElevated;
+      } catch (_) {
+        return false;
+      }
+    },
+    shutdown: () => api.shutdownDaemon(),
+  );
+  return ok;
 }
 
 /// True when the error is the daemon's machine-readable elevation demand.

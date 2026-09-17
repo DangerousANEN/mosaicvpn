@@ -490,7 +490,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
       // TUN without an administrator token is fully recoverable: offer the
       // UAC restart instead of a dead-end error notice (Throne behaviour).
       if (isElevationRequiredError(error) && mounted) {
-        final accepted = await handleElevationRequired(context);
+        final accepted = await handleElevationRequired(context, ref);
         if (!accepted) {
           _notice(
             'Подключение в режиме TUN требует прав администратора.',

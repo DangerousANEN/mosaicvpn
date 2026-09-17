@@ -65,6 +65,7 @@ class _RouteRow {
     required this.traffic,
     required this.isGroup,
     this.isSmartGroup = false,
+    this.isUnverified = false,
     this.jitter,
     this.loss,
     this.speed,
@@ -92,6 +93,7 @@ class _RouteRow {
   final String country;
   final bool isGroup;
   final bool isSmartGroup;
+  final bool isUnverified;
   final IconData icon;
   final bool disabled;
   final String disabledReason;
@@ -433,6 +435,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                   ? 'Автоматический маршрут'
                   : _groupTitle(group),
               ping: _testResults[group.id]?.latencyMS,
+              isUnverified: _testResults[group.id]?.isUnverified == true,
               jitter: _groupLatencyProgress?.groupId == group.id
                   ? _groupLatencyProgress?.jitterMs
                   : null,
@@ -440,8 +443,12 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                   ? _groupLatencyProgress?.lossPercent
                   : null,
               traffic: _groupLatencyProgress?.groupId == group.id
-                  ? '${_groupLatencyProgress!.label} проверено'
-                  : (_testResults[group.id] != null ? 'Проверено' : '—'),
+                  ? (_groupLatencyProgress!.unverified
+                      ? 'Не проверен'
+                      : '${_groupLatencyProgress!.label} проверено')
+                  : (_testResults[group.id]?.isUnverified == true
+                      ? 'Не проверен'
+                      : (_testResults[group.id] != null ? 'Проверено' : '—')),
               country: group.countryCode,
               isGroup: true,
               isSmartGroup: group.routeType == 'smart_group',
@@ -470,6 +477,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
             type: AppStrings.of(context).t('local_group'),
             name: group.name.isEmpty ? 'Безымянный сборник' : group.name,
             ping: _testResults[group.id]?.latencyMS,
+              isUnverified: _testResults[group.id]?.isUnverified == true,
             traffic: AppStrings.of(context).t('automatic'),
             isGroup: true,
             icon: Icons.folder_copy_outlined,
@@ -721,6 +729,20 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                 }
               },
             );
+            if (result.unverified) {
+              if (mounted) {
+                setState(() {
+                  _testResults[group.id] = TestResult(
+                    serverID: group.id,
+                    serverName: _groupTitle(group),
+                    latencyMS: -1,
+                    error: 'unverified',
+                    testedAt: DateTime.now(),
+                  );
+                });
+              }
+              return true;
+            }
             if (result.latencyMs != null && result.latencyMs! > 0) {
               if (mounted) {
                 setState(() {
@@ -1051,7 +1073,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       // TUN without an administrator token is fully recoverable: offer the
       // UAC restart instead of a dead-end error notice (Throne behaviour).
       if (isElevationRequiredError(error) && mounted) {
-        final accepted = await handleElevationRequired(context);
+        final accepted = await handleElevationRequired(context, ref);
         if (!mounted) return;
         if (!accepted) {
           _showMessage(
@@ -1391,6 +1413,25 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
       final result = await runner.run(group, onProgress: (progress) {
         if (mounted) setState(() => _groupLatencyProgress = progress);
       });
+      if (result.unverified) {
+        if (mounted) {
+          setState(() {
+            _testResults[group.id] = TestResult(
+              serverID: group.id,
+              serverName: _groupTitle(group),
+              latencyMS: -1,
+              error: 'unverified',
+              testedAt: DateTime.now(),
+            );
+          });
+        }
+        if (!mounted) return;
+        _showMessage(
+          'Маршрут не проверен: замер не поддерживается на этом устройстве.',
+          ThemeColors.of(context).warning,
+        );
+        return;
+      }
       final ok = result.latencyMs != null && result.latencyMs! > 0;
       if (mounted) {
         setState(() {
@@ -2492,7 +2533,16 @@ class _RouteTable extends StatelessWidget {
         ),
       );
     }
-    if (row.ping == null) {
+    if (row.ping == null || row.isUnverified) {
+      if (row.isUnverified) {
+        return SizedBox(
+          width: width,
+          child: Text('Не проверен',
+              maxLines: 1,
+              style: TextStyle(
+                  color: colors.textSecondary, fontWeight: FontWeight.w500)),
+        );
+      }
       return SizedBox(
           width: width,
           child: Text('—',
@@ -3007,7 +3057,7 @@ class _MobileRouteList extends StatelessWidget {
                     : Padding(
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
-                          '${row.type} · ${row.ping == null ? 'Не проверен' : row.ping! < 0 ? 'Недоступен' : '${row.ping} мс'}',
+                          '${row.type} · ${row.isUnverified || row.ping == null ? 'Не проверен' : row.ping! < 0 ? 'Недоступен' : '${row.ping} мс'}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(

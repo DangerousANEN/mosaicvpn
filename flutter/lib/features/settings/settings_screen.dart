@@ -15,6 +15,7 @@ import '../../core/models/models.dart';
 import '../../core/services/android_mosaic_account_service.dart';
 import '../../core/services/android_vpn_service.dart';
 import '../../core/services/smart_group_runtime_controller.dart';
+import '../../core/services/desktop_instance_lock.dart';
 import '../../core/services/elevation_service.dart';
 import '../../core/services/tray_service.dart';
 import '../../core/services/autostart_service.dart';
@@ -1983,8 +1984,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         await onAllow();
         // Small delay to let the API call reach the daemon
         await Future.delayed(const Duration(milliseconds: 300));
+        // Release the GUI instance lock BEFORE the UAC relaunch (same contract
+        // as handleElevationRequired in elevation_prompt.dart): the fresh
+        // elevated process starts while this instance is still alive, and a
+        // held lock makes it exit silently in main() — the reported
+        // "приложение просто закрывается и ничего не происходит".
+        try {
+          await DesktopInstanceLock.instance.release();
+        } catch (_) {
+          // The OS drops the lock during teardown anyway.
+        }
         final launched = await ElevationService.instance.relaunchElevated(
-          connectOnStart: false,
+          connectOnStart: true,
         );
         if (launched) {
           // Give the elevated process a moment to take over, then yield.

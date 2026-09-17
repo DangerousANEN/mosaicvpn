@@ -70,6 +70,11 @@ class AndroidMosaicAccountService {
     _configureResilientHttpClient();
   }
 
+  @visibleForTesting
+  AndroidMosaicAccountService.withHttpAdapter(HttpClientAdapter adapter) {
+    _dio.httpClientAdapter = adapter;
+  }
+
   static final AndroidMosaicAccountService instance =
       AndroidMosaicAccountService._();
 
@@ -304,11 +309,33 @@ class AndroidMosaicAccountService {
     if (code.length != 8) {
       throw const FormatException('Введите все 8 символов одноразового кода.');
     }
-    final response = await _dio.post<Map<String, dynamic>>(
-      '/api/link/redeem',
-      data: {'code': code},
-    );
-    return Map<String, dynamic>.from(response.data ?? const {});
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/api/link/redeem',
+        data: {'code': code},
+      );
+      return Map<String, dynamic>.from(response.data ?? const {});
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 409 || e.response?.statusCode == 410) {
+        final existing = await restoreSession();
+        if (existing != null && existing.directToken.isNotEmpty) {
+          return {
+            'direct_token': existing.directToken,
+            if (existing.sessionToken != null)
+              'session_token': existing.sessionToken,
+            if (existing.username != null) 'username': existing.username,
+            if (existing.subscriptionUrl != null)
+              'subscription_url': existing.subscriptionUrl,
+            if (existing.providerId != null) 'provider_id': existing.providerId,
+            if (existing.providerAccountId != null)
+              'provider_account_id': existing.providerAccountId,
+            if (existing.subscriptionName != null)
+              'subscription_name': existing.subscriptionName,
+          };
+        }
+      }
+      rethrow;
+    }
   }
 
   /// Compares opaque subscription identities while tolerating a cosmetic
@@ -442,16 +469,26 @@ class AndroidMosaicAccountService {
       throw const FormatException(
           'Не удалось подтвердить добавление подписки в приложение.');
     }
-    final response = await _dio.post<Map<String, dynamic>>(
-      '/api/app-auth/exchange',
-      data: {'code': code, 'state': state},
-    );
-    final payload = Map<String, dynamic>.from(response.data ?? const {});
-    if (payload['purpose']?.toString() != 'enroll') {
-      throw const FormatException(
-          'Сервис вернул неподходящий код добавления. Повторите действие на сайте.');
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/api/app-auth/exchange',
+        data: {'code': code, 'state': state},
+      );
+      final payload = Map<String, dynamic>.from(response.data ?? const {});
+      if (payload['purpose']?.toString() != 'enroll') {
+        throw const FormatException(
+            'Сервис вернул неподходящий код добавления. Повторите действие на сайте.');
+      }
+      return _savePayload(payload, directKey: 'direct_token');
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 409 || e.response?.statusCode == 410) {
+        final existing = await restoreSession();
+        if (existing != null && existing.directToken.isNotEmpty) {
+          return existing;
+        }
+      }
+      rethrow;
     }
-    return _savePayload(payload, directKey: 'direct_token');
   }
 
   String _randomState() {
@@ -847,6 +884,7 @@ class AndroidMosaicAccountService {
   Future<String> buildNativeTunConfigFromScopedCandidates(
     String subscriptionUrl, {
     required String groupId,
+    String? candidateID,
     List<String> bypassPackages = const [],
     List<String> proxyPackages = const [],
     bool bypassRussianSites = true,
@@ -855,26 +893,16 @@ class AndroidMosaicAccountService {
     bool autoFailover = true,
     bool adBlock = false,
   }) async {
-    List<Map<String, dynamic>> outbounds;
-    try {
-      outbounds =
-          await fetchGroupCandidates(subscriptionUrl, groupId: groupId);
-    } catch (e) {
-      debugPrint('[SCOPED_CANDIDATES] fetchGroupCandidates failed ($e), falling back to subscription config');
-      outbounds = const [];
+    var outbounds =
+        await fetchGroupCandidates(subscriptionUrl, groupId: groupId);
+    if (candidateID != null) {
+      outbounds = outbounds.where((entry) => entry['tag'] == candidateID).toList();
+      if (candidateID.isEmpty || outbounds.length != 1) {
+        throw StateError('Кандидат недоступен в выбранной Smart Group.');
+      }
     }
     if (outbounds.isEmpty) {
-      // Graceful fallback: use direct subscription config so connection never fails
-      return buildNativeTunConfigFromSubscriptionUrl(
-        subscriptionUrl,
-        bypassPackages: bypassPackages,
-        proxyPackages: proxyPackages,
-        bypassRussianSites: bypassRussianSites,
-        customBypassDomains: customBypassDomains,
-        customProxyDomains: customProxyDomains,
-        autoFailover: autoFailover,
-        adBlock: adBlock,
-      );
+      throw StateError('Для выбранной Smart Group нет доступных кандидатов.');
     }
     return _buildTunConfig(
       outbounds,
@@ -928,7 +956,6 @@ class AndroidMosaicAccountService {
     if (rawOutbounds is! List) return const [];
     String normalize(String value) => value.toLowerCase().replaceAll('_', '-');
     final wanted = normalize(groupId);
-    final hasMembershipMetadata = <bool>[];
     final members = <Map<String, dynamic>>[];
     for (final value in rawOutbounds) {
       if (value is! Map) continue;
@@ -960,21 +987,9 @@ class AndroidMosaicAccountService {
         continue;
       }
       final matches = groupIDs.any((id) => normalize(id) == wanted);
-      hasMembershipMetadata.add(groupIDs.isNotEmpty);
       if (matches) members.add(outbound);
     }
-    // Compatibility with older Remnawave feeds that cannot carry custom
-    // membership metadata: every usable outbound becomes a group candidate.
-    if (members.isEmpty && !hasMembershipMetadata.any((value) => value)) {
-      return rawOutbounds
-          .whereType<Map>()
-          .map((value) => Map<String, dynamic>.from(value))
-          .where((outbound) =>
-              (outbound['tag']?.toString().isNotEmpty == true) &&
-              !const ['direct', 'block', 'dns', 'urltest', 'selector']
-                  .contains(outbound['type']?.toString()))
-          .toList(growable: false);
-    }
+    // Named groups require explicit membership; legacy feeds cannot establish it.
     return members;
   }
 
@@ -1248,6 +1263,7 @@ class AndroidMosaicAccountService {
     // remains authoritative and we never broaden the selected candidate set.
     if (selected.isEmpty &&
         !hasMembershipMetadata &&
+        groupId?.toLowerCase().replaceAll('_', '-') != 'free-lte' &&
         groupId != null &&
         groupId.isNotEmpty) {
       selected = List<Map<String, dynamic>>.from(candidates);

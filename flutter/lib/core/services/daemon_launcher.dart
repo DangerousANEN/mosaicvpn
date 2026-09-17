@@ -141,4 +141,73 @@ class DaemonLauncher {
 
     return await checkIsRunning();
   }
+
+  /// Restarts the daemon elevated via UAC (Windows only).
+  ///
+  /// TUN needs an administrator token in the DAEMON process, not the GUI: a
+  /// GUI relaunched as admin still attaches to the old non-elevated daemon and
+  /// TUN keeps failing with `elevation_required` (live-verified 2026-09-17:
+  /// daemon_elevated=false, last_error="elevation required"). This stops the
+  /// running daemon (graceful HTTP shutdown via [shutdown], taskkill fallback),
+  /// then spawns mosaicd.exe through a UAC PowerShell prompt. The GUI keeps
+  /// its window, state and instance lock — no GUI self-restart needed.
+  ///
+  /// [checkIsRunning] is polled until the fresh daemon answers (up to 12s);
+  /// it must re-read the daemon lockfile because the elevated daemon binds a
+  /// NEW ephemeral port with a NEW token. Returns true only when the new
+  /// daemon is verified running.
+  Future<bool> ensureDaemonElevated(
+    Future<bool> Function() checkIsRunning, {
+    Future<void> Function()? shutdown,
+  }) async {
+    if (!Platform.isWindows) return false;
+    final exePath = findDaemonExecutable();
+    if (exePath == null) return false;
+
+    // Graceful HTTP shutdown first so the daemon releases its lockfile and
+    // listen port cleanly; a hung daemon gets force-killed.
+    try {
+      await shutdown?.call();
+    } catch (_) {}
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    if (await checkIsRunning()) {
+      try {
+        await Process.run('taskkill', ['/IM', 'mosaicd.exe', '/F'],
+            runInShell: true);
+      } catch (_) {}
+      // Let the OS release the process, lockfile and port.
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+    }
+
+    final portableData = portableDataDirectory();
+    final argList = portableData != null
+        ? " -ArgumentList '--data-dir','${portableData.replaceAll("'", "''")}'"
+        : '';
+    try {
+      final process = await Process.start(
+        'powershell',
+        [
+          '-NoProfile',
+          '-Command',
+          "Start-Process -FilePath '${exePath.replaceAll("'", "''")}'$argList -Verb RunAs",
+        ],
+      );
+      // Start-Process exits 0 once UAC accepted the launch request; a
+      // dismissed prompt surfaces as a non-zero exit code.
+      final accepted = await process.exitCode == 0;
+      if (!accepted) return false;
+    } catch (_) {
+      return false;
+    }
+
+    // Poll for the fresh daemon endpoint (new lockfile port/token) for 12s.
+    final stopwatch = Stopwatch()..start();
+    while (stopwatch.elapsed < const Duration(seconds: 12)) {
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      if (await checkIsRunning()) {
+        return true;
+      }
+    }
+    return false;
+  }
 }
