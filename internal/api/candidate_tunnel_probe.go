@@ -208,6 +208,10 @@ func ProbeCandidateIsolated(ctx context.Context, groupID string, server proto.Se
 		return result
 	}
 
+	// Bound both queue wait and execution, even without a caller deadline.
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
 	// Acquire the global bounded semaphore BEFORE the binary lookup: pool
 	// saturation is a transient runtime state that must be reported as
 	// `concurrency_timeout` even on hosts without a probe binary installed
@@ -225,10 +229,6 @@ func ProbeCandidateIsolated(ctx context.Context, groupID string, server proto.Se
 		result.ProbeKind = "binary_missing"
 		return result
 	}
-
-	// Bound total execution deadline for this candidate probe
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
 
 	socksPort, err := freeLoopbackPort()
 	if err != nil {
