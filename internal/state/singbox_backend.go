@@ -538,6 +538,15 @@ func singBoxDNSServer(tag, endpoint, detour string) map[string]any {
 // connect directly to the candidate node and never route payload traffic via
 // MosaicVPN infrastructure.
 func virtualGroupAllowsCandidate(group proto.Server, candidate proto.Server, targetCountry string) bool {
+	if group.Category == "direct" {
+		if hidden, _ := outboundBoolHint(candidate, "mosaic_client_candidate"); hidden {
+			return false
+		}
+		if path, _ := group.Raw["mosaic_direct_path"].(string); path != "" {
+			candidatePath, _ := candidate.Raw["path"].(string)
+			return candidatePath == path
+		}
+	}
 	tag := group.GroupTag
 	if idx := strings.LastIndex(tag, ":"); idx >= 0 {
 		tag = tag[idx+1:]

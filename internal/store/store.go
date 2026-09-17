@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -318,6 +319,37 @@ func Open(path string) (*Store, error) {
 		}
 		s.state.Version = 5
 		needsPersist = true
+	}
+
+	// Older virtual rows omitted the explicit transport binding. Restore it
+	// only from an unambiguous route in this subscription's own manifest.
+	for i := range s.state.Servers {
+		server := &s.state.Servers[i]
+		if !server.IsVirtualGroup || server.Category != "direct" || server.SubscriptionID == "" {
+			continue
+		}
+		if path, _ := server.Raw["mosaic_direct_path"].(string); path != "" {
+			continue
+		}
+		manifest := s.state.ProviderManifests[server.SubscriptionID]
+		if manifest == nil {
+			continue
+		}
+		baseID := func(id string) string { return id[strings.LastIndex(id, ":")+1:] }
+		path, matches := "", 0
+		for _, route := range manifest.DirectRoutes {
+			if route.Category == "direct" && route.DirectPath != "" && baseID(route.ID) == baseID(server.GroupTag) {
+				path = route.DirectPath
+				matches++
+			}
+		}
+		if matches == 1 {
+			if server.Raw == nil {
+				server.Raw = map[string]any{}
+			}
+			server.Raw["mosaic_direct_path"] = path
+			needsPersist = true
+		}
 	}
 
 	// Existing installs predate groups, so seed them here too rather than

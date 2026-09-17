@@ -576,6 +576,7 @@ func BuildVirtualServersFromManifest(manifest proto.SubscriptionManifest, subID 
 			Raw: map[string]any{
 				"mosaic_group_type":     g.Type,
 				"mosaic_route_type":     g.RouteType,
+				"mosaic_direct_path":    g.DirectPath,
 				"mosaic_country_code":   g.CountryCode,
 				"mosaic_protocol":       protocol,
 				"mosaic_ping_interval":  g.PingInterval,
