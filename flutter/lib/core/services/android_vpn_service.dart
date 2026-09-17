@@ -7,10 +7,11 @@ import '../platform/app_platform.dart';
 
 /// State exposed by the Android native VpnService runtime.
 class AndroidVpnRuntimeState {
-  const AndroidVpnRuntimeState({required this.state, this.error});
+  const AndroidVpnRuntimeState({required this.state, this.error, this.networkFingerprint = ''});
 
   final String state;
   final String? error;
+  final String networkFingerprint;
 
   bool get isConnected => state == 'connected';
   bool get isBusy => state == 'connecting';
@@ -19,6 +20,7 @@ class AndroidVpnRuntimeState {
     return AndroidVpnRuntimeState(
       state: raw['state']?.toString() ?? 'disconnected',
       error: raw['error']?.toString(),
+      networkFingerprint: raw['network_fingerprint']?.toString() ?? '',
     );
   }
 }

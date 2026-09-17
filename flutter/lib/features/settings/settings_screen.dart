@@ -15,8 +15,7 @@ import '../../core/models/models.dart';
 import '../../core/services/android_mosaic_account_service.dart';
 import '../../core/services/android_vpn_service.dart';
 import '../../core/services/smart_group_runtime_controller.dart';
-import '../../core/services/desktop_instance_lock.dart';
-import '../../core/services/elevation_service.dart';
+import '../../core/services/elevation_prompt.dart';
 import '../../core/services/tray_service.dart';
 import '../../core/services/autostart_service.dart';
 import '../../core/config/app_config.dart';
@@ -110,9 +109,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   selected: {prefs.tunnelMode},
                   onSelectionChanged: (s) {
                     if (s.first == 'tun' && prefs.tunnelMode != 'tun') {
-                      _checkTunElevation(context, () {
-                        _update(prefs, tunnelMode: 'tun');
-                      });
+                      _checkTunElevation(
+                          context, () => _update(prefs, tunnelMode: 'tun'));
                     } else {
                       _update(prefs, tunnelMode: s.first);
                     }
@@ -1909,102 +1907,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   void _checkTunElevation(
       BuildContext context, FutureOr<void> Function() onAllow) async {
-    // Linux packages receive the required capability during installation and
-    // macOS/Android follow their native permission flows. UAC applies only to
-    // Windows; do not invoke PowerShell on other desktop platforms.
-    if (!Platform.isWindows) {
-      await onAllow();
-      return;
-    }
-    final c = ThemeColors.of(context);
-    // The daemon's token decides whether TUN can start, not the GUI's: a GUI
-    // launched as admin can still be attached to an older non-elevated
-    // daemon, and vice versa. Ask the live status first.
     try {
-      final api = ref.read(daemonApiProvider);
-      final status = await api.getStatus();
-      if (status.daemonElevated) {
-        onAllow();
-        return;
-      }
-    } catch (_) {
-      // Status unavailable — fall through to the local token probe.
-    }
-    // Check if we're already running with admin privileges
-    try {
-      final result = await Process.run(
-        'powershell',
-        [
-          '-NoProfile',
-          '-Command',
-          '([Security.Principal.WindowsPrincipal]'
-              '[Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole('
-              '[Security.Principal.WindowsBuiltInRole]::Administrator)'
-        ],
-      );
-      if (result.stdout.toString().trim().toLowerCase() == 'true') {
-        // Already admin — no UAC needed
-        onAllow();
-        return;
-      }
-    } catch (_) {
-      // If check fails, fall through to prompt
-    }
-
-    if (!context.mounted) return;
-
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: c.bgCard,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AtlasTheme.radiusMd)),
-        title: const Text('Administrator Privileges Required',
-            style: TextStyle(fontFamily: AtlasTheme.serifFamily)),
-        content: const Text(
-          'TUN mode requires administrative privileges to configure virtual network adapters and routing tables.\n\nMosaicVPN will restart with elevated credentials.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-    if (confirm == true) {
-      // Save prefs first, then restart with elevation. The app exits only
-      // after PowerShell confirms the UAC-elevated launch (exit code 0);
-      // a dismissed prompt or a failed spawn must keep this instance alive.
-      try {
+      if (!Platform.isWindows) {
         await onAllow();
-        // Small delay to let the API call reach the daemon
-        await Future.delayed(const Duration(milliseconds: 300));
-        // Release the GUI instance lock BEFORE the UAC relaunch (same contract
-        // as handleElevationRequired in elevation_prompt.dart): the fresh
-        // elevated process starts while this instance is still alive, and a
-        // held lock makes it exit silently in main() — the reported
-        // "приложение просто закрывается и ничего не происходит".
-        try {
-          await DesktopInstanceLock.instance.release();
-        } catch (_) {
-          // The OS drops the lock during teardown anyway.
-        }
-        final launched = await ElevationService.instance.relaunchElevated(
-          connectOnStart: true,
-        );
-        if (launched) {
-          // Give the elevated process a moment to take over, then yield.
-          await Future<void>.delayed(const Duration(milliseconds: 300));
-          exit(0);
-        }
-      } catch (_) {
-        // Fallback: stay running; the user can retry or connect via proxy.
+        return;
       }
+      // Only the daemon token determines whether it can create a TUN.
+      final status = await ref.read(daemonApiProvider).getStatus().timeout(
+            const Duration(seconds: 2),
+          );
+      if (!context.mounted) return;
+      if (!status.daemonElevated) {
+        final elevated = await handleElevationRequired(context, ref);
+        if (!elevated || !context.mounted) return;
+      }
+      await onAllow();
+    } catch (error) {
+      _showSnack('Не удалось включить TUN: $error');
     }
   }
 

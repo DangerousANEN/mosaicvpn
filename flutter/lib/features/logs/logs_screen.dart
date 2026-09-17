@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../core/theme/atlas_theme.dart';
 import '../../core/providers/logs_provider.dart';
+import '../../core/services/diagnostic_redaction.dart';
 
 enum _CompactLogAction { copy, save, clear }
 
@@ -45,7 +46,7 @@ class _LogsScreenState extends ConsumerState<LogsScreen> {
   String _entriesToText() {
     final entries = ref.read(logsProvider).filtered;
     return entries
-        .map((e) => '${e.formattedTime} ${e.level.padRight(5)} ${e.message}')
+        .map((e) => '${e.formattedTime} ${e.level.padRight(5)} ${redactDiagnosticText(e.message)}')
         .join('\n');
   }
 

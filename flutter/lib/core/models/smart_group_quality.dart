@@ -59,6 +59,13 @@ class SmartGroupProbeResult {
   });
 
   SmartGroupProbeResult copyWith({
+    bool? successful,
+    int? samples,
+    int? successes,
+    double? lossPercent,
+    int? medianLatencyMs,
+    int? p95LatencyMs,
+    int? jitterMs,
     double? downloadMbps,
     double? uploadMbps,
     DateTime? checkedAt,
@@ -66,13 +73,13 @@ class SmartGroupProbeResult {
   }) => SmartGroupProbeResult(
         groupId: groupId,
         candidateId: candidateId,
-        successful: successful,
-        samples: samples,
-        successes: successes,
-        lossPercent: lossPercent,
-        medianLatencyMs: medianLatencyMs,
-        p95LatencyMs: p95LatencyMs,
-        jitterMs: jitterMs,
+        successful: successful ?? this.successful,
+        samples: samples ?? this.samples,
+        successes: successes ?? this.successes,
+        lossPercent: lossPercent ?? this.lossPercent,
+        medianLatencyMs: medianLatencyMs ?? this.medianLatencyMs,
+        p95LatencyMs: p95LatencyMs ?? this.p95LatencyMs,
+        jitterMs: jitterMs ?? this.jitterMs,
         checkedAt: checkedAt ?? this.checkedAt,
         probeKind: probeKind ?? this.probeKind,
         downloadMbps: downloadMbps ?? this.downloadMbps,
@@ -114,19 +121,47 @@ class SmartGroupProbeResult {
         'upload_mbps': uploadMbps,
       };
 
+  /// True when the probe represents an unsupported or unperformed candidate probe (zero samples).
+  /// Must surface to the user as unverified ("Не проверен"), not unavailable ("Недоступен").
+  bool get isUnverified =>
+      samples == 0 || probeKind == 'unverified_android_candidate';
+
+  factory SmartGroupProbeResult.unverified({
+    required String groupId,
+    required String candidateId,
+    String probeKind = 'unverified_android_candidate',
+    DateTime? checkedAt,
+  }) =>
+      SmartGroupProbeResult(
+        groupId: groupId,
+        candidateId: candidateId,
+        successful: false,
+        samples: 0,
+        successes: 0,
+        lossPercent: 0,
+        medianLatencyMs: 0,
+        p95LatencyMs: 0,
+        jitterMs: 0,
+        checkedAt: checkedAt ?? DateTime.now().toUtc(),
+        probeKind: probeKind,
+      );
+
   /// Higher is better. Failed probes are always ranked behind successful ones.
   /// Pass the group's [policy] to honour provider-configured weights; omit to
   /// use the default weights (0.55 reliability / 0.30 latency / 0.15 stability).
   double qualityScore({ManifestClientPolicy? policy}) {
-    if (!successful) return -lossPercent;
+    if (!successful || successes == 0 || lossPercent >= 100 || medianLatencyMs <= 0 || isUnverified) {
+      return double.negativeInfinity;
+    }
     final lw = policy?.lossWeight ?? 0.55;
     final latw = policy?.latencyWeight ?? 0.30;
     final sw = policy?.stabilityWeight ?? 0.15;
     final spw = policy?.speedWeight ?? 0.0;
     final targetMbps = policy?.speedProbe.targetMbps ?? 50.0;
-    final reliability = 1 - (lossPercent.clamp(0, 100) / 100);
-    final latency = medianLatencyMs <= 0 ? 0.0 : 1 / (1 + medianLatencyMs / 150);
-    final stability = 1 / (1 + jitterMs / 100);
+    final loss = (lossPercent.clamp(0, 100) / 100);
+    final reliability = (1 - loss) * (1 - loss);
+    final latency = 1 / (1 + medianLatencyMs / 150);
+    final stability = 1 / (1 + jitterMs / 50.0);
     final measured = downloadMbps > uploadMbps * 0.5 ? downloadMbps : uploadMbps * 0.5;
     final speed = targetMbps > 0 ? (measured / targetMbps).clamp(0.0, 1.0) : 0.0;
     return reliability * lw + latency * latw + stability * sw + speed * spw;

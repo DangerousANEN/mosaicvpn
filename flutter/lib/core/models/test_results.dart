@@ -24,7 +24,9 @@ class TestResult {
             j['tested_at'] != null ? DateTime.tryParse(j['tested_at']) : null,
       );
 
-  bool get failed => latencyMS < 0 || error.isNotEmpty;
+  bool get failed => (latencyMS < 0 || error.isNotEmpty) && !isUnverified;
+  bool get isUnverified =>
+      error == 'unverified' || error.startsWith('unverified');
 }
 
 /// Speed test result.

@@ -23,6 +23,8 @@ class VpnStatus {
   /// daemon's token decides whether TUN can start: a GUI launched as admin
   /// can still be attached to an older non-elevated daemon.
   final bool daemonElevated;
+  /// Opaque fingerprint of local active network interfaces reported by daemon.
+  final String networkFingerprint;
 
   VpnStatus({
     this.agentConnected = false,
@@ -40,6 +42,7 @@ class VpnStatus {
     this.lastError = '',
     this.connectedSince,
     this.daemonElevated = false,
+    this.networkFingerprint = '',
   });
 
   factory VpnStatus.fromJson(Map<String, dynamic> j) => VpnStatus(
@@ -60,6 +63,7 @@ class VpnStatus {
             ? DateTime.tryParse(j['connected_since'])
             : null,
         daemonElevated: j['daemon_elevated'] ?? false,
+        networkFingerprint: j['network_fingerprint'] ?? '',
       );
 
   bool get isConnected => state == 'connected';
@@ -95,6 +99,8 @@ class VpnStatus {
     int? bytesOut,
     String? lastError,
     DateTime? connectedSince,
+    bool? daemonElevated,
+    String? networkFingerprint,
   }) {
     return VpnStatus(
       agentConnected: agentConnected ?? this.agentConnected,
@@ -111,6 +117,8 @@ class VpnStatus {
       bytesOut: bytesOut ?? this.bytesOut,
       lastError: lastError ?? this.lastError,
       connectedSince: connectedSince ?? this.connectedSince,
+      daemonElevated: daemonElevated ?? this.daemonElevated,
+      networkFingerprint: networkFingerprint ?? this.networkFingerprint,
     );
   }
 }

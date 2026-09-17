@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
@@ -17,7 +18,11 @@ import 'unavailable_daemon_api.dart';
 /// operations continue through [AndroidVpnService]. Only desktop-only daemon
 /// operations remain unavailable; they must not make the whole account UI fail.
 class AndroidHostedDaemonApi extends UnavailableDaemonApi {
-  AndroidHostedDaemonApi._();
+  AndroidHostedDaemonApi._() : _account = AndroidMosaicAccountService.instance;
+
+  @visibleForTesting
+  AndroidHostedDaemonApi.withAccount(AndroidMosaicAccountService account)
+      : _account = account;
 
   static final AndroidHostedDaemonApi instance = AndroidHostedDaemonApi._();
 
@@ -26,16 +31,13 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   static const _localServersKey = 'mosaic.android.local_servers.v1';
   static const _localGroupsKey = 'mosaic.android.local_groups.v1';
   static const _localSubscriptionID = 'local-default';
-  final _account = AndroidMosaicAccountService.instance;
+  final AndroidMosaicAccountService _account;
   Server? _activeRoute;
   int _lastMeasuredLatencyMS = 0;
   DateTime? _lastLatencyProbeAt;
   bool _probingLatency = false;
 
-  /// Candidates of the most recent [getCandidateShard] call, keyed by opaque
-  /// tag. Kept in-memory only: probe results must never outlive the feed that
-  /// defined them, and credentials stay inside the process boundary.
-  Map<String, Map<String, dynamic>> _candidateCache = const {};
+  /// Opaque candidates are partitioned by group; credentials remain local.
   final Map<String, Map<String, Map<String, dynamic>>> _groupCandidateCaches = {};
 
   /// Reads the per-app split-tunneling lists from stored preferences. Applied
@@ -464,6 +466,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     return VpnStatus(
       agentConnected: true,
       state: state.state,
+      networkFingerprint: state.networkFingerprint,
       tunnelMode: 'tun',
       server: state.isConnected ? _activeRoute : null,
       lastError: state.error ?? '',
@@ -498,7 +501,9 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   }
 
   @override
-  Future<void> connectGroup(String groupID) async {
+  Future<void> connectGroup(String groupID) => _connectGroup(groupID);
+
+  Future<void> _connectGroup(String groupID, {String? candidateID}) async {
     final perApp = await _readPerAppLists();
     final resolved = await _resolveMosaicGroup(groupID);
     final manifest = await getProviderManifest(subscriptionId: resolved.$1.id);
@@ -517,6 +522,9 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
           ? 'Этот маршрут пока недоступен.'
           : group.disabledReason);
     }
+    if (candidateID != null && group.routeType == 'direct') {
+      throw StateError('Этот маршрут не поддерживает выбор кандидата.');
+    }
     final config = group.routeType == 'direct'
         ? await _account.buildNativeTunConfigFromSubscriptionUrl(
             resolved.$1.url,
@@ -529,6 +537,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         : await _account.buildNativeTunConfigFromScopedCandidates(
             resolved.$1.url,
             groupId: resolved.$2,
+            candidateID: candidateID,
             bypassPackages: perApp.bypassPackages,
             proxyPackages: perApp.proxyPackages,
             bypassRussianSites: perApp.bypassRussian,
@@ -550,43 +559,13 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       '[SMART-GROUP] Launching group "${group.title}" (${group.id}) [routeType=${group.routeType}]',
     );
 
-    try {
-      await _startNativeRoute(
-        config: config,
-        route: routeServer,
-      );
-    } on StateError catch (e) {
-      if (group.routeType != 'direct' &&
-          e.message.contains('Туннель запустился, но не пропускает трафик')) {
-        await vpn.appendNativeLog(
-          '[SMART-GROUP] WARN: Candidate pool failed traffic verification. Activating fallback to direct physical route...',
-        );
-        // Fallback to the provider direct physical route so user connectivity is preserved.
-        final directConfig =
-            await _account.buildNativeTunConfigFromSubscriptionUrl(
-          resolved.$1.url,
-          bypassPackages: perApp.bypassPackages,
-          proxyPackages: perApp.proxyPackages,
-          bypassRussianSites: perApp.bypassRussian,
-          autoFailover: perApp.autoFailover,
-          adBlock: perApp.adBlock,
-        );
-        await _startNativeRoute(
-          config: directConfig,
-          route: routeServer,
-        );
-        await vpn.appendNativeLog(
-          '[SMART-GROUP] SUCCESS: Fallback to direct physical route succeeded.',
-        );
-        return;
-      }
-      rethrow;
-    }
+    await _startNativeRoute(config: config, route: routeServer);
   }
 
   @override
-  Future<void> connectGroupCandidate(String groupID, String candidateID) =>
-      connectGroup(groupID);
+  Future<void> connectGroupCandidate(String groupID, String candidateID) async {
+    await _connectGroup(groupID, candidateID: candidateID);
+  }
 
   @override
   Future<void> disconnect() async {
@@ -837,7 +816,6 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         if (outbound['tag']?.toString().isNotEmpty == true)
           outbound['tag'].toString(): outbound,
     };
-    _candidateCache = map;
     _groupCandidateCaches[groupID] = map;
     return SmartGroupCandidateShard(
       groupId: groupID,
@@ -847,9 +825,10 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     );
   }
 
-  /// Probes one opaque candidate by opening a real TCP connection to its
-  /// endpoint. The candidate tag never leaves the device; only aggregate
-  /// quality metrics flow back to the caller, matching the desktop contract.
+  /// Android has no isolated candidate-probe runtime yet. Neither a host HTTP
+  /// request nor a TCP handshake can verify an opaque candidate. Fail closed
+  /// without touching the active tunnel or contacting a caller-supplied URL.
+  /// Whole-group native connections remain a separate operation.
   @override
   Future<SmartGroupProbeResult> probeGroupCandidate(
     String groupID,
@@ -858,73 +837,9 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     int? probeSamples,
     String? probeUrl,
   }) async {
-    final outbound = _groupCandidateCaches[groupID]?[candidateID] ?? _candidateCache[candidateID];
-    if (outbound == null) {
-      throw StateError(
-          'Кандидат устарел. Запустите проверку задержки ещё раз.');
-    }
-    final host = outbound['server']?.toString() ?? '';
-    final port = int.tryParse(outbound['server_port']?.toString() ?? '') ?? 443;
-    final prefs = await getPrefs();
-    final attempts = (probeSamples ?? prefs.pingRounds).clamp(1, 10);
-    final requestedMode = (probeMode ?? prefs.pingMethod).toLowerCase();
-    final effectiveMode = requestedMode == 'tcp'
-        ? 'tcp'
-        : (requestedMode == 'http' || requestedMode == 'url' || requestedMode == 'http_get')
-            ? 'http_get'
-            : 'tcp';
-    final targetProbeUrl = probeUrl?.isNotEmpty == true
-        ? probeUrl!
-        : (prefs.testUrl.isNotEmpty
-            ? prefs.testUrl
-            : 'https://1.1.1.1/cdn-cgi/trace');
-    final probe = effectiveMode == 'http_get'
-        ? await _probeHttpSamples(
-            targetProbeUrl,
-            attempts: attempts,
-            timeoutMs: prefs.pingTimeoutMs,
-          )
-        : await _probeTcpSamples(host, port,
-            attempts: attempts, timeoutMs: prefs.pingTimeoutMs);
-        final observed = probe.samples.where((s) => s >= 5).toList();
-        if (observed.isEmpty && probe.samples.isNotEmpty) {
-          // If socket immediately closed / returned false-positive sub-5ms loopback/instant reset
-          // keep real timing or mark empty
-          observed.addAll(probe.samples);
-        }
-    final ordered = [...observed]..sort();
-    final median = ordered.isEmpty ? 0 : ordered[ordered.length ~/ 2];
-    final p95Index = ordered.isEmpty
-        ? 0
-        : ((ordered.length - 1) * 0.95).ceil().clamp(0, ordered.length - 1);
-    final p95 = ordered.isEmpty ? 0 : ordered[p95Index];
-    var jitter = 0;
-    if (observed.length > 1) {
-      var totalDelta = 0;
-      for (var index = 1; index < observed.length; index++) {
-        totalDelta += (observed[index] - observed[index - 1]).abs();
-      }
-      jitter = (totalDelta / (observed.length - 1)).round();
-    }
-    final successes = observed.length;
-    return SmartGroupProbeResult(
+    return SmartGroupProbeResult.unverified(
       groupId: groupID,
       candidateId: candidateID,
-      successful: successes > 0,
-      samples: probe.attempts,
-      successes: successes,
-      lossPercent: (probe.attempts - successes) * 100 / probe.attempts,
-      medianLatencyMs: median,
-      p95LatencyMs: p95,
-      jitterMs: jitter,
-      checkedAt: DateTime.now().toUtc(),
-      probeKind: requestedMode == 'icmp'
-          ? 'tcp-connect-fallback-icmp-android'
-          : effectiveMode == 'http_get'
-              ? 'http-get'
-              : requestedMode == 'auto'
-                  ? 'tcp-connect-auto-android'
-                  : 'tcp-connect',
     );
   }
 
