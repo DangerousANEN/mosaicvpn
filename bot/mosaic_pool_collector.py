@@ -20,6 +20,7 @@ import contextlib
 import dataclasses
 from dataclasses import dataclass, field
 import hashlib
+import ipaddress
 import json
 import math
 import os
@@ -34,8 +35,45 @@ import time
 import urllib.parse
 from typing import Optional, List, Dict, Set, Tuple
 
-import psycopg2
-from psycopg2.extras import Json
+try:
+    import psycopg2
+    from psycopg2.extras import Json
+except ImportError:
+    psycopg2 = None
+    Json = lambda v: v
+
+try:
+    from bot.mosaic_pool_scheduler import (
+        DEFAULT_BASE_COOLDOWN,
+        DEFAULT_COUNTRY_TARGETS,
+        DEFAULT_EWMA_ALPHA,
+        DEFAULT_MAX_COOLDOWN,
+        DEFAULT_MAX_REFRESH_RATIO,
+        DEFAULT_PRUNE_TTL,
+        DEFAULT_REFRESH_RATIO,
+        DEFAULT_STATE_FILE,
+        DEFAULT_VERIFY_TTL,
+        load_state,
+        save_state,
+        schedule_candidates,
+        update_state,
+    )
+except ImportError:
+    from mosaic_pool_scheduler import (
+        DEFAULT_BASE_COOLDOWN,
+        DEFAULT_COUNTRY_TARGETS,
+        DEFAULT_EWMA_ALPHA,
+        DEFAULT_MAX_COOLDOWN,
+        DEFAULT_MAX_REFRESH_RATIO,
+        DEFAULT_PRUNE_TTL,
+        DEFAULT_REFRESH_RATIO,
+        DEFAULT_STATE_FILE,
+        DEFAULT_VERIFY_TTL,
+        load_state,
+        save_state,
+        schedule_candidates,
+        update_state,
+    )
 
 try:
     import httpx
@@ -106,6 +144,24 @@ SOURCES = [
     ('vestranet-trojan', None, 'https://raw.githubusercontent.com/MustafaBaqer/VestraNet-Nodes/main/protocols/trojan.txt'),
     ('solovyov-adaptive', None, 'https://raw.githubusercontent.com/solovyov-jenya2004/all_subs/main/final_sorted'),
     ('epodonios-vless', None, 'https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/Splitted-By-Protocol/vless.txt'),
+    # Live-verified feeds (2026-09): raw URI lists, aggregated/deduped by
+    # scheduler EWMA. Dead feeds degrade to zero yield and are pruned from
+    # scheduling naturally, but are kept here for potential revival.
+    ('barry-far-vless', None, 'https://raw.githubusercontent.com/barry-far/V2ray-Config/main/Splitted-By-Protocol/vless.txt'),
+    ('barry-far-trojan', None, 'https://raw.githubusercontent.com/barry-far/V2ray-Config/main/Splitted-By-Protocol/trojan.txt'),
+    ('mahdibland-merge', None, 'https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/sub/sub_merge.txt'),
+    ('mahdibland-best', None, 'https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/Eternity'),
+    ('epodonios-trojan', None, 'https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/Splitted-By-Protocol/trojan.txt'),
+    ('epodonios-ss', None, 'https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/Splitted-By-Protocol/ss.txt'),
+    # Live-verified (2026-09-23, probed before adding): protocol breadth + raw
+    # base64 feeds, deduped across sources by fingerprint. Dead feeds degrade
+    # to zero EWMA yield and are naturally de-prioritized by the scheduler.
+    ('barry-far-ss', None, 'https://raw.githubusercontent.com/barry-far/V2ray-Config/main/Splitted-By-Protocol/ss.txt'),
+    ('barry-far-vmess', None, 'https://raw.githubusercontent.com/barry-far/V2ray-Config/main/Splitted-By-Protocol/vmess.txt'),
+    ('epodonios-vmess', None, 'https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/Splitted-By-Protocol/vmess.txt'),
+    ('ts-sf-fly', None, 'https://raw.githubusercontent.com/ts-sf/fly/main/v2'),
+    ('freefq-v2', None, 'https://raw.githubusercontent.com/freefq/free/master/v2'),
+    ('mahdibland-eternity-vmess', None, 'https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/Eternity.txt'),
 ]
 
 SUPPORTED_TYPES = {'vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria', 'hysteria2'}
@@ -183,7 +239,8 @@ def pg_connect():
 
 
 def fingerprint(config: dict) -> str:
-    raw = json.dumps(config, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+    identity = {k: v for k, v in config.items() if k not in {'tag', 'remarks', 'name'}}
+    raw = json.dumps(identity, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
     return hashlib.sha256(raw.encode('utf-8')).hexdigest()
 
 
@@ -192,8 +249,13 @@ def fingerprint(config: dict) -> str:
 def is_forbidden_host(host: str) -> bool:
     if not host:
         return True
-    host_lower = host.lower()
-    return host_lower in OWN_HOSTS or any(host_lower.endswith('.' + h) for h in OWN_HOSTS)
+    host_lower = host.lower().rstrip('.')
+    if host_lower in OWN_HOSTS or any(host_lower.endswith('.' + h) for h in OWN_HOSTS):
+        return True
+    try:
+        return not ipaddress.ip_address(host_lower).is_global
+    except ValueError:
+        return host_lower == 'localhost' or host_lower.endswith(('.localhost', '.local', '.internal')) or '.' not in host_lower
 
 
 def node_from_singbox(source_name: str, source_url: str, country: Optional[str], outbound: dict) -> Optional[Node]:
@@ -221,6 +283,14 @@ def node_from_singbox(source_name: str, source_url: str, country: Optional[str],
         return None
 
     config = dict(outbound)
+    # Public feeds may supply a proxy, never local routing or file references.
+    unsafe = {'detour', 'bind_interface', 'inet4_bind_address', 'inet6_bind_address',
+              'routing_mark', 'reuse_addr', 'protect_path', 'domain_resolver'}
+    if unsafe.intersection(config):
+        return None
+    tls = config.get('tls') or {}
+    if any(k.endswith('_path') for k in tls):
+        return None
     fp = fingerprint(config)
     config['tag'] = 'mosaic-' + fp[:12]
     return Node(source_name, source_url, country, protocol, address, port, config, fp)
@@ -446,7 +516,10 @@ def _parse_nodes(source_name: str, source_url: str, country: Optional[str], body
         for line in body.splitlines():
             line = line.strip()
             if line:
-                node = node_from_uri(source_name, source_url, country, line)
+                try:
+                    node = node_from_uri(source_name, source_url, country, line)
+                except (ValueError, TypeError, KeyError):
+                    continue
                 if node:
                     nodes.append(node)
     return nodes
@@ -455,24 +528,33 @@ def _parse_nodes(source_name: str, source_url: str, country: Optional[str], body
 if _HAS_HTTPX:
     async def _fetch_one_async(client: 'httpx.AsyncClient', source: Tuple[str, Optional[str], str]) -> list:
         source_name, country, url = source
-        resp = await client.get(url, headers={'User-Agent': USER_AGENT})
-        resp.raise_for_status()
-        body = resp.text
+        chunks = bytearray()
+        async with client.stream('GET', url, headers={'User-Agent': USER_AGENT}) as resp:
+            resp.raise_for_status()
+            async for chunk in resp.aiter_bytes():
+                chunks.extend(chunk)
+                if len(chunks) > 8 * 1024 * 1024:
+                    raise ValueError('source exceeds byte budget')
+        body = chunks.decode('utf-8-sig', errors='replace')
         json_payload = None
         try:
-            json_payload = resp.json()
-        except Exception:
+            json_payload = json.loads(body)
+        except ValueError:
             pass
         return _parse_nodes(source_name, url, country, body, json_payload)
 
     async def _fetch_all_async(sources: list) -> list:
-        limits = httpx.Limits(max_keepalive_connections=4, max_connections=len(sources))
+        limits = httpx.Limits(max_keepalive_connections=4, max_connections=4)
         async with httpx.AsyncClient(
             limits=limits,
             timeout=httpx.Timeout(connect=10.0, read=25.0, write=10.0, pool=5.0),
             follow_redirects=True,
         ) as client:
-            tasks = [_fetch_one_async(client, s) for s in sources]
+            semaphore = asyncio.Semaphore(4)
+            async def bounded(source):
+                async with semaphore:
+                    return await asyncio.wait_for(_fetch_one_async(client, source), timeout=35)
+            tasks = [bounded(s) for s in sources]
             results = await asyncio.gather(*tasks, return_exceptions=True)
         nodes = []
         for source, result in zip(sources, results):
@@ -493,7 +575,9 @@ else:
         source_name, country, url = source
         req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
         with urllib.request.urlopen(req, timeout=25) as resp:
-            data = resp.read()
+            data = resp.read(8 * 1024 * 1024 + 1)
+            if len(data) > 8 * 1024 * 1024:
+                raise ValueError('source exceeds byte budget')
             # Handle BOM and encoding
             body = data.decode('utf-8-sig', errors='ignore')
             json_payload = None
@@ -505,7 +589,7 @@ else:
 
     def fetch_all_sources(sources: list) -> list:
         nodes = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(sources)) as pool:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
             futures = {pool.submit(_fetch_one_sync, s): s for s in sources}
             for fut in concurrent.futures.as_completed(futures):
                 source = futures[fut]
@@ -530,7 +614,7 @@ def stratify_candidates(nodes: list, total_limit: int = 500) -> list:
     other_nodes: List[Node] = []
 
     priority_countries = {'DE', 'NL', 'US', 'FR', 'CA', 'GB', 'FI', 'PL', 'SG', 'JP'}
-    for cc in priority_countries:
+    for cc in sorted(priority_countries):
         by_country[cc] = []
 
     for node in unique.values():
@@ -542,7 +626,8 @@ def stratify_candidates(nodes: list, total_limit: int = 500) -> list:
 
     selected: List[Node] = []
     # Quota per priority country
-    per_country_quota = max(25, total_limit // (len(priority_countries) + 2))
+    total_limit = max(0, total_limit)
+    per_country_quota = total_limit // (len(priority_countries) + 2)
     for cc, cnodes in by_country.items():
         selected.extend(cnodes[:per_country_quota])
 
@@ -562,6 +647,9 @@ def stratify_candidates(nodes: list, total_limit: int = 500) -> list:
 
 def tcp_probe(node: Node, samples: int = TCP_SAMPLES) -> Node:
     """Take multi-sample TCP RTT; compute p50 latency and RFC-approximated jitter."""
+    if node.protocol in {'hysteria', 'hysteria2'}:
+        node.tcp_ok = None
+        return node
     rtts = []
     for _ in range(samples):
         t0 = time.monotonic()
@@ -591,7 +679,7 @@ def icmp_probe(node: Node) -> Node:
         return node
     try:
         host = icmplib.ping(node.address, count=3, interval=0.2, timeout=1.5, privileged=False)
-        node.loss_pct = round((1.0 - host.packet_loss) * 100, 1)
+        node.loss_pct = round(host.packet_loss * 100, 1)
     except Exception:
         node.loss_pct = None
     return node
@@ -604,8 +692,9 @@ def proxy_probe(node: Node) -> Node:
     1. Fast 204 check via Cloudflare cp.cloudflare.com (max 4s)
     2. Speed download (100 KB) + cf-meta-country detection via speed.cloudflare.com
     """
-    if not node.tcp_ok or not Path(SING_BOX).exists():
-        node.proxy_ok = False
+    if not Path(SING_BOX).exists():
+        raise RuntimeError('sing-box unavailable: refusing health updates')
+    if node.tcp_ok is False and node.protocol not in {'hysteria', 'hysteria2'}:
         return node
 
     with _PORT_POOL.acquire() as port:
@@ -644,27 +733,28 @@ def proxy_probe(node: Node) -> Node:
                         '--max-time', str(FAST_HTTP_TIMEOUT),
                         '--socks5-hostname', f'127.0.0.1:{port}',
                         '--output', '/dev/null',
-                        '--write-out', '%{http_code}|%{time_connect}',
+                        '--write-out', '%{http_code}|%{time_total}',
                         FAST_HTTP_URL,
                     ],
                     capture_output=True, text=True,
                     timeout=FAST_HTTP_TIMEOUT + 2,
                 )
                 parts1 = stage1.stdout.strip().split('|')
-                if stage1.returncode != 0 or len(parts1) < 2 or parts1[0] not in ('200', '204'):
+                if stage1.returncode != 0 or len(parts1) < 2 or parts1[0] != '204':
                     node.proxy_ok = False
                     return node
 
                 # Node is fundamentally alive
                 node.proxy_ok = True
                 connect_ms = int(float(parts1[1]) * 1000)
-                node.latency_ms = min(node.latency_ms or connect_ms, connect_ms)
+                node.latency_ms = max(1, connect_ms)
 
                 # Stage 2: Throughput + exit country identification
                 stage2 = subprocess.run(
                     [
                         'curl', '--silent', '--show-error',
                         '--max-time', str(THROUGHPUT_TIMEOUT),
+                        '--max-filesize', '102400',
                         '--socks5-hostname', f'127.0.0.1:{port}',
                         '--output', '/dev/null',
                         '--write-out', '%{http_code}|%{speed_download}',
@@ -687,7 +777,7 @@ def proxy_probe(node: Node) -> Node:
                                 node.exit_country_code = hline.split(':', 1)[1].strip().upper()
                                 break
                 else:
-                    node.speed_mbps = 0.5  # fallback reasonable default for working 204
+                    node.speed_mbps = None  # unknown is not measured bandwidth
 
             except (subprocess.SubprocessError, ValueError):
                 node.proxy_ok = False
@@ -716,7 +806,7 @@ def score_node(node: Node) -> float:
         lat_score = 0.0
 
     # Jitter
-    sr = float(node.success_rate or 0.70)
+    sr = float(0.70 if node.success_rate is None else node.success_rate)
     if node.jitter_ms is not None:
         jitter_score = max(0.0, 1.0 - node.jitter_ms / JITTER_REF_MS)
     else:
@@ -732,7 +822,7 @@ def score_node(node: Node) -> float:
     if node.speed_mbps is not None and node.speed_mbps > 0.001:
         speed_score = min(1.0, node.speed_mbps / SPEED_REF_MBPS)
     else:
-        speed_score = 0.15
+        speed_score = 0.0
 
     stability_score = sr
 
@@ -756,11 +846,111 @@ GROUP_IDS = (
 )
 
 
+# ── Phase 7: Group Starvation Alert ────────────────────────────────────────────
+
+ALERT_STATE_FILE = Path(os.environ.get('MOSAIC_ALERT_STATE', '/var/lib/mosaic-pool/alert_state.json'))
+ALERT_MIN_NODES_DEFAULT = 15
+ALERT_REPEAT_HOURS = 6.0
+
+
+def group_health_snapshot(min_nodes: int = ALERT_MIN_NODES_DEFAULT) -> list:
+    """Return [(group_id, healthy_node_count)] for every smart group, flagging
+    groups whose verified-node count has dropped below the starvation floor."""
+    conn = pg_connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT gn.group_id, COUNT(DISTINCT gn.node_id) AS healthy
+                FROM mosaic_group_nodes gn
+                JOIN mosaic_nodes mn ON mn.id = gn.node_id
+                WHERE mn.enabled IS TRUE
+                  AND mn.proxy_ok IS TRUE
+                  AND mn.last_checked_at >= now() - interval '6 hours'
+                GROUP BY gn.group_id
+                ORDER BY healthy ASC
+            """)
+            return [(gid, int(cnt)) for gid, cnt in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def send_group_starvation_alert(min_nodes: int = ALERT_MIN_NODES_DEFAULT) -> Optional[str]:
+    """Telegram alert to the admin when a smart group falls below the floor.
+
+    Anti-spam: a repeated alert for the same set of starved groups is
+    suppressed for ALERT_REPEAT_HOURS (cycle runs hourly, so this is ~6
+    repeats per day max, degrading to silence once groups recover).
+    Returns the alert text sent, or None when no alert was due.
+    """
+    snapshot = group_health_snapshot(min_nodes=min_nodes)
+    starved = [(gid, cnt) for gid, cnt in snapshot if cnt < min_nodes]
+    if not starved:
+        # Recovery: clear the state so a future degradation alerts again
+        if ALERT_STATE_FILE.exists():
+            try:
+                ALERT_STATE_FILE.unlink()
+            except OSError:
+                pass
+        return None
+
+    # Deduplicate repeats within the suppression window
+    now = time.time()
+    last: dict = {}
+    if ALERT_STATE_FILE.exists():
+        try:
+            last = json.loads(ALERT_STATE_FILE.read_text(encoding='utf-8'))
+        except (ValueError, OSError):
+            last = {}
+    last_sent = float(last.get('sent_at', 0) or 0)
+    last_groups = set(last.get('groups', []) or [])
+    current_groups = {gid for gid, _ in starved}
+    if now - last_sent < ALERT_REPEAT_HOURS * 3600 and current_groups <= last_groups:
+        return None
+
+    token = os.environ.get('MOSAIC_BOT_TOKEN', '')
+    admin_ids = os.environ.get('MOSAIC_ADMIN_IDS', '')
+    chat_id = None
+    for chunk in admin_ids.split(','):
+        chunk = chunk.strip()
+        if chunk.isdigit():
+            chat_id = chunk
+            break
+    if not token or not chat_id:
+        print('starvation_alert_skipped=no_telegram_credentials')
+        return None
+
+    lines = [f'⚠️ Смарт-группы ниже порога ({min_nodes} нод):']
+    for gid, cnt in starved:
+        lines.append(f'• {gid}: {cnt} живых нод')
+    lines.append(f'Всего живых нод в проверке: {sum(cnt for _, cnt in snapshot)}')
+    text = '\n'.join(lines)
+
+    payload = json.dumps({'chat_id': chat_id, 'text': text}).encode('utf-8')
+    req = urllib.request.Request(
+        f'https://api.telegram.org/bot{token}/sendMessage',
+        data=payload,
+        headers={'Content-Type': 'application/json'},
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        resp.read()
+
+    ALERT_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    ALERT_STATE_FILE.write_text(
+        json.dumps({'sent_at': now, 'groups': sorted(current_groups)}),
+        encoding='utf-8',
+    )
+    print(f'starvation_alert_sent groups={sorted(current_groups)}')
+    return text
+
+
 def upsert_nodes(nodes: list) -> dict:
     conn = pg_connect()
     try:
         with conn.cursor() as cur:
             for node in nodes:
+                # No protocol evidence: preserve every stored health field.
+                if node.proxy_ok is None:
+                    continue
                 # Prefer detected exit country over source-declared
                 effective_country = node.exit_country_code or node.country_code
 
@@ -797,7 +987,9 @@ def upsert_nodes(nodes: list) -> dict:
                         exit_country_code= COALESCE(excluded.exit_country_code, mosaic_nodes.exit_country_code),
                         config           = excluded.config,
                         tcp_ok           = excluded.tcp_ok,
-                        proxy_ok         = excluded.proxy_ok,
+                        proxy_ok         = CASE WHEN excluded.proxy_ok THEN true
+                            WHEN mosaic_nodes.failure_count + 1 >= %s THEN false
+                            ELSE mosaic_nodes.proxy_ok END,
                         latency_ms       = excluded.latency_ms,
                         jitter_ms        = excluded.jitter_ms,
                         loss_pct         = excluded.loss_pct,
@@ -829,12 +1021,12 @@ def upsert_nodes(nodes: list) -> dict:
                     node.speed_mbps, node.composite_score,
                     1.0 if node.proxy_ok else 0.0,
                     bool(node.proxy_ok), bool(node.proxy_ok),
-                    FAILURE_DISABLE_THRESHOLD,
+                    FAILURE_DISABLE_THRESHOLD, FAILURE_DISABLE_THRESHOLD,
                 ))
 
             # Query all valid group_ids from DB to avoid any foreign key mismatch
             cur.execute('SELECT id FROM mosaic_groups WHERE enabled IS TRUE')
-            valid_group_ids = tuple(row[0] for row in cur.fetchall())
+            valid_group_ids = tuple(row[0] for row in cur.fetchall() if row[0] in GROUP_IDS)
             if valid_group_ids:
                 cur.execute('DELETE FROM mosaic_group_nodes WHERE group_id IN %s', (valid_group_ids,))
 
@@ -847,7 +1039,7 @@ def upsert_nodes(nodes: list) -> dict:
                            row_number() OVER (PARTITION BY country_code ORDER BY composite_score DESC NULLS LAST, latency_ms ASC) AS rnk
                     FROM mosaic_nodes
                     WHERE enabled AND proxy_ok = true AND country_code IS NOT NULL
-                      AND last_checked_at >= now() - make_interval(hours => %s)
+                      AND last_success_at >= now() - make_interval(hours => %s)
                 ) ranked
                 WHERE rnk <= 40
                   AND ('auto-' || lower(country_code)) IN (SELECT id FROM mosaic_groups WHERE enabled IS TRUE)
@@ -867,7 +1059,7 @@ def upsert_nodes(nodes: list) -> dict:
                     )
                     FROM mosaic_nodes
                     WHERE enabled AND proxy_ok = true AND country_code = %s
-                      AND last_checked_at >= now() - make_interval(hours => %s)
+                      AND last_success_at >= now() - make_interval(hours => %s)
                     LIMIT 40
                 """, (group_id, cc, HEALTH_TTL_HOURS))
 
@@ -881,7 +1073,7 @@ def upsert_nodes(nodes: list) -> dict:
                 )
                 FROM mosaic_nodes
                 WHERE enabled AND proxy_ok = true
-                  AND last_checked_at >= now() - make_interval(hours => %s)
+                  AND last_success_at >= now() - make_interval(hours => %s)
                 LIMIT 80
             """, (HEALTH_TTL_HOURS,))
 
@@ -895,7 +1087,7 @@ def upsert_nodes(nodes: list) -> dict:
                 )
                 FROM mosaic_nodes
                 WHERE enabled AND proxy_ok = true AND latency_ms > 0
-                  AND last_checked_at >= now() - make_interval(hours => %s)
+                  AND last_success_at >= now() - make_interval(hours => %s)
                 LIMIT 40
             """, (HEALTH_TTL_HOURS,))
 
@@ -907,8 +1099,8 @@ def upsert_nodes(nodes: list) -> dict:
                              speed_mbps DESC NULLS LAST, composite_score DESC
                 )
                 FROM mosaic_nodes
-                WHERE enabled AND proxy_ok = true
-                  AND last_checked_at >= now() - make_interval(hours => %s)
+                WHERE enabled AND proxy_ok = true AND speed_mbps > 0
+                  AND last_success_at >= now() - make_interval(hours => %s)
                 LIMIT 40
             """, (HEALTH_TTL_HOURS,))
 
@@ -922,7 +1114,7 @@ def upsert_nodes(nodes: list) -> dict:
                 FROM mosaic_nodes
                 WHERE enabled AND proxy_ok = true
                   AND failure_count = 0 AND success_rate >= 0.85
-                  AND last_checked_at >= now() - make_interval(hours => %s)
+                  AND last_success_at >= now() - make_interval(hours => %s)
                 LIMIT 40
             """, (HEALTH_TTL_HOURS,))
 
@@ -933,7 +1125,7 @@ def upsert_nodes(nodes: list) -> dict:
                 WHERE enabled AND proxy_ok = true AND protocol = 'vless'
                   AND lower(config::text) LIKE '%%reality%%'
                   AND (config->>'server_port' = '443' OR config->>'port' = '443')
-                  AND last_checked_at >= now() - make_interval(hours => %s)
+                  AND last_success_at >= now() - make_interval(hours => %s)
                 LIMIT 40
             """, (HEALTH_TTL_HOURS,))
 
@@ -945,7 +1137,7 @@ def upsert_nodes(nodes: list) -> dict:
                     WHERE enabled AND proxy_ok = true AND protocol = 'vless'
                       AND lower(config::text) LIKE '%%reality%%'
                       AND (config->>'server_port' = '443' OR config->>'port' = '443')
-                      AND last_checked_at >= now() - make_interval(hours => %s)
+                      AND last_success_at >= now() - make_interval(hours => %s)
                     LIMIT 40
                 """, (HEALTH_TTL_HOURS,))
 
@@ -957,7 +1149,7 @@ def upsert_nodes(nodes: list) -> dict:
                     WHERE enabled AND proxy_ok = true AND protocol = 'vless'
                       AND lower(config::text) LIKE '%%reality%%'
                       AND (config->>'server_port' = '443' OR config->>'port' = '443')
-                      AND last_checked_at >= now() - make_interval(hours => %s)
+                      AND last_success_at >= now() - make_interval(hours => %s)
                     LIMIT 40
                 """, (HEALTH_TTL_HOURS,))
 
@@ -978,14 +1170,14 @@ def upsert_nodes(nodes: list) -> dict:
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
-def main():
+def main(argv: Optional[List[str]] = None) -> List[Node]:
     import concurrent.futures
 
     parser = argparse.ArgumentParser(description='MosaicVPN pool collector v3')
     parser.add_argument('--limit', type=int, default=500,
-                        help='Max candidates to TCP-probe after stratification')
-    parser.add_argument('--probe-limit', type=int, default=80,
-                        help='Max TCP-live configs to HTTP-probe')
+                        help='Max candidates to TCP-probe after scheduling/stratification')
+    parser.add_argument('--probe-limit', type=int, default=120,
+                        help='Max TCP-live configs to HTTP-probe (raised from 80: more feeds + tiered TTL free up budget)')
     parser.add_argument('--workers', type=int, default=48,
                         help='TCP probe thread workers')
     parser.add_argument('--proxy-workers', type=int, default=6,
@@ -994,20 +1186,69 @@ def main():
                         help='Run HTTP proxy probes')
     parser.add_argument('--icmp', action='store_true',
                         help='Enable ICMP loss probes')
-    args = parser.parse_args()
+    parser.add_argument('--state-file', type=str, default=None,
+                        help='Path to scheduler state JSON file')
+    parser.add_argument('--verify-ttl', type=float, default=DEFAULT_VERIFY_TTL,
+                        help='TTL for refreshing verified nodes (seconds)')
+    parser.add_argument('--refresh-ratio', type=float, default=DEFAULT_REFRESH_RATIO,
+                        help='Ratio of verify TTL to initiate refresh before expiry')
+    parser.add_argument('--max-refresh-ratio', type=float, default=DEFAULT_MAX_REFRESH_RATIO,
+                        help='Maximum ratio of limit allocated to overdue refresh candidates')
+    parser.add_argument('--base-cooldown', type=float, default=DEFAULT_BASE_COOLDOWN,
+                        help='Base backoff cooldown in seconds')
+    parser.add_argument('--max-cooldown', type=float, default=DEFAULT_MAX_COOLDOWN,
+                        help='Max backoff cooldown in seconds')
+    parser.add_argument('--prune-ttl', type=float, default=DEFAULT_PRUNE_TTL,
+                        help='Prune TTL for unverified candidates (seconds)')
+    parser.add_argument('--ewma-alpha', type=float, default=DEFAULT_EWMA_ALPHA,
+                        help='EWMA alpha weight for source yield')
+    parser.add_argument('--no-scheduler', action='store_true',
+                        help='Bypass scheduler and use legacy stratification only')
+    parser.add_argument('--skip-upsert', action='store_true',
+                        help='Skip database upsert')
+    parser.add_argument('--alert-min-nodes', type=int, default=ALERT_MIN_NODES_DEFAULT,
+                        help='Starvation alert floor: min healthy nodes per smart group (0 disables)')
+    args = parser.parse_args(argv)
+
+    # Sane validation of CLI inputs
+    limit = max(0, args.limit)
+    probe_limit = max(0, args.probe_limit)
+    workers = max(1, min(64, args.workers))
+    proxy_workers = max(1, min(16, args.proxy_workers))
 
     t0 = time.monotonic()
+    now = time.time()
+
     print('phase=fetch')
     all_nodes = fetch_all_sources(SOURCES)
 
-    print('phase=dedup')
-    candidates = stratify_candidates(all_nodes, total_limit=args.limit)
-    print(f'imported={len(all_nodes)} stratified_candidates={len(candidates)}')
+    state_file = args.state_file or os.environ.get('MOSAIC_POOL_SCHEDULER_STATE') or DEFAULT_STATE_FILE
+    if args.no_scheduler:
+        print('phase=dedup')
+        candidates = stratify_candidates(all_nodes, total_limit=limit)
+        sched_state = None
+    else:
+        print('phase=schedule')
+        sched_state = load_state(state_file)
+        candidates = schedule_candidates(
+            nodes=all_nodes,
+            total_limit=limit,
+            state=sched_state,
+            now=now,
+            country_targets=DEFAULT_COUNTRY_TARGETS,
+            verify_ttl=args.verify_ttl,
+            base_cooldown=args.base_cooldown,
+            max_cooldown=args.max_cooldown,
+            refresh_ratio=args.refresh_ratio,
+            max_refresh_ratio=args.max_refresh_ratio,
+            record_scheduled=True,
+        )
+    print(f'imported={len(all_nodes)} candidates={len(candidates)}')
 
     print('phase=tcp_probe')
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
         checked = list(pool.map(tcp_probe, candidates))
-    tcp_alive = [n for n in checked if n.tcp_ok]
+    tcp_alive = [n for n in checked if n.tcp_ok or n.protocol in {'hysteria', 'hysteria2'}]
     print(f'tcp_alive={len(tcp_alive)}')
 
     if args.icmp and _HAS_ICMP:
@@ -1017,31 +1258,84 @@ def main():
 
     if args.full_probe:
         print('phase=proxy_probe')
-        # Stratify HTTP probe targets across countries as well
-        tcp_live_by_cc: Dict[str, List[Node]] = {}
-        for n in tcp_alive:
-            tcp_live_by_cc.setdefault((n.country_code or 'OTHER').upper(), []).append(n)
+        if args.no_scheduler:
+            # Legacy stratification for probe targets with safe slicing
+            if probe_limit <= 0 or not tcp_alive:
+                probe_targets = []
+            else:
+                tcp_live_by_cc: Dict[str, List[Node]] = {}
+                for n in tcp_alive:
+                    tcp_live_by_cc.setdefault((n.country_code or 'OTHER').upper(), []).append(n)
 
-        probe_targets = []
-        target_quota = max(10, args.probe_limit // max(1, len(tcp_live_by_cc)))
-        for cc, cnodes in tcp_live_by_cc.items():
-            probe_targets.extend(cnodes[:target_quota])
-        if len(probe_targets) < args.probe_limit:
-            rem = [n for n in tcp_alive if n not in probe_targets]
-            probe_targets.extend(rem[:args.probe_limit - len(probe_targets)])
+                probe_targets = []
+                target_quota = max(1, probe_limit // max(1, len(tcp_live_by_cc)))
+                for cc, cnodes in tcp_live_by_cc.items():
+                    probe_targets.extend(cnodes[:target_quota])
+                if len(probe_targets) < probe_limit:
+                    rem = [n for n in tcp_alive if n not in probe_targets]
+                    rem_slice = max(0, probe_limit - len(probe_targets))
+                    probe_targets.extend(rem[:rem_slice])
+                probe_targets = probe_targets[:probe_limit]
+        else:
+            # Prioritized, deficit-aware selection for HTTP proxy verification
+            # record_scheduled=False prevents double-updating last_scheduled_at
+            # and double-advancing exploration cursor
+            probe_targets = schedule_candidates(
+                nodes=tcp_alive,
+                total_limit=probe_limit,
+                state=sched_state,
+                now=time.time(),
+                country_targets=DEFAULT_COUNTRY_TARGETS,
+                verify_ttl=args.verify_ttl,
+                base_cooldown=args.base_cooldown,
+                max_cooldown=args.max_cooldown,
+                refresh_ratio=args.refresh_ratio,
+                record_scheduled=False,
+            )
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=args.proxy_workers) as pool:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=proxy_workers) as pool:
             probed = list(pool.map(proxy_probe, probe_targets))
         by_fp = {n.fingerprint: n for n in probed}
         checked = [by_fp.get(n.fingerprint, n) for n in checked]
         proxy_ok_count = sum(1 for n in checked if n.proxy_ok)
         print(f'proxy_ok={proxy_ok_count}')
-    else:
-        for node in checked:
-            node.proxy_ok = False
 
-    print('phase=upsert')
-    stats = upsert_nodes(checked)
+    # Candidates outside the HTTP budget retain unknown evidence.
+
+    # Update and persist scheduler state
+    if not args.no_scheduler and sched_state is not None:
+        print('phase=scheduler_update')
+        update_state(
+            sched_state,
+            checked,
+            now=time.time(),
+            ewma_alpha=args.ewma_alpha,
+            base_cooldown=args.base_cooldown,
+            max_cooldown=args.max_cooldown,
+            prune_ttl=args.prune_ttl,
+        )
+        try:
+            save_state(state_file, sched_state)
+            print(f'scheduler_saved={state_file}')
+        except Exception as exc:
+            print(f'scheduler_save_failed={exc}')
+
+    purged_count = 0
+    if not args.skip_upsert:
+        print('phase=upsert')
+        stats = upsert_nodes(checked)
+        purged_count = stats.get('purged', 0)
+    else:
+        print('phase=skip_upsert')
+
+    # Group starvation alert: after each cycle the group health snapshot is
+    # compared against a floor. A pool can silently degrade when feeds rot —
+    # this surfaces it to the admin instead of letting clients discover it.
+    if args.alert_min_nodes > 0:
+        try:
+            send_group_starvation_alert(min_nodes=args.alert_min_nodes)
+        except Exception as exc:
+            print(f'starvation_alert_failed={exc}')
 
     elapsed = time.monotonic() - t0
     print(
@@ -1049,8 +1343,9 @@ def main():
         f'imported={len(all_nodes)} candidates={len(candidates)} '
         f'tcp_alive={len(tcp_alive)} '
         f'proxy_ok={sum(1 for n in checked if n.proxy_ok)} '
-        f'purged_stale={stats["purged"]}'
+        f'purged_stale={purged_count}'
     )
+    return checked
 
 
 if __name__ == '__main__':

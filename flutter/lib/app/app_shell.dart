@@ -279,6 +279,38 @@ class _AppShellState extends ConsumerState<AppShell>
     } catch (_) {}
   }
 
+  /// Warms Smart Group probe caches for all groups of the active Mosaic
+  /// subscription (throttled inside prewarmGroups). Called on app resume so
+  /// a connect right after opening the app is served from fresh probes.
+  Future<void> _prewarmFromShell() async {
+    try {
+      final api = ref.read(daemonApiProvider);
+      final subs =
+          await ref.read(subscriptionsProvider.future).catchError((_) => <Subscription>[]);
+      Subscription? mosaicSub;
+      for (final sub in subs) {
+        final uri = Uri.tryParse(sub.url);
+        if (uri != null && uri.host.toLowerCase() == 'sub.zxc1x1.ru') {
+          mosaicSub = sub;
+          break;
+        }
+      }
+      final manifest = await api.getProviderManifest(
+        subscriptionId: mosaicSub?.id,
+      );
+      if (!mounted) return;
+      unawaited(
+        SmartGroupRuntimeController.instance.prewarmGroups(
+          api: api,
+          selector: _smartGroupSelector,
+          groups: manifest.groups,
+        ),
+      );
+    } catch (_) {
+      // No manifest / daemon unreachable: prewarm is a pure optimization.
+    }
+  }
+
   Future<void> _drainEnrollmentQueue() async {
     if (_isProcessingEnrollmentQueue) return;
     _isProcessingEnrollmentQueue = true;
@@ -384,6 +416,10 @@ class _AppShellState extends ConsumerState<AppShell>
       _pollAndroidEnrollmentCallbacks();
       // Resume quality monitoring probes when the app comes to the foreground.
       SmartGroupRuntimeController.instance.resume();
+      // Re-warm probe caches after returning to the app (throttled to
+      // one pass per 15 min inside prewarmGroups): the user is about to
+      // interact, and caches older than the TTL would mean a cold connect.
+      _prewarmFromShell();
     } else if (state == AppLifecycleState.paused ||
                state == AppLifecycleState.inactive) {
       // Pause quality monitoring probes to save battery when the app leaves.
@@ -745,6 +781,16 @@ class _AppShellState extends ConsumerState<AppShell>
       }
       final manifest = await api.getProviderManifest(
         subscriptionId: mosaicSubscription?.id,
+      );
+      // Probe-cache warmup for ALL groups (not just the one connecting):
+      // fills the selector cache in the background so the next group switch
+      // or a fresh connect is served from warm probes instead of a cold sweep.
+      unawaited(
+        SmartGroupRuntimeController.instance.prewarmGroups(
+          api: api,
+          selector: _smartGroupSelector,
+          groups: manifest.groups,
+        ),
       );
       final firstEnabledGroup =
           manifest.groups.where((group) => !group.disabled);
