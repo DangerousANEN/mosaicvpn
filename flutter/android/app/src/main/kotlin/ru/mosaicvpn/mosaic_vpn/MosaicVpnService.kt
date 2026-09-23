@@ -92,10 +92,13 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
         @Volatile private var runtimeError: String? = null
         @Volatile private var libboxReady = false
+        private val networkPolicy = UnderlyingNetworkPolicy()
+        @Volatile private var activeNetworkFingerprint: String = networkPolicy.currentFingerprint()
 
         fun status(): Map<String, String?> = mapOf(
             "state" to runtimeState,
             "error" to runtimeError,
+            "network_fingerprint" to activeNetworkFingerprint,
         )
 
         fun start(context: Context, config: String, routeTitle: String = "") {
@@ -174,45 +177,37 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                         runtimeState = "connecting"
                         runtimeError = null
                         appendNativeLog("start: accepted config (${config.length} bytes)")
-                        // Pin the outbound dialer to the current default network.
-                        // route.auto_detect_interface lets libbox call
-                        // PlatformInterface.autoDetectInterfaceControl(fd) which
-                        // maps to VpnService.protect(fd) — the only reliable way
-                        // to keep outbound sockets off the VPN TUN on Android.
                         // Android VPN relies on VpnService.protect(fd) to keep
                         // outbound sockets off the TUN adapter. libbox calls
                         // PlatformInterface.autoDetectInterfaceControl(fd) which
                         // invokes protect(fd). This ONLY works when the config
-                        // sets auto_detect_interface=true. The previous approach
-                        // of pinning route.default_interface removed
-                        // auto_detect_interface, forcing sing-box into a
-                        // bind(SO_BINDTODEVICE) path that silently looped
-                        // traffic back into tun0 — "Connected" UI but no
-                        // internet. Keep auto_detect_interface and let libbox
-                        // drive the protect() calls.
-                        val pinnedConfig = runCatching {
+                        // sets auto_detect_interface=true.
+                        // route.default_interface and route.default_mark are not supported
+                        // on Android in sing-box and force bind(SO_BINDTODEVICE) which loops
+                        // packets back into tun0. Sanitize unconditionally to keep protect(fd)
+                        // active and prevent interface pinning across network handover.
+                        runCatching {
                             val cm = getSystemService(Context.CONNECTIVITY_SERVICE)
                                 as android.net.ConnectivityManager
-                            val active = cm.activeNetwork ?: return@runCatching config
-                            val iface = cm.getLinkProperties(active)?.interfaceName
-                                ?: return@runCatching config
-                            Log.i(TAG, "default physical interface = $iface (auto_detect_interface stays enabled)")
+                            val active = cm.activeNetwork
+                            val iface = active?.let { cm.getLinkProperties(it)?.interfaceName }
+                            if (iface != null) {
+                                Log.i(TAG, "initial default physical interface = $iface (auto_detect_interface stays enabled)")
+                            }
+                        }
+                        val sanitizedConfig = runCatching {
                             org.json.JSONObject(config).apply {
                                 val route = optJSONObject("route") ?: put(
                                     "route", org.json.JSONObject()).let { getJSONObject("route") }
-                                // Ensure auto_detect_interface is present — this
-                                // is what makes libbox call protect(fd) on every
-                                // outbound socket.
                                 route.put("auto_detect_interface", true)
-                                // Remove any leftover default_interface that would
-                                // conflict and bypass the protect() path.
                                 route.remove("default_interface")
+                                route.remove("default_mark")
                                 put("route", route)
                             }.toString()
                         }.getOrDefault(config)
-                        activeConfig = pinnedConfig
+                        activeConfig = sanitizedConfig
                         runCatching {
-                            java.io.File(filesDir, "last-config.json").writeText(pinnedConfig)
+                            java.io.File(filesDir, "last-config.json").writeText(sanitizedConfig)
                         }
                     // Android 14+ (targetSDK 34+) requires the FGS type to be
                     // declared both in the manifest AND passed explicitly to
@@ -230,7 +225,7 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                     } else {
                         startForeground(NOTIFICATION_ID, makeNotification("Подключение…"))
                     }
-                    runtimeExecutor.execute { startOrReloadRuntime(pinnedConfig) }
+                    runtimeExecutor.execute { startOrReloadRuntime(sanitizedConfig) }
                 }
             }
         }
@@ -268,23 +263,75 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 autoRedirect = false
             })
             appendNativeLog("runtime: sing-box service started")
-            runtimeState = "connected"
+            // TUN is up but has not carried a byte yet. Report "connecting"
+            // until an HTTP probe through the tunnel proves real egress;
+            // the old code set "connected" here, so the dashboard showed a
+            // green shield over an unverified (possibly dead) route.
+            runtimeState = "connecting"
             runtimeError = null
-            updateNotification("Подключено")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                try {
-                    TileService.requestListeningState(
-                        this,
-                        ComponentName(this, MosaicVpnTileService::class.java)
-                    )
-                } catch (_: Exception) {}
-            }
+            updateNotification("Подключение…")
+            verifyTunnelEgress()
         } catch (error: Exception) {
             Log.e(TAG, "Unable to start sing-box runtime", error)
             appendNativeLog("error: ${error.message ?: "Unable to start VPN runtime"}")
             publishError(error.message ?: "Unable to start VPN runtime")
             stopRuntime(preserveError = true)
         }
+    }
+
+    /// Proves the tunnel carries real traffic before declaring "connected".
+    /// Retries with settling delays (TUN needs ~600ms before first probe),
+    /// then flips runtimeState to "connected" or publishes an honest error.
+    private fun verifyTunnelEgress() {
+        val verifier = Thread {
+            val probeUrl = "http://1.1.1.1/generate_204"
+            var attempt = 0
+            val delaysMs = longArrayOf(600, 800, 1200, 2000, 3000, 5000)
+            while (attempt < delaysMs.size) {
+                // Bail out if the user cancelled while we were probing.
+                if (runtimeState != "connecting") return@Thread
+                try {
+                    Thread.sleep(delaysMs[attempt])
+                } catch (_: InterruptedException) {
+                    return@Thread
+                }
+                if (runtimeState != "connecting") return@Thread
+                try {
+                    val url = java.net.URL(probeUrl)
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.connectTimeout = 4000
+                    conn.readTimeout = 4000
+                    // Default HttpURLConnection uses the system routing,
+                    // which the TUN has already captured (auto_route).
+                    val code = conn.responseCode
+                    conn.disconnect()
+                    if (code in 200..399 || code == 204) {
+                        runtimeState = "connected"
+                        runtimeError = null
+                        appendNativeLog("egress verified: HTTP $code via tunnel")
+                        updateNotification("Подключено")
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                            try {
+                                TileService.requestListeningState(
+                                    this,
+                                    ComponentName(this, MosaicVpnTileService::class.java)
+                                )
+                            } catch (_: Exception) {}
+                        }
+                        return@Thread
+                    }
+                    appendNativeLog("egress probe: unexpected HTTP $code, retrying")
+                } catch (error: Exception) {
+                    appendNativeLog("egress probe failed (${error.javaClass.simpleName}), retrying")
+                }
+                attempt++
+            }
+            // All probes failed: the tunnel is up but carries no traffic.
+            publishError("Туннель поднят, но трафик не проходит. Попробуйте другой маршрут.")
+        }
+        verifier.isDaemon = true
+        verifier.name = "mosaic-egress-verify"
+        verifier.start()
     }
 
     private fun stopRuntime(releaseService: Boolean = true, preserveError: Boolean = false) {
@@ -526,27 +573,23 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     // Mirror upstream SFA: watch ConnectivityManager and forward each change
     // with the interface name/index of the first non-loopback address.
     private var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
+    private var interfaceListener: InterfaceUpdateListener? = null
 
     override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener) {
+        closeDefaultInterfaceMonitor(listener)
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
             ?: return
+        interfaceListener = listener
         val callback = object : android.net.ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: android.net.Network) {
-                notifyDefault(listener, cm, network)
-            }
-
-            override fun onLinkPropertiesChanged(
-                network: android.net.Network,
-                linkProperties: android.net.LinkProperties,
-            ) {
-                notifyDefault(listener, cm, network)
-            }
-
-            override fun onCapabilitiesChanged(
-                network: android.net.Network,
-                networkCapabilities: android.net.NetworkCapabilities,
-            ) {
-                notifyDefault(listener, cm, network)
+            override fun onAvailable(network: android.net.Network) = refresh()
+            override fun onLinkPropertiesChanged(network: android.net.Network, props: android.net.LinkProperties) = refresh()
+            override fun onCapabilitiesChanged(network: android.net.Network, caps: android.net.NetworkCapabilities) = refresh()
+            override fun onLost(network: android.net.Network) = refresh(network)
+            private fun refresh(lost: android.net.Network? = null) {
+                synchronized(this@MosaicVpnService) {
+                    if (networkCallback !== this || interfaceListener !== listener) return
+                    refreshUnderlyingNetworks(listener, cm, lost)
+                }
             }
         }
         networkCallback = callback
@@ -554,36 +597,69 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             cm.registerNetworkCallback(
                 android.net.NetworkRequest.Builder()
                     .addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                    .build(),
-                callback,
-            )
+                    .addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+                    .build(), callback)
+            synchronized(this) { refreshUnderlyingNetworks(listener, cm, null) }
         } catch (error: Exception) {
-            Log.w(TAG, "Failed to register default interface monitor", error)
+            appendNativeLog("network monitor registration failed: ${error.javaClass.simpleName}")
+            throw error
         }
     }
 
-    private fun notifyDefault(
+    private fun refreshUnderlyingNetworks(
         listener: InterfaceUpdateListener,
         cm: android.net.ConnectivityManager,
-        network: android.net.Network,
+        lost: android.net.Network?,
     ) {
-        try {
-            val props = cm.getLinkProperties(network) ?: return
-            val iface = props.interfaceName ?: return
-            val index = java.net.NetworkInterface.getByName(iface)?.index ?: return
-            Log.i(TAG, "default interface update: $iface (idx=$index)")
-            listener.updateDefaultInterface(iface, index, false, false)
-        } catch (error: Exception) {
-            Log.w(TAG, "Failed to resolve default interface", error)
+        val networks = cm.allNetworks.filter { it != lost }
+        val records = networks.mapNotNull { network ->
+            runCatching {
+                val caps = cm.getNetworkCapabilities(network) ?: return@runCatching null
+                val props = cm.getLinkProperties(network) ?: return@runCatching null
+                val iface = props.interfaceName ?: return@runCatching null
+                val index = java.net.NetworkInterface.getByName(iface)?.index ?: return@runCatching null
+                UnderlyingNetworkPolicy.NetworkRecord(
+                    networkKey = network.networkHandle, interfaceName = iface, interfaceIndex = index,
+                    isWifi = caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI),
+                    isCellular = caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR),
+                    isEthernet = caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET),
+                    isVpn = caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN),
+                    hasInternet = caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET),
+                    isMetered = !caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED),
+                    isValidated = caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED),
+                    isActiveDefault = network == cm.activeNetwork,
+                )
+            }.getOrNull()
+        }
+        // Apply one atomic snapshot: callback arrival order cannot cause transient switches.
+        when (val action = networkPolicy.updateSnapshot(records)) {
+            is UnderlyingNetworkPolicy.PolicyAction.Select -> {
+                val network = networks.firstOrNull { it.networkHandle == action.record.networkKey }
+                setUnderlyingNetworks(network?.let { arrayOf(it) } ?: emptyArray())
+                activeNetworkFingerprint = action.fingerprint
+                listener.updateDefaultInterface(action.record.interfaceName, action.record.interfaceIndex,
+                    action.record.isMetered, action.record.isConstrained)
+                appendNativeLog("underlying network changed; generation=${action.fingerprint.substringAfter(':')}")
+            }
+            is UnderlyingNetworkPolicy.PolicyAction.Lost -> {
+                setUnderlyingNetworks(emptyArray())
+                activeNetworkFingerprint = action.fingerprint
+                listener.updateDefaultInterface("", -1, false, false)
+                appendNativeLog("underlying network unavailable")
+            }
+            UnderlyingNetworkPolicy.PolicyAction.NoChange -> Unit
         }
     }
 
+    @Synchronized
     override fun closeDefaultInterfaceMonitor(listener: InterfaceUpdateListener) {
-        val callback = networkCallback ?: return
+        interfaceListener = null
+        val callback = networkCallback
         networkCallback = null
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
-            ?: return
-        runCatching { cm.unregisterNetworkCallback(callback) }
+        if (callback != null && cm != null) runCatching { cm.unregisterNetworkCallback(callback) }
+        networkPolicy.reset()
+        activeNetworkFingerprint = networkPolicy.currentFingerprint()
     }
 
     override fun findConnectionOwner(

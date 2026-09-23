@@ -118,8 +118,15 @@ void main() {
 
     expect(find.byType(BottomNavigationBar), findsNothing,
         reason: 'wide layout uses the compact sidebar');
-    expect(find.text('Не подключено'), findsWidgets,
-        reason: 'the primary desktop screen must be ConnectionDashboard');
+    // In a test environment there is no live daemon, so the status poll
+    // fails and the honest dashboard shows the "status being clarified"
+    // state rather than lying "Not connected" (tunnel state is unknown).
+    expect(
+      find.text('Не подключено').evaluate().isNotEmpty ||
+          find.text('Уточняем состояние…').evaluate().isNotEmpty,
+      isTrue,
+      reason: 'the primary desktop screen must be ConnectionDashboard',
+    );
     expect(find.text('ТЕКУЩИЙ МАРШРУТ'), findsOneWidget);
     expect(find.text('Минимальный пинг'), findsOneWidget);
     expect(tester.takeException(), isNull,
@@ -130,7 +137,12 @@ void main() {
       (tester) async {
     await _pumpAt(tester, const Size(1440, 960), locale: const Locale('en'));
 
-    expect(find.text('Not connected'), findsWidgets);
+    expect(
+      find.text('Not connected').evaluate().isNotEmpty ||
+          find.text('Status check…').evaluate().isNotEmpty,
+      isTrue,
+      reason: 'daemon is absent in tests: honest unknown-state wording is OK',
+    );
     expect(find.text('ТЕКУЩИЙ МАРШРУТ'), findsOneWidget);
     expect(find.text('Минимальный пинг'), findsOneWidget);
     expect(find.text('Subscriptions'), findsWidgets);

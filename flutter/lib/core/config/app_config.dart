@@ -37,6 +37,8 @@ class AppConfig {
   /// Logs: purely diagnostic, no need for tight polling.
   static const Duration logsPollInterval = Duration(seconds: 3);
   static const Duration logsPollIntervalBackground = Duration(seconds: 30);
+  /// Connections table live-refresh (was hardcoded 3s inline, now named).
+  static const Duration connectionsPollInterval = Duration(seconds: 3);
   /// When the app is fully backgrounded (Doze/standby), ALL polling should
   /// pause entirely to avoid CPU wakeups. This flag is checked by providers.
   static const bool suspendPollingInDoze = true;

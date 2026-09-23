@@ -74,7 +74,15 @@ class LogsNotifier extends StateNotifier<LogsState> {
   final Ref _ref;
   StreamSubscription? _sub;
   Timer? _androidPollTimer;
+  ProviderSubscription? _lifecycleSub;
   int _lastAndroidSeq = 0;
+
+  void _startAndroidLogTimer() {
+    _androidPollTimer?.cancel();
+    _androidPollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      _pollAndroidLogs();
+    });
+  }
 
   /// Internal mutable buffer — the single source of truth.
   /// state.entries is an unmodifiable view of this list.
@@ -87,12 +95,25 @@ class LogsNotifier extends StateNotifier<LogsState> {
   void _subscribe() {
     if (AppPlatform.isAndroid && AndroidVpnService.instance.isSupported) {
       _pollAndroidLogs();
+      // Foreground: poll every 2s. Background: the periodic timer is NOT
+      // created at all — a timer that fires only to check "are we still
+      // backgrounded?" still wakes the CPU. Instead, a one-shot resume
+      // listener restarts the timer (and does an immediate fetch) the moment
+      // the app returns. This also fixes the interval being frozen at
+      // subscription time regardless of later lifecycle changes.
       final isBg = _ref.read(isAppBackgroundedProvider);
-      final interval = isBg ? const Duration(seconds: 15) : const Duration(seconds: 2);
-      _androidPollTimer = Timer.periodic(interval, (_) {
-        final currentBg = _ref.read(isAppBackgroundedProvider);
-        if (currentBg) return; // Completely suspend polling while app is backgrounded
-        _pollAndroidLogs();
+      if (!isBg) {
+        _startAndroidLogTimer();
+      }
+      _lifecycleSub?.close();
+      _lifecycleSub = _ref.listen(isAppBackgroundedProvider, (prev, next) {
+        if (next) {
+          _androidPollTimer?.cancel();
+          _androidPollTimer = null;
+        } else {
+          _startAndroidLogTimer();
+          _pollAndroidLogs(); // immediate catch-up fetch on resume
+        }
       });
       return;
     }
@@ -148,6 +169,7 @@ class LogsNotifier extends StateNotifier<LogsState> {
   @override
   void dispose() {
     _androidPollTimer?.cancel();
+    _lifecycleSub?.close();
     _sub?.cancel();
     super.dispose();
   }

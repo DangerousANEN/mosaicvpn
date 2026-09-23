@@ -199,6 +199,10 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
   ) {
     final connected = status.isConnected;
     final connecting = status.isConnecting;
+    // Tunnel last-known-alive but the status transport is unreachable:
+    // honest wording instead of flashing "ОТКЛЮЧЕНО" on a transient poll
+    // failure while the VPN is actually still up.
+    final statusUnreachable = !connected && !connecting && !status.agentConnected;
 
     return SafeArea(
       top: false,
@@ -234,7 +238,9 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                                 ? 'ПРОВЕРКА СВЯЗИ…'
                                 : connecting
                                     ? 'ПОДКЛЮЧЕНИЕ…'
-                                    : 'ОТКЛЮЧЕНО',
+                                    : statusUnreachable
+                                        ? 'СОСТОЯНИЕ УТОЧНЯЕТСЯ'
+                                        : 'ОТКЛЮЧЕНО',
                         style: TextStyle(
                           fontFamily: AtlasTheme.serifFamily,
                           fontSize: 24,
@@ -257,7 +263,9 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                                 ? 'Верификация сквозного трафика…'
                                 : connecting
                                     ? 'Установка защищённого соединения…'
-                                    : 'Нажмите на компас для подключения',
+                                    : statusUnreachable
+                                        ? 'Нет связи с сервисом — туннель мог остаться активным'
+                                        : 'Нажмите на компас для подключения',
                         style: TextStyle(
                           fontSize: 13,
                           color: c.textSecondary,
@@ -392,30 +400,74 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     _RouteChoice selected, {
     bool expand = false,
   }) {
+    // While a connect attempt is in flight the button becomes an explicit
+    // CANCEL action: the user asked to abort, not to helplessly wait out a
+    // bad route. Tapping another route in the picker also cancels via _toggle.
+    final isCancelling = _busy && !status.isConnected;
     final button = SizedBox(
       height: 54,
       width: expand ? null : 238,
       child: FilledButton.icon(
-        onPressed: _busy ? null : () => _toggle(status, selected),
+        onPressed: isCancelling
+            ? _cancelConnect
+            : _busy
+                ? null
+                : () => _toggle(status, selected),
         style: FilledButton.styleFrom(
-          backgroundColor: status.isConnected ? c.danger : AtlasTheme.accent,
+          backgroundColor: isCancelling
+              ? null
+              : status.isConnected
+                  ? c.danger
+                  : AtlasTheme.accent,
+          foregroundColor: isCancelling ? c.danger : null,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
         ),
         icon: Icon(
-            status.isConnected ? Icons.stop_rounded : Icons.shield_outlined),
+          isCancelling
+              ? Icons.close_rounded
+              : status.isConnected
+                  ? Icons.stop_rounded
+                  : Icons.shield_outlined,
+        ),
         label: Text(
-          _busy
-              ? AppStrings.of(context).t('searching_route')
-              : status.isVerifying
-                  ? 'Проверка…'
-                  : status.isConnected
-                      ? AppStrings.of(context).t('disconnect_action')
-                      : AppStrings.of(context).t('connect_action'),
+          isCancelling
+              ? AppStrings.of(context).t('cancel_connect_action')
+              : _busy
+                  ? AppStrings.of(context).t('searching_route')
+                  : status.isVerifying
+                      ? 'Проверка…'
+                      : status.isConnected
+                          ? AppStrings.of(context).t('disconnect_action')
+                          : AppStrings.of(context).t('connect_action'),
         ),
       ),
     );
     return expand ? button : Align(alignment: Alignment.center, child: button);
+  }
+
+  /// Aborts an in-flight connection attempt (selector sweep, monitor, daemon
+  /// runtime) without leaving the dashboard in a busy state. Safe when the
+  /// attempt already finished: _waitForDisconnected is a no-op then.
+  Future<void> _cancelConnect() async {
+    final api = ref.read(daemonApiProvider);
+    try {
+      SmartGroupRuntimeController.instance.stop();
+      _smartGroupSelector.cancel();
+      _smartGroupSelector.resetCancel();
+      await api.disconnect();
+      await _waitForDisconnected(api);
+      ref.invalidate(vpnStatusProvider);
+    } catch (error) {
+      debugPrint('[HERO_COMPASS] _cancelConnect ERROR: $error');
+      if (mounted) {
+        _notice(
+            '${AppStrings.of(context).t('connection_failed')} ${_connectionErrorDetail(error)}',
+            error: true);
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _toggle(VpnStatus status, _RouteChoice selected) async {
@@ -431,6 +483,9 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
       }
       if (status.isConnected || status.isConnecting) {
         final wasSameRoute = _sameActiveRoute(status, selected);
+        // Stop the CURRENT attempt first: selector sweeps, monitor, and the
+        // daemon runtime. Choosing another route mid-connect must cancel the
+        // in-flight attempt instead of silently leaving it racing the new one.
         SmartGroupRuntimeController.instance.stop();
         _smartGroupSelector.cancel();
         await api.disconnect();
@@ -438,7 +493,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
         // the old runtime; wait for the authoritative state transition.
         await _waitForDisconnected(api);
         _smartGroupSelector.resetCancel();
-        if (wasSameRoute) {
+        if (wasSameRoute && !status.isConnecting) {
           ref.invalidate(vpnStatusProvider);
           return;
         }
@@ -582,7 +637,11 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
         orElse: () => current,
       );
       final status = ref.read(vpnStatusProvider).valueOrNull;
-      if (status?.isConnected == true) {
+      // Connect to the newly chosen route when the VPN is already up OR an
+      // attempt is in flight: the second case used to be a no-op — the old
+      // attempt kept running and the dashboard/route tab disagreed about
+      // what was happening. _toggle cancels the in-flight attempt first.
+      if (status?.isConnected == true || status?.isConnecting == true) {
         await _toggle(status!, chosenChoice);
       }
     }
@@ -1098,23 +1157,31 @@ class _ConnectionVisual extends StatelessWidget {
     final s = AppStrings.of(context);
     final connected = status.isConnected;
     final connecting = status.isConnecting;
+    final statusUnreachable =
+        !connected && !connecting && !status.agentConnected;
     final tint = connected
         ? c.success
         : connecting
             ? AtlasTheme.accent
-            : c.textMuted;
+            : statusUnreachable
+                ? AtlasTheme.warning
+                : c.textMuted;
     final title = connected
         ? s.t('connected')
         : status.isVerifying
             ? s.t('status_verifying')
             : connecting
                 ? s.t('status_connecting')
-                : s.t('status_disconnected');
+                : statusUnreachable
+                    ? s.t('status_unreachable')
+                    : s.t('status_disconnected');
     final subtitle = connected
         ? '${status.server?.name ?? s.t('minimum_ping')}${status.latencyMS > 0 ? ' · ${status.latencyMS} ms' : ''}'
         : connecting
             ? s.t('route_picker_hint')
-            : '${s.t('route_picker')} — ${s.t('connect_action')}';
+            : statusUnreachable
+                ? s.t('status_unreachable_hint')
+                : '${s.t('route_picker')} — ${s.t('connect_action')}';
     return Container(
       height: compact ? 244 : 292,
       decoration: BoxDecoration(

@@ -1019,6 +1019,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
           : currentStatus?.server?.id;
       if (currentStatus?.isConnected == true && activeRouteID != row.id) {
         SmartGroupRuntimeController.instance.stop();
+        _smartGroupSelector.cancel();
         try {
           await api.disconnect();
           var loops = 0;
@@ -1029,6 +1030,24 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
             loops++;
           }
         } catch (_) {}
+        _smartGroupSelector.resetCancel();
+      } else if (currentStatus?.isConnecting == true) {
+        // A previous attempt is still in flight: cancel it before starting
+        // this route so the dashboard and this tab agree on what is
+        // happening (previously the old attempt kept running underneath).
+        SmartGroupRuntimeController.instance.stop();
+        _smartGroupSelector.cancel();
+        try {
+          await api.disconnect();
+          var loops = 0;
+          while (loops < 15) {
+            final st = await api.getStatus();
+            if (!st.isConnected && !st.isConnecting) break;
+            await Future<void>.delayed(const Duration(milliseconds: 80));
+            loops++;
+          }
+        } catch (_) {}
+        _smartGroupSelector.resetCancel();
       }
       final selectedSourceID = ref.read(selectedSubscriptionIdProvider);
       final selectedManifest = selectedSourceID?.isNotEmpty == true

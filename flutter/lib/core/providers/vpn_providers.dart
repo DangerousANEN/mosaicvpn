@@ -532,6 +532,11 @@ final vpnStatusProvider = StreamProvider.autoDispose<VpnStatus>((ref) async* {
   final isBackgrounded = ref.watch(isAppBackgroundedProvider);
   final controller = StreamController<VpnStatus>();
   Timer? timer;
+  // Last known-good status: a transient poll failure (daemon restart, binder
+  // hiccup) must never falsify the tunnel as "disconnected" while TUN is
+  // still up. The UI reads state through this stream; emitting a default
+  // VpnStatus() on error made the dashboard flash "ОТКЛЮЧЕНО" mid-session.
+  VpnStatus? lastGood;
 
   void fetch() async {
     if (controller.isClosed) return;
@@ -539,19 +544,29 @@ final vpnStatusProvider = StreamProvider.autoDispose<VpnStatus>((ref) async* {
       final status = AppPlatform.isAndroid
           ? await _androidVpnStatus()
           : await api.getStatus();
+      lastGood = status;
       if (!controller.isClosed) controller.add(status);
     } catch (e) {
-      if (!controller.isClosed) controller.add(VpnStatus());
+      // Poll failure: preserve the last known tunnel state and mark only the
+      // agent transport as unreachable, so the UI can show "нет связи с
+      // сервисом" instead of lying that the VPN is off.
+      final fallback = (lastGood ?? VpnStatus()).copyWith(agentConnected: false);
+      if (!controller.isClosed) controller.add(fallback);
     }
   }
 
   fetch();
-  // In foreground: 2s poll for responsive state changes.
-  // In background/screen-off: slow down to 8s to prevent CPU wakeups and save battery.
+  // Foreground: 2s poll for responsive state changes.
+  // Background (paused/hidden/inactive): the poll STOPS entirely — the UI is
+  // not visible, so wakeups only burn battery. On resume the provider is
+  // recreated (isBackgrounded flips -> autoDispose restarts) and one fetch
+  // happens immediately. The VPN itself keeps running in the daemon.
   final pollInterval = isBackgrounded
-      ? AppConfig.statusPollIntervalBackground
+      ? null
       : AppConfig.statusPollInterval;
-  timer = Timer.periodic(pollInterval, (_) => fetch());
+  if (pollInterval != null) {
+    timer = Timer.periodic(pollInterval, (_) => fetch());
+  }
 
   ref.onDispose(() {
     timer?.cancel();
@@ -731,10 +746,13 @@ final connectionsProvider =
   }
 
   fetch();
+  // Foreground: 3s poll. Background: poll stops entirely.
   final pollInterval = isBackgrounded
-      ? const Duration(seconds: 30)
-      : AppConfig.statsPollInterval;
-  timer = Timer.periodic(pollInterval, (_) => fetch());
+      ? null
+      : AppConfig.connectionsPollInterval;
+  if (pollInterval != null) {
+    timer = Timer.periodic(pollInterval, (_) => fetch());
+  }
 
   ref.onDispose(() {
     timer?.cancel();
@@ -764,10 +782,14 @@ final trafficStatsProvider =
   }
 
   fetch();
+  // Foreground: 5s poll. Background: poll stops entirely (autoDispose
+  // recreates the provider with a single immediate fetch on resume).
   final pollInterval = isBackgrounded
-      ? AppConfig.statsPollIntervalBackground
-      : AppConfig.logsPollInterval;
-  timer = Timer.periodic(pollInterval, (_) => fetch());
+      ? null
+      : AppConfig.statsPollInterval;
+  if (pollInterval != null) {
+    timer = Timer.periodic(pollInterval, (_) => fetch());
+  }
 
   ref.onDispose(() {
     timer?.cancel();
