@@ -8,6 +8,7 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import kotlin.concurrent.thread
 
 class MainActivity : FlutterActivity() {
     companion object {
@@ -17,7 +18,7 @@ class MainActivity : FlutterActivity() {
 
     private var pendingPermissionResult: MethodChannel.Result? = null
     private var pendingAuthCallback: String? = null
-    private var pendingEnrollmentCallback: String? = null
+    private val pendingEnrollmentCallbacks = java.util.concurrent.ConcurrentLinkedQueue<String>()
     private var bridgeChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -80,8 +81,7 @@ class MainActivity : FlutterActivity() {
                 result.success(callback)
             }
             "consumeEnrollmentCallback" -> {
-                val callback = pendingEnrollmentCallback
-                pendingEnrollmentCallback = null
+                val callback = pendingEnrollmentCallbacks.poll()
                 result.success(callback)
             }
             "validateConfig" -> {
@@ -98,25 +98,31 @@ class MainActivity : FlutterActivity() {
                 }
             }
             "getInstalledApps" -> {
-                try {
-                    val pm = packageManager
-                    val packages = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
-                    val list = mutableListOf<Map<String, Any>>()
-                    for (app in packages) {
-                        val isSystem = (app.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
-                        val name = pm.getApplicationLabel(app).toString()
-                        val pkg = app.packageName
-                        if (pkg == packageName) continue
-                        list.add(mapOf(
-                            "name" to name,
-                            "package" to pkg,
-                            "isSystem" to isSystem
-                        ))
+                // Package enumeration + per-app label resolution is heavy
+                // (hundreds of PackageManager IPC round-trips). Running it on
+                // the main thread froze the split-tunnel screen while opening.
+                // Move to a worker and answer the platform channel from there.
+                thread(name = "mosaic-get-apps") {
+                    try {
+                        val pm = packageManager
+                        val packages = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
+                        val list = mutableListOf<Map<String, Any>>()
+                        for (app in packages) {
+                            val isSystem = (app.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+                            val name = runCatching { pm.getApplicationLabel(app).toString() }.getOrDefault(app.packageName)
+                            val pkg = app.packageName
+                            if (pkg == packageName) continue
+                            list.add(mapOf(
+                                "name" to name,
+                                "package" to pkg,
+                                "isSystem" to isSystem
+                            ))
+                        }
+                        list.sortBy { (it["name"] as? String)?.lowercase() ?: "" }
+                        result.success(list)
+                    } catch (e: Exception) {
+                        result.error("get_apps_failed", e.message, null)
                     }
-                    list.sortBy { (it["name"] as? String)?.lowercase() ?: "" }
-                    result.success(list)
-                } catch (e: Exception) {
-                    result.error("get_apps_failed", e.message, null)
                 }
             }
             else -> result.notImplemented()
@@ -137,7 +143,7 @@ class MainActivity : FlutterActivity() {
                 bridgeChannel?.invokeMethod("authCallbackReceived", callback)
             }
             isWebsiteEnrollment || isCustomEnrollmentFallback -> {
-                pendingEnrollmentCallback = callback
+                pendingEnrollmentCallbacks.offer(callback)
                 // Do not depend solely on `resumed`: Android can deliver a
                 // new VIEW intent to an already resumed Flutter activity.
                 bridgeChannel?.invokeMethod("enrollmentCallbackReceived", callback)

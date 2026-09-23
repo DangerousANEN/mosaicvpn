@@ -33,6 +33,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   static const _localSubscriptionID = 'local-default';
   final AndroidMosaicAccountService _account;
   Server? _activeRoute;
+  String? _activeRouteConfigFingerprint;
   int _lastMeasuredLatencyMS = 0;
   DateTime? _lastLatencyProbeAt;
   bool _probingLatency = false;
@@ -80,6 +81,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   Future<void> _startNativeRoute({
     required String config,
     required Server route,
+    String? configFingerprint,
   }) async {
     final vpn = AndroidVpnService.instance;
     await vpn.appendNativeLog(
@@ -94,7 +96,14 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     }
     final currentStatus = await vpn.status();
     if (currentStatus.isConnected || currentStatus.isBusy) {
-      if (_activeRoute?.id != route.id) {
+      // route.id equality is NOT sufficient: switching candidates inside one
+      // smart group keeps the same id, and skipping the stop leaves the new
+      // core racing the previous TUN descriptor. Treat a config fingerprint
+      // change as a route change too.
+      final routeUnchanged = _activeRoute?.id == route.id &&
+          (configFingerprint == null ||
+              configFingerprint == _activeRouteConfigFingerprint);
+      if (!routeUnchanged) {
         await vpn.appendNativeLog(
           '[ROUTE] Active route changing from "${_activeRoute?.name}" to "${route.name}". Stopping previous tunnel...',
         );
@@ -144,6 +153,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       '[ROUTE] Tunnel verification PASSED for "${route.name}". Committing active route.',
     );
     _activeRoute = route;
+    _activeRouteConfigFingerprint = configFingerprint;
   }
 
   /// Runs the same diagnostic suite as the desktop daemon, natively.
@@ -554,12 +564,25 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       subscriptionID: resolved.$1.id,
     );
 
+    // Candidate switches inside one group keep route.id identical, so id
+    // equality alone would skip the tunnel stop below and the new core could
+    // hang on the previous TUN descriptor. A config fingerprint catches
+    // candidate changes (and any other config delta) reliably.
+    final routeConfigFingerprint =
+        '${candidateID ?? 'auto'}|${perApp.bypassPackages.length}p|'
+        '${perApp.proxyPackages.length}|${perApp.autoFailover ? 1 : 0}|'
+        '${perApp.adBlock ? 1 : 0}|${config.hashCode}';
+
     final vpn = AndroidVpnService.instance;
     await vpn.appendNativeLog(
       '[SMART-GROUP] Launching group "${group.title}" (${group.id}) [routeType=${group.routeType}]',
     );
 
-    await _startNativeRoute(config: config, route: routeServer);
+    await _startNativeRoute(
+      config: config,
+      route: routeServer,
+      configFingerprint: routeConfigFingerprint,
+    );
   }
 
   @override
@@ -584,6 +607,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       // Never leave a phantom active route if the platform channel or service
       // disappeared while stopping.
       _activeRoute = null;
+      _activeRouteConfigFingerprint = null;
     }
   }
 
