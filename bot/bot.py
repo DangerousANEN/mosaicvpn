@@ -6242,9 +6242,9 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             "provider_name": "MosaicVPN",
             "user_tier": "standard",
             "app_update": {
-                "version": "0.3.58",
+                "version": "0.3.59",
                 "download_url": "https://sub.zxc1x1.ru/",
-                "changelog": "Приложение запоминает, какие маршруты реально работают в каждой вашей сети, и начинает именно с них. Добавлена диагностика в один тап: время, DNS, трафик через туннель, утечка IPv6 и MTU."
+                "changelog": "Новый экран скорости с живой шкалой, упрощённый онбординг, повышенная стабильность смарт-групп и фоновая экономия заряда."
             },
             "groups": groups,
             # A direct route is deliberately separate from Smart Groups. Its
