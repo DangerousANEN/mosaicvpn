@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>MosaicVPN — тестовый snapshot</title>
+  <style>
+    body { font: 17px/1.6 system-ui, -apple-system, sans-serif; background: #10151b; color: #eaf0f5; margin: 0; }
+    main { max-width: 820px; margin: auto; padding: 40px 24px; }
+    a { color: #91dfbc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    h1 { line-height: 1.15; margin-top: 10px; }
+    h2 { margin-top: 0; color: #fff; }
+    section { background: #19222c; border: 1px solid #344352; border-radius: 16px; padding: 24px; margin: 24px 0; }
+    .tag { color: #ffcc83; font-weight: 600; text-transform: uppercase; font-size: 13px; letter-spacing: 0.05em; }
+    .meta-row { display: flex; gap: 16px; flex-wrap: wrap; margin: 12px 0; font-size: 15px; color: #9bb0c1; }
+    .meta-row span { background: #131b24; padding: 4px 10px; border-radius: 6px; border: 1px solid #2d3b4a; }
+    small { color: #b7c6d2; font-size: 14px; display: block; margin-top: 10px; }
+    img { max-width: 100%; height: auto; border-radius: 12px; border: 1px solid #344352; margin-top: 12px; }
+    code { overflow-wrap: anywhere; background: #131b24; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
+    ul { padding-left: 20px; }
+    li { margin: 6px 0; }
+    .btn-download { display: inline-block; background: #238636; color: #fff; padding: 10px 20px; border-radius: 8px; font-weight: 600; margin: 8px 0; text-decoration: none; }
+    .btn-download:hover { background: #2ea043; text-decoration: none; }
+  </style>
+</head>
+<body>
+<main>
+  <a href="/">← MosaicVPN</a>
+  <p class="tag" style="margin-top:20px;">SNAPSHOT · ТЕСТОВЫЙ КАНАЛ</p>
+  <h1>Смартгруппы и хэндовер сетей: тестовая сборка</h1>
+  <p>Snapshot <code>20260912-smartgroups</code>. Экспериментальный срез для тестирования переключения сетей и смартгрупп. Стабильные релизы и автообновление не затронуты.</p>
+
+  <p><a href="SHA256SUMS">Контрольные суммы SHA-256</a> · <a href="manifest.json">Манифест состава сборки (JSON)</a></p>
+
+  <section>
+    <h2>Android (Universal APK)</h2>
+    <p><a class="btn-download" href="MosaicVPN-snapshot-20260912-android-universal.apk" download>Скачать Android snapshot (.apk)</a></p>
+    <div class="meta-row">
+      <span>Размер: ~94 МБ (98,578,455 байт)</span>
+      <span>Архитектуры: arm64-v8a, armeabi-v7a, x86_64</span>
+      <span>sing-box: 1.13.18</span>
+    </div>
+    <code>SHA-256: 77f70f1742858e256f459cd55b226769872b1bfac343c65658b181ce87da4858</code>
+    <small>Собрано с многоплатформенным <code>libbox.aar</code> (ARM64, ARMv7, x86_64). Протестирована установка и запуск MainActivity в Android 14, проинициализированы нативные компоненты, проверена реакция VpnService и UnderlyingNetworkPolicy на переключение сетевых интерфейсов (Wi-Fi on/off). Изолирована группа Free LTE.</small>
+  </section>
+
+  <section>
+    <h2>Linux x64</h2>
+    <p><a class="btn-download" href="MosaicVPN-snapshot-20260912-linux-x64.tar.gz" download style="background:#1f6feb;">Скачать Linux snapshot (.tar.gz)</a></p>
+    <div class="meta-row">
+      <span>Размер: ~42.5 МБ (44,657,406 байт)</span>
+      <span>Платформа: Ubuntu 24.04 x64</span>
+      <span>sing-box: 1.13.18</span>
+    </div>
+    <code>SHA-256: d60ce27dd1ba8e6183bdab4a3c0e94b3dd4e35503a492ea8b5502d18632f38d8</code>
+    <small>В архиве Flutter-клиент, mosaicd и sing-box 1.13.18. Требуются GTK 3, libsecret и Ayatana AppIndicator.</small>
+  </section>
+
+  <section>
+    <h2>Что проверено</h2>
+    <ul>
+      <li><strong>Сетевое ядро sing-box v1.13.18</strong>: пересобрана нативная библиотека <code>libbox.aar</code> со всеми тремя ABI (arm64, armv7, x86_64), подтверждено наличие <code>libbox.so</code> в APK.</li>
+      <li><strong>Android Network Handover</strong>: нативная политика сетей <code>UnderlyingNetworkPolicy.kt</code> с приоритетом дефолтной валидированной сети, отсечением служебных сетей без INTERNET и расчетом fingerprint без утечки IP/SSID. Все 5 регрессионных тестов Kotlin пройдены.</li>
+      <li><strong>Тесты Flutter</strong>: 166 невизуальных тестов успешно пройдены (включая проверку изоляции группы <code>free-lte</code> и трансляцию <code>networkFingerprint</code>).</li>
+      <li><strong>Нативный запуск на Android 14</strong>: APK успешно установлен на эмулятор, MainActivity стартует в Impeller (OpenGLES), экраны онбординга, подключения, маршрутов и настроек отрендерены без падений.</li>
+      <li><strong>Linux-сборка</strong>: запуск GUI и Go-демона в песочнице, проверка изоляции туннеля и строгой валидации HTTP 204.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Известные ограничения</h2>
+    <ul>
+      <li>Полноценный E2E-тест Free LTE в боевых сетях сотовых операторов (LTE/5G) требует полевого тестирования на физическом устройстве с SIM-картой.</li>
+      <li>Изолированный параллельный probe кандидатов на Android находится в процессе доработки (выбор ноды сейчас выполняет нативный sing-box urltest).</li>
+      <li>Сборка является тестовой (snapshot) и не перезаписывает стабильные релизы.</li>
+    </ul>
+  </section>
+
+  <h2>Снимки запуска</h2>
+  <p><small>Интерфейс Android-приложения после установки APK:</small></p>
+  <img src="android-launch.png" alt="Запуск MosaicVPN на Android 14">
+
+  <p style="margin-top:24px;"><small>Интерфейс Linux-приложения в песочнице:</small></p>
+  <img src="linux-launch.png" alt="Запуск MosaicVPN в Linux-песочнице">
+
+  <p><small style="margin-top:30px;">Тестовая сборка без гарантий стабильности. Подписки и личные данные в архив не включены.</small></p>
+</main>
+</body>
+</html>

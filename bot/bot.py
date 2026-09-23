@@ -25,6 +25,16 @@ import re
 import smtplib
 from email.message import EmailMessage
 
+try:
+    from bot.sponsored_invites import SponsoredInviteStore, build_gift_url
+except ImportError:
+    from sponsored_invites import SponsoredInviteStore, build_gift_url
+
+try:
+    from bot.onboarding_auth import BrowserLoginStore, BrowserLoginResult
+except ImportError:
+    from onboarding_auth import BrowserLoginStore, BrowserLoginResult
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -87,6 +97,15 @@ if _missing:
 
 DB_PATH = "/opt/mosaic-bot/bot.db"
 ADMIN_FILE = "/opt/mosaic-bot/admins.txt"
+
+# Legal Documents and Requisites Configuration (Redaction 1.0 from 08.08.2026)
+LEGAL_TERMS_VERSION = os.environ.get("MOSAIC_LEGAL_TERMS_VERSION", "1.0")
+LEGAL_SITE_BASE_URL = os.environ.get("MOSAIC_LEGAL_BASE_URL", "https://sub.zxc1x1.ru")
+LEGAL_OFFER_URL = f"{LEGAL_SITE_BASE_URL}/offer.html"
+LEGAL_PRIVACY_URL = f"{LEGAL_SITE_BASE_URL}/privacy.html"
+LEGAL_TERMS_URL = f"{LEGAL_SITE_BASE_URL}/terms.html"
+LEGAL_REFUND_URL = f"{LEGAL_SITE_BASE_URL}/refund.html"
+LEGAL_CONTACTS_URL = f"{LEGAL_SITE_BASE_URL}/contacts.html"
 
 # Telegram IDs allowed to use /admin, receive alerts, and see forwarded complaints.
 # Split on comma to allow multiple admins. The first registered user (owner) is
@@ -193,6 +212,56 @@ MESSAGES = {
             "Вопросы по оплате, настройке или работе сервиса:\n"
             "💬 @mosaicsup\n\n"
             "Мы ответим в самое ближайшее время\\!"
+        ),
+        "terms_accept_btn": "✅ Принимаю условия (ред. 1.0)",
+        "terms_accepted_msg": "✅ Условия оферты (ред. 1.0) приняты. Переходим к оплате.",
+        "terms_declined_msg": "❌ Для продолжения оформления заказа необходимо принять условия оферты.",
+        "terms_prompt": (
+            "📜 Подтверждение согласия с условиями сервиса\n"
+            "Редакция: 1.0 от 8 августа 2026 г.\n\n"
+            "Для выставления счёта и оплаты доступа подтвердите согласие с документами MosaicVPN:\n\n"
+            "• Исполнитель: Самозанятый Липский Н. Е. (ИНН 545113651604, плательщик НПД)\n"
+            "• Стоимость: 1 ₽ / день, до 5 устройств на аккаунте\n"
+            "• Политика No-Logs: не сохраняем журналы сетевой активности\n"
+            "• Возврат: неиспользованный остаток возвращается по заявке за 24 ч\n\n"
+            "Ознакомьтесь с документами по кнопкам ниже и нажмите «Принимаю условия»."
+        ),
+        "terms": (
+            "📜 Юридические документы и правила сервиса MosaicVPN\n\n"
+            "Редакция: 1.0 (от 8 августа 2026 г.)\n"
+            "Исполнитель: Липский Никита Евгеньевич\n"
+            "Статус: Самозанятый, плательщик НПД (ФЗ № 422-ФЗ)\n"
+            "ИНН: 545113651604\n"
+            "Регион: Новосибирская область, Российская Федерация\n"
+            "Email: anen.online@gmail.com\n"
+            "Телефон: +7 913 488-69-19\n"
+            "Telegram: @mosaicvpnbot / @mosaicsup\n\n"
+            "Основные условия:\n"
+            "• Тариф: 1 ₽/сутки (0.01 USDT/сутки), ознакомительный период 3 дня\n"
+            "• Лимит: до 5 устройств одновременно\n"
+            "• Политика No-Logs: конфиденциальность сетевых соединений\n"
+            "• Возврат средств: регламент до 24 часов на рассмотрение (/refund.html)\n\n"
+            "Статус согласия: {status}\n\n"
+            "Полные тексты документов доступны по ссылкам ниже:"
+        ),
+        "paysupport": (
+            "💳 Поддержка по платежам и возвратам MosaicVPN\n\n"
+            "Реквизиты исполнителя:\n"
+            "• Липский Никита Евгеньевич (Самозанятый, плательщик НПД)\n"
+            "• ИНН: 545113651604\n"
+            "• Email: anen.online@gmail.com\n"
+            "• Телефон: +7 913 488-69-19\n"
+            "• Чат поддержки: @mosaicsup\n\n"
+            "Способы оплаты:\n"
+            "• СБП и банковские карты РФ (через шлюз Lava)\n"
+            "• Криптовалюта USDT (через шлюз CryptoBot)\n\n"
+            "Что делать, если оплата не поступила:\n"
+            "1. Зачисление обычно происходит автоматически за 1–5 минут.\n"
+            "2. Проверьте профиль /profile.\n"
+            "3. Если баланс не обновился, нажмите «📝 Создать обращение» или напишите в @mosaicsup с номером заказа (order_id / invoice_id) или чеком.\n\n"
+            "Порядок возврата:\n"
+            "• Неиспользованный остаток возвращается в полном объёме по заявке (рассмотрение до 24 часов).\n"
+            "• Выплата производится на ту же карту/кошелёк от 1 до 10 рабочих дней."
         )
     },
     "en": {
@@ -272,6 +341,56 @@ MESSAGES = {
             "Questions about payments, configuration, or service:\n"
             "💬 @mosaicsup\n\n"
             "We will get back to you as soon as possible!"
+        ),
+        "terms_accept_btn": "✅ Accept Terms (v1.0)",
+        "terms_accepted_msg": "✅ Terms (v1.0) accepted. Proceeding to payment.",
+        "terms_declined_msg": "❌ You need to accept terms to proceed with order.",
+        "terms_prompt": (
+            "📜 Terms of Service & Legal Acceptance\n"
+            "Version: 1.0 (August 8, 2026)\n\n"
+            "Before invoice generation and payment, please confirm agreement with MosaicVPN legal terms:\n\n"
+            "• Contractor: Self-employed Nikita E. Lipskiy (INN 545113651604, NPD regime)\n"
+            "• Price: 1 RUB / day (~0.01 USDT/day), up to 5 devices per account\n"
+            "• No-Logs Policy: We do not log traffic or connection metadata\n"
+            "• Refund: Unused days refunded on request within 24h\n\n"
+            "Review legal documents using the buttons below and tap «Accept Terms»."
+        ),
+        "terms": (
+            "📜 Legal Documents & Terms of Service\n\n"
+            "Version: 1.0 (August 8, 2026)\n"
+            "Contractor: Nikita Evgenyevich Lipskiy\n"
+            "Status: Self-employed / Professional Income Taxpayer (FZ-422)\n"
+            "Tax ID (INN): 545113651604\n"
+            "Region: Novosibirsk Region, Russian Federation\n"
+            "Email: anen.online@gmail.com\n"
+            "Phone: +7 913 488-69-19\n"
+            "Telegram: @mosaicvpnbot / @mosaicsup\n\n"
+            "Key Terms:\n"
+            "• Rate: 1 RUB/day (0.01 USDT/day), 3-day free trial\n"
+            "• Limit: up to 5 devices simultaneously\n"
+            "• No-Logs Policy: traffic privacy & encryption\n"
+            "• Refunds: reviewed within 24 hours (/refund.html)\n\n"
+            "Acceptance status: {status}\n\n"
+            "Official legal documents are accessible below:"
+        ),
+        "paysupport": (
+            "💳 Payment & Refund Support\n\n"
+            "Contractor Details:\n"
+            "• Nikita E. Lipskiy (Self-employed)\n"
+            "• INN: 545113651604\n"
+            "• Email: anen.online@gmail.com\n"
+            "• Phone: +7 913 488-69-19\n"
+            "• Support Chat: @mosaicsup\n\n"
+            "Available Payment Methods:\n"
+            "• SBP & Russian Bank Cards (via Lava gateway)\n"
+            "• USDT Crypto (via CryptoBot gateway)\n\n"
+            "Payment troubleshooting:\n"
+            "1. Credits are processed automatically within 1–5 minutes.\n"
+            "2. Check your balance via /profile.\n"
+            "3. If balance hasn't updated, click «📝 Create ticket» or message @mosaicsup with your order ID or receipt.\n\n"
+            "Refund Policy:\n"
+            "• Unused subscription days are refunded in full upon request (reviewed within 24h).\n"
+            "• Payouts processed to the same card/wallet in 1–10 business days."
         )
     }
 }
@@ -484,6 +603,12 @@ def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
+    except Exception:
+        pass
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
         telegram_id INTEGER PRIMARY KEY,
@@ -501,6 +626,8 @@ def init_db():
         ("first_paid_at", "TEXT"),       # #12: rating prompt — when user first paid
         ("rating_given", "INTEGER DEFAULT 0"),  # #12: rating already submitted
         ("tickets_count", "INTEGER DEFAULT 0"),  # #10: total open+closed tickets
+        ("terms_accepted_version", "TEXT"),
+        ("terms_accepted_at", "TEXT"),
     ]:
         try:
             cursor.execute(f"ALTER TABLE users ADD COLUMN {col} {decl}")
@@ -525,11 +652,22 @@ def init_db():
         ("payment_provider", "TEXT DEFAULT 'cryptobot'"),
         ("provider_invoice_id", "TEXT"),
         ("order_id", "TEXT"),
+        ("terms_version", "TEXT DEFAULT '1.0'"),
     ]:
         try:
             cursor.execute(f"ALTER TABLE invoices ADD COLUMN {col} {decl}")
         except sqlite3.OperationalError:
             pass
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS terms_acceptances (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        telegram_id INTEGER NOT NULL,
+        version TEXT NOT NULL,
+        accepted_at TEXT NOT NULL,
+        source TEXT NOT NULL
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_terms_acceptances_user ON terms_acceptances (telegram_id, version)")
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS notification_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -773,6 +911,10 @@ def init_db():
         updated_by  INTEGER NOT NULL
     )
     """)
+    try:
+        SponsoredInviteStore(DB_PATH)
+    except Exception:
+        pass
     conn.commit()
     conn.close()
 
@@ -1443,6 +1585,18 @@ def get_admin_balance_credit_history(limit=50):
     ]
 
 
+_sponsored_invite_store = None
+_sponsored_invite_store_path = None
+
+
+def get_sponsored_invite_store():
+    global _sponsored_invite_store, _sponsored_invite_store_path
+    if _sponsored_invite_store is None or _sponsored_invite_store_path != DB_PATH:
+        _sponsored_invite_store = SponsoredInviteStore(DB_PATH)
+        _sponsored_invite_store_path = DB_PATH
+    return _sponsored_invite_store
+
+
 # ---------------------------------------------------------------------------
 # Route availability / maintenance control
 # ---------------------------------------------------------------------------
@@ -1554,11 +1708,6 @@ def get_route_eligible_counts():
             GROUP BY gn.group_id
         """)
         raw = {str(group_id): int(count) for group_id, count in cursor.fetchall()}
-        raw["stable"] = raw.get("stable") or raw.get("allowlist") or raw.get("min_latency", 20)
-        raw["compatibility"] = raw.get("allowlist") or raw.get("auto-whitelist", 0)
-        raw["usa"] = raw.get("auto-us", 0)
-        raw["netherlands"] = raw.get("auto-nl", 0)
-        raw["france"] = raw.get("auto-fr", 0)
         return raw
     finally:
         conn.close()
@@ -1639,7 +1788,7 @@ def get_user_by_short_uuid(short_uuid):
         pg_cur.execute("SELECT telegram_id, username, short_uuid FROM users WHERE short_uuid = %s", (short_uuid,))
         p_row = pg_cur.fetchone()
         pg_conn.close()
-        if p_row:
+        if p_row and isinstance(p_row, (tuple, list)):
             tg_id = p_row[0] or 0
             u_name = p_row[1] or ""
             return {"account_id": tg_id, "telegram_id": tg_id, "username": u_name, "short_uuid": p_row[2], "language": "ru", "trial_used": 1, "referrer_id": None}
@@ -1652,11 +1801,39 @@ def get_user(telegram_id):
     account_id = resolve_telegram_account_id(telegram_id)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT username, short_uuid, language, trial_used, referrer_id FROM users WHERE telegram_id = ?", (account_id,))
-    row = cursor.fetchone()
+    try:
+        cursor.execute("SELECT username, short_uuid, language, trial_used, referrer_id, terms_accepted_version, terms_accepted_at FROM users WHERE telegram_id = ?", (account_id,))
+        row = cursor.fetchone()
+        if row:
+            conn.close()
+            return {
+                "account_id": account_id,
+                "username": row[0],
+                "short_uuid": row[1],
+                "language": row[2],
+                "trial_used": row[3],
+                "referrer_id": row[4],
+                "terms_accepted_version": row[5],
+                "terms_version": row[5],
+                "terms_accepted_at": row[6],
+            }
+    except sqlite3.OperationalError:
+        cursor.execute("SELECT username, short_uuid, language, trial_used, referrer_id FROM users WHERE telegram_id = ?", (account_id,))
+        row = cursor.fetchone()
+        if row:
+            conn.close()
+            return {
+                "account_id": account_id,
+                "username": row[0],
+                "short_uuid": row[1],
+                "language": row[2],
+                "trial_used": row[3],
+                "referrer_id": row[4],
+                "terms_accepted_version": None,
+                "terms_version": None,
+                "terms_accepted_at": None,
+            }
     conn.close()
-    if row:
-        return {"account_id": account_id, "username": row[0], "short_uuid": row[1], "language": row[2], "trial_used": row[3], "referrer_id": row[4]}
     return None
 
 def save_user(telegram_id, username, short_uuid, language='ru', trial_used=0, referrer_id=None):
@@ -1683,17 +1860,22 @@ def update_user_lang(telegram_id, language):
     conn.commit()
     conn.close()
 
-def save_invoice(invoice_id, telegram_id, amount, months, days):
+def save_invoice(invoice_id, telegram_id, amount, months, days, terms_version=None):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
     INSERT INTO invoices (invoice_id, telegram_id, amount, months, days, status, created_at)
     VALUES (?, ?, ?, ?, ?, 'pending', ?)
     """, (invoice_id, telegram_id, amount, months, days, datetime.datetime.now().isoformat()))
+    if terms_version:
+        try:
+            cursor.execute("UPDATE invoices SET terms_version = ? WHERE invoice_id = ?", (terms_version, invoice_id))
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
 
-def save_lava_invoice(internal_id, provider_invoice_id, order_id, telegram_id, amount, days, store):
+def save_lava_invoice(internal_id, provider_invoice_id, order_id, telegram_id, amount, days, store, terms_version=None):
     """Persist a Lava invoice before showing its payment URL to the user."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -1702,6 +1884,11 @@ def save_lava_invoice(internal_id, provider_invoice_id, order_id, telegram_id, a
         "VALUES (?, ?, ?, ?, ?, 'pending', ?, 'lava_' || ?, ?, ?)",
         (internal_id, telegram_id, amount, days / 30.0, days, datetime.datetime.now().isoformat(), store, provider_invoice_id, order_id),
     )
+    if terms_version:
+        try:
+            cursor.execute("UPDATE invoices SET terms_version = ? WHERE invoice_id = ?", (terms_version, internal_id))
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
 
@@ -1758,6 +1945,18 @@ def get_pending_invoices():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT invoice_id, telegram_id, days FROM invoices WHERE status = 'pending' AND payment_provider = 'cryptobot'")
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def get_pending_lava_invoices():
+    """Retrieve pending Lava invoices to verify status against the Lava API."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT invoice_id, telegram_id, days, amount, status, payment_provider, order_id "
+        "FROM invoices WHERE status = 'pending' AND payment_provider LIKE 'lava_%'"
+    )
     rows = cursor.fetchall()
     conn.close()
     return rows
@@ -1871,19 +2070,24 @@ def is_admin(telegram_id):
         return False
 
 # Remnawave API helper functions
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+try:
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+except Exception:
+    HTTPAdapter = None
+    Retry = None
 
 _api_session = requests.Session()
-_retry_strategy = Retry(
-    total=3,
-    backoff_factor=0.5,
-    status_forcelist=[429, 500, 502, 503, 504],
-    raise_on_status=False
-)
-_adapter = HTTPAdapter(max_retries=_retry_strategy, pool_connections=25, pool_maxsize=25)
-_api_session.mount("http://", _adapter)
-_api_session.mount("https://", _adapter)
+if HTTPAdapter and Retry and hasattr(_api_session, "mount"):
+    _retry_strategy = Retry(
+        total=3,
+        backoff_factor=0.5,
+        status_forcelist=[429, 500, 502, 503, 504],
+        raise_on_status=False
+    )
+    _adapter = HTTPAdapter(max_retries=_retry_strategy, pool_connections=25, pool_maxsize=25)
+    _api_session.mount("http://", _adapter)
+    _api_session.mount("https://", _adapter)
 
 def api_get_headers():
     return {
@@ -1922,6 +2126,8 @@ def api_create_user(username, days, telegram_id):
             return res.json().get("response")
         else:
             logger.error(f"Create user failed: {res.status_code} - {res.text}")
+    except (requests.Timeout, requests.ConnectionError):
+        raise
     except Exception as e:
         logger.error(f"Error creating user: {e}")
     return None
@@ -1957,6 +2163,8 @@ def api_extend_user(username, days):
             return res.json().get("response")
         else:
             logger.error(f"Extend user failed: {res.status_code} - {res.text}")
+    except (requests.Timeout, requests.ConnectionError):
+        raise
     except Exception as e:
         logger.error(f"Error extending user: {e}")
     return None
@@ -2377,6 +2585,7 @@ RATE_LIMIT_RULES = {
     "promo_apply": (3, 3600),  # 3 promo redemptions per hour
     "rating": (1, 86400),     # 1 rating per day
     "broadcast": (1, 60),     # admin broadcast: 1/min
+    "buy": (10, 60),          # invoice / payment action: 10 per min
 }
 
 def rate_limit_check(telegram_id, action):
@@ -2668,6 +2877,116 @@ def is_user_subscribed_to_channel(telegram_id):
     except Exception as e:
         logger.warning(f"Channel sub check failed for {telegram_id}: {e}")
         return True  # fail-open to avoid locking users out
+
+
+# ============================================================
+# Legal documents acceptance helpers
+# ============================================================
+def has_user_accepted_terms(telegram_id, version=None):
+    """Check whether user has accepted the specified legal terms version."""
+    target_version = version or LEGAL_TERMS_VERSION
+    account_id = resolve_telegram_account_id(telegram_id)
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT terms_accepted_version FROM users WHERE telegram_id = ?", (account_id,))
+        row = cursor.fetchone()
+        if row and row[0] == target_version:
+            return True
+        cursor.execute(
+            "SELECT 1 FROM terms_acceptances WHERE telegram_id = ? AND version = ? LIMIT 1",
+            (account_id, target_version)
+        )
+        return cursor.fetchone() is not None
+    except sqlite3.OperationalError:
+        return False
+    finally:
+        conn.close()
+
+
+def record_terms_acceptance(telegram_id, version=None, source="bot"):
+    """Record explicit acceptance of the versioned legal terms in users and terms_acceptances."""
+    target_version = version or LEGAL_TERMS_VERSION
+    account_id = resolve_telegram_account_id(telegram_id)
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE users SET terms_accepted_version = ?, terms_accepted_at = ? WHERE telegram_id = ?",
+            (target_version, now_iso, account_id)
+        )
+        cursor.execute(
+            "INSERT INTO terms_acceptances (telegram_id, version, accepted_at, source) VALUES (?, ?, ?, ?)",
+            (account_id, target_version, now_iso, source)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_terms_markup(lang="ru"):
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.row(
+        types.InlineKeyboardButton("📄 Публичная оферта" if lang == "ru" else "📄 Public Offer", url=LEGAL_OFFER_URL),
+        types.InlineKeyboardButton("🔒 Конфиденциальность" if lang == "ru" else "🔒 Privacy Policy", url=LEGAL_PRIVACY_URL),
+    )
+    markup.row(
+        types.InlineKeyboardButton("🔄 Условия возврата" if lang == "ru" else "🔄 Refund Policy", url=LEGAL_REFUND_URL),
+        types.InlineKeyboardButton("📜 Лицензии и ПО" if lang == "ru" else "📜 Terms & Licenses", url=LEGAL_TERMS_URL),
+    )
+    markup.row(
+        types.InlineKeyboardButton("🏛 Контакты и реквизиты" if lang == "ru" else "🏛 Requisites", url=LEGAL_CONTACTS_URL),
+        types.InlineKeyboardButton("💳 Поддержка по оплате" if lang == "ru" else "💳 Payment Support", callback_data="show_paysupport"),
+    )
+    return markup
+
+
+def get_paysupport_markup(lang="ru"):
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("💬 Написать в @mosaicsup" if lang == "ru" else "💬 Chat @mosaicsup", url="https://t.me/mosaicsup")
+    )
+    markup.row(
+        types.InlineKeyboardButton("🔄 Регламент возврата" if lang == "ru" else "🔄 Refund Policy", url=LEGAL_REFUND_URL),
+        types.InlineKeyboardButton(f"📄 Оферта (ред. {LEGAL_TERMS_VERSION})" if lang == "ru" else f"📄 Offer (v{LEGAL_TERMS_VERSION})", url=LEGAL_OFFER_URL),
+    )
+    markup.add(
+        types.InlineKeyboardButton("📝 Создать обращение" if lang == "ru" else "📝 Create ticket", callback_data="ticket_new")
+    )
+    markup.add(
+        types.InlineKeyboardButton("📄 Все документы" if lang == "ru" else "📄 All Legal Docs", callback_data="show_terms")
+    )
+    return markup
+
+
+def get_terms_acceptance_markup(lang="ru", action=""):
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    t = MESSAGES.get(lang, MESSAGES["ru"])
+    markup.row(
+        types.InlineKeyboardButton(f"📄 Оферта (ред. {LEGAL_TERMS_VERSION})" if lang == "ru" else f"📄 Offer (v{LEGAL_TERMS_VERSION})", url=LEGAL_OFFER_URL),
+        types.InlineKeyboardButton("🔄 Возврат" if lang == "ru" else "🔄 Refund", url=LEGAL_REFUND_URL),
+    )
+    markup.row(
+        types.InlineKeyboardButton("🔒 Конфиденциальность" if lang == "ru" else "🔒 Privacy", url=LEGAL_PRIVACY_URL),
+        types.InlineKeyboardButton("📜 Условия" if lang == "ru" else "📜 Terms", url=LEGAL_TERMS_URL),
+    )
+    callback_data = f"accept_terms:{action}" if action else "accept_terms"
+    markup.row(
+        types.InlineKeyboardButton(t.get("terms_accept_btn", f"✅ Принимаю условия (ред. {LEGAL_TERMS_VERSION})"), callback_data=callback_data)
+    )
+    markup.row(
+        types.InlineKeyboardButton("❌ Отмена" if lang == "ru" else "❌ Cancel", callback_data="terms_decline")
+    )
+    return markup
+
+
+def send_terms_prompt(telegram_id, lang="ru", action=""):
+    """Send legal terms acceptance prompt with inline action buttons."""
+    t = MESSAGES.get(lang, MESSAGES["ru"])
+    prompt = t.get("terms_prompt", "Для продолжения оформления заказа необходимо ознакомиться и согласиться с условиями сервиса:")
+    markup = get_terms_acceptance_markup(lang=lang, action=action)
+    _safe_bot_send_message(telegram_id, prompt, reply_markup=markup)
 
 
 # ============================================================
@@ -3823,6 +4142,135 @@ def issue_link_code_command(message):
     bot.send_message(telegram_id, text, parse_mode="HTML")
 
 
+@bot.message_handler(commands=["terms", "offer"])
+def handle_terms_command(message):
+    telegram_id = message.chat.id
+    db_user = get_user(telegram_id)
+    lang = db_user["language"] if db_user else "ru"
+    accepted = has_user_accepted_terms(telegram_id)
+    status_str = ("✅ Приняты" if lang == "ru" else "✅ Accepted") if accepted else ("❌ Не приняты" if lang == "ru" else "❌ Not accepted")
+    text = MESSAGES[lang]["terms"].format(status=status_str)
+    markup = get_terms_markup(lang)
+    _safe_bot_send_message(telegram_id, text, reply_markup=markup)
+
+
+@bot.message_handler(commands=["paysupport"])
+def handle_paysupport_command(message):
+    telegram_id = message.chat.id
+    db_user = get_user(telegram_id)
+    lang = db_user["language"] if db_user else "ru"
+    text = MESSAGES[lang]["paysupport"]
+    markup = get_paysupport_markup(lang)
+    _safe_bot_send_message(telegram_id, text, reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "show_terms")
+def handle_show_terms_callback(call):
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    lang = db_user["language"] if db_user else "ru"
+    bot.answer_callback_query(call.id)
+    accepted = has_user_accepted_terms(telegram_id)
+    status_str = ("✅ Приняты" if lang == "ru" else "✅ Accepted") if accepted else ("❌ Не приняты" if lang == "ru" else "❌ Not accepted")
+    text = MESSAGES[lang]["terms"].format(status=status_str)
+    markup = get_terms_markup(lang)
+    _safe_bot_send_message(telegram_id, text, reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "show_paysupport")
+def handle_show_paysupport_callback(call):
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    lang = db_user["language"] if db_user else "ru"
+    bot.answer_callback_query(call.id)
+    text = MESSAGES[lang]["paysupport"]
+    markup = get_paysupport_markup(lang)
+    _safe_bot_send_message(telegram_id, text, reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "accept_terms" or call.data.startswith("accept_terms:"))
+def handle_accept_terms_callback(call):
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    lang = db_user["language"] if db_user else "ru"
+    t = MESSAGES[lang]
+    record_terms_acceptance(telegram_id, LEGAL_TERMS_VERSION, source="bot")
+    bot.answer_callback_query(call.id, t.get("terms_accepted_msg", "Условия приняты"))
+    action = call.data.split(":", 1)[1] if ":" in call.data else ""
+    if not action:
+        _safe_bot_send_message(telegram_id, t.get("terms_accepted_msg", "✅ Условия приняты. Переходим к оплате."))
+        send_buy_menu(telegram_id, lang)
+        return
+
+    if action.startswith("buy_"):
+        try:
+            days = int(action.split("_")[1])
+            pkg = PACKAGES[days]
+            _send_lava_payment_method_menu(telegram_id, pkg["price_rub"], days, lang)
+        except Exception as exc:
+            logger.error("Error resuming buy action %s: %s", action, exc)
+            send_buy_menu(telegram_id, lang)
+    elif action.startswith("lava_card_") or action.startswith("lava_sbp_"):
+        try:
+            _, payment_method, amount_raw, days_raw = action.split("_", 3)
+            amount = int(amount_raw)
+            days = int(days_raw)
+            _send_lava_invoice_for_chat(telegram_id, amount, days, lang, payment_method)
+        except Exception as exc:
+            logger.error("Error resuming lava payment %s: %s", action, exc)
+            send_buy_menu(telegram_id, lang)
+    elif action.startswith("lava_custom_"):
+        try:
+            amount = int(action.split("_")[2])
+            _send_lava_payment_method_menu(telegram_id, amount, amount, lang)
+        except Exception as exc:
+            logger.error("Error resuming custom lava %s: %s", action, exc)
+            send_buy_menu(telegram_id, lang)
+    elif action.startswith("buy_discount_"):
+        try:
+            days = int(action.split("_")[2])
+            pkg = PACKAGES[days]
+            amount = pkg["price_usdt"] / 2.0
+            months = pkg["months"]
+            invoice_id, pay_url = create_cryptopay_invoice(amount, days)
+            if invoice_id and pay_url:
+                save_invoice(invoice_id, telegram_id, amount, months, days, terms_version=LEGAL_TERMS_VERSION)
+                text = (
+                    f"✅ Скидка 50% применена!\n\n"
+                    f"💳 Счет на оплату готов!\n\n"
+                    f"• Товар: Пополнение баланса на {days} дней (Акция)\n"
+                    f"• Сумма: {amount:.2f} USDT (вместо {pkg['price_usdt']:.2f} USDT)\n\n"
+                    f"Нажмите кнопку ниже, чтобы перейти к оплате через CryptoBot."
+                    if lang == "ru" else
+                    f"✅ 50% Discount Applied!\n\n"
+                    f"💳 Invoice is ready!\n\n"
+                    f"• Item: {days} subscription days (Promo)\n"
+                    f"• Price: {amount:.2f} USDT (was {pkg['price_usdt']:.2f} USDT)\n\n"
+                    f"Click the button below to pay via CryptoBot."
+                )
+                markup = types.InlineKeyboardMarkup()
+                markup.add(types.InlineKeyboardButton(t["pay_button"], url=pay_url))
+                _safe_bot_send_message(telegram_id, text, parse_mode="Markdown", reply_markup=markup)
+            else:
+                _safe_bot_send_message(telegram_id, t["error_invoice"])
+        except Exception as exc:
+            logger.error("Error resuming discount action %s: %s", action, exc)
+            send_buy_menu(telegram_id, lang)
+    else:
+        _safe_bot_send_message(telegram_id, t.get("terms_accepted_msg", "✅ Условия приняты. Переходим к оплате."))
+        send_buy_menu(telegram_id, lang)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "terms_decline")
+def handle_terms_decline_callback(call):
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    lang = db_user["language"] if db_user else "ru"
+    t = MESSAGES[lang]
+    bot.answer_callback_query(call.id, t.get("terms_declined_msg", "Условия отклонены"))
+    _safe_bot_send_message(telegram_id, t.get("terms_declined_msg", "❌ Для продолжения оформления заказа необходимо принять условия оферты."))
+
+
 @bot.message_handler(commands=["support"])
 def show_support(message):
     telegram_id = message.chat.id
@@ -4589,15 +5037,21 @@ def handle_buy_discount_menu_callback(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("buy_discount_"))
 def handle_buy_discount_callback(call):
+    telegram_id = call.message.chat.id
+    db_user = get_user(telegram_id)
+    lang = db_user["language"] if db_user else "ru"
+    if not has_user_accepted_terms(telegram_id):
+        bot.answer_callback_query(call.id)
+        send_terms_prompt(telegram_id, lang, action=call.data)
+        return
+    if not rate_limit_check(telegram_id, "buy"):
+        bot.answer_callback_query(call.id, "Слишком много запросов. Пожалуйста, подождите минуту." if lang == "ru" else "Too many requests. Please wait a minute.", show_alert=True)
+        return
     try:
         days = int(call.data.split("_")[2])
         pkg = PACKAGES[days]
         amount = pkg["price_usdt"] / 2.0  # Скидка 50%
         months = pkg["months"]
-        telegram_id = call.message.chat.id
-        
-        db_user = get_user(telegram_id)
-        lang = db_user["language"] if db_user else "ru"
         t = MESSAGES[lang]
         
         bot.answer_callback_query(call.id, "..." if lang == 'en' else "Создаем счет со скидкой...")
@@ -4605,7 +5059,7 @@ def handle_buy_discount_callback(call):
         invoice_id, pay_url = create_cryptopay_invoice(amount, days)
         
         if invoice_id and pay_url:
-            save_invoice(invoice_id, telegram_id, amount, months, days)
+            save_invoice(invoice_id, telegram_id, amount, months, days, terms_version=LEGAL_TERMS_VERSION)
             text = (
                 f"✅ Скидка 50% применена!\n\n"
                 f"💳 Счет на оплату готов!\n\n"
@@ -4656,7 +5110,7 @@ def _send_lava_invoice_for_chat(telegram_id, amount, days, lang, payment_method)
         "bot", telegram_id, amount, days,
         f"MosaicVPN: пополнение на {days} дней", payment_method=payment_method,
     )
-    save_lava_invoice(invoice["internal_id"], invoice["provider_id"], invoice["order_id"], telegram_id, amount, days, "bot")
+    save_lava_invoice(invoice["internal_id"], invoice["provider_id"], invoice["order_id"], telegram_id, amount, days, "bot", terms_version=LEGAL_TERMS_VERSION)
     method_label = ("СБП" if payment_method == "sbp" else "банковская карта") if lang == "ru" else ("SBP" if payment_method == "sbp" else "bank card")
     text = (f"💳 Счёт на оплату готов\n\nСпособ: {method_label}\nПополнение: {days} дней\nСумма: {amount:.0f} ₽\n\nПосле оплаты доступ обновится автоматически." if lang == "ru" else f"💳 Invoice ready\n\nMethod: {method_label}\nTop-up: {days} days\nAmount: {amount:.0f} RUB\n\nYour access will update automatically after payment.")
     markup = types.InlineKeyboardMarkup()
@@ -4670,6 +5124,13 @@ def handle_lava_payment_method_callback(call):
     telegram_id = call.message.chat.id
     db_user = get_user(telegram_id)
     lang = db_user["language"] if db_user else "ru"
+    if not has_user_accepted_terms(telegram_id):
+        bot.answer_callback_query(call.id)
+        send_terms_prompt(telegram_id, lang, action=call.data)
+        return
+    if not rate_limit_check(telegram_id, "buy"):
+        bot.answer_callback_query(call.id, "Слишком много запросов. Пожалуйста, подождите минуту." if lang == "ru" else "Too many requests. Please wait a minute.", show_alert=True)
+        return
     try:
         _, payment_method, amount_raw, days_raw = call.data.split("_", 3)
         amount = int(amount_raw)
@@ -4687,6 +5148,9 @@ def handle_buy_custom_callback(call):
     db_user = get_user(telegram_id)
     lang = db_user["language"] if db_user else "ru"
     bot.answer_callback_query(call.id)
+    if not has_user_accepted_terms(telegram_id):
+        send_terms_prompt(telegram_id, lang, action="buy_custom")
+        return
     prompt = "Введите целое количество рублей от 1 до 100000. 1 ₽ = 1 день." if lang == "ru" else "Enter a whole RUB amount from 1 to 100000. 1 RUB = 1 day."
     msg = bot.send_message(telegram_id, prompt)
     bot.register_next_step_handler(msg, process_custom_lava_amount)
@@ -4696,6 +5160,9 @@ def process_custom_lava_amount(message):
     telegram_id = message.chat.id
     db_user = get_user(telegram_id)
     lang = db_user["language"] if db_user else "ru"
+    if not has_user_accepted_terms(telegram_id):
+        send_terms_prompt(telegram_id, lang, action="buy_custom")
+        return
     raw = (message.text or "").replace("₽", "").replace(" ", "").strip()
     try:
         amount = float(raw.replace(",", "."))
@@ -4721,6 +5188,9 @@ def handle_buy_callback(call):
         db_user = get_user(telegram_id)
         lang = db_user["language"] if db_user else "ru"
         bot.answer_callback_query(call.id)
+        if not has_user_accepted_terms(telegram_id):
+            send_terms_prompt(telegram_id, lang, action=f"buy_{days}")
+            return
         _send_lava_payment_method_menu(telegram_id, pkg["price_rub"], days, lang)
     except (RuntimeError, ValueError, KeyError) as exc:
         logger.error("Lava callback error: %s", exc)
@@ -4846,14 +5316,41 @@ def _shard_group_nodes(opaque_id: str, group_id: str, candidates: list, target: 
         return []
     if len(candidates) <= target:
         return list(candidates)
+
+    def _node_quality(node):
+        # Composite ranking proxy from the fields carried in the candidate
+        # record: measured speed first, then lower latency.
+        speed = node.get("speed_mbps") if isinstance(node, dict) else None
+        latency = node.get("latency_ms") if isinstance(node, dict) else None
+        try:
+            speed_val = float(speed) if speed is not None else -1.0
+        except (TypeError, ValueError):
+            speed_val = -1.0
+        try:
+            lat_val = float(latency) if latency is not None else 10_000.0
+        except (TypeError, ValueError):
+            lat_val = 10_000.0
+        return (speed_val, -lat_val)
+
+    ranked = sorted(candidates, key=_node_quality, reverse=True)
+    candidates = ranked
+
     anchors = candidates[:2]
     rest_nodes = candidates[2:]
     need_extra = max(0, target - len(anchors))
     if not rest_nodes or need_extra == 0:
         return anchors
+    # Quality band: extras are drawn only from the top half of the remaining
+    # ranked candidates (never from the long tail). This keeps the per-user
+    # LCG diversity for load distribution while guaranteeing that every shard
+    # candidate is above the pool's quality median. Android clients, which
+    # can only probe the first shard members, previously could receive tail
+    # nodes from the unbounded shuffle.
+    band_size = max(need_extra, (len(rest_nodes) + 1) // 2)
+    band = rest_nodes[:band_size]
     seed = _lcg_seed(opaque_id, group_id)
-    indices = _lcg_shuffle_indices(seed, len(rest_nodes))
-    selected_extra = [rest_nodes[i] for i in indices[:need_extra]]
+    indices = _lcg_shuffle_indices(seed, len(band))
+    selected_extra = [band[i] for i in indices[:need_extra]]
     return anchors + selected_extra
 
 
@@ -4865,6 +5362,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self._cors_headers()
         self.end_headers()
@@ -4906,6 +5404,12 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             return self._handle_admin_broadcast()
         if path == "/api/admin/pricing":
             return self._handle_admin_pricing()
+        if path == "/api/admin/invites/create":
+            return self._handle_admin_invites_create()
+        if path == "/api/admin/invites/revoke":
+            return self._handle_admin_invites_revoke()
+        if path == "/api/invites/redeem":
+            return self._handle_invites_redeem()
         # T-19: the daemon runs behind NAT on the user's machine, so it is the
         # side that reaches out. The bot issues codes; this endpoint burns them.
         if path == "/api/link/redeem":
@@ -4941,6 +5445,12 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/app-auth/exchange":
             return self._handle_app_auth_exchange()
 
+        try:
+            content_length = int(self.headers.get("Content-Length") or 0)
+            if content_length > 0:
+                self.rfile.read(min(content_length, 65536))
+        except Exception:
+            pass
         self.send_response(404)
         self._cors_headers()
         self.end_headers()
@@ -4950,7 +5460,8 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         if not payload:
             self._send_json(400, {"error": "invalid body"})
             return
-        token = str(payload.get("token") or "")
+        auth = self.headers.get("Authorization", "")
+        token = auth[7:].strip() if auth.startswith("Bearer ") else str(payload.get("token") or "")
         session = get_web_session(token)
         if not session:
             self._send_json(401, {"error": "invalid or expired session"})
@@ -4976,13 +5487,15 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         if payment_method not in ("card", "sbp"):
             self._send_json(400, {"error": "payment_method must be card or sbp"})
             return
+        if payload.get("terms_accepted") or payload.get("accept_terms"):
+            record_terms_acceptance(session["telegram_id"], version=LEGAL_TERMS_VERSION, source="web")
         try:
             invoice = create_lava_invoice(
                 "site", session["telegram_id"], amount, days,
                 "MosaicVPN: пополнение веб-кабинета",
                 payment_method=payment_method,
             )
-            save_lava_invoice(invoice["internal_id"], invoice["provider_id"], invoice["order_id"], session["telegram_id"], amount, days, "site")
+            save_lava_invoice(invoice["internal_id"], invoice["provider_id"], invoice["order_id"], session["telegram_id"], amount, days, "site", terms_version=LEGAL_TERMS_VERSION)
         except (RuntimeError, ValueError) as exc:
             logger.error("Lava site invoice creation failed: %s", exc)
             self._send_json(502, {"error": "payment provider unavailable"})
@@ -5030,8 +5543,12 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         processed = process_lava_paid_invoice(invoice)
         self._send_json(200, {"status": "processed" if processed else "already_processed"})
 
-    def _get_admin_session(self, token):
+    def _get_admin_session(self, token=""):
         """Validate a web session and require a server-configured administrator."""
+        if not token:
+            auth = self.headers.get("Authorization", "")
+            if auth.startswith("Bearer "):
+                token = auth[7:].strip()
         session = get_web_session(token)
         if not session:
             self._send_json(401, {"error": "invalid or expired session"})
@@ -5197,6 +5714,281 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         set_daily_price_rub(price, session["telegram_id"])
         logger.info("Admin %s changed daily price to %s RUB", session["telegram_id"], price)
         self._send_json(200, {"price_per_day_rub": price})
+
+    def _handle_admin_invites_get(self, query):
+        """GET /api/admin/invites — list sponsored invites created by this administrator."""
+        session = self._get_admin_session(query.get("token", [""])[0])
+        if not session:
+            return
+        store = SponsoredInviteStore(DB_PATH)
+        invites = store.list(session["telegram_id"])
+        now = datetime.datetime.now(datetime.timezone.utc)
+        for inv in invites:
+            if inv.get("status") == "pending" and inv.get("expires_at"):
+                try:
+                    exp = datetime.datetime.fromisoformat(inv["expires_at"])
+                    if now >= exp:
+                        inv["status"] = "expired"
+                except Exception:
+                    pass
+        self._send_json(200, {"invites": invites})
+
+    def _handle_admin_invites_create(self):
+        """POST /api/admin/invites/create — create a sponsored gift link."""
+        payload = self._read_json_body()
+        if not payload:
+            self._send_json(400, {"error": "invalid body"})
+            return
+
+        session = self._get_admin_session(str(payload.get("token") or ""))
+        if not session:
+            return
+
+        amount = payload.get("amount")
+        label = payload.get("label")
+        request_id = payload.get("request_id")
+        ttl_seconds = payload.get("ttl_seconds")
+
+        if isinstance(amount, bool) or not isinstance(amount, int):
+            self._send_json(400, {"error": "amount must be an integer"})
+            return
+        if amount < 1 or amount > 10000:
+            self._send_json(400, {"error": "amount must be between 1 and 10000"})
+            return
+
+        if not isinstance(label, str):
+            self._send_json(400, {"error": "label must be a string"})
+            return
+        label = label.strip()
+        if not (1 <= len(label) <= 80):
+            self._send_json(400, {"error": "label must be between 1 and 80 characters"})
+            return
+
+        if not isinstance(request_id, str):
+            self._send_json(400, {"error": "request_id must be a string"})
+            return
+        request_id = request_id.strip()
+        if not request_id or len(request_id) > 128:
+            self._send_json(400, {"error": "request_id must be between 1 and 128 characters"})
+            return
+
+        if ttl_seconds is not None:
+            if isinstance(ttl_seconds, bool) or not isinstance(ttl_seconds, int) or ttl_seconds <= 0 or ttl_seconds > 7 * 86400:
+                self._send_json(400, {"error": "ttl_seconds must be between 1 and 604800"})
+                return
+
+        store = SponsoredInviteStore(DB_PATH)
+        try:
+            record, token = store.create(
+                admin_id=session["telegram_id"],
+                amount=amount,
+                label=label,
+                request_id=request_id,
+                ttl_seconds=ttl_seconds or (7 * 86400),
+            )
+        except ValueError as exc:
+            err_msg = str(exc)
+            if "conflict" in err_msg.lower():
+                self._send_json(409, {"error": "request id conflict"})
+                return
+            self._send_json(400, {"error": err_msg})
+            return
+        except Exception as exc:
+            logger.exception("Failed to create sponsored invite: %s", exc)
+            self._send_json(500, {"error": "failed to create invite"})
+            return
+
+        if token:
+            host = self.headers.get("Host")
+            if host:
+                proto = self.headers.get("X-Forwarded-Proto") or ("https" if not (host.startswith("127.0.0.1") or host.startswith("localhost")) else "http")
+                base_url = f"{proto}://{host}"
+            else:
+                base_url = LEGAL_SITE_BASE_URL
+            gift_url = build_gift_url(token, base_url=base_url)
+            self._send_json(200, {
+                "invite": record,
+                "gift_url": gift_url,
+            })
+        else:
+            self._send_json(200, {
+                "invite": record,
+                "gift_url": None,
+                "already_processed": True,
+            })
+
+    def _handle_admin_invites_revoke(self):
+        """POST /api/admin/invites/revoke — revoke a pending sponsored invite."""
+        payload = self._read_json_body()
+        if not payload:
+            self._send_json(400, {"error": "invalid body"})
+            return
+
+        session = self._get_admin_session(str(payload.get("token") or ""))
+        if not session:
+            return
+
+        invite_id = str(payload.get("invite_id") or "").strip()
+        if not invite_id:
+            self._send_json(400, {"error": "invite_id required"})
+            return
+
+        store = SponsoredInviteStore(DB_PATH)
+        invite = store.get(invite_id)
+        if not invite:
+            self._send_json(404, {"error": "invite not found"})
+            return
+        if invite["admin_id"] != session["telegram_id"]:
+            self._send_json(403, {"error": "invite belongs to another admin"})
+            return
+        if invite["status"] != "pending":
+            self._send_json(400, {"error": f"cannot revoke invite with status '{invite['status']}'"})
+            return
+
+        now = datetime.datetime.now(datetime.timezone.utc)
+        try:
+            if now >= datetime.datetime.fromisoformat(invite["expires_at"]):
+                self._send_json(400, {"error": "invite has already expired"})
+                return
+        except Exception:
+            pass
+
+        revoked = store.revoke(invite_id, session["telegram_id"])
+        if not revoked:
+            self._send_json(400, {"error": "could not revoke invite"})
+            return
+
+        self._send_json(200, {
+            "ok": True,
+            "invite_id": invite_id,
+            "status": "revoked",
+        })
+
+    def _handle_invites_redeem(self):
+        """POST /api/invites/redeem — claim and credit sponsored gift access."""
+        payload = self._read_json_body()
+        if not payload:
+            self._send_json(400, {"error": "invalid body"})
+            return
+
+        auth_header = self.headers.get("Authorization", "")
+        user_token = ""
+        if auth_header.startswith("Bearer "):
+            user_token = auth_header[7:].strip()
+        if not user_token and payload.get("token"):
+            user_token = str(payload.get("token")).strip()
+
+        session = get_web_session(user_token) if user_token else None
+        if not session:
+            self._send_json(401, {"error": "invalid or expired session"})
+            return
+
+        gift_token = str(payload.get("invite_token") or payload.get("gift_token") or "").strip()
+        if not gift_token and auth_header.startswith("Bearer ") and payload.get("token"):
+            gift_token = str(payload.get("token")).strip()
+
+        if not gift_token:
+            self._send_json(400, {"error": "invite_token required"})
+            return
+
+        account_id = session["telegram_id"]
+        db_user = get_user(account_id)
+        username = (db_user or {}).get("username") or session.get("username") or f"tg_{account_id}"
+        claimant_label = username
+
+        store = SponsoredInviteStore(DB_PATH)
+        claim_res = store.claim(
+            token=gift_token,
+            account_id=account_id,
+            claimant_label=claimant_label,
+        )
+
+        if claim_res.status == "not_found":
+            self._send_json(404, {"error": "gift invite not found"})
+            return
+        if claim_res.status == "expired":
+            self._send_json(410, {"error": "gift invite has expired"})
+            return
+        if claim_res.status == "revoked":
+            self._send_json(410, {"error": "gift invite has been revoked"})
+            return
+        if claim_res.status == "already_claimed":
+            self._send_json(409, {"error": "gift invite has already been claimed by another user"})
+            return
+        if claim_res.is_repeat:
+            rec_status = claim_res.record.get("status")
+            if rec_status == "succeeded":
+                self._send_json(200, {
+                    "ok": True,
+                    "status": "already_redeemed",
+                    "already_processed": True,
+                    "message": "Этот подарок уже был активирован на вашем аккаунте.",
+                    "amount": claim_res.record["amount"],
+                    "days": claim_res.record["amount"],
+                })
+                return
+            if rec_status == "uncertain":
+                self._send_json(409, {
+                    "error": "активация подарка в неопределённом состоянии; повторное списание заблокировано",
+                    "status": "uncertain",
+                })
+                return
+            self._send_json(409, {
+                "error": f"gift invite has status '{rec_status}'",
+                "status": rec_status,
+            })
+            return
+
+        if not claim_res.is_claimed:
+            self._send_json(400, {"error": claim_res.error or "could not claim invite"})
+            return
+
+        invite_id = claim_res.record["id"]
+        days = int(claim_res.record["amount"])
+
+        # Execute subscription extension via Remnawave provider double / API
+        # Uncertain external write: never retried!
+        try:
+            target_user = api_get_user(username)
+            if target_user:
+                updated = api_extend_user(username, days)
+            else:
+                updated = api_create_user(username, days, account_id)
+        except (requests.Timeout, requests.ConnectionError) as net_err:
+            logger.error("Network error during gift provider update for invite %s: %s", invite_id, net_err)
+            store.finish(invite_id, status="uncertain", error=f"network_timeout: {net_err}")
+            self._send_json(504, {"error": "payment provider timeout during gift activation"})
+            return
+        except Exception as exc:
+            logger.exception("Unexpected error during gift provider update for invite %s: %s", invite_id, exc)
+            store.finish(invite_id, status="uncertain", error=f"error: {exc}")
+            self._send_json(502, {"error": "could not update subscription"})
+            return
+
+        if not isinstance(updated, dict):
+            logger.error("Gift redeem provider update returned non-dict for invite %s: %r", invite_id, updated)
+            store.finish(invite_id, status="failed", error="subscription_update_failed")
+            self._send_json(502, {"error": "could not update subscription"})
+            return
+
+        short_uuid = str(updated.get("shortUuid") or "")
+        expire_at = str(updated.get("expireAt") or "") if updated.get("expireAt") else None
+        current_lang = str((db_user or {}).get("language") or "ru")
+        referrer_id = (db_user or {}).get("referrer_id")
+        save_user(account_id, username, short_uuid, current_lang, 1, referrer_id)
+
+        result_payload = json.dumps({"short_uuid": short_uuid, "expire_at": expire_at})
+        store.finish(invite_id, status="succeeded", result=result_payload)
+
+        self._send_json(200, {
+            "ok": True,
+            "status": "succeeded",
+            "amount": days,
+            "days": days,
+            "message": f"Подарок успешно активирован! Начислено {days} дней доступа.",
+            "short_uuid": short_uuid,
+            "expires_at": expire_at,
+        })
 
     def _account_payload(self, session, forced_status=None):
         """Build a single account representation for web and native cabinet clients."""
@@ -5488,8 +6280,8 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             target_groups = [
                 ("min_latency", ["min_latency"]),
                 ("max_speed", ["max_speed"]),
-                ("stable", ["stable", "min_latency", "all"]),
-                ("compatibility", ["allowlist", "compatibility", "auto-whitelist"]),
+                ("stable", ["stable"]),
+                ("compatibility", ["compatibility", "allowlist", "auto-whitelist"]),
                 ("germany", ["germany", "auto-de"]),
                 ("usa", ["usa", "auto-us"]),
                 ("netherlands", ["netherlands", "auto-nl"]),
@@ -5907,6 +6699,18 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/manifest.json":
             return self._handle_provider_manifest(query)
 
+        # Setup uses a full browser session in a header, never a subscription
+        # capability or a logged query-string token.
+        if path == "/api/profile":
+            authorization = self.headers.get("Authorization", "")
+            token = authorization[7:] if authorization.startswith("Bearer ") else ""
+            session = get_web_session(token)
+            if not session:
+                return self._send_json(401, {"error": "invalid or expired session"})
+            profile = self._account_payload(session)
+            return self._send_json(200 if profile else 503,
+                                   profile or {"error": "account temporarily unavailable"})
+
         # Web cabinet: billing profile
         if path == "/api/billing/profile":
             return self._handle_billing_profile(query)
@@ -5919,6 +6723,8 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         # Administrative journal, authorization is performed inside the handler.
         if path == "/api/admin/balance-credits":
             return self._handle_admin_balance_credit_history(query)
+        if path == "/api/admin/invites":
+            return self._handle_admin_invites_get(query)
         # Route availability / maintenance controls.
         if path == "/api/admin/routes":
             return self._handle_admin_routes_get(query)
@@ -6003,13 +6809,15 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
         self._send_json(200, profile)
 
     def _handle_checkout_options(self, query):
-        session = get_web_session(query.get("token", [""])[0])
+        auth = self.headers.get("Authorization", "")
+        token = auth[7:].strip() if auth.startswith("Bearer ") else query.get("token", [""])[0]
+        session = get_web_session(token)
         if not session:
             self._send_json(401, {"error": "invalid or expired session"})
             return
         try:
             methods = available_lava_payment_methods("site")
-        except (RuntimeError, requests.RequestException) as exc:
+        except Exception as exc:
             logger.warning("Could not load Lava site payment methods: %s", exc)
             methods = []
         self._send_json(200, {"providers": [{

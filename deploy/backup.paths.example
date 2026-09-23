@@ -1,0 +1,12 @@
+# Every path is required. File symlinks are snapshotted as regular files with safe manifest link metadata.
+/opt/remnawave/docker-compose.yml
+/opt/remnawave/.env
+/opt/remnawave/nginx.conf
+/opt/remnawave/nginx-main.conf
+/opt/remnawave/nginx/ssl
+/etc/mosaic-bot.env
+/etc/systemd/system/mosaic-bot.service
+/etc/letsencrypt/live
+/etc/letsencrypt/renewal
+/etc/letsencrypt/archive
+/etc/letsencrypt/accounts

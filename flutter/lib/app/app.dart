@@ -64,7 +64,10 @@ class MosaicApp extends ConsumerWidget {
                 onDone: () => ref.invalidate(onboardingProvider),
               )
             : const AppShell(),
-        loading: () => const AppShell(),
+        loading: () => const Scaffold(
+          backgroundColor: AtlasTheme.darkBgBase,
+          body: Center(child: CircularProgressIndicator()),
+        ),
         error: (_, __) => const AppShell(),
       ),
     );

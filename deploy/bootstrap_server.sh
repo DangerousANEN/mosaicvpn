@@ -12,8 +12,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 RESTORE_BACKUP=""
-if [ "${1:-}" = "--restore" ] && [ -n "${2:-}" ]; then
-    RESTORE_BACKUP="$2"
+if [ "${1:-}" = "--restore" ]; then
+    printf '%s\n' 'Automated bootstrap restore is disabled: use docs/DISASTER_RECOVERY.md to stop writers, verify and restore explicitly.' >&2
+    exit 2
 fi
 
 COLOR_RESET="\033[0m"
@@ -42,6 +43,8 @@ apt-get install -y --no-install-recommends \
     lsb-release \
     jq \
     gzip \
+    age \
+    rclone \
     tar \
     ufw \
     fail2ban \
@@ -137,6 +140,13 @@ fi
 log_step "Step 7: Installing Automated Database Backup & Restore System"
 cp "${ROOT_DIR}/scripts/backup/backup_db.sh" /opt/mosaicvpn/scripts/backup/backup_db.sh
 cp "${ROOT_DIR}/scripts/backup/restore_db.sh" /opt/mosaicvpn/scripts/backup/restore_db.sh
+cp "${ROOT_DIR}/scripts/backup/full_backup.py" /opt/mosaicvpn/scripts/backup/full_backup.py
+if [ ! -f /etc/mosaic-backup.paths ]; then
+    install -m 600 "${SCRIPT_DIR}/backup.paths.example" /etc/mosaic-backup.paths
+fi
+if [ ! -f /etc/mosaic-backup.env ]; then
+    install -m 600 "${SCRIPT_DIR}/backup.env.example" /etc/mosaic-backup.env
+fi
 chmod +x /opt/mosaicvpn/scripts/backup/*.sh
 
 cp "${SCRIPT_DIR}/systemd/mosaic-backup.service" /etc/systemd/system/mosaic-backup.service
@@ -144,8 +154,12 @@ cp "${SCRIPT_DIR}/systemd/mosaic-backup.timer" /etc/systemd/system/mosaic-backup
 cp "${SCRIPT_DIR}/systemd/mosaic-bot.service" /etc/systemd/system/mosaic-bot.service
 
 systemctl daemon-reload
-systemctl enable --now mosaic-backup.timer
-log_info "Automated database backup timer activated (runs at 03:00 and 15:00 UTC)."
+if [ -s /etc/mosaic-backup.recipients ]; then
+    systemctl enable --now mosaic-backup.timer
+    log_info "Encrypted backup timer activated (03:00 and 15:00 UTC); verify first successful run."
+else
+    log_warn "Backup timer NOT activated: install off-server-generated age public recipients first."
+fi
 
 log_step "Step 8: Starting Docker Infrastructure Stack"
 cd /opt/remnawave
@@ -164,17 +178,7 @@ while ! docker exec remnawave-db pg_isready -U postgres >/dev/null 2>&1; do
     fi
 done
 
-if [ -n "${RESTORE_BACKUP}" ]; then
-    log_step "Step 9: Restoring Database from Provided Snapshot (${RESTORE_BACKUP})"
-    if [ -f "${RESTORE_BACKUP}" ]; then
-        /opt/mosaicvpn/scripts/backup/restore_db.sh "${RESTORE_BACKUP}" --force
-        log_info "Database restoration complete!"
-    else
-        log_err "Restore file ${RESTORE_BACKUP} not found!"
-    fi
-else
-    log_info "No --restore parameter specified. Skipping database import."
-fi
+log_info "Database import is a separate gated operation; see docs/DISASTER_RECOVERY.md."
 
 log_step "Step 10: Starting Mosaic Bot Service"
 systemctl enable --now mosaic-bot.service

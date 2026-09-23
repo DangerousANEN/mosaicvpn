@@ -48,6 +48,14 @@ func (m *Manager) RouteMemorySnapshot() map[string]map[string]netmemory.RouteSta
 
 // currentNetwork returns the fingerprint of the network in use, or "" when the
 // feature is off or the fingerprint cannot be determined.
+// CurrentNetwork returns the active network fingerprint or empty string if unknown.
+func (m *Manager) CurrentNetwork() string {
+	if m == nil {
+		return ""
+	}
+	return m.currentNetwork()
+}
+
 func (m *Manager) currentNetwork() string {
 	m.mu.Lock()
 	mem := m.routeMemory

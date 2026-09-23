@@ -109,3 +109,5 @@ flutter/test/failures/
 # A stray `git add -A` once staged 228 MB of APKs into a release commit.
 *.apk
 bench_data_dir/
+scripts/__pycache__/
+site-qa-results/

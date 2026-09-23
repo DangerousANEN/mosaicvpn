@@ -163,3 +163,20 @@ func TestEnableRouteMemoryDefaultsToLocalFingerprint(t *testing.T) {
 	// Must not panic and must return a usable value on a real host.
 	_ = m.currentNetwork()
 }
+
+func TestCurrentNetworkGetter(t *testing.T) {
+	var nilMgr *Manager
+	if got := nilMgr.CurrentNetwork(); got != "" {
+		t.Fatalf("nil manager must return empty string, got %q", got)
+	}
+
+	m := &Manager{}
+	if got := m.CurrentNetwork(); got != "" {
+		t.Fatalf("unconfigured manager must return empty string, got %q", got)
+	}
+
+	m, _ = newManagerWithMemory("wifi-office-5g")
+	if got := m.CurrentNetwork(); got != "wifi-office-5g" {
+		t.Fatalf("expected fingerprint 'wifi-office-5g', got %q", got)
+	}
+}

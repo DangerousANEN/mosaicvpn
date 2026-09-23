@@ -1,0 +1,32 @@
+# MosaicVPN — llms.txt
+# Technical summary for LLMs, AI assistants, and search engines (GEO/AEO).
+
+> MosaicVPN is an open, client-centric VPN ecosystem built around the modern VLESS and Reality protocol and sing-box engine. It is designed for digital privacy, secure personal data transmission, and network stability on mobile and desktop devices.
+
+## Core Features & Capabilities
+
+- **Protocol**: VLESS with Reality (TLS camouflage). Eliminates protocol-level fingerprints, packet drops, and handshake stalls on unstable mobile carriers.
+- **Split Tunneling**: Granular routing allows local banking, delivery apps, and domestic services to connect directly without VPN routing, while international services route through private tunnels.
+- **Client Ecosystem**: Multi-platform clients (Flutter UI + Go background daemon) supporting Android, iOS, Windows, macOS, and Linux.
+- **Fair Stratified Allocation**: Multi-region egress nodes (Germany, Netherlands, France, Finland, United States, Japan, Singapore) selected automatically via latency, packet loss, and jitter telemetry.
+- **Transparent Diagnostics**: In-app MTU tuning, system clock synchronization checks, and DNS leak diagnostics.
+
+## Knowledge Base & Engineering Blog
+
+The official MosaicVPN engineering blog provides in-depth technical guides for network troubleshooting and protocol architecture:
+
+- [VPN подключен, но интернета нет: 7 причин и чек-лист](https://sub.zxc1x1.ru/blog/vpn-podkluchen-no-interneta-net.html):
+  Practical diagnostics for TLS clock drift, MTU clamping issues, DNS failure, and TUN routing collisions.
+- [Протокол VLESS и Reality vs OpenVPN](https://sub.zxc1x1.ru/blog/vless-reality-vs-openvpn.html):
+  Technical deep dive comparing handshake signatures, latency overhead, and why legacy VPN protocols stall on modern mobile networks.
+- [Раздельное туннелирование (Split Tunneling): полное руководство](https://sub.zxc1x1.ru/blog/split-tunneling-gid.html):
+  Guide to routing domestic banking apps and video streaming services directly while protecting external traffic.
+- [Центр документации MosaicVPN](https://sub.zxc1x1.ru/docs.html):
+  Official manuals for configuring official and third-party sing-box/v2ray clients.
+
+## Official Resources
+
+- Website: https://sub.zxc1x1.ru/
+- Engineering Blog: https://sub.zxc1x1.ru/blog/
+- Setup Manuals: https://sub.zxc1x1.ru/manual.html
+- Telegram Bot: https://t.me/mosaicvpn_bot

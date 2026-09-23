@@ -1,23 +1,42 @@
 {
   "project": "MosaicVPN",
   "domain": "https://sub.zxc1x1.ru",
-  "generated_at": "2026-09-11T15:00:00Z",
-  "audit_version": "1.0.0",
-  "health_score": 98,
+  "generated_at": "2026-09-12T04:22:16+00:00",
+  "audit_version": "2.1.0",
+  "health_score": 99,
+  "health_score_breakdown": {
+    "meta_tags_completeness": "25/25",
+    "canonical_coverage": "20/20",
+    "sitemap_and_robots": "20/20",
+    "indexnow_key_verification": "15/15",
+    "schema_markup": "9/10",
+    "privacy_terminology_check": "10/10"
+  },
   "summary": {
-    "total_pages": 12,
-    "indexed_in_sitemap": 11,
-    "disallowed_in_robots": 5,
-    "schema_org_types": ["Organization", "WebSite", "TechArticle", "FAQPage"],
+    "total_html_files": 19,
+    "pages_in_sitemap": 13,
+    "disallowed_in_robots": 7,
+    "schema_org_types": [
+      "FAQPage",
+      "SoftwareApplication",
+      "TechArticle"
+    ],
     "canonical_coverage": "100%",
-    "mobile_friendly": true,
-    "anti_rkn_compliance": "passed"
+    "privacy_terminology_check": "passed",
+    "indexnow_status": "ready"
+  },
+  "indexing_transparency_note": {
+    "status": "Search Console verification required for actual indexation metrics",
+    "sitemap_role": "Sitemap and IndexNow submit crawl requests to search engines",
+    "indexation_claim_policy": "Pages cannot be claimed as indexed by Google or Yandex without verified Webmaster/Search Console API data.",
+    "metrics_grounding": "No synthetic traffic, volume, or ranking numbers are generated. Target queries reflect editorial intent only.",
+    "regulatory_note": "Terminology validation checks content against internal privacy-first guidelines and does not constitute a legal compliance guarantee or immunity from regulatory decisions."
   },
   "search_engines": {
     "sitemap": {
       "url": "https://sub.zxc1x1.ru/sitemap.xml",
       "status": 200,
-      "lastmod": "2026-09-11"
+      "url_count": 13
     },
     "robots": {
       "url": "https://sub.zxc1x1.ru/robots.txt",
@@ -25,10 +44,16 @@
       "clean_param_yandex": true
     },
     "indexnow": {
-      "endpoint": "https://api.indexnow.org/indexnow",
-      "host": "sub.zxc1x1.ru",
+      "status": "ready",
+      "key": "mosaic-indexnow-key",
       "key_location": "https://sub.zxc1x1.ru/mosaic-indexnow-key.txt",
-      "status": "ready"
+      "protocol_specs": {
+        "indexnow_org": "https://www.indexnow.org/documentation",
+        "yandex_webmaster": "https://yandex.com/support/webmaster/en/indexnow/key"
+      },
+      "endpoint": "https://api.indexnow.org/indexnow",
+      "sample_ping_bing": "https://www.bing.com/indexnow?url=https%3A//sub.zxc1x1.ru/&key=mosaic-indexnow-key&keyLocation=https%3A//sub.zxc1x1.ru/mosaic-indexnow-key.txt",
+      "sample_ping_yandex": "https://yandex.com/indexnow?url=https%3A//sub.zxc1x1.ru/&key=mosaic-indexnow-key&keyLocation=https%3A//sub.zxc1x1.ru/mosaic-indexnow-key.txt"
     },
     "webmaster": {
       "google_search_console": "https://search.google.com/search-console",
@@ -37,196 +62,448 @@
   },
   "pages": [
     {
-      "url": "https://sub.zxc1x1.ru/",
-      "title": "MosaicVPN — Личный кабинет и загрузка клиента",
-      "description": "Официальный сайт MosaicVPN: быстрый протокол VLESS/Reality, раздельное туннелирование, защита в открытых сетях, тариф 1 рубль в сутки.",
-      "h1": "MosaicVPN",
-      "type": "landing",
-      "schema_org": ["Organization", "WebSite"],
-      "word_count": 840,
-      "priority": 1.0,
-      "status": 200
-    },
-    {
-      "url": "https://sub.zxc1x1.ru/blog/",
-      "title": "Блог инженеров MosaicVPN: приватность, протоколы VLESS и сетевая безопасность",
-      "description": "Статьи, технические руководства и ответы на частые вопросы о протоколах VLESS, Reality, split tunneling и сетевой диагностике.",
-      "h1": "Блог инженеров MosaicVPN",
-      "type": "blog_hub",
-      "schema_org": ["CollectionPage", "BreadcrumbList"],
-      "word_count": 520,
-      "priority": 0.9,
-      "status": 200
-    },
-    {
-      "url": "https://sub.zxc1x1.ru/blog/vpn-podkluchen-no-interneta-net.html",
-      "title": "VPN подключен, но интернета нет: 7 частых причин и пошаговая диагностика — MosaicVPN",
-      "description": "Разбор причин сбоя передачи трафика при активном туннеле: MTU, DNS-кэш, TLS handshake timeout, блокировки провайдера и способы исправления.",
-      "h1": "VPN подключен, но интернета нет: 7 причин и пошаговое руководство по диагностике",
-      "type": "article",
-      "schema_org": ["TechArticle", "FAQPage"],
-      "word_count": 1420,
-      "priority": 0.8,
-      "status": 200,
-      "keywords": [
-        "vpn подключен но интернета нет",
-        "почему vpn не грузит страницы",
-        "туннель активен но трафика нет",
-        "ошибка dns vpn"
-      ]
-    },
-    {
-      "url": "https://sub.zxc1x1.ru/blog/vless-reality-vs-openvpn.html",
-      "title": "Протокол VLESS и Reality: сравнение с OpenVPN и WireGuard — MosaicVPN",
-      "description": "Подробный инженерный разбор современных протоколов: почему OpenVPN и WireGuard фильтруются, как работает VLESS Reality с маскировкой под TLS.",
-      "h1": "Протокол VLESS и Reality против устаревших VPN: почему старые протоколы больше не работают",
-      "type": "article",
-      "schema_org": ["TechArticle", "FAQPage"],
-      "word_count": 1580,
-      "priority": 0.8,
-      "status": 200,
-      "keywords": [
-        "протокол vless reality",
-        "vless vs openvpn",
-        "почему не работает wireguard",
-        "маскировка tls reality"
-      ]
-    },
-    {
-      "url": "https://sub.zxc1x1.ru/blog/split-tunneling-gid.html",
-      "title": "Раздельное туннелирование (Split Tunneling): настройка и применение — MosaicVPN",
-      "description": "Полное руководство по Split Tunneling: одновременный доступ к российским банкам, Госуслугам и защищённым сервисам без переключения VPN.",
-      "h1": "Раздельное туннелирование (Split Tunneling): как настроить и зачем это нужно",
-      "type": "article",
-      "schema_org": ["TechArticle", "FAQPage"],
-      "word_count": 1260,
-      "priority": 0.8,
-      "status": 200,
-      "keywords": [
-        "раздельное туннелирование",
-        "split tunneling на андроид",
-        "как сделать чтобы сбербанк работал с впн",
-        "vpn для госуслуг"
-      ]
-    },
-    {
-      "url": "https://sub.zxc1x1.ru/docs.html",
-      "title": "Документация и архитектура клиента MosaicVPN",
-      "description": "Техническая документация: архитектура ядра sing-box, gVisor сетевой стек, управление ключами и разделение трафика.",
-      "h1": "Документация MosaicVPN",
-      "type": "docs",
-      "schema_org": ["TechArticle"],
-      "word_count": 1850,
-      "priority": 0.7,
-      "status": 200
-    },
-    {
-      "url": "https://sub.zxc1x1.ru/manual.html",
-      "title": "Инструкция по установке и настройке сторонних клиентов",
-      "description": "Пошаговая настройка VLESS Reality подписки в v2rayNG, sing-box, Streisand, Hiddify и FoXray.",
-      "h1": "Руководство по настройке сторонних клиентов",
-      "type": "guide",
-      "schema_org": ["HowTo"],
-      "word_count": 940,
-      "priority": 0.7,
-      "status": 200
-    },
-    {
-      "url": "https://sub.zxc1x1.ru/contacts.html",
-      "title": "Контакты и служба поддержки — MosaicVPN",
-      "description": "Контакты администратора, каналы технической поддержки в Telegram и email для обращений.",
-      "h1": "Контакты",
-      "type": "legal",
-      "schema_org": ["ContactPage"],
-      "word_count": 210,
+      "file": "admin.html",
+      "url": "https://sub.zxc1x1.ru/admin.html",
+      "title": "Администрирование — MosaicVPN",
+      "description": "",
+      "h1": "Администрирование",
+      "canonical": "",
+      "robots_meta": "noindex, nofollow",
+      "schema_org": [],
+      "type": "utility_or_legal",
+      "word_count": 261,
       "priority": 0.3,
+      "in_sitemap": false,
+      "disallowed_in_robots": true,
+      "has_critical_meta": false,
+      "has_canonical": false,
       "status": 200
     },
     {
+      "file": "blog/index.html",
+      "url": "https://sub.zxc1x1.ru/blog/",
+      "title": "Блог MosaicVPN — Сетевая безопасность, протоколы VLESS и диагностика",
+      "description": "Инженерный блог о сетевой безопасности, устройстве протоколов VLESS и Reality, настройке раздельного туннелирования и решении сетевых проблем.",
+      "h1": "Ответы на вопросы о сетевой безопасности",
+      "canonical": "https://sub.zxc1x1.ru/blog/",
+      "robots_meta": "index, follow",
+      "schema_org": [],
+      "type": "blog_hub",
+      "word_count": 182,
+      "priority": 0.9,
+      "in_sitemap": true,
+      "disallowed_in_robots": false,
+      "has_critical_meta": true,
+      "has_canonical": true,
+      "status": 200
+    },
+    {
+      "file": "blog/split-tunneling-gid.html",
+      "url": "https://sub.zxc1x1.ru/blog/split-tunneling-gid.html",
+      "title": "Split Tunneling: как открывать Сбербанк и Госуслуги без отключения VPN",
+      "description": "Полное руководство по раздельному туннелированию (Split Tunneling). Как настроить правила маршрутизации, чтобы банковские и государственные приложения работали напрямую.",
+      "h1": "Split Tunneling: как открывать Сбербанк и Госуслуги без отключения VPN",
+      "canonical": "https://sub.zxc1x1.ru/blog/split-tunneling-gid.html",
+      "robots_meta": "index, follow",
+      "schema_org": [
+        "TechArticle",
+        "FAQPage"
+      ],
+      "type": "article",
+      "word_count": 342,
+      "priority": 0.8,
+      "in_sitemap": true,
+      "disallowed_in_robots": false,
+      "has_critical_meta": true,
+      "has_canonical": true,
+      "status": 200
+    },
+    {
+      "file": "blog/vless-reality-vs-openvpn.html",
+      "url": "https://sub.zxc1x1.ru/blog/vless-reality-vs-openvpn.html",
+      "title": "Протокол VLESS и Reality: устройство, скорость и отличия от OpenVPN",
+      "description": "Подробный технический разбор архитектуры VLESS с надстройкой Reality: почему он быстрее OpenVPN и WireGuard, как работает маскировка TLS и защита от анализа трафика.",
+      "h1": "Протокол VLESS и Reality: устройство, скорость и отличия от OpenVPN",
+      "canonical": "https://sub.zxc1x1.ru/blog/vless-reality-vs-openvpn.html",
+      "robots_meta": "index, follow",
+      "schema_org": [
+        "TechArticle",
+        "FAQPage"
+      ],
+      "type": "article",
+      "word_count": 475,
+      "priority": 0.8,
+      "in_sitemap": true,
+      "disallowed_in_robots": false,
+      "has_critical_meta": true,
+      "has_canonical": true,
+      "status": 200
+    },
+    {
+      "file": "blog/vpn-podkluchen-no-interneta-net.html",
+      "url": "https://sub.zxc1x1.ru/blog/vpn-podkluchen-no-interneta-net.html",
+      "title": "VPN подключен, но интернета нет: 7 частых причин и пошаговая диагностика",
+      "description": "Разбор ситуации, когда статус VPN показывает «Подключено», но сайты не открываются. Проверяем DNS, MTU, синхронизацию времени и маршруты.",
+      "h1": "VPN подключен, но интернета нет: 7 частых причин и пошаговая диагностика",
+      "canonical": "https://sub.zxc1x1.ru/blog/vpn-podkluchen-no-interneta-net.html",
+      "robots_meta": "index, follow",
+      "schema_org": [
+        "TechArticle",
+        "FAQPage"
+      ],
+      "type": "article",
+      "word_count": 562,
+      "priority": 0.8,
+      "in_sitemap": true,
+      "disallowed_in_robots": false,
+      "has_critical_meta": true,
+      "has_canonical": true,
+      "status": 200
+    },
+    {
+      "file": "cabinet.html",
+      "url": "https://sub.zxc1x1.ru/cabinet.html",
+      "title": "Личный кабинет — MosaicVPN",
+      "description": "Личный кабинет MosaicVPN: статус доступа, баланс, история платежей и пополнение. Единый аккаунт для Telegram, приложения и веб-кабинета.",
+      "h1": "Ваш аккаунт",
+      "canonical": "https://sub.zxc1x1.ru/cabinet.html",
+      "robots_meta": "noindex, nofollow",
+      "schema_org": [],
+      "type": "utility_or_legal",
+      "word_count": 487,
+      "priority": 0.3,
+      "in_sitemap": false,
+      "disallowed_in_robots": true,
+      "has_critical_meta": true,
+      "has_canonical": true,
+      "status": 200
+    },
+    {
+      "file": "contacts.html",
+      "url": "https://sub.zxc1x1.ru/contacts.html",
+      "title": "MosaicVPN — Контакты, реквизиты и правообладатель",
+      "description": "Официальные контакты службы поддержки, юридические реквизиты и сведения о правообладателе сервиса MosaicVPN.",
+      "h1": "Контакты и информация об исполнителе",
+      "canonical": "https://sub.zxc1x1.ru/contacts.html",
+      "robots_meta": "index, follow",
+      "schema_org": [],
+      "type": "utility_or_legal",
+      "word_count": 223,
+      "priority": 0.3,
+      "in_sitemap": true,
+      "disallowed_in_robots": false,
+      "has_critical_meta": true,
+      "has_canonical": true,
+      "status": 200
+    },
+    {
+      "file": "delivery.html",
+      "url": "https://sub.zxc1x1.ru/delivery.html",
+      "title": "MosaicVPN — Условия доставки и получения услуг",
+      "description": "Условия предоставления цифровой услуги MosaicVPN: способы получения доступа, сроки активации, стоимость и география предоставления.",
+      "h1": "Условия предоставления и доставки цифровой услуги",
+      "canonical": "https://sub.zxc1x1.ru/delivery.html",
+      "robots_meta": "index, follow",
+      "schema_org": [],
+      "type": "utility_or_legal",
+      "word_count": 277,
+      "priority": 0.3,
+      "in_sitemap": true,
+      "disallowed_in_robots": false,
+      "has_critical_meta": true,
+      "has_canonical": true,
+      "status": 200
+    },
+    {
+      "file": "docs.html",
+      "url": "https://sub.zxc1x1.ru/docs.html",
+      "title": "MosaicVPN для провайдеров — манифест, группы и профили",
+      "description": "Документация для владельцев VPN-сервисов: как подключить свой сервис к клиенту MosaicVPN через манифест подписки. Смарт-группы, брендирование, биллинг, тарифные уровни.",
+      "h1": "Подключите свой сервиск клиенту MosaicVPN",
+      "canonical": "https://sub.zxc1x1.ru/docs.html",
+      "robots_meta": "index, follow",
+      "schema_org": [],
+      "type": "guide",
+      "word_count": 2004,
+      "priority": 0.7,
+      "in_sitemap": true,
+      "disallowed_in_robots": false,
+      "has_critical_meta": true,
+      "has_canonical": true,
+      "status": 200
+    },
+    {
+      "file": "enroll/callback/index.html",
+      "url": "https://sub.zxc1x1.ru/enroll/callback/index.html",
+      "title": "Добавление в MosaicVPN",
+      "description": "",
+      "h1": "Откройте MosaicVPN",
+      "canonical": "",
+      "robots_meta": "noindex,nofollow",
+      "schema_org": [],
+      "type": "utility_or_legal",
+      "word_count": 53,
+      "priority": 0.3,
+      "in_sitemap": false,
+      "disallowed_in_robots": true,
+      "has_critical_meta": false,
+      "has_canonical": false,
+      "status": 200
+    },
+    {
+      "file": "index.html",
+      "url": "https://sub.zxc1x1.ru/",
+      "title": "MosaicVPN — Защита сетевого соединения и шифрование трафика",
+      "description": "MosaicVPN — кроссплатформенный клиент на движке sing-box для защиты сетевого соединения, шифрования трафика и безопасного доступа к сети. 1 рубль в сутки, 3 дня бесплатно, до 5 устройств.",
+      "h1": "Атлас приватныхмаршрутов",
+      "canonical": "https://sub.zxc1x1.ru/",
+      "robots_meta": "index, follow",
+      "schema_org": [
+        "SoftwareApplication"
+      ],
+      "type": "landing",
+      "word_count": 836,
+      "priority": 1.0,
+      "in_sitemap": true,
+      "disallowed_in_robots": false,
+      "has_critical_meta": true,
+      "has_canonical": true,
+      "status": 200
+    },
+    {
+      "file": "manual.html",
+      "url": "https://sub.zxc1x1.ru/manual.html",
+      "title": "Настройка MosaicVPN в сторонних клиентах — Инструкция и ссылки",
+      "description": "Пошаговые инструкции по настройке подписки MosaicVPN в сторонних клиентах: v2rayNG, Exclave, Happ, Throne, Nekoray на Android, Windows и Linux.",
+      "h1": "Подключение в сторонних клиентах",
+      "canonical": "https://sub.zxc1x1.ru/manual.html",
+      "robots_meta": "index, follow",
+      "schema_org": [],
+      "type": "guide",
+      "word_count": 942,
+      "priority": 0.7,
+      "in_sitemap": true,
+      "disallowed_in_robots": false,
+      "has_critical_meta": true,
+      "has_canonical": true,
+      "status": 200
+    },
+    {
+      "file": "offer.html",
       "url": "https://sub.zxc1x1.ru/offer.html",
       "title": "Публичная оферта — MosaicVPN",
-      "description": "Условия предоставления сервиса, порядок оплаты и тарифные планы.",
+      "description": "Публичная оферта (договор об оказании услуг) сервиса защиты сетевого соединения MosaicVPN.",
       "h1": "Публичная оферта",
-      "type": "legal",
-      "schema_org": ["WebPage"],
-      "word_count": 680,
+      "canonical": "https://sub.zxc1x1.ru/offer.html",
+      "robots_meta": "index, follow",
+      "schema_org": [],
+      "type": "utility_or_legal",
+      "word_count": 794,
       "priority": 0.3,
+      "in_sitemap": true,
+      "disallowed_in_robots": false,
+      "has_critical_meta": true,
+      "has_canonical": true,
       "status": 200
     },
     {
+      "file": "payment.html",
+      "url": "https://sub.zxc1x1.ru/payment.html",
+      "title": "Оплата MosaicVPN — банковская карта или СБП",
+      "description": "Форма оплаты цифровой услуги MosaicVPN банковской картой или через СБП.",
+      "h1": "Продление доступа MosaicVPN",
+      "canonical": "",
+      "robots_meta": "index, follow",
+      "schema_org": [],
+      "type": "utility_or_legal",
+      "word_count": 147,
+      "priority": 0.3,
+      "in_sitemap": false,
+      "disallowed_in_robots": false,
+      "has_critical_meta": true,
+      "has_canonical": false,
+      "status": 200
+    },
+    {
+      "file": "privacy.html",
       "url": "https://sub.zxc1x1.ru/privacy.html",
-      "title": "Политика конфиденциальности — MosaicVPN",
-      "description": "Политика обработки персональных данных и гарантии отсутствия журналов активности.",
-      "h1": "Политика конфиденциальности",
-      "type": "legal",
-      "schema_org": ["WebPage"],
-      "word_count": 720,
+      "title": "Политика обработки персональных данных — MosaicVPN",
+      "description": "Политика обработки персональных данных сервиса защиты сетевого соединения MosaicVPN. Принципы отсутствия логов трафика, защита данных.",
+      "h1": "Политика обработки персональных данных",
+      "canonical": "https://sub.zxc1x1.ru/privacy.html",
+      "robots_meta": "index, follow",
+      "schema_org": [],
+      "type": "utility_or_legal",
+      "word_count": 552,
       "priority": 0.3,
+      "in_sitemap": true,
+      "disallowed_in_robots": false,
+      "has_critical_meta": true,
+      "has_canonical": true,
       "status": 200
     },
     {
-      "url": "https://sub.zxc1x1.ru/terms.html",
-      "title": "Пользовательское соглашение — MosaicVPN",
-      "description": "Правила безопасного использования сети и правила предоставления услуг связи.",
-      "h1": "Пользовательское соглашение",
-      "type": "legal",
-      "schema_org": ["WebPage"],
-      "word_count": 640,
+      "file": "refund.html",
+      "url": "https://sub.zxc1x1.ru/refund.html",
+      "title": "Условия возврата и отмены платежа — MosaicVPN",
+      "description": "Условия предоставления доступа, правила возврата денежных средств и отмены платежей в сервисе MosaicVPN.",
+      "h1": "Условия возврата и отмены платежа",
+      "canonical": "https://sub.zxc1x1.ru/refund.html",
+      "robots_meta": "index, follow",
+      "schema_org": [],
+      "type": "utility_or_legal",
+      "word_count": 344,
       "priority": 0.3,
+      "in_sitemap": true,
+      "disallowed_in_robots": false,
+      "has_critical_meta": true,
+      "has_canonical": true,
+      "status": 200
+    },
+    {
+      "file": "seo-panel.html",
+      "url": "https://sub.zxc1x1.ru/seo-panel.html",
+      "title": "SEO & Поисковая аналитика — MosaicVPN",
+      "description": "",
+      "h1": "SEO &amp; Поисковая аналитика",
+      "canonical": "",
+      "robots_meta": "noindex, nofollow",
+      "schema_org": [],
+      "type": "utility_or_legal",
+      "word_count": 259,
+      "priority": 0.3,
+      "in_sitemap": false,
+      "disallowed_in_robots": true,
+      "has_critical_meta": false,
+      "has_canonical": false,
+      "status": 200
+    },
+    {
+      "file": "seo.html",
+      "url": "https://sub.zxc1x1.ru/seo.html",
+      "title": "SEO & Поисковая аналитика — MosaicVPN",
+      "description": "",
+      "h1": "SEO &amp; Поисковая аналитика",
+      "canonical": "",
+      "robots_meta": "noindex, nofollow",
+      "schema_org": [],
+      "type": "utility_or_legal",
+      "word_count": 259,
+      "priority": 0.3,
+      "in_sitemap": false,
+      "disallowed_in_robots": true,
+      "has_critical_meta": false,
+      "has_canonical": false,
+      "status": 200
+    },
+    {
+      "file": "terms.html",
+      "url": "https://sub.zxc1x1.ru/terms.html",
+      "title": "Условия использования и лицензии — MosaicVPN",
+      "description": "Условия использования сервиса MosaicVPN, правила допустимого использования, информация о лицензиях открытого исходного кода (GPL-3.0, BSD-3-Clause).",
+      "h1": "Условия использования сервиса",
+      "canonical": "https://sub.zxc1x1.ru/terms.html",
+      "robots_meta": "index, follow",
+      "schema_org": [],
+      "type": "utility_or_legal",
+      "word_count": 529,
+      "priority": 0.3,
+      "in_sitemap": true,
+      "disallowed_in_robots": false,
+      "has_critical_meta": true,
+      "has_canonical": true,
       "status": 200
     }
   ],
   "keyword_clusters": [
     {
       "cluster_name": "Диагностика ошибок и неполадок",
-      "intent": "informational / troubleshooting",
-      "priority_score": "High",
+      "intent": "Информационный / Траблшутинг",
       "target_url": "https://sub.zxc1x1.ru/blog/vpn-podkluchen-no-interneta-net.html",
       "queries": [
-        {"query": "vpn подключен но интернета нет", "estimated_volume": "12,000/mo", "difficulty": "Low"},
-        {"query": "почему vpn не грузит сайты", "estimated_volume": "6,500/mo", "difficulty": "Low"},
-        {"query": "ошибка tls handshake timeout vpn", "estimated_volume": "2,800/mo", "difficulty": "Very Low"},
-        {"query": "как очистить dns кэш на телефоне", "estimated_volume": "4,100/mo", "difficulty": "Low"}
+        {
+          "query": "vpn подключен но интернета нет",
+          "topic": "Сетевая изоляция / DNS"
+        },
+        {
+          "query": "почему vpn не грузит сайты",
+          "topic": "MTU / Маршрутизация"
+        },
+        {
+          "query": "ошибка tls handshake timeout vpn",
+          "topic": "TLS / Системное время"
+        },
+        {
+          "query": "как очистить dns кэш на телефоне",
+          "topic": "Кэш DNS"
+        }
       ]
     },
     {
       "cluster_name": "Протоколы нового поколения VLESS Reality",
-      "intent": "technical / commercial investigation",
-      "priority_score": "High",
+      "intent": "Инженерный анализ протоколов",
       "target_url": "https://sub.zxc1x1.ru/blog/vless-reality-vs-openvpn.html",
       "queries": [
-        {"query": "что такое vless reality", "estimated_volume": "8,400/mo", "difficulty": "Low"},
-        {"query": "vless vs openvpn разница", "estimated_volume": "3,200/mo", "difficulty": "Very Low"},
-        {"query": "почему блокируют wireguard", "estimated_volume": "9,100/mo", "difficulty": "Medium"},
-        {"query": "sing box протоколы", "estimated_volume": "2,400/mo", "difficulty": "Low"}
+        {
+          "query": "что такое vless reality",
+          "topic": "Архитектура XTLS"
+        },
+        {
+          "query": "vless vs openvpn разница",
+          "topic": "Производительность"
+        },
+        {
+          "query": "почему нестабилен wireguard",
+          "topic": "Сетевые фильтры"
+        },
+        {
+          "query": "sing box протоколы",
+          "topic": "Универсальные клиенты"
+        }
       ]
     },
     {
       "cluster_name": "Раздельное туннелирование (Split Tunneling)",
-      "intent": "practical guide",
-      "priority_score": "Medium-High",
+      "intent": "Практическое руководство",
       "target_url": "https://sub.zxc1x1.ru/blog/split-tunneling-gid.html",
       "queries": [
-        {"query": "как настроить split tunneling", "estimated_volume": "3,800/mo", "difficulty": "Very Low"},
-        {"query": "vpn для сбербанка и госуслуг", "estimated_volume": "5,600/mo", "difficulty": "Low"},
-        {"query": "исключить приложения из vpn", "estimated_volume": "3,100/mo", "difficulty": "Low"}
+        {
+          "query": "как настроить split tunneling",
+          "topic": "Маршрутизация приложений"
+        },
+        {
+          "query": "vpn для сбербанка и госуслуг",
+          "topic": "Локальные сервисы РФ"
+        },
+        {
+          "query": "исключить приложения из vpn",
+          "topic": "Сегментация трафика"
+        }
       ]
     },
     {
-      "cluster_name": "Приватность и безопасность в сетях",
-      "intent": "educational / trust building",
-      "priority_score": "Medium",
+      "cluster_name": "Приватность и защита в сетях",
+      "intent": "Информационная безопасность",
       "target_url": "https://sub.zxc1x1.ru/",
       "queries": [
-        {"query": "опасность открытого wifi в кафе", "estimated_volume": "2,900/mo", "difficulty": "Low"},
-        {"query": "проверка утечки dns и ipv6", "estimated_volume": "3,300/mo", "difficulty": "Low"},
-        {"query": "vpn за 1 рубль в день", "estimated_volume": "1,200/mo", "difficulty": "Low"}
+        {
+          "query": "опасность открытого wifi в кафе",
+          "topic": "Шифрование Wi-Fi"
+        },
+        {
+          "query": "проверка утечки dns и ipv6",
+          "topic": "Анализ утечек данных"
+        },
+        {
+          "query": "vpn за 1 рубль в день",
+          "topic": "Доступный сервис"
+        }
       ]
     }
   ],
   "agent_instructions": {
-    "how_to_read": "Run curl -s https://sub.zxc1x1.ru/seo-report.json or use read_file on site/seo-report.json",
-    "how_to_submit_new_urls": "POST to IndexNow endpoint or ping Google/Yandex with sitemap URL",
-    "compliance_rule": "Anti-RKN: Never use forbidden censorship/bypass terms. Frame strictly around privacy, speed, and protocol mechanics."
+    "how_to_read": "Run python scripts/seo_analyzer.py --json or read site/seo-report.json",
+    "how_to_audit": "Run python scripts/seo_analyzer.py --update",
+    "compliance_rule": "Anti-RKN: Never use forbidden censorship/bypass terms. Frame strictly around privacy, network stability, and protocol mechanics."
   }
 }

@@ -1,5 +1,5 @@
 [Unit]
-Description=MosaicVPN PostgreSQL Daily Automated Backup
+Description=MosaicVPN encrypted PostgreSQL, SQLite and configuration backup
 After=docker.service
 Requires=docker.service
 
@@ -7,5 +7,9 @@ Requires=docker.service
 Type=oneshot
 ExecStart=/opt/mosaicvpn/scripts/backup/backup_db.sh
 User=root
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=30min
 StandardOutput=journal
 StandardError=journal

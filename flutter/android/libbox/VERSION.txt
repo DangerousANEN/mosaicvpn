@@ -1,9 +1,10 @@
-Runtime: sing-box experimental/libbox
-Version: 1.13.18
-Source repository: https://github.com/SagerNet/sing-box.git
-Source revision: 45ca32dcb966f07f97fc888fe8586e359dbe8405
-Build targets: android/arm64, android/arm, android/amd64, android/386
-Build tool: github.com/sagernet/gomobile v0.1.12
-License: GPL-3.0-or-later
-e0d69c9df53836c98f0737b4000c6a42daa6385284a5627ef8e3808d431cb238  libbox.aar
-09775ee7d4518f91b7fcdd8abf030b15dcbc2270a28254a45ca628e63f2c481a  libbox-legacy.aar
+sing-box v1.13.18
+Source tag: v1.13.18 (upstream SagerNet/sing-box)
+Build: cmd/internal/build_libbox, android/arm64,android/arm,android/amd64
+Go toolchain: go1.24.7
+Android NDK: 28.2.13676358
+Build environment: isolated Ubuntu Docker sandbox
+AAR SHA256: 81cef3d75931d985e5d4ce800bbe76ab9453ad0c235092b4d8218719f3ad681d
+Verified native libraries: arm64-v8a, armeabi-v7a, x86_64
+The AAR contents, not this metadata file, are authoritative. Verify the final APK
+with scripts/verify_android_snapshot_abi.py before release.

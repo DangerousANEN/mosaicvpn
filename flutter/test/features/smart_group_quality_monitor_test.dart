@@ -194,5 +194,69 @@ void main() {
 
       monitor.stop();
     });
+
+    test('excludes failed or unknown alternatives from failover winner selection',
+        () async {
+      final monitor = SmartGroupQualityMonitor(
+        api: api,
+        selector: selector,
+        config: const MonitorConfig(
+          probeInterval: Duration(milliseconds: 20),
+          degradationWindowCount: 1,
+          failoverCooldown: Duration.zero,
+          minMaterialImprovement: 0.1,
+        ),
+      );
+
+      // cand-1 is degraded (latency 500ms > maxLatencyThresholdMs 400ms)
+      api.probes['cand-1'] = SmartGroupProbeResult(
+        groupId: 'group-a',
+        candidateId: 'cand-1',
+        successful: true,
+        samples: 3,
+        successes: 3,
+        lossPercent: 0,
+        medianLatencyMs: 500,
+        p95LatencyMs: 600,
+        jitterMs: 10,
+        checkedAt: DateTime.now(),
+        probeKind: 'transport_tcp',
+      );
+
+      // cand-2 is failed/unknown (successful: false, loss: 100%, 0 successes)
+      api.probes['cand-2'] = SmartGroupProbeResult(
+        groupId: 'group-a',
+        candidateId: 'cand-2',
+        successful: false,
+        samples: 3,
+        successes: 0,
+        lossPercent: 100,
+        medianLatencyMs: 0,
+        p95LatencyMs: 0,
+        jitterMs: 0,
+        checkedAt: DateTime.now(),
+        probeKind: 'transport_error',
+      );
+
+      FailoverEvent? lastEvent;
+      monitor.onFailoverEvent = (event) => lastEvent = event;
+
+      bool switchCalled = false;
+      monitor.onSwitchCandidate = (gid, cid) async {
+        switchCalled = true;
+      };
+
+      monitor.start(group: testGroup, activeCandidateId: 'cand-1');
+
+      // Wait for evaluation window
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      expect(switchCalled, isFalse);
+      expect(lastEvent, isNotNull);
+      expect(lastEvent!.switched, isFalse);
+      expect(lastEvent!.reason, FailoverReason.noAlternative);
+
+      monitor.stop();
+    });
   });
 }

@@ -725,6 +725,9 @@ type Status struct {
 	// non-elevated daemon, and only the daemon's token decides whether TUN
 	// can be created.
 	DaemonElevated bool `json:"daemon_elevated"`
+	// NetworkFingerprint is an opaque fingerprint of the local active network
+	// interfaces used for network-scoped candidate freshness and cache invalidation.
+	NetworkFingerprint string `json:"network_fingerprint,omitempty"`
 	// ProxySOCKS / ProxyHTTP are the loopback listeners exposed by the
 	// active backend (e.g. "127.0.0.1:2080" / "127.0.0.1:2081"). Empty
 	// when the backend is the mock or no proxy listener is active.

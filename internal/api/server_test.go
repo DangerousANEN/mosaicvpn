@@ -65,6 +65,19 @@ func TestStatusEndpointAuth(t *testing.T) {
 	}
 }
 
+func TestStatusEndpointIncludesNetworkFingerprint(t *testing.T) {
+	srv, c, _ := newTestServer(t, nil)
+	_ = srv
+
+	st, err := c.Status(context.Background())
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if st.NetworkFingerprint != "" {
+		t.Fatalf("expected empty network fingerprint initially, got %q", st.NetworkFingerprint)
+	}
+}
+
 // TestCORSPreflight ensures the daemon answers CORS preflight requests
 // without first being rejected by the bearer-token check. The Tauri
 // renderer (and `vite dev`) sit at a different origin than the loopback

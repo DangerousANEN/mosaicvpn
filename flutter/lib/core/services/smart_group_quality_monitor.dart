@@ -408,8 +408,22 @@ class SmartGroupQualityMonitor {
     }
 
     final total = lw + latw + stabw + spw;
-    return total > 0
-        ? (reliability * lw + latency * latw + stability * stabw) / total
+    // Speed participates only when it was actually measured; otherwise its
+    // weight is dropped from the normalization instead of dragging the score
+    // down (a missing sample must never be scored as a zero-speed node).
+    final speed = result.downloadMbps > 0
+        ? (result.downloadMbps / (policy.speedProbe.targetMbps > 0
+              ? policy.speedProbe.targetMbps
+              : 50.0)).clamp(0.0, 1.0)
+        : 0.0;
+    final activeWeight =
+        result.downloadMbps > 0 ? total : lw + latw + stabw;
+    return activeWeight > 0
+        ? (reliability * lw +
+                latency * latw +
+                stability * stabw +
+                speed * spw) /
+            activeWeight
         : 0.0;
   }
 

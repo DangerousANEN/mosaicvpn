@@ -48,6 +48,40 @@ def pg_connect():
     )
 
 
+def apply_config_change(config: dict, tmp_path: str) -> bool:
+    """Atomically install the rebuilt config and restart the pool service.
+
+    Returns True when the config changed and the service was restarted.
+    Returns False when the new config is semantically identical to the current
+    one — in that case nothing is written and the service keeps running, so
+    live client tunnels are never torn down by a no-op collector cycle.
+    A syntactically broken previous config counts as changed (recovery path).
+    """
+    import shutil
+    config_changed = True
+    if POOL_CONFIG.exists():
+        try:
+            previous_cfg = json.loads(POOL_CONFIG.read_bytes().decode('utf-8'))
+            config_changed = (previous_cfg != config)
+        except Exception:
+            config_changed = True  # unreadable/corrupt previous config
+
+    if not config_changed:
+        print('SKIP: config unchanged; no restart needed')
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return False
+
+    if POOL_CONFIG.exists():
+        POOL_CONFIG.rename(POOL_CONFIG.with_suffix('.json.prev'))
+    shutil.move(tmp_path, str(POOL_CONFIG))
+    POOL_CONFIG.chmod(0o644)
+    subprocess.run(['systemctl', 'restart', POOL_SERVICE], check=True, timeout=10)
+    return True
+
+
 def main():
     conn = pg_connect()
     cur  = conn.cursor()
@@ -60,7 +94,7 @@ def main():
         FROM mosaic_nodes
         WHERE enabled AND proxy_ok
           AND last_checked_at >= now() - make_interval(hours => %s)
-        ORDER BY COALESCE(composite_score, 0) DESC NULLS LAST, latency_ms ASC NULLS LAST
+        ORDER BY COALESCE(composite_score, 0) DESC NULLS LAST, latency_ms ASC NULLS LAST, id ASC
     """, (HEALTH_TTL_HOURS,))
     rows = cur.fetchall()
 
@@ -111,9 +145,16 @@ def main():
     us_countries = {'US', 'CA'}
     as_countries = {'JP', 'SG', 'KR', 'HK', 'TW', 'IN', 'AU', 'NZ'}
 
-    eu_tags = [t for cc in eu_countries for t in by_country.get(cc, [])]
-    us_tags = [t for cc in us_countries for t in by_country.get(cc, [])]
-    as_tags = [t for cc in as_countries for t in by_country.get(cc, [])]
+    # Preserve the DB ranking; set membership is fine, set iteration is not.
+    # Iterating countries changed both order and capped membership per process.
+    def regional_tags(countries):
+        eligible = {tag for cc, tags in by_country.items()
+                    if cc in countries for tag in tags}
+        return [tag for tag in all_tags if tag in eligible]
+
+    eu_tags = regional_tags(eu_countries)
+    us_tags = regional_tags(us_countries)
+    as_tags = regional_tags(as_countries)
 
     urltest_base = {
         'interval': '3m',
@@ -155,7 +196,7 @@ def main():
         WHERE enabled AND proxy_ok AND protocol = 'vless'
           AND lower(config::text) LIKE '%%reality%%'
           AND last_checked_at >= now() - make_interval(hours => %s)
-        ORDER BY COALESCE(composite_score, 0) DESC NULLS LAST
+        ORDER BY COALESCE(composite_score, 0) DESC NULLS LAST, id ASC
         LIMIT 20
     """, (HEALTH_TTL_HOURS,))
     wl_tags = [r[0] for r in cur.fetchall() if r[0] in tag_set]
@@ -238,14 +279,8 @@ def main():
         conn.close()
         sys.exit(1)
 
-    # ── 7. Atomic write and restart ───────────────────────────────────────────
-    import shutil
-    if POOL_CONFIG.exists():
-        POOL_CONFIG.rename(POOL_CONFIG.with_suffix('.json.prev'))
-    shutil.move(tmp_path, str(POOL_CONFIG))
-    POOL_CONFIG.chmod(0o644)
-
-    subprocess.run(['systemctl', 'restart', POOL_SERVICE], check=True, timeout=10)
+    # ── 7. Atomic write and conditional restart ───────────────────────────────
+    restart_done = apply_config_change(config, tmp_path)
 
     total_outbounds   = len(outbounds)
     total_groups      = len(urltest_groups)

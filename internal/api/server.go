@@ -308,6 +308,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	if status.State == proto.StateConnected || status.State == proto.StateConnecting {
 		status.ActiveGroupID = s.currentActiveGroupID()
 	}
+	if s.mgr != nil {
+		status.NetworkFingerprint = s.mgr.CurrentNetwork()
+	}
 	writeJSON(w, http.StatusOK, status)
 }
 
@@ -2236,10 +2239,9 @@ func (s *Server) handleProbeCandidate(w http.ResponseWriter, r *http.Request) {
 
 	// Determine probe parameters. Client overrides (query params) take
 	// precedence, falling back to the group's ClientPolicy defaults from the
-	// active manifest. Fall back to plain TCP defaults if no manifest is loaded.
+	// active manifest.
 	var (
-		mode     proto.ProbeMode = proto.ProbeModeTCP
-		samples                  = 5
+		samples  = 5
 		probeURL string
 	)
 	// Look up the ManifestGroup for this store group to get the ClientPolicy.
@@ -2248,9 +2250,6 @@ func (s *Server) handleProbeCandidate(w http.ResponseWriter, r *http.Request) {
 		if mg := s.activeManifest.RouteByID(groupID); mg != nil {
 			policy := mg.ClientPolicy
 			policy.SetDefaults()
-			if policy.ProbeMode != proto.ProbeModeAuto && policy.ProbeMode != "" {
-				mode = policy.ProbeMode
-			}
 			if policy.ProbeSamples >= 3 && policy.ProbeSamples <= 20 {
 				samples = policy.ProbeSamples
 			}
@@ -2260,9 +2259,6 @@ func (s *Server) handleProbeCandidate(w http.ResponseWriter, r *http.Request) {
 	s.manifestMu.RUnlock()
 
 	// Client-side override via query parameters (optional — backwards compat).
-	if qm := r.URL.Query().Get("probe_mode"); qm != "" {
-		mode = proto.ProbeMode(qm)
-	}
 	if qs := r.URL.Query().Get("probe_samples"); qs != "" {
 		if n, nerr := strconv.Atoi(qs); nerr == nil && n >= 3 && n <= 20 {
 			samples = n
@@ -2281,46 +2277,8 @@ func (s *Server) handleProbeCandidate(w http.ResponseWriter, r *http.Request) {
 		samples = 20
 	}
 
-	var latencies []int
-	var probeKind string
-
-	switch mode {
-	case proto.ProbeModeHTTPGet:
-		if probeURL == "" {
-			probeURL = "https://1.1.1.1/cdn-cgi/trace"
-		}
-		latencies = probeHTTPGet(r.Context(), probeURL, samples)
-		if len(latencies) == 0 {
-			// HTTP probe failed (firewall, no HTTPS, etc.); fall back to TCP.
-			latencies = probeServerMulti(r.Context(), server.Address, server.Port, samples, 2*time.Second)
-			probeKind = "transport_tcp_fallback"
-		} else {
-			probeKind = "http_get"
-		}
-	case proto.ProbeModeICMP:
-		// ICMP requires raw-socket privileges. Fall back to TCP to avoid
-		// silently failing with an empty result set.
-		latencies = probeServerMulti(r.Context(), server.Address, server.Port, samples, 2*time.Second)
-		probeKind = "transport_tcp_fallback_icmp"
-	default: // tcp
-		latencies = probeServerMulti(r.Context(), server.Address, server.Port, samples, 2*time.Second)
-		probeKind = "transport_tcp"
-	}
-
-	median, p95, jitter := computeProbeStats(latencies)
-	result := proto.CandidateProbeResult{
-		GroupID:         groupID,
-		CandidateID:     req.CandidateID,
-		Samples:         samples,
-		Successes:       len(latencies),
-		LossPercent:     float64(samples-len(latencies)) * 100 / float64(samples),
-		CheckedAt:       time.Now().UTC(),
-		ProbeKind:       probeKind,
-		MedianLatencyMs: median,
-		P95LatencyMs:    p95,
-		JitterMs:        jitter,
-	}
-	result.Successful = len(latencies) > 0
+	result := ProbeCandidateIsolated(r.Context(), groupID, server, probeURL, samples)
+	result.CandidateID = req.CandidateID
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -2539,6 +2497,10 @@ func (s *Server) handleRuntimeQualityProbe(w http.ResponseWriter, r *http.Reques
 	}
 	results := make([]proto.CandidateProbeResult, 0, len(req.CandidateIDs))
 
+	// Bound total request deadline for the entire batch of quality probes
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+
 	for _, candidateID := range req.CandidateIDs {
 		if !admitSet[candidateID] {
 			// Not an eligible group member — return a failed probe without
@@ -2571,43 +2533,8 @@ func (s *Server) handleRuntimeQualityProbe(w http.ResponseWriter, r *http.Reques
 			continue
 		}
 
-		latencies := make([]int, 0, maxSamples)
-		observed := make([]int, 0, maxSamples)
-		for i := 0; i < maxSamples; i++ {
-			ctx, cancel := context.WithTimeout(r.Context(), 1500*time.Millisecond)
-			started := time.Now()
-			conn, err := (&net.Dialer{}).DialContext(ctx, "tcp",
-				net.JoinHostPort(server.Address, fmt.Sprintf("%d", server.Port)))
-			cancel()
-			if err != nil {
-				continue
-			}
-			_ = conn.Close()
-			elapsed := int(time.Since(started).Milliseconds())
-			if elapsed < 1 {
-				elapsed = 1
-			}
-			latencies = append(latencies, elapsed)
-			observed = append(observed, elapsed)
-		}
-		median, p95, jitter := computeProbeStats(observed)
-
-		result := proto.CandidateProbeResult{
-			GroupID:     groupID,
-			CandidateID: candidateID,
-			Samples:     maxSamples,
-			Successes:   len(latencies),
-			LossPercent: float64(maxSamples-len(latencies)) * 100 / float64(maxSamples),
-			CheckedAt:   time.Now().UTC(),
-			ProbeKind:   "runtime_tcp",
-		}
-		if len(latencies) > 0 {
-			result.Successful = true
-			result.MedianLatencyMs = median
-			result.P95LatencyMs = p95
-			result.JitterMs = jitter
-			result.ProbeKind = "runtime_" + string(req.ProbeMode)
-		}
+		result := ProbeCandidateIsolated(ctx, groupID, server, req.ProbeURL, maxSamples)
+		result.CandidateID = candidateID
 		results = append(results, result)
 	}
 

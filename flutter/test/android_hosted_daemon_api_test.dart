@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,6 +24,28 @@ void main() {
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(secureStorageChannel, null);
+  });
+
+  test('unknown Android candidate never contacts caller-supplied HTTP target', () async {
+    var requests = 0;
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((request) {
+      requests++;
+      request.response.statusCode = 204;
+      request.response.close();
+    });
+    try {
+      final result = await AndroidHostedDaemonApi.instance.probeGroupCandidate(
+        'unavailable-group', 'unknown-candidate', probeMode: 'http',
+        probeUrl: 'http://127.0.0.1:${server.port}/204');
+      expect(result.successful, isFalse);
+      expect(result.successes, 0);
+      expect(result.samples, 0);
+      expect(result.probeKind, 'unverified_android_candidate');
+      expect(requests, 0);
+    } finally {
+      await server.close(force: true);
+    }
   });
 
   test(

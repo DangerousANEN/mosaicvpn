@@ -16,9 +16,10 @@ class ProfilesScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profilesAsync = ref.watch(profilesProvider);
+    final isMobile = MediaQuery.sizeOf(context).width < 640;
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(isMobile ? 16 : 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -37,6 +38,17 @@ class ProfilesScreen extends ConsumerWidget {
               data: (profiles) {
                 if (profiles.isEmpty) {
                   return _emptyState(context, ref);
+                }
+                if (isMobile) {
+                  return ListView.separated(
+                    itemCount: profiles.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (context, i) => _ProfileCard(
+                      profile: profiles[i],
+                      ref: ref,
+                      onEdit: () => _showEditDialog(context, ref, profiles[i]),
+                    ),
+                  );
                 }
                 return GridView.count(
                   crossAxisCount: 2,
@@ -152,13 +164,16 @@ class ProfilesScreen extends ConsumerWidget {
                 const SizedBox(height: 12),
                 ValueListenableBuilder<String>(
                   valueListenable: tunnelMode,
-                  builder: (_, v, __) => SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(value: 'tun', label: Text('TUN')),
-                      ButtonSegment(value: 'proxy', label: Text('Proxy')),
-                    ],
-                    selected: {v},
-                    onSelectionChanged: (s) => tunnelMode.value = s.first,
+                  builder: (_, v, __) => SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'tun', label: Text('TUN')),
+                        ButtonSegment(value: 'proxy', label: Text('Proxy')),
+                      ],
+                      selected: {v},
+                      onSelectionChanged: (s) => tunnelMode.value = s.first,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),

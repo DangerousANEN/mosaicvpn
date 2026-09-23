@@ -53,7 +53,7 @@
       "name": "Почему VPN пишет «Подключено», но страницы не загружаются?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "В большинстве случаев само сетевое соединение (рукопожатие со шлюзом) установлено, но трафик стопорится из-за отсутствия DNS-резолвинга, слишком большого пакета MTU, фрагментируемого оператором, или рассинхронизации системного времени более чем на 90 секунд."
+        "text": "В большинстве случаев само сетевое соединение (рукопожатие со шлюзом) установлено, но трафик стопорится из-за отсутствия DNS-резолвинга, слишком большого пакета MTU, фрагментируемого оператором, или рассинхронизации системного времени устройства с сетью."
       }
     },
     {
@@ -138,6 +138,26 @@
 
   footer{border-top:1px solid var(--border); padding:32px 0; font-size:13px; color:var(--muted); text-align:center}
 </style>
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript">
+(function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+m[i].l=1*new Date();
+for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
+k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
+(window, document, "script", "https://mc.yandex.ru/metrika/tag.js?id=112517161", "ym");
+
+ym(112517161, "init", {
+    clickmap:true,
+    trackLinks:true,
+    accurateTrackBounce:true,
+    webvisor:true
+});
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/112517161" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
+<!-- Cloudflare Web Analytics -->
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "0e4108e0321a4cdd9e01f2943cef592b"}'></script>
+<!-- End Cloudflare Web Analytics -->
 </head>
 <body>
 
@@ -182,7 +202,7 @@
       <p><strong>Решение:</strong> Укажите в настройках приложения или сетевого адаптера независимые защищенные DNS, например <code>1.1.1.1</code> или <code>8.8.8.8</code>.</p>
 
       <h2>2. Несовпадение системного времени (Time Drift)</h2>
-      <p>Современные защищенные протоколы (TLS 1.3, VLESS Reality, WireGuard) используют временные метки (timestamp) для защиты от атак повторного воспроизведения (replay attack). Если системные часы вашего телефона или компьютера спешат или отстают более чем на <strong>90 секунд</strong>, удаленный сервер молча отбрасывает сессию.</p>
+      <p>Современные защищенные протоколы (TLS 1.3, VLESS Reality, WireGuard) используют временные метки (timestamp) для защиты от атак повторного воспроизведения (replay attack). Если системные часы вашего телефона или компьютера существенно расходятся со временем сервера, валидация сессии завершается ошибкой.</p>
       <p><strong>Решение:</strong> Зайдите в настройки системы (Дата и время) и включите переключатель <em>«Устанавливать время автоматически по сети (NTP)»</em>.</p>
 
       <h2>3. Проблема размера MTU (Maximum Transmission Unit)</h2>

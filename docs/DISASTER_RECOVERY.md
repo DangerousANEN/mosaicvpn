@@ -1,125 +1,77 @@
-# Регламент аварийного восстановления и авторазвертывания (Disaster Recovery Playbook) — MosaicVPN
+# Recovery and encrypted backups
 
-> **Версия документа**: 1.0  
-> **Целевое время восстановления (RTO)**: ≤ 5 минут  
-> **Допустимая потеря данных (RPO)**: ≤ 12 часов (бэкапы дважды в сутки: 03:00 и 15:00 UTC)  
-> **Поддерживаемые ОС**: Ubuntu 22.04 LTS, Ubuntu 24.04 LTS, Debian 12  
+## Contents and limits
 
----
+`scripts/backup/backup_db.sh` creates `mosaic_full_<UTC>.tar.gz.age`:
+- PostgreSQL custom dump from `remnawave-db`, validated by `pg_restore --list`.
+- Online SQLite backup of `/opt/mosaic-bot/bot.db`, validated with `PRAGMA integrity_check` (accounts, credentials, Telegram links, payments and support data).
+- Required configuration paths listed in `/etc/mosaic-backup.paths`, including environment, compose, Nginx, certificates and bot unit.
+- Manifest with SHA-256 and sizes for every archived file.
 
-## 1. Архитектурная карта сервиса
+PG and SQLite are individually consistent online snapshots, **not an atomic cross-database transaction**. After DR reconcile payments/account grants against payment-provider records. Code and static assets remain in the Git repository, not this data backup. Additional node hosts require their own configuration backup.
 
-Production-стек MosaicVPN разворачивается как единый комплекс:
-1. **База данных PostgreSQL 15**: Контейнер `remnawave-db` (порт `127.0.0.1:6767`, volume `remnawave-db-data`).
-2. **Кэш & Сокеты Valkey / Redis**: Контейнер `remnawave-redis` (unix domain socket `/var/run/valkey`).
-3. **Remnawave Backend & Subscription Page**: Контейнеры `remnawave` (порт `3000`) и `remnawave-subscription-page` (порт `3010`).
-4. **Реверс-прокси Nginx 1.24**: Контейнер `remnawave-nginx` (порты `80`, `443`, `8443`). Отдает статический лендинг, документацию, SEO-блог, SEO-панель управления и проксирует API в бота.
-5. **Telegram Bot & Cabinet Daemon**: Сервис `mosaic-bot.service` (Python venv в `/opt/mosaic-bot`, порт `12223`).
-6. **Система автобэкапов**: `mosaic-backup.timer` (снапшоты в `/var/backups/mosaic-db/`).
+Encryption uses age public recipients. The private recovery identity is kept **off the VPS**, outside Git and outside the archive. Losing every copy of the private identity makes recovery impossible. Backups and staging directories use restrictive permissions. Compression is streamed into encryption, avoiding an additional plaintext tar file; individual snapshots temporarily exist in a private staging directory and are removed on normal completion/failure. Abrupt power loss can leave `.staging-*`; inspect and remove stale staging directories manually when no backup is running.
 
----
+Local policy: 14 days, 1 GiB target budget, always preserve newest two encrypted backups. The two-file minimum may exceed the budget. Preflight reserves at least 768 MiB; low disk fails rather than pruning the last good copies. Old `mosaic_db_*.sql.gz` files are not deleted automatically by the new policy. Preserve them until the encrypted restore rehearsal passes, then explicitly retire obsolete plaintext copies.
 
-## 2. Сценарии аварий
+## Operations
 
-### Сценарий A: Полный отказ или блокировка текущего сервера (Blackout / Migration)
-*Если хостинг удалил VPS, диск вышел из строя или IP заблокирован:*
+Config templates: `deploy/backup.env.example`, `deploy/backup.paths.example`.
+Installed scripts: `/opt/mosaicvpn/scripts/backup/`.
+Schedule: `mosaic-backup.timer`, explicitly 03:00 and 15:00 UTC.
 
-#### Шаг 1: Аренда нового сервера
-Создайте чистый инстанс **Ubuntu 22.04 LTS** (или 24.04) у любого провайдера (любой регион: Нидерланды, Германия, Финляндия, США).  
-Рекомендуемые параметры: 2 vCPU, 4GB RAM, 40GB NVMe.
-
-#### Шаг 2: Клонирование репозитория на новый сервер
-Подключитесь по SSH к новому серверу:
 ```bash
-ssh root@<НОВЫЙ_IP>
-```
-Склонируйте репозиторий MosaicVPN:
-```bash
-git clone https://github.com/ANEN2k/mosaicvpn.git /opt/mosaicvpn-src
-cd /opt/mosaicvpn-src
+systemctl start mosaic-backup.service
+systemctl status mosaic-backup.service --no-pager
+journalctl -u mosaic-backup.service -n 50 --no-pager
+python3 -m json.tool /var/backups/mosaic-db/last-success.json
 ```
 
-#### Шаг 3: Перенос последнего дампа базы данных
-Скопируйте последний проверенный локальный бэкап с рабочего ПК на новый сервер:
+`last-success.json` is written only after local creation and, when configured, successful remote read-back. `offsite_verified: false` means there is **no verified offsite copy**. A timer being active alone does not prove backup health. Check last-success freshness against the 12-hour schedule.
+
+## Google Drive (final authorization step)
+
+Install/configure rclone with an explicitly authorized Google account, then set `RCLONE_REMOTE` to a dedicated folder, e.g. `mosaic-drive:MosaicVPN/backups`. No OAuth secret belongs in Git. rclone credentials must be root-only. Only encrypted archives/checksums are uploaded; each uploaded object is streamed back and SHA-256 compared. Remote failure makes the job fail while preserving the local archive.
+
+Remote retention is scoped strictly to `mosaic_full_*.tar.gz.age` and `.sha256` archives: prunes archives older than `RETENTION_DAYS` (default 14) via `rclone lsjson` and `rclone deletefile`, while always retaining the latest and at least two archives offsite. Unrelated files on the remote are never touched. A prior local-only archive is not automatically retried; run another full backup or explicitly upload and verify it.
+
+## Verify without database modification
+
+Run on an isolated recovery machine with matching/newer PostgreSQL client utilities, age and Python. Use the original PG major version for production recovery unless a major upgrade is intentionally planned.
+
 ```bash
-# Выполняется на вашей локальной машине:
-scp backups/mosaic_db_latest.sql.gz root@<НОВЫЙ_IP>:/root/mosaic_db_latest.sql.gz
+AGE_IDENTITY_FILE=/secure/offline-recovery.key \
+  /opt/mosaicvpn/scripts/backup/restore_db.sh /secure/snapshot.tar.gz.age --verify-only
 ```
 
-#### Шаг 4: Запуск 1-Click Bootstrap инсталлятора
-На новом сервере выполните одну команду:
-```bash
-cd /opt/mosaicvpn-src/deploy
-chmod +x bootstrap_server.sh
-./bootstrap_server.sh --restore /root/mosaic_db_latest.sql.gz
-```
-Скрипт автоматически:
-- Установит Docker CE, Docker Compose v2, Python3, UFW, Certbot, Fail2ban.
-- Настроит UFW (разрешит 22, 80, 443, 8443; закроет БД снаружи).
-- Развернет стек `/opt/remnawave` и запустит контейнеры.
-- Накатит дамп базы данных через `/opt/mosaicvpn/scripts/backup/restore_db.sh`.
-- Настроит виртуальное окружение бота `/opt/mosaic-bot/venv`.
-- Включит таймер бэкапов `mosaic-backup.timer`.
-- Запустит `mosaic-bot.service`.
+Authenticates the complete ciphertext before extraction, rejects links/traversal/duplicates, checks manifest and SQLite integrity and PG archive structure. This is necessary but does not replace an actual restore rehearsal.
 
-#### Шаг 5: Перенаправление DNS в Cloudflare
-В панели управления DNS Cloudflare измените A-записи на новый IP:
-- `sub.zxc1x1.ru` → `<НОВЫЙ_IP>` (Proxy: DNS Only или Proxied)
-- `panel.zxc1x1.ru` → `<НОВЫЙ_IP>`
+## Restore rehearsal / disaster recovery
 
-#### Шаг 6: Сертификаты SSL (Let's Encrypt)
-Если сертификаты выпускаются заново:
+1. Provision an isolated PostgreSQL instance, matching extensions/roles and application code. Do not point a rehearsal at production.
+2. Stop **all writers**: bot systemd service, Remnawave, maintenance timers/workers and any application accessing either database. Preserve a current PG snapshot before destructive restoration. Never restart automatically after failure.
+3. Run verify-only first. Set `DB_NAME`, `CONTAINER_NAME` and `BOT_DB_PATH` explicitly for the intended target. For local non-Docker PG use `PG_MODE=local` and standard libpq environment variables.
+4. Restore with explicit acknowledgement:
+
 ```bash
-certbot certonly --standalone -d sub.zxc1x1.ru -d panel.zxc1x1.ru --agree-tos -m anen.online@gmail.com
-```
-И скопируйте их в смонтированную директорию:
-```bash
-mkdir -p /opt/remnawave/nginx/ssl/sub.zxc1x1.ru
-cp /etc/letsencrypt/live/sub.zxc1x1.ru/fullchain.pem /opt/remnawave/nginx/ssl/sub.zxc1x1.ru/
-cp /etc/letsencrypt/live/sub.zxc1x1.ru/privkey.pem /opt/remnawave/nginx/ssl/sub.zxc1x1.ru/
-docker restart remnawave-nginx
+AGE_IDENTITY_FILE=/secure/offline-recovery.key \
+  /opt/mosaicvpn/scripts/backup/restore_db.sh /secure/snapshot.tar.gz.age \
+  --confirm-stopped --config-output /secure/recovered-config
 ```
 
----
+PostgreSQL uses `--exit-on-error --single-transaction`; a SQL error rolls that restore back. SQLite is replaced only after PG succeeds, preserving a pre-restore SQLite snapshot if present. This is not a distributed transaction: if SQLite replacement fails after PG commit, leave writers stopped and complete recovery. Existing target database objects absent from the dump are not guaranteed to be removed: use a clean target for exact recovery.
 
-### Сценарий B: Повреждение данных или случайное удаление таблиц
+5. Config files are staged only, NEVER copied over live service credentials automatically. Review and install to their corresponding absolute paths, preserving root-only secret permissions. Certificate renewal requires `/etc/letsencrypt/archive` and `/etc/letsencrypt/accounts` coverage alongside `live/` and `renewal/`. Relative symlinks (e.g. `live/<domain>/cert.pem -> ../../archive/<domain>/cert1.pem`) are safely reconstructed via manifest link metadata without arbitrary archive symlinks or path traversal risk. If restoring from a legacy snapshot where `live/` files were materialized flat, verify symlinks point into `archive/` and ACME accounts exist before running `certbot renew`.
+6. Verify restored account/link/payment row counts, account login and subscription retrieval in the isolated instance. Reconcile cross-database/payment state. Start services only after these gates, then verify real HTTP/DNS through the client tunnel; a CONNECTED badge is insufficient.
 
-Если сервер работает, но база данных была повреждена или требуется откат:
+### Legacy PG-only archive
+
 ```bash
-# 1. Посмотреть доступные бэкапы:
-ls -la /var/backups/mosaic-db/
-
-# 2. Запустить безопасное восстановление из последнего снапшота:
-/opt/mosaicvpn/scripts/backup/restore_db.sh /var/backups/mosaic-db/latest.sql.gz
-
-# 3. Перезапустить зависимые сервисы:
-systemctl restart mosaic-bot
-docker restart remnawave
+/opt/mosaicvpn/scripts/backup/restore_db.sh --legacy-pg-only old.sql.gz --confirm-stopped
 ```
 
----
+Uses `psql -X -v ON_ERROR_STOP=1 --single-transaction`. This does **not** restore SQLite/config. No longer supported through unattended `bootstrap_server.sh --restore`, which now refuses before modifying the system.
 
-## 3. Регламент проверки после восстановления (Health Check)
+## Sandbox regression tests
 
-Выполните команду на локальном ПК или сервере:
-```bash
-# 1. Проверка доступности SEO блога и документации:
-curl -sI https://sub.zxc1x1.ru/blog/ | grep -E 'HTTP|Server'
-curl -sI https://sub.zxc1x1.ru/seo.html | grep -E 'HTTP|Server'
-
-# 2. Проверка целостности SEO-панели через агентский скрипт:
-python scripts/seo_analyzer.py --remote
-
-# 3. Проверка ответа Telegram-бота:
-curl -sI https://sub.zxc1x1.ru/api/cabinet/health || true
-
-# 4. Проверка статуса таймера бэкапов:
-systemctl status mosaic-backup.timer
-```
-
----
-
-## 4. Контроль конфиденциальности
-- В Git-репозиторий категорически запрещено коммитить реальные пароли и дампы `.sql.gz`.
-- Все секреты задаются на сервере в `/opt/remnawave/.env` и `/etc/mosaic-bot.env` (права `chmod 600`).
-- Шаблоны переменных хранятся в репозитории как `deploy/env.example`.
+`test_full_backup.py` uses real PostgreSQL, real SQLite and real age encryption: roundtrip data/config, corruption fallback and sidecar handling (-journal/-wal/-shm), wrong key, missing SQLite, absent recipients, low disk, lock parent creation and contention, scoped remote retention via rclone transport, certbot safe symlink reconstruction and path escape rejection, writer-stop gate and archive traversal rejection. Run inside the isolated sandbox, not the user's desktop. Test fixtures contain no production credentials.

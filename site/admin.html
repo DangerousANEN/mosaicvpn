@@ -17,10 +17,35 @@
   .admin-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px 18px;border:1px solid var(--accent);border-radius:12px;background:var(--accent-soft);font-size:14px}.admin-bar strong{font-family:var(--mono);font-size:12px}.admin-bar .tag{display:inline-flex;align-items:center;gap:7px;padding:5px 8px;border-radius:999px;background:#fff;color:var(--ok);font-size:12px;font-weight:700}.admin-bar .tag::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor}
   .credit-card{padding:clamp(20px,4vw,30px)}.section-title{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:18px}.section-title p{max-width:42ch;margin:0;color:var(--text-2);font-size:13px;text-align:right}.form-grid{display:grid;grid-template-columns:1fr 180px;gap:13px}.field-group{display:grid;gap:6px}.field-group.wide{grid-column:1/-1}.field-group label{font-size:13px;color:var(--text-2)}.field{width:100%;min-height:45px;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:#fff;color:var(--text);outline:none}.field:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}textarea.field{min-height:90px;resize:vertical}.help{margin:3px 0 0;color:var(--muted);font-size:12px}.form-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:16px}.form-message{min-height:22px;margin:12px 0 0;color:var(--text-2);font-size:13px}.form-message.error{color:var(--err)}.form-message.success{color:var(--ok)}
   .warning{display:flex;align-items:flex-start;gap:10px;margin:18px 0 0;padding:13px 15px;border-left:3px solid var(--accent);background:var(--card-strong);font-size:13px;color:var(--text-2)}.warning svg{flex:none;width:18px;height:18px;color:var(--accent);margin-top:1px}
-  .history{display:grid;gap:9px}.history-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:17px;align-items:center;padding:15px 16px;border:1px solid var(--border);border-radius:11px;background:var(--card)}.history-main{min-width:0}.history-title{font-size:14px;font-weight:700}.history-meta{margin-top:3px;color:var(--text-2);font-size:12px;overflow-wrap:anywhere}.history-amount{font-family:var(--serif);font-size:20px;white-space:nowrap}.history-status{font-size:12px;text-align:right;white-space:nowrap;color:var(--ok)}.history-status.failed{color:var(--err)}.history-status.processing{color:var(--warn)}.empty{padding:18px;border:1px dashed var(--border);border-radius:10px;color:var(--muted);font-size:14px}.error-card{padding:24px;border:1px solid rgba(140,58,46,.4);border-radius:13px;background:rgba(140,58,46,.06)}.error-card p{color:var(--text-2)}
+  .history{display:grid;gap:9px}.history-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:17px;align-items:center;padding:15px 16px;border:1px solid var(--border);border-radius:11px;background:var(--card)}.history-main{min-width:0}.history-title{font-size:14px;font-weight:700}.history-meta{margin-top:3px;color:var(--text-2);font-size:12px;overflow-wrap:anywhere}.history-amount{font-family:var(--serif);font-size:20px;white-space:nowrap}.history-status{font-size:12px;text-align:right;white-space:nowrap;color:var(--ok)}.history-status.failed{color:var(--err)}.history-status.processing{color:var(--warn)}.history-status.pending{color:var(--warn)}.history-status.revoked{color:var(--muted)}.history-status.expired{color:var(--err)}.history-status.claimed,.history-status.completed{color:var(--ok)}.empty{padding:18px;border:1px dashed var(--border);border-radius:10px;color:var(--muted);font-size:14px}.error-card{padding:24px;border:1px solid rgba(140,58,46,.4);border-radius:13px;background:rgba(140,58,46,.06)}.error-card p{color:var(--text-2)}
+  .gift-result{margin-top:20px;padding:20px;border:1px solid var(--border);border-radius:12px;background:var(--card-strong)}
+  .gift-copy-group{display:flex;gap:10px;align-items:center;margin-top:10px}
+  .gift-copy-group .field{flex:1;min-width:0;font-family:var(--mono);font-size:13px}
+  .btn-sm{min-height:36px;padding:6px 14px;font-size:13px}
+  .history-actions{display:flex;justify-content:flex-end}
   footer{margin-top:20px;border-top:1px solid var(--border);padding:26px 0 40px;color:var(--muted);font-size:13px}
-  @media(max-width:640px){.wrap{padding:0 16px}.nav{height:58px}.head{padding:31px 0 22px}main section{padding:21px 0}.admin-bar{align-items:flex-start;display:block}.admin-bar .tag{margin-top:10px}.section-title{display:block}.section-title p{margin-top:7px;text-align:left}.form-grid{grid-template-columns:1fr}.field-group.wide{grid-column:auto}.form-actions{display:grid;grid-template-columns:1fr}.form-actions .btn{width:100%}.history-row{grid-template-columns:minmax(0,1fr) auto;gap:11px}.history-status{grid-column:1/-1;text-align:left}.credit-card{padding:20px}}
+  @media(max-width:640px){.wrap{padding:0 16px}.nav{height:58px}.head{padding:31px 0 22px}main section{padding:21px 0}.admin-bar{align-items:flex-start;display:block}.admin-bar .tag{margin-top:10px}.section-title{display:block}.section-title p{margin-top:7px;text-align:left}.form-grid{grid-template-columns:1fr}.field-group.wide{grid-column:auto}.form-actions{display:grid;grid-template-columns:1fr}.form-actions .btn{width:100%}.history-row{grid-template-columns:minmax(0,1fr) auto;gap:11px}.history-status{grid-column:1/-1;text-align:left}.credit-card{padding:20px}.gift-copy-group{flex-direction:column;align-items:stretch}.history-actions{grid-column:1/-1;justify-content:stretch}.history-actions .btn{width:100%}}
 </style>
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript">
+(function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+m[i].l=1*new Date();
+for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
+k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
+(window, document, "script", "https://mc.yandex.ru/metrika/tag.js?id=112517161", "ym");
+
+ym(112517161, "init", {
+    clickmap:true,
+    trackLinks:true,
+    accurateTrackBounce:true,
+    webvisor:true
+});
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/112517161" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
+<!-- Cloudflare Web Analytics -->
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "0e4108e0321a4cdd9e01f2943cef592b"}'></script>
+<!-- End Cloudflare Web Analytics -->
 </head>
 <body>
 <header><div class="wrap nav"><a class="brand" href="/" aria-label="MosaicVPN — на главную"><img src="/assets/logo-96.png" alt="" width="24" height="24" style="display:block" loading="eager">MosaicVPN<span class="dot">.</span></a><a class="nav-link" href="/cabinet.html">В кабинет</a></div></header>
@@ -30,16 +55,46 @@
   <section id="forbidden" class="hidden"><div class="error-card"><div class="fig" style="color:var(--err)">Доступ закрыт</div><h2>Недостаточно прав</h2><p>Эта учётная запись не имеет прав администратора. Если это ошибка, войдите в правильный аккаунт через кабинет.</p><a class="btn btn-secondary" href="/cabinet.html">Вернуться в кабинет</a></div></section>
   <section id="panel" class="hidden">
     <div class="admin-bar"><div><strong id="admin-id">ID: —</strong><span style="margin-left:8px;color:var(--text-2)">Админская сессия активна</span></div><span class="tag">Серверная проверка включена</span></div>
-    <section><div class="surface credit-card"><div class="section-title"><div><div class="fig">Начисление доступа</div><h2>Добавить баланс по ID</h2></div><p>В текущей модели 1 ₽ начисления равен 1 дню доступа. Операция будет записана в журнал.</p></div>
+    <section><div class="surface credit-card"><div class="section-title"><div><div class="fig">Начисление доступа</div><h2>Добавить баланс по ID</h2></div><p>Начисление доступа по ID аккаунта. Срок рассчитывается по действующему тарифу сервиса. Операция будет записана в журнал.</p></div>
       <form id="credit-form" novalidate>
         <div class="form-grid">
           <div class="field-group"><label for="target-id">ID аккаунта</label><input id="target-id" class="field" type="text" inputmode="numeric" autocomplete="off" placeholder="Например, 831992162" maxlength="19" required /><p class="help">Введите ID из личного кабинета пользователя.</p></div>
-          <div class="field-group"><label for="credit-amount">Сумма, ₽</label><input id="credit-amount" class="field" type="number" min="1" max="100000" step="1" inputmode="numeric" placeholder="10" required /><p class="help">= количеству дней доступа.</p></div>
+          <div class="field-group"><label for="credit-amount">Сумма, ₽</label><input id="credit-amount" class="field" type="number" min="1" max="100000" step="1" inputmode="numeric" placeholder="10" required /><p id="credit-tariff-hint" class="help">Срок доступа рассчитывается по действующему тарифу.</p></div>
           <div class="field-group wide"><label for="credit-reason">Основание начисления</label><textarea id="credit-reason" class="field" minlength="3" maxlength="240" placeholder="Например, компенсация за технические работы" required></textarea><p class="help">Обязательное пояснение сохраняется в журнале операций.</p></div>
         </div>
         <div class="warning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg><span>Перед выполнением появится подтверждение с ID и суммой. Повторная отправка того же запроса не начислит баланс второй раз.</span></div>
-        <div class="form-actions"><span class="help">Лимит одной операции: 100 000 ₽ / дней.</span><button id="submit-credit" class="btn btn-primary" type="submit">Проверить и начислить</button></div><div id="credit-message" class="form-message" role="status"></div>
+        <div class="form-actions"><span class="help">Лимит одной операции: 100 000 ₽.</span><button id="submit-credit" class="btn btn-primary" type="submit">Проверить и начислить</button></div><div id="credit-message" class="form-message" role="status"></div>
       </form>
+    </div></section>
+    <section><div class="surface credit-card"><div class="section-title"><div><div class="fig">Подарочные ссылки</div><h2>Создать подарочную ссылку</h2></div><p>Доступ для друзей и близких без необходимости указывать их ID. Ссылка активируется на странице настройки.</p></div>
+      <form id="gift-form" novalidate>
+        <div class="form-grid">
+          <div class="field-group"><label for="gift-label">Кому / Описание</label><input id="gift-label" class="field" type="text" autocomplete="off" placeholder="Например, Друг Алексей или Розыгрыш в канале" maxlength="80" required /><p class="help">Метка или имя получателя (от 1 до 80 символов). ID не требуется.</p></div>
+          <div class="field-group"><label for="gift-amount">Сумма подарка, ₽</label><input id="gift-amount" class="field" type="number" min="1" max="10000" step="1" inputmode="numeric" placeholder="100" required /><p id="gift-tariff-hint" class="help">Номинал от 1 до 10 000 ₽. Срок доступа рассчитывается по действующему тарифу.</p></div>
+        </div>
+        <div class="warning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg><span>Перед созданием появится подтверждение с меткой и суммой. Ссылка одноразовая и отображается ровно один раз. Сохраните её сразу.</span></div>
+        <div class="form-actions"><span class="help">Лимит одной ссылки: 10 000 ₽. Секретный URL никогда не выводится повторно.</span><button id="submit-gift" class="btn btn-primary" type="submit">Создать ссылку</button></div><div id="gift-message" class="form-message" role="status"></div>
+      </form>
+      <div id="gift-result-card" class="gift-result hidden">
+        <div style="display:flex;align-items:center;gap:8px;font-weight:700;color:var(--accent);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+          <span>Подарочная ссылка готова!</span>
+        </div>
+        <p style="margin:8px 0 10px;font-size:13px;color:var(--text-2);">Скопируйте ссылку и отправьте получателю. Из соображений безопасности <strong>ссылка показывается только один раз</strong> и больше никогда не будет доступна в журнале или повторных ответах.</p>
+        <div class="gift-copy-group">
+          <input id="gift-url-output" class="field" type="text" readonly onclick="this.select()" />
+          <button id="btn-copy-gift" class="btn btn-primary" type="button">Скопировать ссылку</button>
+          <button id="btn-share-gift" class="btn btn-secondary" type="button">Поделиться</button>
+        </div>
+        <div id="gift-copy-status" style="min-height:18px;margin-top:6px;font-size:12px;color:var(--ok);"></div>
+      </div>
+      <div style="margin-top:28px;">
+        <div class="section-title" style="margin-bottom:12px;">
+          <div><div class="fig">Журнал подарков</div><h3 style="margin:0;font-size:18px;">История подарочных ссылок</h3></div>
+          <button id="refresh-gifts-btn" class="btn btn-secondary btn-sm" type="button">Обновить список</button>
+        </div>
+        <div id="gift-history" class="history"><div class="empty">Загружаем подарочные ссылки…</div></div>
+      </div>
     </div></section>
     <section><div class="surface credit-card"><div class="section-title"><div><div class="fig">Тариф</div><h2>Стоимость дня доступа</h2></div><p>Новое значение применяется к новым web-платежам. Уже созданные счета и оплаченные периоды не пересчитываются.</p></div><form id="price-form" novalidate><div class="form-grid"><div class="field-group"><label for="daily-price">Цена, ₽ за день</label><input id="daily-price" class="field" type="number" min="1" max="100000" step="1" value="1" required /></div></div><div class="warning"><span>Для сохранения введите в подтверждении <strong>SET_PRICE</strong>. Изменение фиксируется сервером.</span></div><div class="form-actions"><span id="price-message" class="form-message"></span><button class="btn btn-primary" type="submit">Изменить цену</button></div></form></div></section>
     <section><div class="surface credit-card"><div class="section-title"><div><div class="fig">Рассылка</div><h2>Сообщение пользователям</h2></div><p>Перед запуском будет показано число Telegram-получателей. Отправка работает в фоне и записывается в журнал сервера.</p></div><form id="broadcast-form" novalidate><div class="field-group"><label for="broadcast-message">Текст сообщения</label><textarea id="broadcast-message" class="field" maxlength="3000" placeholder="Техническое уведомление для пользователей" required></textarea></div><div class="warning"><span>Проверьте текст. Для запуска введите в подтверждении <strong>BROADCAST</strong>.</span></div><div class="form-actions"><span id="broadcast-message-status" class="form-message"></span><button class="btn btn-primary" type="submit">Подтвердить и запустить рассылку</button></div></form></div></section>
@@ -53,31 +108,183 @@
   'use strict';
   var TOKEN_KEY = 'mv_session_token';
   var token = localStorage.getItem(TOKEN_KEY);
-  var API_PROFILE = '/api/billing/profile';
+  var API_PROFILE = '/api/profile';
+  var API_BILLING_PROFILE = '/api/billing/profile';
   var API_CREDIT = '/api/admin/balance-credit';
   var API_HISTORY = '/api/admin/balance-credits';
   var API_BROADCAST = '/api/admin/broadcast';
   var API_PRICING = '/api/admin/pricing';
   var API_ROUTES = '/api/admin/routes';
+  var API_INVITES = '/api/admin/invites';
+  var API_INVITES_CREATE = '/api/admin/invites/create';
+  var API_INVITES_REVOKE = '/api/admin/invites/revoke';
   var gate = document.getElementById('gate');
   var panel = document.getElementById('panel');
   var forbidden = document.getElementById('forbidden');
   var submit = document.getElementById('submit-credit');
+  var currentDailyPriceRub = null;
   function esc(value){return String(value == null ? '' : value).replace(/[&<>"']/g,function(char){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char];});}
-  function json(url,options){return fetch(url,options).then(function(response){return response.json().catch(function(){return {};}).then(function(body){return {status:response.status,body:body};});});}
+  function json(url,options){options=options||{};options.headers=options.headers||{};if(token&&!options.headers['Authorization']){options.headers['Authorization']='Bearer '+token;}return fetch(url,options).then(function(response){return response.json().catch(function(){return {};}).then(function(body){return {status:response.status,body:body};});});}
   function setMessage(text,kind){var node=document.getElementById('credit-message');node.textContent=text || '';node.className='form-message'+(kind ? ' '+kind : '');}
+  function setGiftMessage(text,kind){var node=document.getElementById('gift-message');if(!node)return;node.textContent=text || '';node.className='form-message'+(kind ? ' '+kind : '');}
   function setVisible(which){gate.classList.toggle('hidden',which!=='gate');panel.classList.toggle('hidden',which!=='panel');forbidden.classList.toggle('hidden',which!=='forbidden');}
   function readableDate(value){if(!value)return '—';var date=new Date(value);return isNaN(date.getTime()) ? String(value) : date.toLocaleString('ru-RU',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});}
+  function updateTariffHints(){if(!currentDailyPriceRub||currentDailyPriceRub<=0)return;var ch=document.getElementById('credit-tariff-hint');if(ch)ch.textContent='Действующий тариф: '+currentDailyPriceRub+' ₽ за день доступа.';var gh=document.getElementById('gift-tariff-hint');if(gh)gh.textContent='Номинал от 1 до 10 000 ₽. Действующий тариф: '+currentDailyPriceRub+' ₽ за день доступа.';}
   function renderHistory(credits){var node=document.getElementById('history');if(!credits || !credits.length){node.innerHTML='<div class="empty">Административных начислений пока не было.</div>';return;}node.innerHTML=credits.map(function(credit){var label=credit.status==='succeeded'?'Выполнено':credit.status==='failed'?'Ошибка':'В обработке';return '<article class="history-row"><div class="history-main"><div class="history-title">ID аккаунта: '+esc(credit.target_telegram_id)+'</div><div class="history-meta">'+esc(credit.reason)+' · '+esc(readableDate(credit.created_at))+'</div></div><div class="history-amount">+'+esc(credit.amount)+' ₽</div><div class="history-status '+esc(credit.status)+'">'+esc(label)+'</div></article>';}).join('');}
   function loadHistory(){return json(API_HISTORY+'?token='+encodeURIComponent(token)+'&limit=50').then(function(result){if(result.status===200){renderHistory(result.body.credits||[]);}});}
+  function renderGiftHistory(invites){var node=document.getElementById('gift-history');if(!node)return;if(!invites||!invites.length){node.innerHTML='<div class="empty">Подарочных ссылок пока не создавалось.</div>';return;}node.innerHTML=invites.map(function(invite){var status=invite.status||'pending';var statusClass='pending';var statusLabel='Ожидает активации';if(status==='claimed'||status==='completed'){statusClass='claimed';statusLabel='Активирована';}else if(status==='revoked'){statusClass='revoked';statusLabel='Отозвана';}else if(status==='expired'){statusClass='expired';statusLabel='Истекла';}else if(status==='processing'){statusClass='processing';statusLabel='В обработке';}else if(status==='uncertain'){statusClass='processing';statusLabel='Статус не определен';}else if(status==='failed'){statusClass='failed';statusLabel='Ошибка';}var meta='Создана: '+esc(readableDate(invite.created_at));if((status==='claimed'||status==='completed')&&invite.claimed_at){meta+=' · Активирована: '+esc(readableDate(invite.claimed_at));if(invite.claimant_label){meta+=' ('+esc(invite.claimant_label)+')';}else if(invite.claimant_account_id!=null){meta+=' (ID: '+esc(invite.claimant_account_id)+')';}}else if(status==='revoked'&&invite.completed_at){meta+=' · Отозвана: '+esc(readableDate(invite.completed_at));}else if(status==='pending'&&invite.expires_at){meta+=' · До: '+esc(readableDate(invite.expires_at));}var revokeBtn=status==='pending'?'<div class="history-actions"><button class="btn btn-secondary btn-sm" data-action="revoke-gift" data-gift-action="revoke" data-id="'+esc(invite.id)+'" data-label="'+esc(invite.label)+'" data-amount="'+esc(invite.amount)+'">Отозвать</button></div>':'';return '<article id="invite-row-'+esc(invite.id)+'" class="history-row"><div class="history-main"><div class="history-title">🎁 '+esc(invite.label||'Подарок')+' <span class="fig" style="margin-left:6px;font-size:11px;">'+esc(invite.id)+'</span></div><div class="history-meta">'+meta+'</div></div><div class="history-amount">+'+esc(invite.amount)+' ₽</div><div class="history-status '+esc(statusClass)+'">'+esc(statusLabel)+'</div>'+revokeBtn+'</article>';}).join('');node.querySelectorAll('button[data-action="revoke-gift"]').forEach(function(btn){btn.addEventListener('click',function(){var id=btn.getAttribute('data-id');var lbl=btn.getAttribute('data-label')||'';var amt=btn.getAttribute('data-amount')||'';if(!window.confirm('Отозвать подарочную ссылку для «'+lbl+'» на '+amt+' ₽?\n\nПосле отзыва её нельзя будет активировать.')){return;}btn.disabled=true;json(API_INVITES_REVOKE,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token,invite_id:id})}).then(function(result){if(result.status!==200){alert(result.body.error||'Не удалось отозвать подарочную ссылку.');btn.disabled=false;return;}setGiftMessage('Подарочная ссылка для «'+lbl+'» успешно отозвана.','success');loadGiftHistory();}).catch(function(){alert('Ошибка сети при отзыве ссылки.');btn.disabled=false;});});});}
+  function loadGiftHistory(){return json(API_INVITES+'?token='+encodeURIComponent(token)).then(function(result){if(result.status===200){renderGiftHistory(result.body.invites||[]);}});};
   function renderRoutes(routes){var node=document.getElementById('routes-list');node.innerHTML=(routes||[]).map(function(route){return '<article class="history-row"><div class="history-main"><div class="history-title">'+esc(route.title||route.route_id)+'</div><div class="history-meta">'+esc(route.reason||'Маршрут доступен')+'</div></div><button class="btn btn-secondary" data-route-id="'+esc(route.route_id)+'" data-disabled="'+String(!!route.disabled)+'">'+(route.disabled?'Включить':'Отключить')+'</button></article>';}).join('')||'<div class="empty">Маршруты не найдены.</div>';node.querySelectorAll('button[data-route-id]').forEach(function(button){button.addEventListener('click',function(){var disabled=button.dataset.disabled!=='true';var reason=disabled?(window.prompt('Причина отключения','Техработы')||'').trim():'';if(disabled&&!reason)return;var icon=disabled?(window.prompt('Значок','wrench')||'').trim():'';json(API_ROUTES+'/'+encodeURIComponent(button.dataset.routeId),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token,disabled:disabled,reason:reason,icon:icon})}).then(function(result){var msg=document.getElementById('routes-message');msg.textContent=result.status===200?'Настройка маршрута сохранена.':(result.body.error||'Ошибка');msg.className='form-message '+(result.status===200?'success':'error');if(result.status===200)loadRoutes();});});});}
   function loadRoutes(){return json(API_ROUTES+'?token='+encodeURIComponent(token)).then(function(result){if(result.status===200)renderRoutes(result.body.routes||[]);});}
   function createRequestId(){if(window.crypto&&window.crypto.randomUUID){return window.crypto.randomUUID().replace(/-/g,'');}return 'credit_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,18);}
-  function boot(){if(!token){setVisible('gate');return;}json(API_PROFILE+'?token='+encodeURIComponent(token)).then(function(result){if(result.status===401){localStorage.removeItem(TOKEN_KEY);setVisible('gate');return;}if(result.status!==200||result.body.is_admin!==true){setVisible('forbidden');return;}document.getElementById('admin-id').textContent='ID администратора: '+String(result.body.telegram_id);setVisible('panel');loadHistory();loadRoutes();}).catch(function(){setVisible('gate');});}
+  function fetchProfileSession(){return json(API_PROFILE).then(function(result){if(result.status===404){return json(API_BILLING_PROFILE+'?token='+encodeURIComponent(token));}return result;});}
+  function boot(){if(!token){setVisible('gate');return;}fetchProfileSession().then(function(result){if(result.status===401){localStorage.removeItem(TOKEN_KEY);setVisible('gate');return;}if(result.status!==200||result.body.is_admin!==true){setVisible('forbidden');return;}var adminId=result.body.telegram_id||result.body.account_id||'—';document.getElementById('admin-id').textContent='ID администратора: '+String(adminId);if(result.body.billing&&result.body.billing.price_per_day_rub){currentDailyPriceRub=Number(result.body.billing.price_per_day_rub);var priceInput=document.getElementById('daily-price');if(priceInput)priceInput.value=currentDailyPriceRub;updateTariffHints();}setVisible('panel');loadHistory();loadRoutes();loadGiftHistory();}).catch(function(){setVisible('gate');});}
   document.getElementById('target-id').addEventListener('input',function(){this.value=this.value.replace(/\D/g,'').slice(0,19);});
-  document.getElementById('price-form').addEventListener('submit',function(event){event.preventDefault();var value=document.getElementById('daily-price').value.trim();var message=document.getElementById('price-message');if(!/^\d+$/.test(value)||Number(value)<1||Number(value)>100000){message.textContent='Цена должна быть целым числом от 1 до 100000 ₽.';message.className='form-message error';return;}if(window.prompt('Введите SET_PRICE для подтверждения изменения цены:')!=='SET_PRICE'){message.textContent='Изменение цены отменено.';message.className='form-message';return;}json(API_PRICING,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token,price_per_day_rub:value,confirmed:true,confirmation:'SET_PRICE'})}).then(function(result){if(result.status!==200){message.textContent=result.body.error||'Не удалось изменить цену.';message.className='form-message error';return;}message.textContent='Цена сохранена: '+result.body.price_per_day_rub+' ₽ за день.';message.className='form-message success';}).catch(function(){message.textContent='Не удалось подключиться к сервису.';message.className='form-message error';});});
+  document.getElementById('price-form').addEventListener('submit',function(event){event.preventDefault();var value=document.getElementById('daily-price').value.trim();var message=document.getElementById('price-message');if(!/^\d+$/.test(value)||Number(value)<1||Number(value)>100000){message.textContent='Цена должна быть целым числом от 1 до 100000 ₽.';message.className='form-message error';return;}if(window.prompt('Введите SET_PRICE для подтверждения изменения цены:')!=='SET_PRICE'){message.textContent='Изменение цены отменено.';message.className='form-message';return;}json(API_PRICING,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token,price_per_day_rub:value,confirmed:true,confirmation:'SET_PRICE'})}).then(function(result){if(result.status!==200){message.textContent=result.body.error||'Не удалось изменить цену.';message.className='form-message error';return;}message.textContent='Цена сохранена: '+result.body.price_per_day_rub+' ₽ за день.';message.className='form-message success';currentDailyPriceRub=Number(result.body.price_per_day_rub);updateTariffHints();}).catch(function(){message.textContent='Не удалось подключиться к сервису.';message.className='form-message error';});});
   document.getElementById('broadcast-form').addEventListener('submit',function(event){event.preventDefault();var text=document.getElementById('broadcast-message').value.trim();var message=document.getElementById('broadcast-message-status');if(!text||text.length>3000){message.textContent='Введите сообщение длиной до 3000 символов.';message.className='form-message error';return;}if(window.prompt('Введите BROADCAST для подтверждения рассылки:')!=='BROADCAST'){message.textContent='Рассылка отменена.';message.className='form-message';return;}json(API_BROADCAST,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token,message:text,request_id:createRequestId(),confirmed:true,confirmation:'BROADCAST'})}).then(function(result){if(result.status!==202){message.textContent=result.body.error||'Не удалось запустить рассылку.';message.className='form-message error';return;}message.textContent='Рассылка поставлена в очередь. Получателей: '+result.body.recipient_count+'.';message.className='form-message success';document.getElementById('broadcast-message').value='';}).catch(function(){message.textContent='Не удалось подключиться к сервису.';message.className='form-message error';});});
-  document.getElementById('credit-form').addEventListener('submit',function(event){event.preventDefault();var target=document.getElementById('target-id').value.trim();var amount=document.getElementById('credit-amount').value.trim();var reason=document.getElementById('credit-reason').value.trim();if(!/^\d+$/.test(target)||Number(target)<=0){setMessage('Введите корректный ID аккаунта.','error');return;}if(!/^\d+$/.test(amount)||Number(amount)<1||Number(amount)>100000){setMessage('Сумма должна быть целым числом от 1 до 100000 ₽.','error');return;}if(reason.length<3||reason.length>240){setMessage('Укажите основание начисления длиной от 3 до 240 символов.','error');return;}if(!window.confirm('Подтвердите начисление:\n\nАккаунт ID: '+target+'\nСумма: '+amount+' ₽ ('+amount+' дней)\nОснование: '+reason+'\n\nОперация будет записана в журнал.')){setMessage('Начисление отменено.');return;}submit.disabled=true;setMessage('Начисляем доступ…');var requestId=createRequestId();json(API_CREDIT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token,target_id:target,amount:amount,reason:reason,request_id:requestId,confirmed:true})}).then(function(result){if(result.status!==200){var errors={"account ID not found":"Аккаунт с таким ID не найден.","admin access required":"Недостаточно прав администратора.","could not update subscription":"Не удалось обновить доступ. Проверьте журнал и повторите с новым запросом только после проверки."};setMessage(errors[result.body.error]||'Не удалось начислить доступ. Попробуйте позже.','error');return;}document.getElementById('credit-form').reset();setMessage(result.body.already_processed?'Этот запрос уже был выполнен ранее. Повторного начисления не произошло.':'Готово: +'+result.body.amount+' ₽ / дней начислено аккаунту '+result.body.target_id+'.','success');loadHistory();}).catch(function(){setMessage('Не удалось подключиться к сервису. Проверьте журнал перед повторной попыткой.','error');}).finally(function(){submit.disabled=false;});});
+  document.getElementById('credit-form').addEventListener('submit',function(event){event.preventDefault();var target=document.getElementById('target-id').value.trim();var amount=document.getElementById('credit-amount').value.trim();var reason=document.getElementById('credit-reason').value.trim();if(!/^\d+$/.test(target)||Number(target)<=0){setMessage('Введите корректный ID аккаунта.','error');return;}if(!/^\d+$/.test(amount)||Number(amount)<1||Number(amount)>100000){setMessage('Сумма должна быть целым числом от 1 до 100000 ₽.','error');return;}if(reason.length<3||reason.length>240){setMessage('Укажите основание начисления длиной от 3 до 240 символов.','error');return;}var daysEstimate=currentDailyPriceRub&&currentDailyPriceRub>0?' (~'+Math.floor(Number(amount)/currentDailyPriceRub)+' дн. по тарифу '+currentDailyPriceRub+' ₽/день)':'';var confirmText='Подтвердите начисление:\n\nАккаунт ID: '+target+'\nСумма: '+amount+' ₽'+daysEstimate+'\nОснование: '+reason+'\n\nОперация будет записана в журнал.';if(!window.confirm(confirmText)){setMessage('Начисление отменено.');return;}submit.disabled=true;setMessage('Начисляем доступ…');var requestId=createRequestId();json(API_CREDIT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:token,target_id:target,amount:amount,reason:reason,request_id:requestId,confirmed:true})}).then(function(result){if(result.status!==200){var errors={"account ID not found":"Аккаунт с таким ID не найден.","admin access required":"Недостаточно прав администратора.","could not update subscription":"Не удалось обновить доступ. Проверьте журнал и повторите с новым запросом только после проверки."};setMessage(errors[result.body.error]||'Не удалось начислить доступ. Попробуйте позже.','error');return;}document.getElementById('credit-form').reset();setMessage(result.body.already_processed?'Этот запрос уже был выполнен ранее. Повторного начисления не произошло.':'Готово: +'+result.body.amount+' ₽ начислено аккаунту '+result.body.target_id+'.','success');loadHistory();}).catch(function(){setMessage('Не удалось подключиться к сервису. Проверьте журнал перед повторной попыткой.','error');}).finally(function(){submit.disabled=false;});});
+  var submitGift = document.getElementById('submit-gift');
+  var giftForm = document.getElementById('gift-form');
+  var giftResultCard = document.getElementById('gift-result-card');
+  var giftUrlOutput = document.getElementById('gift-url-output');
+  var giftCopyStatus = document.getElementById('gift-copy-status');
+  var refreshGiftsBtn = document.getElementById('refresh-gifts-btn');
+  var currentGiftRequestId = null;
+  var currentGiftPayloadKey = null;
+  function getOrCreateGiftRequestId(label, amount){var key=label+':::'+amount;if(!currentGiftRequestId||currentGiftPayloadKey!==key){currentGiftRequestId='gift_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,18);currentGiftPayloadKey=key;}return currentGiftRequestId;}
+  function clearGiftRequestId(){currentGiftRequestId=null;currentGiftPayloadKey=null;}
+  if (refreshGiftsBtn) {
+    refreshGiftsBtn.addEventListener('click', function(){ loadGiftHistory(); });
+  }
+  if (giftForm) {
+    giftForm.addEventListener('submit', function(event) {
+      event.preventDefault();
+      var labelInput = document.getElementById('gift-label');
+      var amountInput = document.getElementById('gift-amount');
+      var label = (labelInput ? labelInput.value : '').trim();
+      var amount = (amountInput ? amountInput.value : '').trim();
+      if (!label || label.length < 1 || label.length > 80) {
+        setGiftMessage('Метка получателя должна содержать от 1 до 80 символов.', 'error');
+        return;
+      }
+      if (!/^\d+$/.test(amount) || Number(amount) < 1 || Number(amount) > 10000) {
+        setGiftMessage('Сумма подарка должна быть целым числом от 1 до 10 000 ₽.', 'error');
+        return;
+      }
+      var daysEstimate = currentDailyPriceRub && currentDailyPriceRub > 0 ? ' (~' + Math.floor(Number(amount) / currentDailyPriceRub) + ' дн. по тарифу ' + currentDailyPriceRub + ' ₽/день)' : '';
+      var confirmText = 'Подтвердите выпуск подарочной ссылки:\n\nПолучатель: ' + label + '\nСумма: ' + amount + ' ₽' + daysEstimate + '\n\nСекретная ссылка для активации будет показана только один раз.';
+      if (!window.confirm(confirmText)) {
+        setGiftMessage('Создание подарочной ссылки отменено.');
+        return;
+      }
+      if (submitGift) submitGift.disabled = true;
+      setGiftMessage('Создаем подарочную ссылку…', 'processing');
+      var requestId = getOrCreateGiftRequestId(label, amount);
+      json(API_INVITES_CREATE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: token,
+          label: label,
+          amount: parseInt(amount, 10),
+          request_id: requestId,
+          ttl_seconds: 7 * 86400,
+          confirmed: true
+        })
+      }).then(function(result) {
+        if (result.status === 200) {
+          clearGiftRequestId();
+          if (result.body.gift_url) {
+            if (giftUrlOutput) giftUrlOutput.value = result.body.gift_url;
+            if (giftCopyStatus) giftCopyStatus.textContent = '';
+            if (giftResultCard) giftResultCard.classList.remove('hidden');
+            setGiftMessage('Подарочная ссылка успешно создана! Сохраните её прямо сейчас.', 'success');
+            giftForm.reset();
+          } else {
+            if (giftResultCard) giftResultCard.classList.add('hidden');
+            if (giftUrlOutput) giftUrlOutput.value = '';
+            setGiftMessage('Этот запрос уже был выполнен ранее. Повторного создания ссылки не произошло. Секретный URL не выводится повторно в целях безопасности. Статус: ' + ((result.body.invite && result.body.invite.status) || 'обработан') + '.', 'success');
+          }
+          loadGiftHistory();
+          return;
+        }
+        if (result.status >= 400 && result.status < 500) {
+          clearGiftRequestId();
+          if (giftResultCard) giftResultCard.classList.add('hidden');
+          setGiftMessage(result.body.error || 'Не удалось создать подарочную ссылку.', 'error');
+          return;
+        }
+        if (giftResultCard) giftResultCard.classList.add('hidden');
+        setGiftMessage('Статус операции не определен: сервер вернул ошибку (' + result.status + '). Запрос сохранен, повторите попытку или проверьте журнал подарков во избежание двойного создания.', 'error');
+      }).catch(function() {
+        if (giftResultCard) giftResultCard.classList.add('hidden');
+        setGiftMessage('Статус операции не определен из-за ошибки сети. Ссылка могла быть создана. Повторите попытку (запрос защищен от повторного списания) или проверьте журнал подарков.', 'error');
+      }).finally(function() {
+        if (submitGift) submitGift.disabled = false;
+      });
+    });
+  }
+  var btnCopyGift = document.getElementById('btn-copy-gift');
+  function executeCopyCommand() {
+    if (!giftUrlOutput) return false;
+    giftUrlOutput.focus();
+    giftUrlOutput.select();
+    if (typeof giftUrlOutput.setSelectionRange === 'function') {
+      giftUrlOutput.setSelectionRange(0, giftUrlOutput.value.length);
+    }
+    var ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch (e) {
+      ok = false;
+    }
+    return Boolean(ok);
+  }
+  function handleCopyResult(success) {
+    if (!giftCopyStatus) return;
+    if (success) {
+      giftCopyStatus.textContent = 'Ссылка скопирована в буфер обмена!';
+      giftCopyStatus.style.color = 'var(--ok)';
+    } else {
+      giftCopyStatus.textContent = 'Не удалось скопировать автоматически. Скопируйте ссылку вручную.';
+      giftCopyStatus.style.color = 'var(--err)';
+    }
+  }
+  if (btnCopyGift) {
+    btnCopyGift.addEventListener('click', function() {
+      if (!giftUrlOutput || !giftUrlOutput.value) return;
+      var text = giftUrlOutput.value;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function() {
+          handleCopyResult(true);
+        }).catch(function() {
+          var ok = executeCopyCommand();
+          handleCopyResult(ok);
+        });
+      } else {
+        var ok = executeCopyCommand();
+        handleCopyResult(ok);
+      }
+    });
+  }
+  var btnShareGift = document.getElementById('btn-share-gift');
+  if (btnShareGift) {
+    btnShareGift.addEventListener('click', function() {
+      if (!giftUrlOutput || !giftUrlOutput.value) return;
+      var text = giftUrlOutput.value;
+      if (navigator.share) {
+        navigator.share({
+          title: 'Подарок MosaicVPN',
+          text: 'Подарочный доступ к MosaicVPN',
+          url: text
+        }).catch(function() {});
+      } else {
+        if (btnCopyGift) {
+          btnCopyGift.click();
+        }
+      }
+    });
+  }
   boot();
 })();
 </script>

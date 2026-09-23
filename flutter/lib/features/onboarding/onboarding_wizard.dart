@@ -267,7 +267,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         ),
         const SizedBox(height: 24),
         Text(
-          'Свободный интернет\nбез ограничений',
+          'Приватность\nи стабильная связь',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontFamily: AtlasTheme.serifFamily,
@@ -279,7 +279,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Быстрый доступ к заблокированным ресурсам, защита приватности и стабильный пинг.',
+          'Защита персональных данных и управление сетевыми маршрутами.',
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 14,
@@ -292,15 +292,15 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           c,
           icon: Icons.flash_on_rounded,
           iconColor: c.warning,
-          title: 'Максимальная скорость',
-          desc: 'Магистральные каналы 1 Гбит/с без очередей и замедлений YouTube.',
+          title: 'Подбор маршрута',
+          desc: 'Сравнение доступных узлов по результатам сетевых проверок.',
         ),
         const SizedBox(height: 14),
         _buildFeatureRow(
           c,
           icon: Icons.account_balance_rounded,
           iconColor: c.info,
-          title: 'Умный обход сайтов РФ',
+          title: 'Раздельное туннелирование',
           desc: 'Банки, Госуслуги и доставка работают напрямую без выключения VPN.',
         ),
         const SizedBox(height: 14),
@@ -308,8 +308,8 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           c,
           icon: Icons.lock_rounded,
           iconColor: c.success,
-          title: 'Zero-Logs и приватность',
-          desc: 'VLESS шифрование нового поколения. Ваш провайдер ничего не видит.',
+          title: 'Защита соединения',
+          desc: 'Современный протокол VLESS/Reality для защищённого соединения.',
         ),
       ],
     );
@@ -396,7 +396,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           tag: 'РЕКОМЕНДУЕТСЯ',
           tagColor: c.success,
           icon: Icons.auto_awesome_rounded,
-          title: 'Умный обход РФ',
+          title: 'Раздельное туннелирование',
           subtitle:
               'Сайты банков, Госуслуг и сервисы зоны .RU открываются напрямую на максимальной скорости. Всё остальное защищено VPN.',
         ),
