@@ -39,6 +39,7 @@ import '../features/account/unified_account_panel.dart'
 import '../features/groups/groups_screen.dart';
 import '../features/more/more_screen.dart';
 import '../core/services/app_update_service.dart';
+import '../core/services/tgws_booster.dart';
 
 /// Root shell with bottom navigation (and sidebar on desktop/wide screens) and tab caching via IndexedStack.
 ///
@@ -202,6 +203,17 @@ class _AppShellState extends ConsumerState<AppShell>
     if (AppPlatform.isAndroid) {
       _enrollmentCallbackSubscription =
           AndroidVpnService.instance.enrollmentCallbacks.listen(_enqueueEnrollment);
+      // Telegram WS resilience booster: start the embedded engine at app
+      // launch when the user enabled it, so Telegram keeps working even
+      // before any tunnel is raised (and independently of it).
+      () async {
+        try {
+          final prefs = await ref.read(daemonApiProvider).getPrefs();
+          if (prefs.tgBooster) await TgWsBooster.start();
+        } catch (_) {
+          // Booster is best-effort; never block app startup.
+        }
+      }();
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _pollAndroidEnrollmentCallbacks();

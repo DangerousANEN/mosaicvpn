@@ -13,6 +13,7 @@ import '../models/payment_entry.dart';
 import '../models/provider_profile.dart';
 import '../models/unified_account.dart';
 import 'android_vpn_service.dart';
+import 'tgws_booster.dart';
 
 /// Device-local account material required by Android's native direct runtime.
 class AndroidMosaicSession {
@@ -1812,6 +1813,40 @@ class AndroidMosaicAccountService {
     route['auto_detect_interface'] = true;
     route['default_domain_resolver'] = 'dns-direct';
     route['final'] = effectiveFinal;
+
+    // Telegram WS resilience booster: when the embedded tg-ws-proxy engine
+    // is running, Telegram DC ranges bypass the tunnel and go through the
+    // local SOCKS5 bridge instead (WS+TLS to Telegram DCs behind Cloudflare).
+    // This keeps Telegram alive even when the selected outbound cannot carry
+    // Telegram ranges, and removes Telegram media from the paid tunnel volume.
+    final tgwsPort = TgWsBooster.port;
+    if (tgwsPort > 0) {
+      const telegramCidrs = [
+        '149.154.160.0/20',
+        '91.108.0.0/16',
+        '91.105.192.0/23',
+        '2001:b28:f23d::/48',
+        '2001:b28:f23f::/48',
+      ];
+      final tgwsOutbound = {
+        'type': 'socks',
+        'tag': 'mosaic-tgws-bridge',
+        'server': '127.0.0.1',
+        'server_port': tgwsPort,
+        'version': '5',
+      };
+      final outboundList = (config['outbounds'] as List?) ?? const [];
+      config['outbounds'] = [...outboundList, tgwsOutbound];
+      final rules = (route['rules'] as List?) ?? const [];
+      route['rules'] = [
+        {
+          'ip_cidr': telegramCidrs,
+          'outbound': 'mosaic-tgws-bridge',
+        },
+        ...rules,
+      ];
+    }
+
     config['route'] = route;
     return jsonEncode(config);
   }

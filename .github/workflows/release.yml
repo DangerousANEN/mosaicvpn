@@ -206,6 +206,13 @@ jobs:
           set -euo pipefail
           ./scripts/build_android_libbox.sh
 
+      - name: Build MIT tg-ws-proxy Android runtime
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          ./scripts/build_android_tgws.sh
+
       - name: Restore Android release signing identity
         if: startsWith(github.ref, 'refs/tags/v')
         working-directory: flutter

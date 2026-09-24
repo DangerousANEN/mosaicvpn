@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Build the MIT tg-ws-proxy Android AAR used by MosaicVPN as the Telegram
+# resilience layer (local SOCKS5 -> WS+TLS -> Telegram DC behind Cloudflare).
+# Mirrors scripts/build_android_libbox.sh: source-first, reproducible.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO="https://github.com/d0mhate/-tg-ws-proxy-Manager-go.git"
+VERSION="v1.4.1"
+WORK_DIR="${TGWS_SOURCE_DIR:-$ROOT/.cache/tg-ws-proxy}"
+OUTPUT_DIR="$ROOT/flutter/android/app/libs"
+PROVENANCE="$ROOT/flutter/android/libbox/TGWS_VERSION.txt"
+
+if [[ -z "${ANDROID_HOME:-}" && -z "${ANDROID_SDK_ROOT:-}" ]]; then
+  echo "ANDROID_HOME or ANDROID_SDK_ROOT must point to the Android SDK." >&2
+  exit 1
+fi
+if [[ -z "${ANDROID_NDK_HOME:-}" ]]; then
+  echo "ANDROID_NDK_HOME must point to the Android NDK." >&2
+  exit 1
+fi
+
+if [[ ! -d "$WORK_DIR/.git" ]]; then
+  rm -rf "$WORK_DIR"
+  git clone --filter=blob:none "$REPO" "$WORK_DIR"
+fi
+cd "$WORK_DIR"
+git fetch --tags --force origin
+git checkout --detach "$VERSION"
+[[ "$(git rev-parse HEAD)" == "$(git rev-parse "$VERSION")" ]]
+
+make lib_install || true # gomobile may already be installed
+export PATH="$PATH:$(go env GOPATH)/bin"
+
+# The gomobile binding source lives in-repo next to this script.
+cp -r "$ROOT/scripts/tgws_binding" libtgws
+
+# bind: single AAR covering all ABIs via gomobile's android target.
+gomobile bind -v -androidapi 26 \
+  -ldflags="-s -w" \
+  -target=android -o "$OUTPUT_DIR/tgws.aar" \
+  ./libtgws
+
+mkdir -p "$(dirname "$PROVENANCE")"
+REVISION="$(git rev-parse HEAD)"
+cat > "$PROVENANCE" <<EOF
+tg-ws-proxy $VERSION
+Source: $REPO (MIT)
+Revision: $REVISION
+Binding: scripts/build_android_tgws.sh + scripts/tgws_binding/tgws.go
+gomobile bind -androidapi 26 -target=android
+EOF
+echo "built $OUTPUT_DIR/tgws.aar"
+cat "$PROVENANCE"

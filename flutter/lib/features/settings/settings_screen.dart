@@ -14,6 +14,7 @@ import '../../core/i18n/app_strings.dart';
 import '../../core/models/models.dart';
 import '../../core/services/android_mosaic_account_service.dart';
 import '../../core/services/android_vpn_service.dart';
+import '../../core/services/tgws_booster.dart';
 import '../../core/services/smart_group_runtime_controller.dart';
 import '../../core/services/elevation_prompt.dart';
 import '../../core/services/tray_service.dart';
@@ -170,6 +171,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onChanged: (v) => _update(prefs, killSwitch: v),
                   ),
                 ),
+              // Telegram WS resilience booster
+              _SettingTile(
+                label: 'Устойчивость Telegram',
+                description:
+                    'Встроенный мост: Telegram идёт через WebSocket к серверам Telegram за Cloudflare, даже если основной маршрут нестабилен. Работает и без VPN.',
+                tooltip:
+                    'Embedded tg-ws-proxy (MIT): local SOCKS5 -> WS+TLS -> Telegram DC (kws*.web.telegram.org). Telegram traffic bypasses the tunnel when Telegram ranges are unreachable.',
+                difficulty: 1,
+                child: Switch(
+                  value: prefs.tgBooster,
+                  onChanged: (v) async {
+                    if (v) {
+                      await TgWsBooster.start();
+                    } else {
+                      await TgWsBooster.stop();
+                    }
+                    _update(prefs, tgBooster: v);
+                  },
+                ),
+              ),
               // Allow LAN (TUN only)
               if (prefs.tunnelMode == 'tun')
                 _SettingTile(
@@ -1551,7 +1572,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _update(Preferences prefs,
-      {String? tunnelMode,
+      {bool? tgBooster,
+      String? tunnelMode,
       String? tunStack,
       String? socksAddr,
       String? httpAddr,
@@ -1614,6 +1636,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       bool? includeSubscriptions}) async {
     final s = AppStrings.of(context);
     final updated = prefs.copyWith(
+      tgBooster: tgBooster,
       tunnelMode: tunnelMode,
       tunStack: tunStack,
       socksAddr: socksAddr,

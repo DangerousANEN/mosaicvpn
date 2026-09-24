@@ -31,6 +31,7 @@ class Preferences {
   final bool mcpConfirm;
   final bool showRawNodes; // Smart Presets vs Direct Raw Nodes mode
   final bool advancedMode; // Simple Mode (4 tabs) vs Advanced Mode (12 tabs)
+  final bool tgBooster; // Telegram WS resilience layer (embedded tg-ws-proxy)
   final String lastServerID; // q3: last connected server for auto-reconnect
   final String themeMode; // q8: "system" | "light" | "dark"
   final List<String> favoriteServerIDs; // q7: starred servers
@@ -107,6 +108,7 @@ class Preferences {
     this.mcpConfirm = true,
     this.showRawNodes = false,
     this.advancedMode = false,
+    this.tgBooster = false,
     this.lastServerID = '',
     this.themeMode = 'system',
     this.favoriteServerIDs = const [],
@@ -177,6 +179,7 @@ class Preferences {
         mcpConfirm: j['mcp_confirm'] ?? true,
         showRawNodes: j['show_raw_nodes'] ?? false,
         advancedMode: j['advanced_mode'] ?? false,
+        tgBooster: j['tg_booster'] ?? false,
         lastServerID: j['last_server_id'] ?? '',
         themeMode: j['theme_mode'] ?? 'system',
         favoriteServerIDs:
@@ -248,6 +251,7 @@ class Preferences {
         'mcp_confirm': mcpConfirm,
         'show_raw_nodes': showRawNodes,
         'advanced_mode': advancedMode,
+        'tg_booster': tgBooster,
         'last_server_id': lastServerID,
         'theme_mode': themeMode,
         'favorite_server_ids': favoriteServerIDs,
@@ -289,6 +293,7 @@ class Preferences {
       };
 
   Preferences copyWith({
+    bool? tgBooster,
     String? tunnelMode,
     String? tunStack,
     String? socksAddr,
@@ -356,6 +361,7 @@ class Preferences {
     bool? autoReconnectOnSettings,
   }) =>
       Preferences(
+        tgBooster: tgBooster ?? this.tgBooster,
         tunnelMode: tunnelMode ?? this.tunnelMode,
         tunStack: tunStack ?? this.tunStack,
         socksAddr: socksAddr ?? this.socksAddr,

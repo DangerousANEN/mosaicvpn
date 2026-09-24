@@ -78,6 +78,9 @@ android {
 
 dependencies {
     implementation(files("libs/libbox.aar"))
+    if (project.hasProperty("tgws.aar") || file("libs/tgws.aar").exists()) {
+        implementation(files("libs/tgws.aar"))
+    }
 }
 
 tasks.configureEach {

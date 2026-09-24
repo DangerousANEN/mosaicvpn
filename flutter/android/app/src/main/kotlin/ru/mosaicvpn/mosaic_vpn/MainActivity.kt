@@ -64,6 +64,31 @@ class MainActivity : FlutterActivity() {
                 result.success(MosaicVpnService.status())
             }
             "status" -> result.success(MosaicVpnService.status())
+            "tgwsStart" -> {
+                try {
+                    TgWsBridge.start(applicationContext)
+                    result.success(
+                        mapOf(
+                            "running" to TgWsBridge.running(),
+                            "port" to TgWsBridge.port,
+                            "lastLog" to TgWsBridge.lastLogLine,
+                        ),
+                    )
+                } catch (error: Exception) {
+                    result.error("tgws_start_failed", error.message, null)
+                }
+            }
+            "tgwsStop" -> {
+                TgWsBridge.stop()
+                result.success(mapOf("running" to TgWsBridge.running()))
+            }
+            "tgwsStatus" -> result.success(
+                mapOf(
+                    "running" to TgWsBridge.running(),
+                    "port" to TgWsBridge.port,
+                    "lastLog" to TgWsBridge.lastLogLine,
+                ),
+            )
             "readNativeLogs" -> {
                 val after = (call.argument<Any>("afterSeq") as? Number)?.toLong() ?: 0L
                 result.success(MosaicVpnService.snapshotNativeLogs(after))
