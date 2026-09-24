@@ -34,7 +34,9 @@ git checkout --detach "$VERSION"
 go install golang.org/x/mobile/cmd/gomobile@latest
 go install golang.org/x/mobile/cmd/gobind@latest
 export PATH="$PATH:$(go env GOPATH)/bin"
-gomobile init || true
+# The gomobile bind step requires golang.org/x/mobile in the module graph.
+go get golang.org/x/mobile@latest
+go mod tidy
 
 # The gomobile binding source lives in-repo (underscore dir: invisible to go vet).
 cp -r "$ROOT/scripts/_tgws_binding" libtgws
