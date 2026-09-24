@@ -861,9 +861,64 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     int? probeSamples,
     String? probeUrl,
   }) async {
-    return SmartGroupProbeResult.unverified(
+    // A TCP connect to the candidate's real server:port measures transport
+    // reachability from the user's current network. It is not an
+    // authenticated-proxy proof, so the result is reported with
+    // probeKind='tcp_android_candidate' — eligible for ranking (unlike the
+    // old unverified stub) but honestly labelled as transport-only.
+    final cache = _groupCandidateCaches[groupID];
+    final candidate = cache?[candidateID];
+    if (candidate == null) {
+      return SmartGroupProbeResult.unverified(
+        groupId: groupID,
+        candidateId: candidateID,
+      );
+    }
+    final host = candidate['server']?.toString() ?? '';
+    final port =
+        int.tryParse(candidate['server_port']?.toString() ?? '') ?? 0;
+    if (host.isEmpty || port <= 0) {
+      return SmartGroupProbeResult.unverified(
+        groupId: groupID,
+        candidateId: candidateID,
+      );
+    }
+    final samplesResult = await _probeTcpSamples(
+      host,
+      port,
+      attempts: (probeSamples ?? 3).clamp(1, 10),
+      timeoutMs: 2500,
+    );
+    final samples = samplesResult.samples;
+    if (samples.isEmpty) {
+      return SmartGroupProbeResult.unverified(
+        groupId: groupID,
+        candidateId: candidateID,
+      );
+    }
+    final sorted = [...samples]..sort();
+    final median = sorted[sorted.length ~/ 2];
+    final mean =
+        samples.reduce((a, b) => a + b) / samples.length;
+    final jitter = (samples
+            .map((s) => (s - mean).abs())
+            .reduce((a, b) => a + b) /
+            samples.length)
+        .round();
+    final now = DateTime.now();
+    return SmartGroupProbeResult(
       groupId: groupID,
       candidateId: candidateID,
+      successful: true,
+      samples: samples.length,
+      successes: samples.length,
+      lossPercent: 0,
+      medianLatencyMs: median.clamp(1, 60000),
+      p95LatencyMs: sorted[(sorted.length * 0.95).floor().clamp(0, sorted.length - 1)]
+          .clamp(1, 60000),
+      jitterMs: jitter.clamp(0, 60000),
+      checkedAt: now,
+      probeKind: 'tcp_android_candidate',
     );
   }
 

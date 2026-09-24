@@ -241,6 +241,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                                     : statusUnreachable
                                         ? 'СОСТОЯНИЕ УТОЧНЯЕТСЯ'
                                         : 'ОТКЛЮЧЕНО',
+                        textAlign: TextAlign.center,
                         style: TextStyle(
                           fontFamily: AtlasTheme.serifFamily,
                           fontSize: 24,
@@ -266,6 +267,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                                     : statusUnreachable
                                         ? 'Нет связи с сервисом — туннель мог остаться активным'
                                         : 'Нажмите на компас для подключения',
+                        textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 13,
                           color: c.textSecondary,
@@ -1543,7 +1545,7 @@ class _AtlasRouteSelectorCard extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                           color: c.textPrimary,
                         ),
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
@@ -1978,9 +1980,12 @@ class _QuickControlsRow extends ConsumerWidget {
     final bypassRussian = ref.watch(bypassRussianSitesProvider);
     final adBlock = ref.watch(adBlockFilterProvider);
 
-    return Row(
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
       children: [
-        Expanded(
+        SizedBox(
+          width: double.infinity,
           child: Material(
             color: c.bgElevated,
             borderRadius: BorderRadius.circular(14),
@@ -2008,7 +2013,7 @@ class _QuickControlsRow extends ConsumerWidget {
                     Expanded(
                       child: Text(
                         autoFailover ? 'Автосмена: ВКЛ' : 'Автосмена: ВЫКЛ',
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 11.5,
@@ -2023,8 +2028,8 @@ class _QuickControlsRow extends ConsumerWidget {
             ),
           ),
         ),
-        const SizedBox(width: 8),
-        Expanded(
+        SizedBox(
+          width: double.infinity,
           child: Material(
             color: c.bgElevated,
             borderRadius: BorderRadius.circular(14),
@@ -2048,7 +2053,7 @@ class _QuickControlsRow extends ConsumerWidget {
                     Expanded(
                       child: Text(
                         bypassRussian ? 'Обход РФ: ВКЛ' : 'Обход РФ: ВЫКЛ',
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 11.5,
@@ -2063,8 +2068,8 @@ class _QuickControlsRow extends ConsumerWidget {
             ),
           ),
         ),
-        const SizedBox(width: 8),
-        Expanded(
+        SizedBox(
+          width: double.infinity,
           child: Material(
             color: c.bgElevated,
             borderRadius: BorderRadius.circular(14),
@@ -2092,7 +2097,7 @@ class _QuickControlsRow extends ConsumerWidget {
                     Expanded(
                       child: Text(
                         adBlock ? 'AdBlock: ВКЛ' : 'AdBlock: ВЫКЛ',
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 11.5,

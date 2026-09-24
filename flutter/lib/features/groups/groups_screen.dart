@@ -321,6 +321,83 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                           ),
                         ),
                       ],
+                      if (_activeGroupLatencyTest != null &&
+                          _groupLatencyProgress != null) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: colors.bgCard,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                                color: AtlasTheme.accent.withValues(alpha: .3)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'Проверка «${_groupLatencyProgress!.label}» серверов · '
+                                      'доступно: ${_groupLatencyProgress!.successful}',
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: colors.textPrimary,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: _stopGroupLatencyTest,
+                                    style: TextButton.styleFrom(
+                                      visualDensity: VisualDensity.compact,
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 4),
+                                    ),
+                                    child: Text('Остановить',
+                                        style: TextStyle(
+                                            color: colors.danger,
+                                            fontSize: 13)),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: LinearProgressIndicator(
+                                  value: _groupLatencyProgress!.total == 0
+                                      ? null
+                                      : _groupLatencyProgress!.completed /
+                                          _groupLatencyProgress!.total,
+                                  backgroundColor: colors.border,
+                                  valueColor: const AlwaysStoppedAnimation<Color>(
+                                      AtlasTheme.accent),
+                                  minHeight: 4,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Подписка: ${selectedSource.name.isEmpty ? 'Основная' : selectedSource.name}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    color: colors.textSecondary, fontSize: 11),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 14),
                       if (selectedManifestAsync?.hasError == true &&
                           _isMosaicSubscription(selectedSource))

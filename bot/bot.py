@@ -6019,9 +6019,10 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                 hour=0, minute=0, second=0, microsecond=0).isoformat()
         raw_devices = api_get_user_devices(username, remote) if remote else []
         devices = _cabinet_device_rows(raw_devices)
-        traffic_used = int((remote or {}).get("usedTrafficBytes") or 0)
+        remote_traffic = ((remote or {}).get("userTraffic") or {}) if isinstance((remote or {}).get("userTraffic"), dict) else {}
+        traffic_used = int((remote or {}).get("usedTrafficBytes") or remote_traffic.get("usedTrafficBytes") or 0)
         traffic_limit = int((remote or {}).get("trafficLimitBytes") or 0)
-        lifetime_traffic = int((remote or {}).get("lifetimeUsedTrafficBytes") or 0)
+        lifetime_traffic = int((remote or {}).get("lifetimeUsedTrafficBytes") or remote_traffic.get("lifetimeUsedTrafficBytes") or 0)
         device_limit = int((remote or {}).get("hwidDeviceLimit") or (remote or {}).get("hwidDevicesLimit") or 5)
         daily_price_rub = get_daily_price_rub()
         telegram_link = get_telegram_account_link(telegram_id)
@@ -6801,7 +6802,10 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                     profile["days_left"] = max(0, (expire_dt - now).days)
                 except Exception:
                     pass
-            traffic_used = user_data.get("usedTrafficBytes", 0) or 0
+            user_traffic = user_data.get("userTraffic") or {}
+            if not isinstance(user_traffic, dict):
+                user_traffic = {}
+            traffic_used = user_data.get("usedTrafficBytes") or user_traffic.get("usedTrafficBytes") or 0
             traffic_limit = user_data.get("trafficLimitBytes", 0) or 0
             profile["traffic_used"] = traffic_used
             profile["traffic_limit"] = traffic_limit
@@ -6967,9 +6971,9 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                 "tier": "standard",
                 "expires_at": expires_at,
                 "days_left": days_left,
-                "traffic_used_bytes": int(remote.get("usedTrafficBytes") or 0),
+                "traffic_used_bytes": int(remote.get("usedTrafficBytes") or ((remote.get("userTraffic") or {}) if isinstance(remote.get("userTraffic"), dict) else {}).get("usedTrafficBytes") or 0),
                 "traffic_limit_bytes": int(remote.get("trafficLimitBytes") or 0),
-                "lifetime_traffic_bytes": int(remote.get("lifetimeUsedTrafficBytes") or 0),
+                "lifetime_traffic_bytes": int(remote.get("lifetimeUsedTrafficBytes") or ((remote.get("userTraffic") or {}) if isinstance(remote.get("userTraffic"), dict) else {}).get("lifetimeUsedTrafficBytes") or 0),
                 "device_limit": max(0, int(remote.get("hwidDeviceLimit") or remote.get("hwidDevicesLimit") or 0)),
                 "last_sync_at": now.isoformat(),
             }

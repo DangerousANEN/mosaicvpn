@@ -102,6 +102,23 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     }
   }
 
+  /// Website-first enrollment: opens the browser at the cabinet with an
+  /// Add-to-app return_to. The site issues a short-lived one-time code and
+  /// returns it via the mosaicvpn://enroll/callback deep link; the app shell's
+  /// callback queue completes the enrollment without any manual pasting.
+  Future<void> _launchWebsiteEnrollment() async {
+    setState(() => _importError = null);
+    try {
+      final uri = await AndroidMosaicAccountService.instance.beginWebsiteLogin();
+      await ExternalLauncher.openUrl(uri.toString());
+    } catch (_) {
+      if (mounted) {
+        setState(() => _importError =
+            'Не удалось открыть сайт. Проверьте подключение и повторите попытку.');
+      }
+    }
+  }
+
   Future<void> _finish() async {
     await _applySelectedMode();
     final url = _subUrlController.text.trim();
@@ -664,6 +681,21 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           icon: const Icon(Icons.send_rounded, size: 18, color: AtlasTheme.accent),
           label: const Text(
             'Получить ключ в Telegram-боте',
+            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+          ),
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: _launchWebsiteEnrollment,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: c.textPrimary,
+            side: BorderSide(color: c.border),
+            padding: const EdgeInsets.symmetric(vertical: 13),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+          icon: const Icon(Icons.language_rounded, size: 18, color: AtlasTheme.accent),
+          label: const Text(
+            'Добавить через сайт',
             style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
           ),
         ),
