@@ -35,12 +35,11 @@ go install golang.org/x/mobile/cmd/gomobile@latest
 go install golang.org/x/mobile/cmd/gobind@latest
 export PATH="$PATH:$(go env GOPATH)/bin"
 # The gomobile bind step requires golang.org/x/mobile in the module graph.
+# Copy the binding into the module tree FIRST so go mod tidy keeps it.
+cp -r "$ROOT/scripts/_tgws_binding" libtgws
+rm -rf libtgws/livecheck
 go get golang.org/x/mobile@latest
 go mod tidy
-
-# The gomobile binding source lives in-repo (underscore dir: invisible to go vet).
-cp -r "$ROOT/scripts/_tgws_binding" libtgws
-rm -f libtgws/livecheck 2>/dev/null || true
 
 # bind: single AAR covering all ABIs via gomobile's android target.
 gomobile bind -v -androidapi 26 \
