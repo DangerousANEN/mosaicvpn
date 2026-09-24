@@ -42,7 +42,8 @@ go get -tool golang.org/x/mobile/cmd/gobind
 go mod tidy
 
 # bind: single AAR covering all ABIs via gomobile's android target.
-gomobile bind -v -androidapi 26 \
+# androidapi 24 matches the app's minSdk; the binding uses no newer APIs.
+gomobile bind -v -androidapi 24 \
   -ldflags="-s -w" \
   -target=android -o "$OUTPUT_DIR/tgws.aar" \
   ./libtgws
