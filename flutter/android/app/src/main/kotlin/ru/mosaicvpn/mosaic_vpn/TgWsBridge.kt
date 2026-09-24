@@ -29,7 +29,7 @@ object TgWsBridge {
                 val proxy = Proxy()
                 proxy.start()
                 proxyRef.set(proxy)
-                port = proxy.port()
+                port = proxy.port().toInt()
                 Log.i(TAG, "tg-ws-proxy engine listening on 127.0.0.1:$port")
             } catch (e: Exception) {
                 Log.e(TAG, "tg-ws-proxy engine failed to start", e)
