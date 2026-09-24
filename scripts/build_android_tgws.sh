@@ -38,7 +38,7 @@ export PATH="$PATH:$(go env GOPATH)/bin"
 # Copy the binding into the module tree FIRST so go mod tidy keeps it.
 cp -r "$ROOT/scripts/_tgws_binding" libtgws
 rm -rf libtgws/livecheck
-go get golang.org/x/mobile@latest
+go get -tool golang.org/x/mobile/cmd/gobind
 go mod tidy
 
 # bind: single AAR covering all ABIs via gomobile's android target.
