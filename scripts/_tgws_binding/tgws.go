@@ -11,6 +11,7 @@ import (
 	"errors"
 	"log"
 	"net"
+	"os"
 	"strconv"
 	"time"
 
@@ -43,21 +44,8 @@ type Proxy struct {
 	done   chan struct{}
 	err    error
 
-	logSink   *callbackWriter
 	port      int
 	startedAt time.Time
-}
-
-// callbackWriter adapts a mobile log callback into an io.Writer.
-type callbackWriter struct {
-	cb func(line string)
-}
-
-func (w *callbackWriter) Write(p []byte) (int, error) {
-	if w != nil && w.cb != nil {
-		w.cb(string(p))
-	}
-	return len(p), nil
 }
 
 // New builds a proxy handle. Port 0 lets the engine pick a free port;
@@ -84,11 +72,6 @@ func (p *Proxy) SetCFDomain(domain string) {
 // SetVerbose toggles verbose engine logging.
 func (p *Proxy) SetVerbose(v bool) { p.cfg.Verbose = v }
 
-// SetLogCallback routes engine logs to the app layer (Java callback).
-func (p *Proxy) SetLogCallback(cb func(line string)) {
-	p.logSink = &callbackWriter{cb: cb}
-}
-
 // Start launches the SOCKS5 server in the background. Returns an error
 // message string; empty means success.
 func (p *Proxy) Start() error {
@@ -100,7 +83,7 @@ func (p *Proxy) Start() error {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	p.cancel = cancel
-	logger := log.New(p.logSink, "tgws ", log.LstdFlags)
+	logger := log.New(os.Stderr, "tgws ", log.LstdFlags)
 
 	// Windows can transiently refuse rebinding a just-released port, so retry
 	// with a fresh port until the engine actually accepts one.

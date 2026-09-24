@@ -1,6 +1,5 @@
 package ru.mosaicvpn.mosaic_vpn
 
-import android.content.Context
 import android.util.Log
 import tgws.Proxy
 import java.util.concurrent.atomic.AtomicReference
@@ -22,23 +21,15 @@ object TgWsBridge {
     var port: Int = 0
         private set
 
-    @Volatile
-    var lastLogLine: String = ""
-        private set
-
-    fun start(context: Context) {
+    fun start() {
         if (proxyRef.get() != null) return
         synchronized(this) {
             if (proxyRef.get() != null) return
             try {
                 val proxy = Proxy()
-                proxy.setLogCallback { line ->
-                    lastLogLine = line.trim()
-                    if (BuildConfig.DEBUG) Log.d(TAG, line.trim())
-                }
                 proxy.start()
                 proxyRef.set(proxy)
-                port = proxy.port
+                port = proxy.port()
                 Log.i(TAG, "tg-ws-proxy engine listening on 127.0.0.1:$port")
             } catch (e: Exception) {
                 Log.e(TAG, "tg-ws-proxy engine failed to start", e)
@@ -57,5 +48,5 @@ object TgWsBridge {
         port = 0
     }
 
-    fun running(): Boolean = proxyRef.get()?.running ?: false
+    fun running(): Boolean = proxyRef.get()?.running() ?: false
 }
