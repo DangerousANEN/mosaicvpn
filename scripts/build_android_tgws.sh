@@ -51,7 +51,7 @@ gomobile bind -v -androidapi 24 \
 # The app already embeds libbox.aar, which ships the go.Seq runtime classes.
 # Strip the duplicate go/* runtime from tgws.aar's classes.jar so both AARs
 # can coexist on the same classpath (go.Seq is version-identical).
-python3 - <<'PY'
+TGWS_AAR="$OUTPUT_DIR/tgws.aar" python3 - <<'PY'
 import shutil, zipfile, os, sys
 aar = os.environ.get('TGWS_AAR', 'flutter/android/app/libs/tgws.aar')
 tmp = aar + '.tmp'
