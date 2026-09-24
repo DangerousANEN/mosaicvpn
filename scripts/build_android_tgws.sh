@@ -48,6 +48,36 @@ gomobile bind -v -androidapi 24 \
   -target=android -o "$OUTPUT_DIR/tgws.aar" \
   ./libtgws
 
+# The app already embeds libbox.aar, which ships the go.Seq runtime classes.
+# Strip the duplicate go/* runtime from tgws.aar's classes.jar so both AARs
+# can coexist on the same classpath (go.Seq is version-identical).
+python3 - <<'PY'
+import shutil, zipfile, os, sys
+aar = os.environ.get('TGWS_AAR', 'flutter/android/app/libs/tgws.aar')
+tmp = aar + '.tmp'
+with zipfile.ZipFile(aar, 'r') as zin:
+    names = zin.namelist()
+    with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as zout:
+        for name in names:
+            if name == 'classes.jar':
+                cj = zin.read(name)
+                cj_path = aar + '.classes'
+                open(cj_path, 'wb').write(cj)
+                with zipfile.ZipFile(cj_path, 'r') as cjar, \
+                     zipfile.ZipFile(cj_path + '.new', 'w', zipfile.ZIP_DEFLATED) as cnew:
+                    for entry in cjar.namelist():
+                        if entry.startswith('go/'):
+                            continue  # strip duplicate gomobile runtime
+                        cnew.writestr(entry, cjar.read(entry))
+                zout.writestr(name, open(cj_path + '.new', 'rb').read())
+                os.remove(cj_path)
+                os.remove(cj_path + '.new')
+            else:
+                zout.writestr(name, zin.read(name))
+os.replace(tmp, aar)
+print('stripped go/* runtime from', aar)
+PY
+
 mkdir -p "$(dirname "$PROVENANCE")"
 REVISION="$(git rev-parse HEAD)"
 cat > "$PROVENANCE" <<EOF
