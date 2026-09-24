@@ -29,8 +29,12 @@ git fetch --tags --force origin
 git checkout --detach "$VERSION"
 [[ "$(git rev-parse HEAD)" == "$(git rev-parse "$VERSION")" ]]
 
-make lib_install || true # gomobile may already be installed
+# Install official gomobile (the sagernet fork from the sing-box build has no
+# `bind` package). CGO is not needed for the binding itself.
+go install golang.org/x/mobile/cmd/gomobile@latest
+go install golang.org/x/mobile/cmd/gobind@latest
 export PATH="$PATH:$(go env GOPATH)/bin"
+gomobile init || true
 
 # The gomobile binding source lives in-repo (underscore dir: invisible to go vet).
 cp -r "$ROOT/scripts/_tgws_binding" libtgws
