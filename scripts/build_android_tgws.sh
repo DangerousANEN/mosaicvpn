@@ -32,8 +32,9 @@ git checkout --detach "$VERSION"
 make lib_install || true # gomobile may already be installed
 export PATH="$PATH:$(go env GOPATH)/bin"
 
-# The gomobile binding source lives in-repo next to this script.
-cp -r "$ROOT/scripts/tgws_binding" libtgws
+# The gomobile binding source lives in-repo (underscore dir: invisible to go vet).
+cp -r "$ROOT/scripts/_tgws_binding" libtgws
+rm -f libtgws/livecheck 2>/dev/null || true
 
 # bind: single AAR covering all ABIs via gomobile's android target.
 gomobile bind -v -androidapi 26 \
