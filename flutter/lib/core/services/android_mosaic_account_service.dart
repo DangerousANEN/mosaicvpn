@@ -905,6 +905,22 @@ class AndroidMosaicAccountService {
     if (outbounds.isEmpty) {
       throw StateError('Для выбранной Smart Group нет доступных кандидатов.');
     }
+    // Client-side reachability gate (Exclave/SagerNet-style urltest): the
+    // collector marks nodes proxy_ok from a datacenter vantage with no
+    // filtering, but residential/mobile Russian ISPs silently drop TLS to
+    // many of them (SNI filtering). A TCP connect from THIS device is the
+    // honest first-order filter: endpoints the current network cannot reach
+    // can never carry the tunnel, and a urltest group built from them yields
+    // a "connected" badge over a black-holed route. Skipped for an explicit
+    // single-candidate connect so real proxy errors still surface.
+    if (candidateID == null && outbounds.length > 1) {
+      outbounds = await filterReachableOutbounds(outbounds);
+      if (outbounds.isEmpty) {
+        throw StateError(
+            'Все ноды выбранной группы недоступны из текущей сети. '
+            'Попробуйте другую группу или обновите маршрут.');
+      }
+    }
     return _buildTunConfig(
       outbounds,
       bypassPackages: bypassPackages,
@@ -917,6 +933,53 @@ class AndroidMosaicAccountService {
     );
   }
 
+  /// Concurrent TCP-connect probe of every candidate endpoint (default 3s
+  /// timeout). Returns the reachable entries ordered by measured latency,
+  /// fastest first, so the config's top-6 shard is the best reachable set
+  /// rather than the shard's nominal ranking. Endpoints without a usable
+  /// host/port are kept unchanged: their viability is decided by the
+  /// sing-box urltest at runtime.
+  @visibleForTesting
+  static Future<List<Map<String, dynamic>>> filterReachableOutbounds(
+    List<Map<String, dynamic>> outbounds, {
+    Duration timeout = const Duration(seconds: 3),
+  }) async {
+    final probes = <Future<Map<String, dynamic>?>>[];
+    for (final outbound in outbounds) {
+      final host = outbound['server']?.toString() ?? '';
+      final port =
+          int.tryParse(outbound['server_port']?.toString() ?? '') ?? 0;
+      if (host.isEmpty || port <= 0) {
+        probes.add(Future.value(outbound));
+        continue;
+      }
+      final sw = Stopwatch()..start();
+      probes.add(Socket.connect(host, port, timeout: timeout).then(
+        (socket) {
+          sw.stop();
+          socket.destroy();
+          return outbound
+            ..['mosaic_client_latency_ms'] = sw.elapsedMilliseconds;
+        },
+        onError: (_) => null,
+      ));
+    }
+    final resolved = await Future.wait(probes);
+    final reachable = resolved.whereType<Map<String, dynamic>>().toList()
+      ..sort((a, b) {
+        final aLat = _latencyOf(a);
+        final bLat = _latencyOf(b);
+        if (aLat == null && bLat == null) return 0;
+        if (aLat == null) return 1;
+        if (bLat == null) return -1;
+        return aLat.compareTo(bLat);
+      });
+    return reachable;
+  }
+
+  static int? _latencyOf(Map<String, dynamic> outbound) =>
+      int.tryParse(outbound['mosaic_client_latency_ms']?.toString() ?? '');
+
   /// Fetches the candidate feed of [subscriptionUrl] and returns the outbound
   /// entries belonging to [groupId] (normalized `mosaic_group_ids` matching).
   /// Shared by the TUN config builder and the Android latency-test facade so
@@ -927,12 +990,24 @@ class AndroidMosaicAccountService {
   }) async {
     final cleanUrl = subscriptionUrl.trim().replaceAll(RegExp(r'\.+$'), '');
     final uri = Uri.tryParse(cleanUrl);
-    if (uri == null || !uri.isScheme('https') || uri.pathSegments.length != 1) {
+    // Accept BOTH URL shapes MosaicVPN hands out: the short token form
+    // https://sub.zxc1x1.ru/<token> (enrollment/Telegram) and the full
+    // subscription path /v1/client/app/sub/<uuid> (manual paste, bot deep
+    // link). The opaque candidate ID is always the last non-empty segment;
+    // requiring exactly one segment used to reject manual imports with
+    // "Не удалось определить ссылку MosaicVPN" at connect time.
+    final opaqueSegments =
+        uri?.pathSegments.where((s) => s.isNotEmpty).toList(growable: false) ??
+            const <String>[];
+    if (uri == null ||
+        !uri.isScheme('https') ||
+        uri.host.toLowerCase() != Uri.parse(_baseUrl).host ||
+        opaqueSegments.isEmpty) {
       throw const FormatException('Не удалось определить ссылку MosaicVPN.');
     }
     final candidateUri = uri.replace(
       path:
-          '/api/client-candidates/${Uri.encodeComponent(uri.pathSegments.single)}',
+          '/api/client-candidates/${Uri.encodeComponent(opaqueSegments.last)}',
       query: null,
     );
     final response = await _dio.getUri<Object>(

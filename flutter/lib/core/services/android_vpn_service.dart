@@ -88,10 +88,16 @@ class AndroidVpnService {
   /// Validates the config, starts the service and waits for its first terminal
   /// runtime state. Native Android service startup is asynchronous, so callers
   /// must not treat the initial `connecting` reply as a ready tunnel.
+  ///
+  /// The native egress verifier retries with settling delays that sum to
+  /// ~12.6s of sleep plus up to six 4s probes (~36s worst case). A 12s budget
+  /// here used to preempt the verifier mid-flight and surface "не подтвердил
+  /// запуск" even when the tunnel would have passed at 15s. Match the native
+  /// worst case instead.
   Future<AndroidVpnRuntimeState> startAndAwaitReady(
     String singBoxConfig, {
     String? routeTitle,
-    Duration timeout = const Duration(seconds: 12),
+    Duration timeout = const Duration(seconds: 45),
   }) async {
     await validateConfig(singBoxConfig);
     var state = await start(singBoxConfig, routeTitle: routeTitle);
