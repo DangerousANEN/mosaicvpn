@@ -28,7 +28,13 @@ class TgWsBooster {
       );
       _running = (res['running'] as bool? ?? false);
       _port = (res['port'] as num?)?.toInt() ?? 0;
-      return res;
+      // The engine reports its port asynchronously (stdout LISTENING line);
+      // poll briefly until the bridge has parsed it.
+      for (var i = 0; i < 20 && _running && _port == 0; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await status();
+      }
+      return {'running': _running, 'port': _port};
     } on PlatformException {
       // Platform without the embedded engine (desktop / tests): no-op.
       return {'running': false, 'port': 0};

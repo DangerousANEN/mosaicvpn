@@ -1,52 +1,97 @@
 package ru.mosaicvpn.mosaic_vpn
 
+import android.content.Context
 import android.util.Log
-import tgws.Proxy
-import java.util.concurrent.atomic.AtomicReference
+import java.io.File
 
 /**
- * Telegram resilience layer: runs the embedded tg-ws-proxy engine (MIT,
- * github.com/d0mhate/-tg-ws-proxy-Manager-go) as a local SOCKS5 server that
- * carries Telegram DC traffic over WebSocket+TLS to kws*.web.telegram.org
- * (Telegram domains behind Cloudflare). Works both while the VPN tunnel is
- * up (as a split-tunnel route for Telegram DC ranges) and standalone.
+ * Telegram resilience layer: runs the tg-ws-proxy engine (MIT,
+ * github.com/d0mhate/-tg-ws-proxy-Manager-go) as a separate native process.
+ *
+ * The engine is a plain Go binary shipped in jniLibs (executable, like
+ * libbox.so). Running it out-of-process avoids the two-gomobile-runtimes
+ * clash: the app already embeds libgojni.so from sing-box, so a second
+ * gomobile AAR can never coexist in the same classloader. A subprocess also
+ * means an engine crash can never take the app down.
+ *
+ * Lifecycle: start() spawns `libtgws.so -mode socks -port <free> -host
+ * 127.0.0.1`; the engine prints `LISTENING 127.0.0.1:<port>` on stdout and
+ * we parse it. stop() destroys the process.
  */
 object TgWsBridge {
     private const val TAG = "TgWsBridge"
+    private const val ENGINE_LIB = "libtgws.so"
 
-    private val proxyRef = AtomicReference<Proxy?>(null)
-
-    /** Engine port, or 0 when the engine is not running. */
-    @Volatile
-    var port: Int = 0
+    @Volatile var port: Int = 0
+        private set
+    @Volatile var running: Boolean = false
         private set
 
-    fun start() {
-        if (proxyRef.get() != null) return
-        synchronized(this) {
-            if (proxyRef.get() != null) return
+    private var process: Process? = null
+    private var deathWatch: Thread? = null
+
+    fun engineBinary(context: Context): File {
+        return File(context.applicationInfo.nativeLibraryDir, ENGINE_LIB)
+    }
+
+    @Synchronized
+    fun start(context: Context): Int {
+        if (process != null && process!!.isAlive) return port
+        val bin = engineBinary(context)
+        if (!bin.exists() || !bin.canExecute()) {
+            Log.e(TAG, "engine binary missing: ${bin.absolutePath}")
+            throw IllegalStateException("tgws engine binary missing")
+        }
+        val p = ProcessBuilder(bin.absolutePath, "-mode", "socks", "-host", "127.0.0.1", "-port", "0")
+            .redirectErrorStream(true)
+            .start()
+        process = p
+        running = true
+
+        // Read stdout for the LISTENING line (engine picks a free port when
+        // -port 0). Fall back to a bounded wait if stdout is quiet.
+        val stdout = p.inputStream.bufferedReader()
+        deathWatch = Thread {
             try {
-                val proxy = Proxy()
-                proxy.start()
-                proxyRef.set(proxy)
-                port = proxy.port().toInt()
-                Log.i(TAG, "tg-ws-proxy engine listening on 127.0.0.1:$port")
+                while (true) {
+                    val line = stdout.readLine() ?: break
+                    if (line.startsWith("LISTENING ")) {
+                        val addr = line.removePrefix("LISTENING ").trim()
+                        port = addr.substringAfterLast(':').toIntOrNull() ?: 0
+                        Log.i(TAG, "tg-ws-proxy engine listening on $addr")
+                    } else {
+                        Log.d(TAG, "engine: ${line.take(300)}")
+                    }
+                }
             } catch (e: Exception) {
-                Log.e(TAG, "tg-ws-proxy engine failed to start", e)
-                port = 0
+                Log.d(TAG, "engine stdout closed", e)
+            } finally {
+                running = false
+                Log.w(TAG, "tg-ws-proxy engine exited (port=$port)")
             }
-        }
+        }.apply { isDaemon = true; start() }
+        return port
     }
 
+    @Synchronized
     fun stop() {
-        val proxy = proxyRef.getAndSet(null) ?: return
-        try {
-            proxy.stop()
-        } catch (e: Exception) {
-            Log.w(TAG, "tg-ws-proxy engine stop error", e)
-        }
+        val p = process ?: return
+        process = null
+        running = false
         port = 0
+        try {
+            p.destroy()
+            // SIGTERM grace, then SIGKILL.
+            val w = Thread { try { p.waitFor() } catch (_: InterruptedException) {} }
+            w.start(); w.join(1500)
+            if (p.isAlive) p.destroyForcibly()
+        } catch (e: Exception) {
+            Log.w(TAG, "engine stop error", e)
+        }
     }
 
-    fun running(): Boolean = proxyRef.get()?.running() ?: false
+    fun status(): Map<String, Any> = mapOf(
+        "running" to running,
+        "port" to port
+    )
 }
