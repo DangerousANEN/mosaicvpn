@@ -6243,7 +6243,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             "provider_name": "MosaicVPN",
             "user_tier": "standard",
             "app_update": {
-                "version": "0.3.61",
+                "version": "0.3.62",
                 "download_url": "https://sub.zxc1x1.ru/",
                 "changelog": "Новый бустер устойчивости Telegram: трафик Telegram идёт через WebSocket-мост даже при нестабильном маршруте. Также — живое тестирование смарт-групп, вход через сайт и статистика трафика в кабинете."
             },
