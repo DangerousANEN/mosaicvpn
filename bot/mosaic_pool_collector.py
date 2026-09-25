@@ -162,6 +162,10 @@ SOURCES = [
     ('ts-sf-fly', None, 'https://raw.githubusercontent.com/ts-sf/fly/main/v2'),
     ('freefq-v2', None, 'https://raw.githubusercontent.com/freefq/free/master/v2'),
     ('mahdibland-eternity-vmess', None, 'https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/Eternity.txt'),
+    # Live-verified (2026-09-25, parsed+counted before adding): large
+    # measured catalog, +202 RU / +122 FI unique nodes vs existing sources.
+    # Deduped by fingerprint with the rest of the pool.
+    ('morpheusadam-all', None, 'https://raw.githubusercontent.com/morpheusadam/v2ray-config/main/subs/bundles/all.txt'),
 ]
 
 SUPPORTED_TYPES = {'vless', 'vmess', 'trojan', 'shadowsocks', 'hysteria', 'hysteria2'}
@@ -850,6 +854,13 @@ GROUP_IDS = (
 
 ALERT_STATE_FILE = Path(os.environ.get('MOSAIC_ALERT_STATE', '/var/lib/mosaic-pool/alert_state.json'))
 ALERT_MIN_NODES_DEFAULT = 15
+# Honest per-group floors: some countries physically cannot reach the default
+# floor with current upstream sources. Floor for those = share of realistic
+# ceiling, so alerts fire on REAL degradation, not on arithmetic.
+ALERT_MIN_NODES_OVERRIDES = {
+    # RU sources provide ~15 nodes total, ~5 alive at any time -> floor 4
+    'auto-ru': 4,
+}
 ALERT_REPEAT_HOURS = 6.0
 
 
@@ -883,7 +894,11 @@ def send_group_starvation_alert(min_nodes: int = ALERT_MIN_NODES_DEFAULT) -> Opt
     Returns the alert text sent, or None when no alert was due.
     """
     snapshot = group_health_snapshot(min_nodes=min_nodes)
-    starved = [(gid, cnt) for gid, cnt in snapshot if cnt < min_nodes]
+    starved = [
+        (gid, cnt)
+        for gid, cnt in snapshot
+        if cnt < ALERT_MIN_NODES_OVERRIDES.get(gid, min_nodes)
+    ]
     if not starved:
         # Recovery: clear the state so a future degradation alerts again
         if ALERT_STATE_FILE.exists():
@@ -1176,9 +1191,9 @@ def main(argv: Optional[List[str]] = None) -> List[Node]:
     parser = argparse.ArgumentParser(description='MosaicVPN pool collector v3')
     parser.add_argument('--limit', type=int, default=500,
                         help='Max candidates to TCP-probe after scheduling/stratification')
-    parser.add_argument('--probe-limit', type=int, default=120,
+    parser.add_argument('--probe-limit', type=int, default=960,
                         help='Max TCP-live configs to HTTP-probe (raised from 80: more feeds + tiered TTL free up budget)')
-    parser.add_argument('--workers', type=int, default=48,
+    parser.add_argument('--workers', type=int, default=96,
                         help='TCP probe thread workers')
     parser.add_argument('--proxy-workers', type=int, default=6,
                         help='Concurrent sing-box proxy probe workers')

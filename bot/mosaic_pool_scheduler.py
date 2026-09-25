@@ -42,7 +42,7 @@ DEFAULT_MAX_CANDIDATES_IN_STATE: int = 50000  # Hard ceiling on tracked candidat
 
 # Target countries and quotas matching collector auto/named groups
 DEFAULT_TARGET_COUNTRIES: Tuple[str, ...] = (
-    "DE", "NL", "US", "FR", "CA", "GB", "FI", "PL", "SG", "JP",
+    "RU", "DE", "NL", "US", "FR", "CA", "GB", "FI", "PL", "SG", "JP",
 )
 DEFAULT_COUNTRY_TARGET_QUOTA: int = 40
 DEFAULT_COUNTRY_TARGETS: Dict[str, int] = {
