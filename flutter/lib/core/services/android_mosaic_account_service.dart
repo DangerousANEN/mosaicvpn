@@ -1017,6 +1017,42 @@ class AndroidMosaicAccountService {
   /// Warm entries (probed <10 min ago on the same network) are used from the
   /// cache without re-probing, so a repeat connect skips the sweep entirely.
   /// Cold entries are probed concurrently and the results are stored back.
+  /// Full TLS-level reachability probe: TCP connect + TLS ClientHello with
+  /// the node's REAL SNI. RU-side DPI silently drops the ClientHello for most
+  /// masked public nodes (TCP syn-ack succeeds, TLS handshake times out), so
+  /// a TCP-only probe happily admits nodes the tunnel can never use. This is
+  /// the client-side ground truth the shard ranking relies on.
+  ///
+  /// Returns true when the TLS handshake completes. Never throws.
+  static Future<bool> _tlsProbe(String host, int port,
+      Map<String, dynamic> outbound, Duration timeout) async {
+    final tlsCfg = outbound['tls'];
+    String sni = host;
+    if (tlsCfg is Map<String, dynamic>) {
+      final declared = tlsCfg['server_name']?.toString() ?? '';
+      if (declared.isNotEmpty) sni = declared;
+    }
+    Socket? raw;
+    try {
+      raw = await Socket.connect(host, port, timeout: timeout);
+      // SecureSocket.secure performs the TLS handshake with an explicit
+      // serverHostname (SNI), which for masked nodes differs from the dialed
+      // IP/host. Certificate validation is skipped: we only care whether the
+      // handshake completes (DPI drops it for dead nodes).
+      final secure = await SecureSocket.secure(
+        raw,
+        host: sni,
+        onBadCertificate: (_) => true,
+      ).timeout(timeout);
+      secure.destroy();
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      raw?.destroy();
+    }
+  }
+
   @visibleForTesting
   static Future<List<Map<String, dynamic>>> filterReachableOutbounds(
     List<Map<String, dynamic>> outbounds, {
@@ -1058,10 +1094,10 @@ class AndroidMosaicAccountService {
         continue;
       }
       final sw = Stopwatch()..start();
-      probes.add(Socket.connect(host, port, timeout: timeout).then(
-        (socket) {
+      probes.add(_tlsProbe(host, port, outbound, timeout).then(
+        (ok) {
           sw.stop();
-          socket.destroy();
+          if (!ok) return null;
           _storeReach(host, port, sw.elapsedMilliseconds);
           checked++;
           alive++;
@@ -1075,20 +1111,10 @@ class AndroidMosaicAccountService {
           return outbound
             ..['mosaic_client_latency_ms'] = sw.elapsedMilliseconds;
         },
-        onError: (_) {
-          checked++;
-          ConnectProgressBus.instance.publish(ConnectPhaseEvent(
-            phase: 'sweeping',
-            detail: 'Перебор нод группы',
-            candidatesTotal: cold,
-            candidatesChecked: checked,
-            candidatesAlive: alive,
-          ));
-          return null;
-        },
       ));
     }
     final resolved = await Future.wait(probes);
+    checked = resolved.where((r) => r != null).length;
     final reachable = resolved.whereType<Map<String, dynamic>>().toList()
       ..sort((a, b) {
         final aLat = _latencyOf(a);

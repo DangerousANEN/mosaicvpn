@@ -6334,7 +6334,7 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
                         "latency_ms": lat,
                     })
 
-                sharded = _shard_group_nodes(opaque_id, gid, cands, target=6)
+                sharded = _shard_group_nodes(opaque_id, gid, cands, target=16)
                 for node_rec in sharded:
                     fp = node_rec["fingerprint"]
                     if fp not in seen_nodes:
