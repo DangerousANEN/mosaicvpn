@@ -205,9 +205,9 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      // Animated prompt and badge appear
-      expect(find.text('Нажмите ещё раз для подключения'), findsOneWidget);
-      expect(find.text('Подключить'), findsOneWidget);
+      // Calm selected-state prompt and connect pill appear
+      expect(find.text('Выбран — нажмите для подключения'), findsOneWidget);
+      expect(find.byTooltip('Подключить'), findsOneWidget);
     });
 
     testWidgets('desktop view: selecting a route updates state and prompts user',
@@ -234,7 +234,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(find.byTooltip('Нажмите для подключения'), findsOneWidget);
+      expect(find.byTooltip('Подключить'), findsOneWidget);
     });
   });
 }

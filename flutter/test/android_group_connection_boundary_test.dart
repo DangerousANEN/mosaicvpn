@@ -21,6 +21,7 @@ void main() {
       ]),
     });
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+    AndroidMosaicAccountService.debugSkipReachabilityFilter = true;
     configs.clear();
     adapter = FeedAdapter({'outbounds': [
       node('first', groups: ['free-lte']),

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../../core/services/connect_progress_bus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/models.dart';
@@ -36,6 +37,8 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
   final UiPreferencesService _uiPrefs = UiPreferencesService();
   bool _busy = false;
   bool _isBackgrounded = false;
+  StreamSubscription<ConnectPhaseEvent>? _connectProgressSub;
+  ConnectPhaseEvent? _connectProgress;
 
   @override
   void initState() {
@@ -45,6 +48,17 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
       vsync: this,
       duration: const Duration(milliseconds: 2600),
     );
+    _connectProgressSub = ConnectProgressBus.instance.stream.listen((event) {
+      if (!mounted) return;
+      setState(() => _connectProgress = event);
+      if (event.phase == 'done' || event.phase == 'idle') {
+        Future<void>.delayed(const Duration(seconds: 3), () {
+          if (mounted && _connectProgress?.phase == event.phase) {
+            setState(() => _connectProgress = null);
+          }
+        });
+      }
+    });
   }
 
   @override
@@ -74,6 +88,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
 
   @override
   void dispose() {
+    _connectProgressSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _pulse.stop();
     _pulse.dispose();
@@ -276,6 +291,12 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                       ),
                       const SizedBox(height: 20),
 
+                      // ── Live connect progress: node sweep + phases ──
+                      if (_connectProgress != null &&
+                          !connected &&
+                          (connecting || status.isVerifying))
+                        _ConnectProgressCard(event: _connectProgress!),
+
                       // ── Sleek Atlas Route Selector Card ──
                       _AtlasRouteSelectorCard(
                         selected: selected,
@@ -451,25 +472,34 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
   /// Aborts an in-flight connection attempt (selector sweep, monitor, daemon
   /// runtime) without leaving the dashboard in a busy state. Safe when the
   /// attempt already finished: _waitForDisconnected is a no-op then.
+  ///
+  /// The CANCEL must feel instant. The native stop already marks the runtime
+  /// `disconnected` synchronously before cleanup completes, so the UI state
+  /// flips the moment this method starts; teardown continues in the
+  /// background and any residual error is logged, not surfaced as a dialog —
+  /// the user asked to stop, not to fix.
   Future<void> _cancelConnect() async {
     final api = ref.read(daemonApiProvider);
-    try {
-      SmartGroupRuntimeController.instance.stop();
-      _smartGroupSelector.cancel();
-      _smartGroupSelector.resetCancel();
-      await api.disconnect();
-      await _waitForDisconnected(api);
-      ref.invalidate(vpnStatusProvider);
-    } catch (error) {
-      debugPrint('[HERO_COMPASS] _cancelConnect ERROR: $error');
-      if (mounted) {
-        _notice(
-            '${AppStrings.of(context).t('connection_failed')} ${_connectionErrorDetail(error)}',
-            error: true);
+    // Flip UI immediately: busy off, progress cleared, status re-read.
+    setState(() {
+      _busy = false;
+      _connectProgress = null;
+    });
+    ConnectProgressBus.instance.publishSimple('idle', 'Отменено');
+    ref.invalidate(vpnStatusProvider);
+    ref.read(connectingRouteProvider.notifier).end();
+    unawaited(() async {
+      try {
+        SmartGroupRuntimeController.instance.stop();
+        _smartGroupSelector.cancel();
+        _smartGroupSelector.resetCancel();
+        await api.disconnect();
+        await _waitForDisconnected(api);
+        if (mounted) ref.invalidate(vpnStatusProvider);
+      } catch (error) {
+        debugPrint('[HERO_COMPASS] _cancelConnect ERROR: $error');
       }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    }());
   }
 
   Future<void> _toggle(VpnStatus status, _RouteChoice selected) async {
@@ -500,6 +530,8 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
           return;
         }
       }
+      ref.read(connectingRouteProvider.notifier).begin(selected.id);
+      try {
       if (selected.disabled) {
         final disabledLabel = selected.disabledReason.isEmpty
             ? 'Маршрут временно отключён.'
@@ -540,6 +572,9 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
             when subId.isNotEmpty) {
           await _uiPrefs.writeLastConnectedSubscriptionId(subId);
         }
+      }
+      } finally {
+        ref.read(connectingRouteProvider.notifier).end();
       }
       ref.invalidate(vpnStatusProvider);
     } catch (error, stackTrace) {
@@ -2117,3 +2152,88 @@ class _QuickControlsRow extends ConsumerWidget {
   }
 }
 
+
+/// Live connect progress card: shows the actual phase of the connect
+/// pipeline and, during the node sweep, a linear progress with counts
+/// (checked / total, alive). This answers "what is the app doing while I
+/// wait" without dumping the full node table onto the dashboard.
+class _ConnectProgressCard extends StatelessWidget {
+  const _ConnectProgressCard({required this.event});
+
+  final ConnectPhaseEvent event;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeColors.of(context);
+    final sweeping = event.isSweeping && event.candidatesTotal > 0;
+    final fraction = sweeping
+        ? (event.candidatesChecked / event.candidatesTotal).clamp(0.0, 1.0)
+        : null;
+
+    final label = switch (event.phase) {
+      'fetching' => 'Получение списка нод с сервера…',
+      'sweeping' => sweeping
+          ? 'Перебор нод: ${event.candidatesChecked}/${event.candidatesTotal}'
+          : 'Перебор нод группы…',
+      'connecting' => 'Поднимаем защищённый туннель…',
+      'verifying' => 'Проверяем связь через туннель…',
+      'done' => 'Подключено',
+      _ => event.detail,
+    };
+
+    final aliveSuffix = sweeping && event.candidatesAlive > 0
+        ? '  ·  доступно: ${event.candidatesAlive}'
+        : '';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: c.bgElevated.withValues(alpha: .6),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AtlasTheme.accent.withValues(alpha: .25)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '$label$aliveSuffix',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: c.textPrimary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (fraction != null) ...[
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: fraction,
+                  minHeight: 4,
+                  backgroundColor: c.border,
+                  color: AtlasTheme.accent,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}

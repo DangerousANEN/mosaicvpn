@@ -1142,3 +1142,20 @@ class SelectedRouteNotifier extends StateNotifier<String?> {
     }
   }
 }
+
+/// Route currently being connected from ANY tab (dashboard compass, route
+/// table, picker sheet). The route tab previously tracked only its own local
+/// `_connectingId`, so a connect started from the dashboard showed no
+/// connecting state in the routes list — two views disagreed. This shared
+/// notifier is the single source of truth for "which route is connecting".
+class ConnectingRouteNotifier extends StateNotifier<String?> {
+  ConnectingRouteNotifier() : super(null);
+
+  void begin(String routeId) => state = routeId;
+  void end() => state = null;
+}
+
+final connectingRouteProvider =
+    StateNotifierProvider<ConnectingRouteNotifier, String?>((ref) {
+  return ConnectingRouteNotifier();
+});

@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
 import '../services/android_mosaic_account_service.dart';
+import '../services/connect_progress_bus.dart';
 import '../services/android_vpn_service.dart';
 import '../services/ui_preferences_service.dart';
 import 'unavailable_daemon_api.dart';
@@ -122,36 +123,31 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     );
     final state = await vpn.startAndAwaitReady(config, routeTitle: route.name);
     await vpn.appendNativeLog(
-      '[ROUTE] sing-box startup state: isConnected=${state.isConnected}, error=${state.error ?? "none"}',
+      '[ROUTE] sing-box startup state: state=${state.state}, error=${state.error ?? "none"}',
     );
-    if (!state.isConnected) {
+    if (state.state == 'error') {
       throw StateError(
         state.error?.trim().isNotEmpty == true
             ? state.error!
-            : 'Android VPN runtime не подтвердил подключение.',
+            : 'Android VPN runtime не подтвердил запуск.',
       );
     }
 
-    // "The runtime reports connected" is not "traffic flows". A core can start
-    // cleanly and still move zero bytes — sing-box multiplex against an Xray
-    // peer is the canonical case: the config validates, the service reports
-    // connected, and every stream is silently dropped. Committing the route
-    // here would show a green shield over a dead tunnel, which for a VPN is
-    // worse than a visible error. So prove it carries traffic first.
-    final verified = await _verifyTunnelCarriesTraffic();
-    if (!verified) {
-      await vpn.appendNativeLog(
-        '[ROUTE] ERROR: Tunnel verification failed for "${route.name}". Stopping VPN to prevent dead tunnel.',
-      );
-      await vpn.stop();
-      throw StateError(
-        'Туннель запустился, но не пропускает трафик. '
-        'Маршрут отклонён — попробуйте другой.',
-      );
+    // Egress verification is NOT awaited here. The native service runs its
+    // own verifier in the background (session-tokened): it transitions
+    // `verifying` → `connected` on the first successful HTTP 204 through the
+    // tunnel, or → `error` (and tears the TUN down) when every probe fails.
+    if (state.state == 'verifying') {
+      ConnectProgressBus.instance
+          .publishSimple('verifying', 'Проверяем связь через туннель');
+    } else if (state.state == 'connected') {
+      ConnectProgressBus.instance
+          .publishSimple('done', 'Подключено');
     }
-    await vpn.appendNativeLog(
-      '[ROUTE] Tunnel verification PASSED for "${route.name}". Committing active route.',
-    );
+    // This mirrors the Exclave/SagerNet connect model: the tunnel is up in
+    // ~1-2s, traffic is proven asynchronously, and a dead candidate surfaces
+    // through status polling as an honest error instead of stalling the
+    // button for 30-60s of stacked synchronous probes.
     _activeRoute = route;
     _activeRouteConfigFingerprint = configFingerprint;
   }
@@ -454,10 +450,22 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     });
   }
 
+  Future<String> _currentNetworkFingerprint() async {
+    try {
+      final state = await AndroidVpnService.instance.status();
+      return state.networkFingerprint;
+    } catch (_) {
+      return '';
+    }
+  }
+
   @override
   Future<VpnStatus> getStatus() async {
     final state = await AndroidVpnService.instance.status();
-    if (!state.isConnected) {
+    if (!state.isConnected && !state.isBusy) {
+      // Only a terminal failure clears the route. While the runtime is
+      // `verifying` the TUN is already up: keep the route so the dashboard
+      // shows which route is being verified instead of an anonymous spinner.
       _activeRoute = null;
       _lastMeasuredLatencyMS = 0;
       _lastLatencyProbeAt = null;
@@ -478,7 +486,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       state: state.state,
       networkFingerprint: state.networkFingerprint,
       tunnelMode: 'tun',
-      server: state.isConnected ? _activeRoute : null,
+      server: (state.isConnected || state.isBusy) ? _activeRoute : null,
       lastError: state.error ?? '',
       latencyMS: state.isConnected ? _lastMeasuredLatencyMS : 0,
     );
@@ -535,6 +543,10 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     if (candidateID != null && group.routeType == 'direct') {
       throw StateError('Этот маршрут не поддерживает выбор кандидата.');
     }
+    // Prime the endpoint reachability cache for the CURRENT network so any
+    // cached probe verdicts belong to this network, not a previous Wi-Fi/ISP.
+    AndroidMosaicAccountService.primeReachabilityCache(
+        await _currentNetworkFingerprint());
     final config = group.routeType == 'direct'
         ? await _account.buildNativeTunConfigFromSubscriptionUrl(
             resolved.$1.url,

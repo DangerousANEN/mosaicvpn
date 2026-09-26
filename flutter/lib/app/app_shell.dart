@@ -14,6 +14,7 @@ import '../core/models/subscription.dart';
 import '../core/providers/vpn_providers.dart';
 import '../core/i18n/app_strings.dart';
 import '../core/services/android_mosaic_account_service.dart';
+import '../core/services/android_smart_group_pool_keeper.dart';
 import '../core/services/android_vpn_service.dart';
 import '../core/services/desktop_instance_lock.dart';
 import '../core/services/elevation_service.dart';
@@ -181,6 +182,15 @@ class _AppShellState extends ConsumerState<AppShell>
   @override
   void initState() {
     super.initState();
+    if (AppPlatform.isAndroid && !_isRunningInTest) {
+      // Background smart-group pool maintenance: refreshes candidate pools
+      // from the control plane and keeps the reachability cache warm (a few
+      // TCP probes per sweep) so repeat connects are instant. Never touches
+      // an active tunnel; pauses automatically while connected. Guarded from
+      // widget tests: a periodic Timer outliving the test tree fails the
+      // flutter_test "timers pending" invariant.
+      AndroidSmartGroupPoolKeeper.instance.start();
+    }
     WidgetsBinding.instance.addObserver(this);
     if (AppPlatform.isDesktop) {
       windowManager.addListener(this);
@@ -1126,4 +1136,15 @@ class _NavDestination {
     required this.activeIcon,
     required this.label,
   });
+}
+
+/// True inside `flutter test` (asserts enabled). Used to skip background
+/// timers that would trip the test binding's timers-pending invariant.
+bool get _isRunningInTest {
+  var inTest = false;
+  assert(() {
+    inTest = true;
+    return true;
+  }());
+  return inTest;
 }

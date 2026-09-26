@@ -91,6 +91,7 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         }
 
         @Volatile private var runtimeError: String? = null
+        @Volatile private var verifySession: Int = 0
         @Volatile private var libboxReady = false
         private val networkPolicy = UnderlyingNetworkPolicy()
         @Volatile private var activeNetworkFingerprint: String = networkPolicy.currentFingerprint()
@@ -263,13 +264,15 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 autoRedirect = false
             })
             appendNativeLog("runtime: sing-box service started")
-            // TUN is up but has not carried a byte yet. Report "connecting"
-            // until an HTTP probe through the tunnel proves real egress;
-            // the old code set "connected" here, so the dashboard showed a
-            // green shield over an unverified (possibly dead) route.
-            runtimeState = "connecting"
+        // TUN is up but has not carried a byte yet. Report "verifying" (a
+        // non-terminal, busy state) instead of blocking the caller: the UI
+        // shows "Проверка связи…" while the async verifier below proves real
+        // egress. This is the Exclave/SagerNet model — the tunnel comes up
+        // instantly and connectivity is proven in the background — so a slow
+        // or dead candidate never stalls the button.
+            runtimeState = "verifying"
             runtimeError = null
-            updateNotification("Подключение…")
+            updateNotification("Проверка связи…")
             verifyTunnelEgress()
         } catch (error: Exception) {
             Log.e(TAG, "Unable to start sing-box runtime", error)
@@ -283,19 +286,23 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
     /// Retries with settling delays (TUN needs ~600ms before first probe),
     /// then flips runtimeState to "connected" or publishes an honest error.
     private fun verifyTunnelEgress() {
+        // A stale verifier from a previous start/reload must never flip the
+        // NEW session's state. Token the session so only the current attempt
+        // can transition to connected/error.
+        val session = ++verifySession
         val verifier = Thread {
             val probeUrl = "http://1.1.1.1/generate_204"
             var attempt = 0
             val delaysMs = longArrayOf(600, 800, 1200, 2000, 3000, 5000)
             while (attempt < delaysMs.size) {
-                // Bail out if the user cancelled while we were probing.
-                if (runtimeState != "connecting") return@Thread
+                // Bail out if the user cancelled or a new session started.
+                if (session != verifySession || runtimeState == "disconnected") return@Thread
                 try {
                     Thread.sleep(delaysMs[attempt])
                 } catch (_: InterruptedException) {
                     return@Thread
                 }
-                if (runtimeState != "connecting") return@Thread
+                if (session != verifySession || runtimeState == "disconnected") return@Thread
                 try {
                     val url = java.net.URL(probeUrl)
                     val conn = url.openConnection() as java.net.HttpURLConnection
@@ -417,7 +424,13 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         runtimeState = "error"
         runtimeError = message
         Log.e(TAG, message)
-        updateNotification("Ошибка подключения")
+        // An error state must not keep the VpnService interface up: Android
+        // shows the key icon in the status bar the moment Builder.establish()
+        // returns, so leaving the TUN alive here keeps "VPN включен" in the
+        // system UI while the app reports the route as failed. Tear the
+        // runtime down (stopping the core + interface + notification) while
+        // preserving the error for the UI to surface.
+        stopRuntime(preserveError = true)
     }
 
     // --- libbox CommandServerHandler -------------------------------------

@@ -14,7 +14,7 @@ class AndroidVpnRuntimeState {
   final String networkFingerprint;
 
   bool get isConnected => state == 'connected';
-  bool get isBusy => state == 'connecting';
+  bool get isBusy => state == 'connecting' || state == 'verifying';
 
   factory AndroidVpnRuntimeState.fromMap(Map<Object?, Object?> raw) {
     return AndroidVpnRuntimeState(
@@ -85,25 +85,31 @@ class AndroidVpnService {
     return AndroidVpnRuntimeState.fromMap(raw ?? const {});
   }
 
-  /// Validates the config, starts the service and waits for its first terminal
-  /// runtime state. Native Android service startup is asynchronous, so callers
-  /// must not treat the initial `connecting` reply as a ready tunnel.
+  /// Validates the config, starts the service and waits only until the
+  /// native runtime has actually raised the TUN interface — NOT until egress
+  /// is verified. This is the Exclave/SagerNet connection model: the tunnel
+  /// comes up within ~1-2s, the caller returns, and connectivity is proven
+  /// asynchronously by the native verifier which transitions
+  /// `verifying` → `connected`/`error` on its own.
   ///
-  /// The native egress verifier retries with settling delays that sum to
-  /// ~12.6s of sleep plus up to six 4s probes (~36s worst case). A 12s budget
-  /// here used to preempt the verifier mid-flight and surface "не подтвердил
-  /// запуск" even when the tunnel would have passed at 15s. Match the native
-  /// worst case instead.
+  /// Waits for the first non-busy state (connected/error) OR the first
+  /// `verifying` state (TUN raised, verification in flight). The terminal
+  /// verdict of verification arrives later via `status()` polling, which the
+  /// dashboard already does through vpnStatusProvider.
   Future<AndroidVpnRuntimeState> startAndAwaitReady(
     String singBoxConfig, {
     String? routeTitle,
-    Duration timeout = const Duration(seconds: 45),
+    Duration timeout = const Duration(seconds: 20),
   }) async {
     await validateConfig(singBoxConfig);
     var state = await start(singBoxConfig, routeTitle: routeTitle);
     final deadline = DateTime.now().add(timeout);
-    while (state.isBusy && DateTime.now().isBefore(deadline)) {
-      await Future<void>.delayed(const Duration(milliseconds: 180));
+    while (DateTime.now().isBefore(deadline)) {
+      // `verifying` = TUN is up; that is the moment the user considers
+      // "connected" in every mainstream client. Return immediately.
+      if (state.state == 'verifying') return state;
+      if (!state.isBusy) return state;
+      await Future<void>.delayed(const Duration(milliseconds: 120));
       state = await status();
     }
     if (state.isBusy) {

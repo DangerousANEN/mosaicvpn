@@ -176,6 +176,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
     final sources = _sourcesFor(legacyManifestAsync.valueOrNull, subscriptions);
     final sharedSubId = ref.watch(selectedSubscriptionIdProvider);
     final sharedRouteId = ref.watch(selectedRouteIdProvider);
+      final sharedConnectingId = ref.watch(connectingRouteProvider);
     final selectedSource = sources.firstWhere(
       (source) => source.id == sharedSubId,
       orElse: () => sources.isNotEmpty ? sources.first : Subscription(),
@@ -419,8 +420,13 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen> {
                                   ? status.activeGroupId
                                   : status.server?.id)
                               : null,
+                          activeConnecting: status?.isConnecting == true,
                           selectedId: sharedRouteId,
-                          connectingId: _connectingId,
+                          // A connect started from the DASHBOARD (compass or
+                          // picker) previously did not show in this tab: only
+                          // the local _connectingId did. Merge both sources
+                          // so the row reflects the real in-flight attempt.
+                          connectingId: _connectingId ?? sharedConnectingId,
                           sort: _sort,
                           ascending: _ascending,
                           onSort: _applySort,
@@ -2401,6 +2407,7 @@ class _RouteTable extends StatelessWidget {
   const _RouteTable({
     required this.rows,
     required this.activeId,
+    this.activeConnecting = false,
     required this.selectedId,
     required this.connectingId,
     required this.sort,
@@ -2422,6 +2429,11 @@ class _RouteTable extends StatelessWidget {
 
   final List<_RouteRow> rows;
   final String? activeId;
+
+  /// True while the daemon itself reports connecting/verifying (e.g. the
+  /// attempt was started from the dashboard): rows show the sweep spinner
+  /// even though this tab did not initiate it.
+  final bool activeConnecting;
   final String? selectedId;
   final String? connectingId;
   final _RouteSort sort;
@@ -2446,6 +2458,7 @@ class _RouteTable extends StatelessWidget {
       return _MobileRouteList(
         rows: rows,
         activeId: activeId,
+        activeConnecting: activeConnecting,
         selectedId: selectedId,
         connectingId: connectingId,
         onConnect: onConnect,
@@ -2554,7 +2567,8 @@ class _RouteTable extends StatelessWidget {
   DataRow _row(BuildContext context, _RouteRow row, List<_RouteColumn> columns,
       Map<_RouteColumn, double> widths) {
     final connected = activeId == row.id || activeId == 'group:${row.id}';
-    final connecting = connectingId == row.id;
+    final connecting = connectingId == row.id ||
+        (activeConnecting && connected);
     final selected = selectedId == row.id;
     return DataRow(
       selected: connected || selected,
@@ -2714,8 +2728,8 @@ class _RouteTable extends StatelessWidget {
             else if (connected)
               const Padding(
                   padding: EdgeInsets.only(left: 8),
-                  child: Icon(Icons.check_circle_rounded,
-                      color: AtlasTheme.success, size: 18)),
+                  child: Icon(Icons.fiber_manual_record_rounded,
+                      color: AtlasTheme.success, size: 12)),
           ]),
         ),
       _RouteColumn.country => text(_countryLabel(row.country)),
@@ -2729,28 +2743,31 @@ class _RouteTable extends StatelessWidget {
       _RouteColumn.traffic => text(row.traffic),
       _RouteColumn.action => SizedBox(
           width: width,
-          child: selected && !connected && !connecting
-              ? Tooltip(
-                  message: 'Нажмите для подключения',
-                  child: IconButton(
-                    onPressed: () => onConnect(row),
-                    icon: const Icon(
-                      Icons.play_circle_fill_rounded,
-                      color: AtlasTheme.accent,
-                    ),
-                  ),
-                )
-              : IconButton(
-                  tooltip: connected ? 'Отключить' : 'Подключиться',
-                  onPressed:
-                      row.disabled || connecting ? null : () => onConnect(row),
-                  icon: Icon(
-                    connected
-                        ? Icons.check_circle_outline_rounded
-                        : Icons.play_circle_outline_rounded,
-                    color: connected ? AtlasTheme.success : AtlasTheme.accent,
-                  ),
-                ),
+          child: connecting
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+              : selected && !connected
+                  ? _SelectedConnectBadge(
+                      iconOnly: true,
+                      onTap: () => onConnect(row),
+                    )
+                  : connected
+                      ? _ConnectedStopBadge(
+                          compact: true,
+                          onTap: () => onConnect(row),
+                        )
+                      : IconButton(
+                          tooltip: 'Подключиться',
+                          onPressed: row.disabled
+                              ? null
+                              : () => onConnect(row),
+                          icon: const Icon(
+                            Icons.play_circle_outline_rounded,
+                            color: AtlasTheme.accent,
+                          ),
+                        ),
         ),
     };
   }
@@ -2880,8 +2897,74 @@ class _RouteTableLayout {
 }
 
 /// Animated pulsing badge indicating that the route is selected and a second tap will connect.
-class _PulsingConnectBadge extends StatefulWidget {
-  const _PulsingConnectBadge({
+/// Calm stateful badge for a route that is SELECTED and awaiting the second
+/// tap (the connect trigger). Replaces the old pulsing badge: a static pill
+/// with a power icon — clearly tappable, no animation noise.
+class _SelectedConnectBadge extends StatelessWidget {
+  const _SelectedConnectBadge({
+    required this.onTap,
+    this.compact = false,
+    this.iconOnly = false,
+  });
+
+  final VoidCallback onTap;
+  final bool compact;
+
+  /// Narrow desktop action column (56px): render icon only, label would
+  /// overflow the cell.
+  final bool iconOnly;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Подключить',
+      child: Material(
+        color: AtlasTheme.accent,
+        borderRadius: BorderRadius.circular(iconOnly ? 10 : 14),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(iconOnly ? 10 : 14),
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: iconOnly ? 5 : (compact ? 10 : 12),
+              vertical: iconOnly ? 5 : 6,
+            ),
+            child: iconOnly
+                ? const Icon(
+                    Icons.power_settings_new_rounded,
+                    size: 17,
+                    color: AtlasTheme.onAccent,
+                  )
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.power_settings_new_rounded,
+                        size: 15,
+                        color: AtlasTheme.onAccent,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        'Подключить',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: AtlasTheme.onAccent,
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Badge for the CONNECTED route: the row's stop control. Filled success pill
+/// with a stop icon; tooltip explains it disconnects.
+class _ConnectedStopBadge extends StatelessWidget {
+  const _ConnectedStopBadge({
     required this.onTap,
     this.compact = false,
   });
@@ -2890,100 +2973,35 @@ class _PulsingConnectBadge extends StatefulWidget {
   final bool compact;
 
   @override
-  State<_PulsingConnectBadge> createState() => _PulsingConnectBadgeState();
-}
-
-class _PulsingConnectBadgeState extends State<_PulsingConnectBadge>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final Animation<double> _scale;
-  late final Animation<double> _glow;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    )..repeat(reverse: true);
-    _scale = Tween<double>(begin: 0.96, end: 1.04).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
-    _glow = Tween<double>(begin: 0.18, end: 0.42).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return Transform.scale(
-          scale: _scale.value,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: widget.onTap,
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                padding: EdgeInsets.symmetric(
-                  horizontal: widget.compact ? 8 : 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: AtlasTheme.accent.withValues(alpha: 0.18),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: AtlasTheme.accent,
-                    width: 1.5,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AtlasTheme.accent.withValues(alpha: _glow.value),
-                      blurRadius: 8,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.touch_app_rounded,
-                      size: 14,
-                      color: AtlasTheme.accent,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      widget.compact ? 'Подключить' : 'Нажмите для запуска',
-                      style: const TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                        color: AtlasTheme.accent,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+    return Tooltip(
+      message: 'Отключить',
+      child: Material(
+        color: AtlasTheme.success,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Icon(
+              Icons.stop_rounded,
+              size: 16,
+              color: AtlasTheme.onAccent,
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
+
 
 class _MobileRouteList extends StatelessWidget {
   const _MobileRouteList({
     required this.rows,
     required this.activeId,
+    this.activeConnecting = false,
     required this.selectedId,
     required this.connectingId,
     required this.onConnect,
@@ -2997,6 +3015,11 @@ class _MobileRouteList extends StatelessWidget {
 
   final List<_RouteRow> rows;
   final String? activeId;
+
+  /// True while the daemon itself reports connecting/verifying (e.g. the
+  /// attempt was started from the dashboard): rows show the sweep spinner
+  /// even though this tab did not initiate it.
+  final bool activeConnecting;
   final String? selectedId;
   final String? connectingId;
   final ValueChanged<_RouteRow> onConnect;
@@ -3090,20 +3113,34 @@ class _MobileRouteList extends StatelessWidget {
         itemBuilder: (context, index) {
           final row = rows[index];
           final connected = activeId == row.id || activeId == 'group:${row.id}';
-          final connecting = connectingId == row.id;
+          final connecting = connectingId == row.id ||
+              (activeConnecting && connected);
           final selected = selectedId == row.id && !connected && !connecting;
           return Container(
             margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
             decoration: BoxDecoration(
-              color: selected
-                  ? AtlasTheme.accent.withValues(alpha: 0.10)
-                  : connected
-                      ? AtlasTheme.success.withValues(alpha: 0.08)
-                      : null,
+              color: connecting
+                  ? AtlasTheme.accent.withValues(alpha: 0.07)
+                  : selected
+                      ? AtlasTheme.accent.withValues(alpha: 0.08)
+                      : connected
+                          ? AtlasTheme.success.withValues(alpha: 0.07)
+                          : null,
               borderRadius: BorderRadius.circular(12),
-              border: selected
-                  ? Border.all(color: AtlasTheme.accent, width: 1.5)
-                  : null,
+              border: connecting
+                  ? Border.all(
+                      color: AtlasTheme.accent.withValues(alpha: 0.45),
+                      width: 1.2)
+                  : selected
+                      ? Border.all(
+                          color: AtlasTheme.accent.withValues(alpha: 0.7),
+                          width: 1.2)
+                      : connected
+                          ? Border.all(
+                              color:
+                                  AtlasTheme.success.withValues(alpha: 0.5),
+                              width: 1.2)
+                          : null,
             ),
             child: Material(
               color: Colors.transparent,
@@ -3124,30 +3161,32 @@ class _MobileRouteList extends StatelessWidget {
                           : (selected ? AtlasTheme.accent : colors.textPrimary),
                       fontWeight: FontWeight.w700,
                     )),
-                subtitle: selected
+                subtitle: connecting
                     ? Padding(
                         padding: const EdgeInsets.only(top: 3),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.touch_app_rounded,
-                              size: 13,
-                              color: AtlasTheme.accent,
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                'Нажмите ещё раз для подключения',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: AtlasTheme.accent,
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ],
+                        child: Text(
+                          'Устанавливаем соединение…',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: AtlasTheme.accent,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      )
+                    : selected
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Text(
+                          'Выбран — нажмите для подключения',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: colors.textSecondary,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       )
                     : Padding(
@@ -3170,10 +3209,12 @@ class _MobileRouteList extends StatelessWidget {
                       )
                     : Row(mainAxisSize: MainAxisSize.min, children: [
                         if (connected)
-                          const Icon(Icons.check_circle_rounded,
-                              color: AtlasTheme.success, size: 20)
+                          _ConnectedStopBadge(
+                            compact: true,
+                            onTap: () => onPrimaryAction(row),
+                          )
                         else if (selected)
-                          _PulsingConnectBadge(
+                          _SelectedConnectBadge(
                             compact: true,
                             onTap: () => onPrimaryAction(row),
                           ),

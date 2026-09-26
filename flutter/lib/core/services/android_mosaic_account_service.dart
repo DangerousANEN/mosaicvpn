@@ -1,5 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
+
+import 'connect_progress_bus.dart';
+
 import 'dart:math';
 
 import 'package:dio/dio.dart';
@@ -547,6 +550,7 @@ class AndroidMosaicAccountService {
   Future<SubscriptionBaseProfile> getSubscriptionBaseProfile(
     String subscriptionUrl,
   ) async {
+    lastSubscriptionUrl = subscriptionUrl.trim();
     final cleanUrl = subscriptionUrl.trim().replaceAll(RegExp(r'\.+$'), '');
     final uri = Uri.tryParse(cleanUrl);
     if (uri == null ||
@@ -894,6 +898,8 @@ class AndroidMosaicAccountService {
     bool autoFailover = true,
     bool adBlock = false,
   }) async {
+    ConnectProgressBus.instance
+        .publishSimple('fetching', 'Получение списка нод с сервера');
     var outbounds =
         await fetchGroupCandidates(subscriptionUrl, groupId: groupId);
     if (candidateID != null) {
@@ -913,7 +919,7 @@ class AndroidMosaicAccountService {
     // can never carry the tunnel, and a urltest group built from them yields
     // a "connected" badge over a black-holed route. Skipped for an explicit
     // single-candidate connect so real proxy errors still surface.
-    if (candidateID == null && outbounds.length > 1) {
+    if (candidateID == null && outbounds.length > 1 && !debugSkipReachabilityFilter) {
       outbounds = await filterReachableOutbounds(outbounds);
       if (outbounds.isEmpty) {
         throw StateError(
@@ -921,6 +927,8 @@ class AndroidMosaicAccountService {
             'Попробуйте другую группу или обновите маршрут.');
       }
     }
+    ConnectProgressBus.instance
+        .publishSimple('connecting', 'Поднимаем туннель');
     return _buildTunConfig(
       outbounds,
       bypassPackages: bypassPackages,
@@ -933,17 +941,106 @@ class AndroidMosaicAccountService {
     );
   }
 
+  /// Reachability cache: endpoint -> (latency ms, checked-at). Probed on
+  /// connect and refreshed by the background pool keeper. A warm cache makes
+  /// the second connect to the same group near-instant: no TCP sweep at all,
+  /// straight to config + TUN raise.
+  ///
+  /// Static because the account service can be recreated across subscription
+  /// refreshes while the reachability knowledge is network-, not
+  /// subscription-scoped.
+  static final Map<String, _ReachCacheEntry> _reachCache = {};
+  static String _reachCacheScope = '';
+
+  static void primeReachabilityCache(String networkScope) {
+    if (_reachCacheScope == networkScope) return;
+    // Network changed: reachability from the old network says nothing about
+    // the new one. Drop everything rather than serve stale verdicts.
+    _reachCache.clear();
+    _reachCacheScope = networkScope;
+  }
+
+  static String _reachKey(String host, int port) => '$host:$port';
+
+  /// Last subscription URL successfully used by this service instance
+  /// (pool-keeper background refresh reuses it without re-resolving state).
+  static String? lastSubscriptionUrl;
+
+  /// Test-only switch: skips the TCP reachability sweep so widget/unit tests
+  /// on hosts without network access still exercise config construction.
+  static bool debugSkipReachabilityFilter = false;
+
+  /// Endpoints from [endpoints] that are absent from the reachability cache
+  /// (new, potential reserve nodes) or whose verdict is oldest, capped at
+  /// [maxCount]. Feeds the light background sweep.
+  static List<(String, int)> staleReachabilityEndpoints(
+      List<(String, int)> endpoints,
+      {int maxCount = 3}) {
+    final scored = <(String, int), DateTime>{};
+    for (final (host, port) in endpoints) {
+      final entry = _reachCache[_reachKey(host, port)];
+      scored[(host, port)] = entry?.at ?? DateTime.fromMillisecondsSinceEpoch(0);
+    }
+    final ordered = scored.entries.toList()
+      ..sort((a, b) => a.value.compareTo(b.value));
+    return ordered.take(maxCount).map((e) => e.key).toList();
+  }
+
+  /// Public store used by the pool keeper so background probes land in the
+  /// same cache the connect path reads.
+  static void storeReachability(String host, int port, int latencyMs) =>
+      _storeReach(host, port, latencyMs);
+
+
+  static void _storeReach(String host, int port, int latencyMs) {
+    _reachCache[_reachKey(host, port)] =
+        _ReachCacheEntry(latencyMs: latencyMs, at: DateTime.now());
+  }
+
+  static _ReachCacheEntry? _loadReach(String host, int port) {
+    final entry = _reachCache[_reachKey(host, port)];
+    if (entry == null) return null;
+    if (DateTime.now().difference(entry.at) > const Duration(minutes: 10)) {
+      _reachCache.remove(_reachKey(host, port));
+      return null;
+    }
+    return entry;
+  }
+
   /// Concurrent TCP-connect probe of every candidate endpoint (default 3s
   /// timeout). Returns the reachable entries ordered by measured latency,
   /// fastest first, so the config's top-6 shard is the best reachable set
   /// rather than the shard's nominal ranking. Endpoints without a usable
   /// host/port are kept unchanged: their viability is decided by the
   /// sing-box urltest at runtime.
+  ///
+  /// Warm entries (probed <10 min ago on the same network) are used from the
+  /// cache without re-probing, so a repeat connect skips the sweep entirely.
+  /// Cold entries are probed concurrently and the results are stored back.
   @visibleForTesting
   static Future<List<Map<String, dynamic>>> filterReachableOutbounds(
     List<Map<String, dynamic>> outbounds, {
     Duration timeout = const Duration(seconds: 3),
+    bool useCache = true,
   }) async {
+    final cold = outbounds.where((outbound) {
+      final host = outbound['server']?.toString() ?? '';
+      final port =
+          int.tryParse(outbound['server_port']?.toString() ?? '') ?? 0;
+      if (host.isEmpty || port <= 0) return false;
+      return _loadReach(host, port) == null;
+    }).length;
+    if (cold > 0) {
+      ConnectProgressBus.instance.publish(ConnectPhaseEvent(
+        phase: 'sweeping',
+        detail: 'Перебор нод группы',
+        candidatesTotal: cold,
+        candidatesChecked: 0,
+        candidatesAlive: 0,
+      ));
+    }
+    var checked = 0;
+    var alive = 0;
     final probes = <Future<Map<String, dynamic>?>>[];
     for (final outbound in outbounds) {
       final host = outbound['server']?.toString() ?? '';
@@ -953,15 +1050,42 @@ class AndroidMosaicAccountService {
         probes.add(Future.value(outbound));
         continue;
       }
+      final cached = useCache ? _loadReach(host, port) : null;
+      if (cached != null) {
+        alive++;
+        probes.add(Future.value(
+            outbound..['mosaic_client_latency_ms'] = cached.latencyMs));
+        continue;
+      }
       final sw = Stopwatch()..start();
       probes.add(Socket.connect(host, port, timeout: timeout).then(
         (socket) {
           sw.stop();
           socket.destroy();
+          _storeReach(host, port, sw.elapsedMilliseconds);
+          checked++;
+          alive++;
+          ConnectProgressBus.instance.publish(ConnectPhaseEvent(
+            phase: 'sweeping',
+            detail: 'Перебор нод группы',
+            candidatesTotal: cold,
+            candidatesChecked: checked,
+            candidatesAlive: alive,
+          ));
           return outbound
             ..['mosaic_client_latency_ms'] = sw.elapsedMilliseconds;
         },
-        onError: (_) => null,
+        onError: (_) {
+          checked++;
+          ConnectProgressBus.instance.publish(ConnectPhaseEvent(
+            phase: 'sweeping',
+            detail: 'Перебор нод группы',
+            candidatesTotal: cold,
+            candidatesChecked: checked,
+            candidatesAlive: alive,
+          ));
+          return null;
+        },
       ));
     }
     final resolved = await Future.wait(probes);
@@ -1925,4 +2049,11 @@ class AndroidMosaicAccountService {
     config['route'] = route;
     return jsonEncode(config);
   }
+}
+
+class _ReachCacheEntry {
+  _ReachCacheEntry({required this.latencyMs, required this.at});
+
+  final int latencyMs;
+  final DateTime at;
 }
