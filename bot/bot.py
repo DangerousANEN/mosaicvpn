@@ -6243,9 +6243,9 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             "provider_name": "MosaicVPN",
             "user_tier": "standard",
             "app_update": {
-                "version": "0.3.62",
+                "version": "0.3.63",
                 "download_url": "https://sub.zxc1x1.ru/",
-                "changelog": "Новый бустер устойчивости Telegram: трафик Telegram идёт через WebSocket-мост даже при нестабильном маршруте. Также — живое тестирование смарт-групп, вход через сайт и статистика трафика в кабинете."
+                "changelog": "Мгновенное подключение по модели Exclave: туннель поднимается сразу, проверка связи идёт в фоне. Карточка прогресса с перебором нод смарт-группы, быстрая отмена подключения, кеш доступности нод (повторное подключение моментально) и фоновое обновление пула. Исправлен значок VPN в статус-баре при неудачном подключении."
             },
             "groups": groups,
             # A direct route is deliberately separate from Smart Groups. Its
