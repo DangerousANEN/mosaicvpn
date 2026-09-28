@@ -6243,9 +6243,9 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             "provider_name": "MosaicVPN",
             "user_tier": "standard",
             "app_update": {
-                "version": "0.3.64",
+                "version": "0.3.65",
                 "download_url": "https://sub.zxc1x1.ru/",
-                "changelog": "Сильно улучшен выбор нод смарт-групп: клиент проверяет ноды по TLS (а не только TCP), отсеивая недоступные из сетей РФ провайдеров, а сервер выдаёт расширенный список кандидатов на группу. Большинство смарт-групп снова наполнены рабочими нодами."
+                "changelog": "Выбор нод смарт-групп переработан: проверка учитывает протокол ноды (TLS, обычный TCP, QUIC), поэтому рабочие ноды Shadowsocks и Hysteria2 больше не отбрасываются. Если нода не пропускает трафик — приложение автоматически переключается на следующую вместо разрыва соединения."
             },
             "groups": groups,
             # A direct route is deliberately separate from Smart Groups. Its
