@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -49,6 +51,12 @@ class OnboardingWizard extends ConsumerStatefulWidget {
 class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   static const _minPasswordLength = 10;
 
+  final _random = Random.secure();
+
+  /// When false (the default) the account is created with generated
+  /// credentials and the user types nothing at all.
+  bool _useOwnCredentials = false;
+
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _subUrlController = TextEditingController();
@@ -62,7 +70,6 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   String? _notice;
 
   bool _showExistingSubscription = false;
-  bool _showEmailForm = false;
 
   @override
   void initState() {
@@ -150,19 +157,43 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     return raw.isEmpty ? 'Не удалось выполнить действие. Попробуйте ещё раз.' : raw;
   }
 
+  /// Locally generated credentials for the zero-typing signup.
+  ///
+  /// Nobody should have to invent an email and a password before they have
+  /// seen the product work. The account is real and the subscription is real;
+  /// the address is simply a placeholder the user never sees, and the Accounts
+  /// screen lets them attach their own email the moment they want the account
+  /// on a second device.
+  (String, String) _generatedCredentials() {
+    String random(int length) => List.generate(length, (_) => _random.nextInt(36))
+        .map((value) => value.toRadixString(36))
+        .join();
+    return ('mosaic-${random(12)}@mosaic-trial.app', random(24));
+  }
+
   /// PRIMARY PATH: create the account, persist the subscription, connect.
-  /// One tap from the user's perspective; the trial makes it free to try.
+  ///
+  /// One tap, no typing: the credentials are generated locally unless the user
+  /// opened the optional "use my own email" form.
   Future<void> _startFreeAndConnect() async {
-    final email = _emailController.text.trim();
-    final password = _passwordController.text;
-    if (email.isEmpty || !email.contains('@')) {
-      setState(() => _error = 'Введите почту — на неё придёт доступ.');
-      return;
-    }
-    if (password.length < _minPasswordLength) {
-      setState(() => _error =
-          'Пароль от $_minPasswordLength символов. Он защищает ваш аккаунт.');
-      return;
+    String email;
+    String password;
+    if (_useOwnCredentials) {
+      email = _emailController.text.trim();
+      password = _passwordController.text;
+      if (email.isEmpty || !email.contains('@')) {
+        setState(() => _error = 'Введите почту — на неё придёт доступ.');
+        return;
+      }
+      if (password.length < _minPasswordLength) {
+        setState(() => _error =
+            'Пароль от $_minPasswordLength символов. Он защищает ваш аккаунт.');
+        return;
+      }
+    } else {
+      final generated = _generatedCredentials();
+      email = generated.$1;
+      password = generated.$2;
     }
 
     setState(() {
@@ -202,8 +233,9 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
       setState(() {
         _busy = false;
         _error = _friendlyError(error);
-        // Failed sign-up because the mailbox is taken -> offer sign-in.
-        if (_error!.contains('уже есть')) _showEmailForm = true;
+        // A generated address is unique, so this only happens when the user
+        // opted into their own email -> surface the sign-in option.
+        if (_error!.contains('уже есть')) _useOwnCredentials = true;
       });
     }
   }
@@ -340,9 +372,10 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                       const SizedBox(height: 22),
                       _buildBenefitStrip(c),
                       const SizedBox(height: 22),
-                      if (!_showExistingSubscription) _buildAccountCard(c),
-                      if (_showEmailForm && !_showExistingSubscription)
-                        _buildExistingHint(c),
+                      if (!_showExistingSubscription && _useOwnCredentials)
+                        _buildAccountCard(c),
+                      if (!_showExistingSubscription && !_useOwnCredentials)
+                        _buildReassurance(c),
                       if (_showExistingSubscription)
                         _buildExistingSubscriptionCard(c),
                       if (_error != null) ...[
@@ -550,12 +583,48 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     );
   }
 
-  Widget _buildExistingHint(ThemeColors c) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Text(
-        'Уже есть аккаунт? Нажмите «Войти» ниже.',
-        style: TextStyle(fontSize: 12, color: c.textMuted),
+  /// Shown on the default (no-typing) path: explains what will happen and why
+  /// it asks for nothing.
+  Widget _buildReassurance(ThemeColors c) {
+    final rows = <(IconData, String)>[
+      (Icons.touch_app_rounded, 'Аккаунт и доступ на $_trialDays дня создадутся сами'),
+      (Icons.account_balance_rounded, 'Банки, Госуслуги и российские сервисы — напрямую'),
+      (Icons.route_rounded, 'Маршрут подберётся автоматически и переключится при сбое'),
+    ];
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: c.bgCard,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: c.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final (index, row) in rows.indexed) ...[
+            if (index > 0) const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(row.$1, size: 17, color: AtlasTheme.accent),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    row.$2,
+                    style: TextStyle(
+                        fontSize: 12.5, color: c.textSecondary, height: 1.3),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 12),
+          Text(
+            'Почту и пароль можно будет указать позже — в разделе «Аккаунты», '
+            'чтобы входить с других устройств.',
+            style: TextStyle(fontSize: 11.5, color: c.textMuted, height: 1.3),
+          ),
+        ],
       ),
     );
   }
@@ -684,12 +753,16 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (!_showExistingSubscription)
+            if (!_showExistingSubscription && !_useOwnCredentials)
               TextButton(
-                onPressed:
-                    _busy ? null : () => setState(() => _showEmailForm = true),
+                onPressed: _busy
+                    ? null
+                    : () => setState(() {
+                          _useOwnCredentials = true;
+                          _error = null;
+                        }),
                 child: Text(
-                  'Войти',
+                  'Со своей почтой',
                   style: TextStyle(
                     fontSize: 13.5,
                     fontWeight: FontWeight.w600,
@@ -697,7 +770,22 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                   ),
                 ),
               ),
-            if (!_showExistingSubscription)
+            if (!_showExistingSubscription && !_useOwnCredentials)
+              Text('·',
+                  style: TextStyle(fontSize: 13.5, color: c.textMuted)),
+            if (!_showExistingSubscription && _useOwnCredentials)
+              TextButton(
+                onPressed: _busy ? null : _signInAndConnect,
+                child: Text(
+                  'Уже есть аккаунт — войти',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: AtlasTheme.accent,
+                  ),
+                ),
+              ),
+            if (!_showExistingSubscription && _useOwnCredentials)
               Text('·',
                   style: TextStyle(fontSize: 13.5, color: c.textMuted)),
             TextButton(
@@ -718,18 +806,6 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
             ),
           ],
         ),
-        if (_showEmailForm && !_showExistingSubscription)
-          TextButton(
-            onPressed: _busy ? null : _signInAndConnect,
-            child: Text(
-              'Войти с почтой и паролем',
-              style: TextStyle(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w700,
-                color: AtlasTheme.accent,
-              ),
-            ),
-          ),
         TextButton(
           onPressed: _busy ? null : _skip,
           child: Text(

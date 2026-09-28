@@ -1356,11 +1356,39 @@ class AndroidMosaicAccountService {
     return normalized.toString();
   }
 
+  /// Test-visible entry point for the account-payload contract: the production
+  /// callers are async and network-bound, but the parsing rule is what must not
+  /// regress (see test/account_payload_contract_test.dart).
+  @visibleForTesting
+  AndroidMosaicSession debugSessionFromPayload(Map<String, dynamic> payload,
+          {String directKey = 'client_token'}) =>
+      _sessionFromPayload(payload, directKey: directKey);
+
   AndroidMosaicSession _sessionFromPayload(
     Map<String, dynamic> payload, {
     required String directKey,
   }) {
-    final directToken = payload[directKey]?.toString() ?? '';
+    // Two DIFFERENT tokens, and conflating them breaks the client:
+    //   * the profile token (directToken) is the opaque id used to fetch
+    //     configs -- the last path segment of subscription_url;
+    //   * the session token (token) authenticates cabinet/profile calls.
+    // Verified live: Bearer <token> is accepted by /api/profile while
+    // Bearer <url-segment> is rejected with 401.
+    //
+    // The account endpoints (/api/auth/register, /api/auth/login) send `token`
+    // plus a ready `subscription_url`, and send NEITHER `client_token` NOR
+    // `direct_token`. Demanding those keys turned a successful signup into
+    // "Сервис не выдал токен конфигурации для устройства", which is what broke
+    // the one-tap onboarding. The profile token is therefore derived from the
+    // URL when no explicit key is present.
+    var directToken = payload[directKey]?.toString().trim() ?? '';
+    if (directToken.isEmpty) {
+      final url = payload['subscription_url']?.toString().trim() ?? '';
+      final uri = Uri.tryParse(url);
+      if (uri != null && uri.pathSegments.isNotEmpty) {
+        directToken = uri.pathSegments.last.trim();
+      }
+    }
     if (directToken.isEmpty) {
       throw StateError('Сервис не выдал токен конфигурации для устройства.');
     }
