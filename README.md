@@ -47,14 +47,14 @@ system settings.
 
 ## Install
 
-**Latest: v0.3.65** — resilient connect (URL sanitization, graceful candidate
+**Latest: v0.3.66** — resilient connect (URL sanitization, graceful candidate
 fallback, DNS resilience), new France route, mobile menu fix. Downloads:
 
 | Platform | File |
 |---|---|
-| Windows 10/11 x64 | [Setup](https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.65/MosaicVPN-Setup-x64-v0.3.65.exe) · [Portable .zip](https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.65/MosaicVPN-Portable-x64-v0.3.65.zip) |
-| Linux x86_64 | [.deb](https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.65/MosaicVPN_0.3.65_amd64.deb) · [Portable .tar.gz](https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.65/MosaicVPN-Portable-x86_64-v0.3.65.tar.gz) |
-| Android 7.0+ | [.apk](https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.65/MosaicVPN-Android-v0.3.65.apk) |
+| Windows 10/11 x64 | [Setup](https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.66/MosaicVPN-Setup-x64-v0.3.66.exe) · [Portable .zip](https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.66/MosaicVPN-Portable-x64-v0.3.66.zip) |
+| Linux x86_64 | [.deb](https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.66/MosaicVPN_0.3.66_amd64.deb) · [Portable .tar.gz](https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.66/MosaicVPN-Portable-x86_64-v0.3.66.tar.gz) |
+| Android 7.0+ | [.apk](https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.66/MosaicVPN-Android-v0.3.66.apk) |
 
 Landing page with full docs: <https://zxc1x1.ru/>
 

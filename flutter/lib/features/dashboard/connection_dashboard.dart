@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/models.dart';
 import '../../core/api/daemon_api_base.dart';
+import '../../core/providers/billing_provider.dart';
+import '../billing/billing_screen.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/platform/app_platform.dart';
 import '../../core/services/elevation_prompt.dart';
@@ -194,6 +196,15 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     );
   }
 
+  /// Opens the billing screen where the user tops up their balance.
+  /// Reachable from the access strip so renewal is one tap away from the
+  /// screen the user is already looking at.
+  void _openBilling() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const BillingScreen()),
+    );
+  }
+
   bool _isMosaicSubscription(Subscription subscription) {
     if (subscription.id == 'mosaic-direct') return true;
     final uri = Uri.tryParse(subscription.url.trim());
@@ -230,6 +241,15 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
               onRefresh: () => ref.invalidate(vpnStatusProvider),
             ),
             const SizedBox(height: 8),
+
+            // ── Access status strip ──
+            // The single most common support question is "why did it stop
+            // working": the trial ran out. Warning BEFORE the tunnel dies
+            // turns a confusing outage into a calm, one-tap renewal.
+            _AccessStrip(
+              onRenew: () => _openBilling(),
+            ),
+            const SizedBox(height: 6),
 
             // ── The Centerpiece: Hero Compass Dial & Status ──
             Expanded(
@@ -2233,6 +2253,98 @@ class _ConnectProgressCard extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Compact, honest access status strip.
+///
+/// Shows nothing at all while access is comfortably active, so the dashboard
+/// stays calm. It appears when action is needed soon (<= 2 days), when access
+/// has actually lapsed, or when the account is not linked yet -- with a single
+/// primary action that resolves the situation.
+class _AccessStrip extends ConsumerWidget {
+  const _AccessStrip({required this.onRenew});
+
+  final VoidCallback onRenew;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = ThemeColors.of(context);
+    final async = ref.watch(billingProfileProvider);
+    // A billing backend hiccup must never put a scary banner on the dashboard.
+    final profile = async.valueOrNull;
+    if (profile == null) return const SizedBox.shrink();
+
+    final daysLeft = profile.daysLeft;
+    final expired = daysLeft <= 0 ||
+        profile.status.toLowerCase().contains('expired');
+
+    if (expired) {
+      return _strip(
+        c,
+        icon: Icons.error_outline_rounded,
+        color: AtlasTheme.error,
+        text: 'Доступ закончился',
+        actionLabel: 'Пополнить',
+      );
+    }
+    if (daysLeft <= 2) {
+      return _strip(
+        c,
+        icon: Icons.schedule_rounded,
+        color: AtlasTheme.warning,
+        text: daysLeft == 1
+            ? 'Остался 1 день доступа'
+            : 'Осталось $daysLeft дня доступа',
+        actionLabel: 'Продлить',
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
+  Widget _strip(
+    ThemeColors c, {
+    required IconData icon,
+    required Color color,
+    required String text,
+    required String actionLabel,
+  }) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: .32)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 17, color: color),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: c.textPrimary,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: onRenew,
+            style: TextButton.styleFrom(
+              minimumSize: const Size(0, 32),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              foregroundColor: color,
+            ),
+            child: Text(
+              actionLabel,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
       ),
     );
   }

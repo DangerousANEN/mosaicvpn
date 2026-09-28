@@ -89,6 +89,13 @@ API_TOKEN = os.environ.get("MOSAIC_REMNAWAVE_TOKEN", "")
 BASE_URL = os.environ.get("MOSAIC_REMNAWAVE_URL", "https://panel.zxc1x1.ru")
 SQUAD_UUID = "7eea96e4-e8f1-4340-ab81-234fd8a24a85" # Default-Squad
 
+# Free welcome access granted once per account (Telegram /start and website
+# registration). The website copy promises a trial period, so both entry
+# points must hand out the same number of days -- otherwise a user who
+# registers on the site lands on a 0-day account while the page told them
+# a trial was available.
+WELCOME_TRIAL_DAYS = 3
+
 # Credentials come from the environment only; never commit real keys.
 _missing = [n for n, v in (("MOSAIC_BOT_TOKEN", BOT_TOKEN),
                             ("MOSAIC_REMNAWAVE_TOKEN", API_TOKEN)) if not v]
@@ -1210,9 +1217,11 @@ def create_website_account(email, raw_password):
             return None, "exists"
         account_id = _allocate_website_account_id(cursor)
         username = f"web_{abs(account_id)}"
-        # Provision an expired/zero-day remote account now. It receives the
-        # same opaque subscription identity and becomes active after checkout.
-        remote = api_create_user(username, 0, account_id)
+        # Provision the remote account WITH the welcome trial. The previous
+        # days=0 provisioning burned the trial flag while handing the user
+        # nothing, so a website signup landed on an unusable profile even
+        # though setup.html advertises a trial period.
+        remote = api_create_user(username, WELCOME_TRIAL_DAYS, account_id)
         short_uuid = (remote or {}).get("shortUuid") or ""
         if not short_uuid:
             conn.rollback()
@@ -1235,6 +1244,57 @@ def create_website_account(email, raw_password):
     finally:
         conn.close()
     return {"account_id": account_id, "username": username, "short_uuid": short_uuid}, None
+
+
+def attach_website_credentials(account_id, email, raw_password):
+    """Give an auto-created (trial) account real sign-in credentials.
+
+    Why: the in-app one-tap trial creates an account with a locally generated,
+    undisclosed email so the user never has to type anything. That is great for
+    the first launch, but it would strand them on a second device if there were
+    no way to claim the account later. This upgrades the placeholder record to
+    the user's own email/password in place -- same account id, same
+    subscription, no data lost.
+
+    Returns (True, None) on success or (False, reason) where reason is one of
+    'invalid', 'taken', 'not_found', 'provider'.
+    """
+    normalized = _normalize_email(email)
+    password = _validate_password(raw_password)
+    if not _EMAIL_RE.fullmatch(normalized) or password is None:
+        return False, "invalid"
+    now = datetime.datetime.now(datetime.timezone.utc)
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        cursor = conn.cursor()
+        row = cursor.execute(
+            "SELECT email_normalized FROM web_credentials WHERE account_id = ?",
+            (account_id,)).fetchone()
+        if not row:
+            conn.rollback()
+            return False, "not_found"
+        existing = cursor.execute(
+            "SELECT account_id FROM web_credentials WHERE email_normalized = ?",
+            (normalized,)).fetchone()
+        # Re-claiming your own current address is a no-op, not a conflict.
+        if existing and int(existing[0]) != int(account_id):
+            conn.rollback()
+            return False, "taken"
+        salt = secrets.token_bytes(16)
+        cursor.execute(
+            "UPDATE web_credentials SET email_normalized = ?, password_salt = ?, "
+            "password_hash = ?, updated_at = ? WHERE account_id = ?",
+            (normalized, salt, _password_digest(password, salt),
+             now.isoformat(), account_id))
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        logger.error("attach website credentials failed: %s", exc)
+        return False, "provider"
+    finally:
+        conn.close()
+    return True, None
 
 
 def authenticate_website_account(email, raw_password):
@@ -3933,7 +3993,7 @@ def send_welcome(message):
             user_lang = message.from_user.language_code
             lang = "ru" if user_lang and user_lang.lower().startswith("ru") else "en"
             username = f"tg_{telegram_id}"
-            created = api_create_user(username, 3, telegram_id)
+            created = api_create_user(username, WELCOME_TRIAL_DAYS, telegram_id)
             short_uuid = created.get("shortUuid") if created else ""
             save_user(telegram_id, username, short_uuid, lang, 1, None)
             db_user = {"username": username, "short_uuid": short_uuid, "language": lang, "trial_used": 1, "referrer_id": None}
@@ -4003,7 +4063,7 @@ def send_welcome(message):
         
         # Provision a 3-day free trial user
         username = f"tg_{telegram_id}"
-        created = api_create_user(username, 3, telegram_id)
+        created = api_create_user(username, WELCOME_TRIAL_DAYS, telegram_id)
         if created:
             short_uuid = created.get("shortUuid")
         else:
@@ -5431,6 +5491,8 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             return self._handle_password_register()
         if path == "/api/auth/login":
             return self._handle_password_login()
+        if path == "/api/auth/attach":
+            return self._handle_password_attach()
         if path == "/api/auth/recovery/start":
             return self._handle_password_recovery_start()
         if path == "/api/auth/recovery/complete":
@@ -6243,9 +6305,9 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             "provider_name": "MosaicVPN",
             "user_tier": "standard",
             "app_update": {
-                "version": "0.3.65",
+                "version": "0.3.66",
                 "download_url": "https://sub.zxc1x1.ru/",
-                "changelog": "Выбор нод смарт-групп переработан: проверка учитывает протокол ноды (TLS, обычный TCP, QUIC), поэтому рабочие ноды Shadowsocks и Hysteria2 больше не отбрасываются. Если нода не пропускает трафик — приложение автоматически переключается на следующую вместо разрыва соединения."
+                "changelog": "Подключение теперь в один тап: аккаунт создаётся прямо в приложении, 3 дня бесплатно без карты. Настройка маршрутизации (банки и Госуслуги напрямую) применяется автоматически. На главном экране видно остаток дней, продление — в один тап. На экране «Аккаунты» можно закрепить аккаунт за своей почтой, чтобы входить с других устройств."
             },
             "groups": groups,
             # A direct route is deliberately separate from Smart Groups. Its
@@ -6592,6 +6654,35 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             self._send_json(401, {"error": "invalid email or password"})
             return
         self._send_json(200, self._password_session_payload(account))
+
+    def _handle_password_attach(self):
+        """Attach a real email/password to the session's account (trial claim).
+
+        Authenticated by the session token the client already holds, so the
+        user does not have to re-enter anything they were never shown.
+        """
+        payload = self._read_json_body()
+        if not payload:
+            self._send_json(400, {"error": "invalid request"})
+            return
+        auth = self.headers.get("Authorization", "")
+        token = auth[7:].strip() if auth.startswith("Bearer ") else str(payload.get("token") or "")
+        session = get_web_session(token)
+        if not session:
+            self._send_json(401, {"error": "invalid or expired session"})
+            return
+        ok, reason = attach_website_credentials(
+            session["telegram_id"], payload.get("email"), payload.get("password"))
+        if ok:
+            self._send_json(200, {"ok": True})
+            return
+        if reason == "taken":
+            self._send_json(409, {"error": "this email is already used by another account"})
+            return
+        if reason == "not_found":
+            self._send_json(404, {"error": "account not found"})
+            return
+        self._send_json(400, {"error": "use a valid email and a password of 10 to 128 characters"})
 
     def _handle_password_recovery_start(self):
         payload = self._read_json_body()

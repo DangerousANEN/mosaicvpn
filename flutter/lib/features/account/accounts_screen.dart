@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/models.dart';
 import '../../core/providers/vpn_providers.dart';
 import '../../core/theme/atlas_theme.dart';
+import '../../core/services/android_mosaic_account_service.dart';
 import '../groups/subscription_cabinet_screen.dart';
+import 'unified_account_panel.dart' show unifiedAccountProvider;
 
 /// Subscription-first account index.
 ///
@@ -78,6 +80,8 @@ class _AccountsBody extends StatelessWidget {
                           TextStyle(color: colors.textSecondary, height: 1.35),
                     ),
                     const SizedBox(height: 20),
+                    const _ClaimAccountCard(),
+                    const SizedBox(height: 10),
                     if (subscriptions.isEmpty)
                       _EmptyAccounts(colors: colors)
                     else
@@ -263,6 +267,212 @@ class _AccountsError extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Lets the user attach their own email/password to an account that was
+/// auto-created by the one-tap trial.
+///
+/// Motivation: the trial signs the user up with a locally generated address so
+/// first launch needs zero typing. The account is real, but only reachable from
+/// that one device until the user claims it. This card closes that gap -- the
+/// account, its remaining days and its subscription stay exactly the same, they
+/// simply become portable, and password recovery starts working.
+class _ClaimAccountCard extends ConsumerStatefulWidget {
+  const _ClaimAccountCard();
+
+  @override
+  ConsumerState<_ClaimAccountCard> createState() => _ClaimAccountCardState();
+}
+
+class _ClaimAccountCardState extends ConsumerState<_ClaimAccountCard> {
+  static const _minPasswordLength = 10;
+
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  bool _busy = false;
+  bool _obscure = true;
+  String? _message;
+  bool _done = false;
+
+  @override
+  void dispose() {
+    _email.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _attach() async {
+    final email = _email.text.trim();
+    final password = _password.text;
+    if (email.isEmpty || !email.contains('@')) {
+      setState(() => _message = 'Введите почту.');
+      return;
+    }
+    if (password.length < _minPasswordLength) {
+      setState(() => _message = 'Пароль от $_minPasswordLength символов.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    try {
+      await AndroidMosaicAccountService.instance
+          .attachCredentials(email, password);
+      ref.invalidate(unifiedAccountProvider);
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _done = true;
+        _message = 'Готово. Теперь можно войти с этой почтой на любом устройстве.';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      final raw = error.toString();
+      setState(() {
+        _busy = false;
+        _message = raw.contains('409')
+            ? 'Эта почта уже привязана к другому аккаунту.'
+            : raw.contains('401')
+                ? 'Сессия истекла — войдите заново.'
+                : 'Не удалось сохранить. Попробуйте ещё раз.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeColors.of(context);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: c.bgCard,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: c.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                _done
+                    ? Icons.verified_user_rounded
+                    : Icons.person_add_alt_1_rounded,
+                size: 19,
+                color: _done ? c.success : AtlasTheme.accent,
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  _done ? 'Аккаунт закреплён' : 'Закрепить аккаунт за собой',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: c.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _done
+                ? 'Вход с этой почтой работает на любом устройстве.'
+                : 'Укажите свою почту и пароль, чтобы входить на других '
+                    'устройствах и восстанавливать доступ. Остаток дней и '
+                    'подписка сохранятся.',
+            style: TextStyle(fontSize: 12, color: c.textSecondary, height: 1.35),
+          ),
+          if (!_done) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: _email,
+              keyboardType: TextInputType.emailAddress,
+              decoration: _decoration(c, 'name@example.com'),
+              style: TextStyle(color: c.textPrimary, fontSize: 13.5),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _password,
+              obscureText: _obscure,
+              decoration: _decoration(
+                c,
+                'Пароль от $_minPasswordLength символов',
+                suffix: IconButton(
+                  icon: Icon(
+                    _obscure
+                        ? Icons.visibility_off_rounded
+                        : Icons.visibility_rounded,
+                    size: 18,
+                    color: c.textMuted,
+                  ),
+                  tooltip: _obscure ? 'Показать пароль' : 'Скрыть пароль',
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                ),
+              ),
+              style: TextStyle(color: c.textPrimary, fontSize: 13.5),
+            ),
+            const SizedBox(height: 10),
+            ElevatedButton(
+              onPressed: _busy ? null : _attach,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AtlasTheme.accent,
+                foregroundColor: AtlasTheme.onAccent,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(13),
+                ),
+              ),
+              child: _busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AtlasTheme.onAccent),
+                    )
+                  : const Text(
+                      'Сохранить',
+                      style:
+                          TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                    ),
+            ),
+          ],
+          if (_message != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              _message!,
+              style: TextStyle(
+                fontSize: 12,
+                color: _done ? c.success : c.danger,
+                height: 1.3,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  InputDecoration _decoration(ThemeColors c, String hint, {Widget? suffix}) {
+    OutlineInputBorder border(Color color, [double width = 1]) =>
+        OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: color, width: width),
+        );
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: TextStyle(color: c.textMuted, fontSize: 13),
+      filled: true,
+      fillColor: c.bgBase,
+      isDense: true,
+      border: border(c.border),
+      enabledBorder: border(c.border),
+      focusedBorder: border(AtlasTheme.accent, 1.5),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+      suffixIcon: suffix,
     );
   }
 }

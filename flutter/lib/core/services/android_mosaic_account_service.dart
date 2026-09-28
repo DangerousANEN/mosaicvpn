@@ -365,6 +365,24 @@ class AndroidMosaicAccountService {
   bool _sameMosaicSubscriptionUrl(String left, String right) =>
       sameSubscriptionUrlForTesting(left, right);
 
+  /// Creates a MosaicVPN account straight from the app.
+  ///
+  /// Why this exists: sign-in was implemented but sign-UP was not, so a brand
+  /// new user had to leave the app, find the website, register there and come
+  /// back through a deep link. That browser round-trip was the single biggest
+  /// step in the funnel. `POST /api/auth/register` already provisions the
+  /// account and now grants the welcome trial, so the app can do it in one
+  /// call and land the user on a working tunnel immediately.
+  Future<AndroidMosaicSession> registerWithEmail(
+      String email, String password) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/api/auth/register',
+      data: {'email': email.trim(), 'password': password},
+    );
+    final payload = Map<String, dynamic>.from(response.data ?? const {});
+    return _savePayload(payload, directKey: 'client_token');
+  }
+
   Future<AndroidMosaicSession> loginWithEmail(
       String email, String password) async {
     final response = await _dio.post<Map<String, dynamic>>(
@@ -373,6 +391,21 @@ class AndroidMosaicAccountService {
     );
     final payload = Map<String, dynamic>.from(response.data ?? const {});
     return _savePayload(payload, directKey: 'client_token');
+  }
+
+  /// Attaches real sign-in credentials to the current (auto-created) account.
+  ///
+  /// The one-tap trial creates an account with a locally generated email so a
+  /// newcomer never types anything. Without this the user would be locked to
+  /// that one device, so the app offers to claim the account with their own
+  /// email later -- same account, same subscription, now portable.
+  Future<void> attachCredentials(String email, String password) async {
+    final token = await _sessionToken();
+    await _dio.post<Map<String, dynamic>>(
+      '/api/auth/attach',
+      data: {'email': email.trim(), 'password': password},
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
   }
 
   Future<void> clearSession() async {
