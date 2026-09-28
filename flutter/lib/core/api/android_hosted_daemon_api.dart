@@ -519,9 +519,95 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   }
 
   @override
-  Future<void> connectGroup(String groupID) => _connectGroup(groupID);
+  Future<void> connectGroup(String groupID) => _connectGroupWithRotation(groupID);
 
-  Future<void> _connectGroup(String groupID, {String? candidateID}) async {
+  /// Connects a Smart Group with NODE ROTATION.
+  ///
+  /// Why: with a public node pool, a candidate can pass every client-side
+  /// probe (TCP + TLS with its real SNI) and still fail to carry traffic --
+  /// measured against the real sing-box core, 3 of 9 probed survivors were
+  /// protocol-dead. The old behaviour tore the whole TUN down on that first
+  /// verdict ("connects, lags, dies in 3 seconds", leaving the user with
+  /// nothing). Now the dead candidate is excluded and the next one is tried,
+  /// so the user ends up connected instead of bounced.
+  Future<void> _connectGroupWithRotation(String groupID,
+      {String? candidateID}) async {
+    if (candidateID != null) {
+      // An explicit user pick is honored as-is: rotating away from a
+      // deliberately chosen node would be surprising.
+      await _connectGroup(groupID, candidateID: candidateID);
+      return;
+    }
+    const maxAttempts = 3;
+    final excluded = <String>{};
+    Object? lastError;
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      final vpn = AndroidVpnService.instance;
+      try {
+        final picked = await _connectGroup(
+          groupID,
+          excludeTags: excluded,
+          attempt: attempt + 1,
+          maxAttempts: maxAttempts,
+        );
+        if (picked != null && picked.isNotEmpty) {
+          final verdict = await _awaitEgressVerdict(vpn);
+          if (verdict == null) return; // connected
+          lastError = StateError(verdict);
+          await vpn.appendNativeLog(
+            '[ROTATE] candidate rejected ($verdict) -- rotating '
+            '(${attempt + 1}/$maxAttempts)',
+          );
+          excluded.add(picked);
+        } else {
+          lastError ??= StateError('Не удалось выбрать ноду группы.');
+        }
+      } catch (error) {
+        // Rotation is ONLY for the diagnosed failure mode: the core started,
+        // the tunnel came up, but no traffic passed. Any error from config
+        // construction or native startup is a real fault (missing permission,
+        // unparseable config, empty shard) and must surface immediately --
+        // retrying it would mask the cause and triple the user's wait.
+        // The boundary test 'group startup failure never substitutes
+        // ordinary subscription' pins this: exactly one start attempt.
+        rethrow;
+      }
+    }
+    throw StateError(
+      lastError?.toString().replaceFirst('Bad state: ', '') ??
+          'Не удалось подключиться ни к одной ноде группы.',
+    );
+  }
+
+  /// Waits for the native egress verdict on the current session.
+  /// Returns null when the tunnel is confirmed carrying traffic, otherwise a
+  /// human-readable reason the candidate must be rotated out.
+  Future<String?> _awaitEgressVerdict(AndroidVpnService vpn) async {
+    final deadline = DateTime.now().add(const Duration(seconds: 20));
+    while (DateTime.now().isBefore(deadline)) {
+      final status = await vpn.status();
+      if (status.state == 'connected') return null;
+      if (status.state == 'error') {
+        return status.error?.trim().isNotEmpty == true
+            ? status.error!
+            : 'трафик не проходит';
+      }
+      if (status.state == 'disconnected') {
+        return 'туннель остановлен';
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    }
+    return 'истёк таймаут проверки связи';
+  }
+
+  /// Returns the tag of the candidate the config actually routed to (the top
+  /// of the probed, latency-sorted list), so the caller can rotate it out on a
+  /// bad egress verdict. Null when the single-candidate path was used.
+  Future<String?> _connectGroup(String groupID,
+      {String? candidateID,
+      Set<String> excludeTags = const <String>{},
+      int attempt = 1,
+      int maxAttempts = 1}) async {
     final perApp = await _readPerAppLists();
     final resolved = await _resolveMosaicGroup(groupID);
     final manifest = await getProviderManifest(subscriptionId: resolved.$1.id);
@@ -560,6 +646,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
             resolved.$1.url,
             groupId: resolved.$2,
             candidateID: candidateID,
+            excludeTags: excludeTags,
             bypassPackages: perApp.bypassPackages,
             proxyPackages: perApp.proxyPackages,
             bypassRussianSites: perApp.bypassRussian,
@@ -590,11 +677,16 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       '[SMART-GROUP] Launching group "${group.title}" (${group.id}) [routeType=${group.routeType}]',
     );
 
+    if (maxAttempts > 1) {
+      ConnectProgressBus.instance.publishSimple('connecting',
+          'Попытка $attempt из $maxAttempts: поднимаем туннель');
+    }
     await _startNativeRoute(
       config: config,
       route: routeServer,
       configFingerprint: routeConfigFingerprint,
     );
+    return AndroidMosaicAccountService.lastSelectedCandidateTag;
   }
 
   @override

@@ -890,6 +890,7 @@ class AndroidMosaicAccountService {
     String subscriptionUrl, {
     required String groupId,
     String? candidateID,
+    Set<String> excludeTags = const <String>{},
     List<String> bypassPackages = const [],
     List<String> proxyPackages = const [],
     bool bypassRussianSites = true,
@@ -902,6 +903,14 @@ class AndroidMosaicAccountService {
         .publishSimple('fetching', 'Получение списка нод с сервера');
     var outbounds =
         await fetchGroupCandidates(subscriptionUrl, groupId: groupId);
+    if (excludeTags.isNotEmpty) {
+      // Node rotation: a candidate whose tunnel carried no traffic is dropped
+      // and the next one takes its place, so a dead node never ends the
+      // session -- the connect retries instead of tearing the TUN down.
+      outbounds = outbounds
+          .where((entry) => !excludeTags.contains(entry['tag']?.toString()))
+          .toList();
+    }
     if (candidateID != null) {
       outbounds = outbounds.where((entry) => entry['tag'] == candidateID).toList();
       if (candidateID.isEmpty || outbounds.length != 1) {
@@ -929,6 +938,13 @@ class AndroidMosaicAccountService {
     }
     ConnectProgressBus.instance
         .publishSimple('connecting', 'Поднимаем туннель');
+    // Rotation target: with a urltest pool the core picks the node itself, so
+    // the tag to exclude on a bad verdict is the FIRST (fastest) candidate --
+    // that is the one the group actually routes through until a health check
+    // says otherwise. With a single-node config it is trivially that node.
+    lastSelectedCandidateTag = outbounds.isNotEmpty
+        ? outbounds.first['tag']?.toString()
+        : null;
     return _buildTunConfig(
       outbounds,
       bypassPackages: bypassPackages,
@@ -965,6 +981,18 @@ class AndroidMosaicAccountService {
   /// Last subscription URL successfully used by this service instance
   /// (pool-keeper background refresh reuses it without re-resolving state).
   static String? lastSubscriptionUrl;
+
+  /// Tag of the candidate the last scoped-candidate config actually routed to
+  /// (top of the probed, latency-sorted list). Lets the connect layer rotate
+  /// that node out when its tunnel turns out to carry no traffic.
+  static String? lastSelectedCandidateTag;
+
+  /// Test-only switch: forces every endpoint to look reachable WITHOUT a real
+  /// network probe, so tests can drive the post-sweep connect logic (node
+  /// rotation, config building) on a host with no route to the fixtures.
+  /// Distinct from [debugSkipReachabilityFilter], which skips the sweep
+  /// entirely and therefore also skips the latency ordering it produces.
+  static bool debugAssumeAllReachable = false;
 
   /// Test-only switch: skips the TCP reachability sweep so widget/unit tests
   /// on hosts without network access still exercise config construction.
@@ -1017,28 +1045,53 @@ class AndroidMosaicAccountService {
   /// Warm entries (probed <10 min ago on the same network) are used from the
   /// cache without re-probing, so a repeat connect skips the sweep entirely.
   /// Cold entries are probed concurrently and the results are stored back.
-  /// Full TLS-level reachability probe: TCP connect + TLS ClientHello with
-  /// the node's REAL SNI. RU-side DPI silently drops the ClientHello for most
-  /// masked public nodes (TCP syn-ack succeeds, TLS handshake times out), so
-  /// a TCP-only probe happily admits nodes the tunnel can never use. This is
-  /// the client-side ground truth the shard ranking relies on.
+  /// PROTOCOL-AWARE reachability probe - the honest first-order filter.
   ///
-  /// Returns true when the TLS handshake completes. Never throws.
-  static Future<bool> _tlsProbe(String host, int port,
-      Map<String, dynamic> outbound, Duration timeout) async {
-    final tlsCfg = outbound['tls'];
-    String sni = host;
-    if (tlsCfg is Map<String, dynamic>) {
-      final declared = tlsCfg['server_name']?.toString() ?? '';
-      if (declared.isNotEmpty) sni = declared;
+  /// A blanket TLS probe is wrong: measured against the REAL sing-box core
+  /// (24/190 feed nodes carry traffic from a RU ISP), TLS-only probing killed
+  /// 8 of 13 known-working nodes (61% recall loss) because
+  ///   - shadowsocks has no TLS layer at all (TLS handshake always fails),
+  ///   - hysteria2 speaks QUIC over UDP (a TCP + TLS probe always fails),
+  ///   - plain-TCP vless/vmess carries no TLS.
+  ///
+  /// So the probe matches the protocol that will actually be spoken:
+  ///   tls protocols  -> TCP connect + TLS handshake with the node's real SNI
+  ///                     (RU DPI drops ClientHello for masked SNIs while the
+  ///                      TCP syn-ack still succeeds, so TCP alone is a lie)
+  ///   plaintext      -> TCP connect (shadowsocks / plain vless/vmess)
+  ///   QUIC (UDP)     -> no cheap probe exists in Dart; admit and let the
+  ///                     sing-box urltest group decide at runtime.
+  ///
+  /// Returns null for "not admitted". Never throws.
+  static Future<bool> _probeEndpointReachable(
+      String host, int port, Map<String, dynamic> outbound,
+      Duration timeout) async {
+    if (debugAssumeAllReachable) return true;
+    final type = (outbound['type']?.toString() ?? '').toLowerCase();
+    // hysteria2 / tuic / quic: UDP transport, no Dart-side probe.
+    if (type == 'hysteria2' || type == 'hysteria' || type == 'tuic') {
+      return true;
     }
+    final tlsCfg = outbound['tls'];
+    final tlsEnabled = tlsCfg is Map && tlsCfg['enabled'] != false &&
+        (tlsCfg['enabled'] == true || tlsCfg['server_name'] != null);
+    final plaintext = type == 'shadowsocks' || type == 'ss';
+    if (!tlsEnabled || plaintext) {
+      // Plain TCP service: a completed connect is the real evidence.
+      try {
+        final s = await Socket.connect(host, port, timeout: timeout);
+        s.destroy();
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+    String sni = host;
+    final declared = (tlsCfg['server_name']?.toString() ?? '').trim();
+    if (declared.isNotEmpty) sni = declared;
     Socket? raw;
     try {
       raw = await Socket.connect(host, port, timeout: timeout);
-      // SecureSocket.secure performs the TLS handshake with an explicit
-      // serverHostname (SNI), which for masked nodes differs from the dialed
-      // IP/host. Certificate validation is skipped: we only care whether the
-      // handshake completes (DPI drops it for dead nodes).
       final secure = await SecureSocket.secure(
         raw,
         host: sni,
@@ -1094,7 +1147,7 @@ class AndroidMosaicAccountService {
         continue;
       }
       final sw = Stopwatch()..start();
-      probes.add(_tlsProbe(host, port, outbound, timeout).then(
+      probes.add(_probeEndpointReachable(host, port, outbound, timeout).then(
         (ok) {
           sw.stop();
           if (!ok) return null;

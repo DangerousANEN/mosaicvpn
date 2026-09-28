@@ -42,6 +42,7 @@ void main() {
       });
   });
   tearDown(() {
+    AndroidMosaicAccountService.debugAssumeAllReachable = false;
     AppPlatform.debugTargetPlatformOverride = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(channel, null);
@@ -86,4 +87,55 @@ void main() {
     expect(configs, hasLength(1));
     expect(adapter.paths, isNot(contains('/fixture')));
   });
+
+  test('a dead-traffic candidate is rotated out, not retried', () async {
+    // The diagnosed production failure: the core starts, the tunnel comes up,
+    // but the node carries no traffic ("connects, lags, dies in 3s"). The
+    // connect layer must drop THAT node and start again with the next one,
+    // so the user ends up with a working tunnel instead of a teardown.
+    AndroidMosaicAccountService.debugSkipReachabilityFilter = false;
+    AndroidMosaicAccountService.debugAssumeAllReachable = true;
+    var starts = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'prepare') return true;
+      if (call.method == 'status') {
+        // First session: verify fails (error). Second: verified connected.
+        if (starts <= 1) return {'state': 'error', 'error': 'трафик не проходит'};
+        return {'state': 'connected'};
+      }
+      if (call.method == 'start') {
+        starts++;
+        configs.add(jsonDecode((call.arguments as Map)['config'] as String));
+        return {'state': 'verifying'};
+      }
+      return null;
+    });
+
+    await api.connectGroup('provider:fixture:free-lte');
+
+    expect(starts, 2, reason: 'rotation must retry exactly once for one dead node');
+    final firstTags = _candidateTags(configs.first);
+    final secondTags = _candidateTags(configs.last);
+    expect(secondTags.length, lessThan(firstTags.length),
+        reason: 'the rejected node must be excluded from the retry');
+    expect(firstTags.difference(secondTags), hasLength(1),
+        reason: 'exactly one node (the fastest) is dropped per rotation');
+  });
+}
+
+/// Candidate tags present in the sing-box config built for a group. Fixture
+/// nodes carry plain tags ('first'/'second'), production ones are prefixed
+/// with mosaic-candidate-, so both shapes are collected here.
+Set<String> _candidateTags(Map<String, dynamic> config) {
+  final outbounds = (config['outbounds'] as List).cast<Map>();
+  return outbounds
+      .map((o) => o['tag']?.toString() ?? '')
+      .where((tag) =>
+          tag.isNotEmpty &&
+          tag != 'direct' &&
+          tag != 'block' &&
+          tag != 'proxy' &&
+          !tag.contains('selected-route'))
+      .toSet();
 }

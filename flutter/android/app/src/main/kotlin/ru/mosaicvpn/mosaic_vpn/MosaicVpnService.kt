@@ -292,22 +292,40 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         val session = ++verifySession
         val verifier = Thread {
             val probeUrl = "http://1.1.1.1/generate_204"
+            // Wall-clock budget, not a fixed retry count.
+            //
+            // Measured against the real sing-box core: a urltest group whose
+            // first member is protocol-dead but which holds healthy nodes
+            // starts passing traffic after ~7.2s (health check converges and
+            // the selector moves off the dead node). A healthy group therefore
+            // needs room BEFORE we may declare failure -- otherwise a working
+            // session is torn down and rotated for nothing.
+            //
+            // The old schedule (6 sleeps + 4s connect timeout each) could run
+            // past 35s, i.e. longer than the Dart side waited, which produced
+            // a rotation verdict on a live group. A 15s deadline with 2.5s
+            // probes keeps the worst case ~17.5s: comfortably inside the
+            // client's 25s wait, and comfortably past urltest convergence, so
+            // the verifier only fails a group that is genuinely dead.
+            val deadline = System.currentTimeMillis() + 15_000L
             var attempt = 0
-            val delaysMs = longArrayOf(600, 800, 1200, 2000, 3000, 5000)
-            while (attempt < delaysMs.size) {
+            while (System.currentTimeMillis() < deadline) {
                 // Bail out if the user cancelled or a new session started.
                 if (session != verifySession || runtimeState == "disconnected") return@Thread
+                val backoff = longArrayOf(500, 700, 1000, 1500, 2000, 2500)
+                val sleepMs = backoff[minOf(attempt, backoff.size - 1)]
                 try {
-                    Thread.sleep(delaysMs[attempt])
+                    Thread.sleep(sleepMs)
                 } catch (_: InterruptedException) {
                     return@Thread
                 }
                 if (session != verifySession || runtimeState == "disconnected") return@Thread
+                if (System.currentTimeMillis() >= deadline) break
                 try {
                     val url = java.net.URL(probeUrl)
                     val conn = url.openConnection() as java.net.HttpURLConnection
-                    conn.connectTimeout = 4000
-                    conn.readTimeout = 4000
+                    conn.connectTimeout = 2500
+                    conn.readTimeout = 2500
                     // Default HttpURLConnection uses the system routing,
                     // which the TUN has already captured (auto_route).
                     val code = conn.responseCode
@@ -333,7 +351,8 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 }
                 attempt++
             }
-            // All probes failed: the tunnel is up but carries no traffic.
+            // Budget exhausted: the tunnel is up but carries no traffic.
+            // The Dart layer rotates to the next candidate on this verdict.
             publishError("Туннель поднят, но трафик не проходит. Попробуйте другой маршрут.")
         }
         verifier.isDaemon = true
