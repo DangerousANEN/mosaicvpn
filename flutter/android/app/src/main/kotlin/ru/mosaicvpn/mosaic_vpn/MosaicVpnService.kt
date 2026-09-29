@@ -291,7 +291,37 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         // can transition to connected/error.
         val session = ++verifySession
         val verifier = Thread {
-            val probeUrl = "http://1.1.1.1/generate_204"
+            // HTTPS, deliberately: the previous target was
+            // "http://1.1.1.1/generate_204" and this app ships with
+            // targetSdk 36 and no usesCleartextTraffic flag, so Android's
+            // network security policy rejected the request before a single
+            // packet left the device:
+            //
+            //   isCleartextTrafficPermitted("1.1.1.1") = false
+            //   -> IOException: Cleartext HTTP traffic to 1.1.1.1 not permitted
+            //
+            // Measured in an isolated experiment against this exact code path:
+            // the cleartext probe failed in 7ms on every attempt while the
+            // HTTPS probe to the same host answered in ~590ms. A 7ms failure
+            // is why the budget below produced 8 attempts instead of the 4 a
+            // 2.5s timeout would allow -- the tunnel was healthy the whole
+            // time and got torn down anyway, then blamed on the node.
+            //
+            // Fixing this by allowing cleartext would only legalise an
+            // insecure probe; an HTTPS target proves the same thing (real
+            // bytes made a round trip) and additionally proves TLS survives
+            // the tunnel, which is what users actually browse through.
+            // Several targets, all HTTPS. One endpoint answering oddly (a 503
+            // from a degraded edge, a captive portal) must not condemn a
+            // healthy tunnel, which is exactly how a single hardcoded URL
+            // behaves. The first entry needs no DNS -- its certificate carries
+            // the IP SAN -- so it still works before the tunnel's resolver has
+            // warmed up, which was the original reason for using an IP literal.
+            val probeUrls = arrayOf(
+                "https://1.1.1.1/cdn-cgi/trace",
+                "https://cp.cloudflare.com/generate_204",
+                "https://www.gstatic.com/generate_204",
+            )
             // Wall-clock budget, not a fixed retry count.
             //
             // Measured against the real sing-box core: a urltest group whose
@@ -322,18 +352,39 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 if (session != verifySession || runtimeState == "disconnected") return@Thread
                 if (System.currentTimeMillis() >= deadline) break
                 try {
-                    val url = java.net.URL(probeUrl)
-                    val conn = url.openConnection() as java.net.HttpURLConnection
-                    conn.connectTimeout = 2500
-                    conn.readTimeout = 2500
-                    // Default HttpURLConnection uses the system routing,
-                    // which the TUN has already captured (auto_route).
-                    val code = conn.responseCode
-                    conn.disconnect()
-                    if (code in 200..399 || code == 204) {
+                    var proven: Int? = null
+                    var provenUrl = ""
+                    var lastDetail = "no target answered"
+                    for (probeUrl in probeUrls) {
+                        if (session != verifySession || runtimeState == "disconnected") return@Thread
+                        try {
+                            val url = java.net.URL(probeUrl)
+                            val conn = url.openConnection() as java.net.HttpURLConnection
+                            conn.connectTimeout = 2500
+                            conn.readTimeout = 2500
+                            // Default HttpURLConnection uses the system routing,
+                            // which the TUN has already captured (auto_route).
+                            val code = conn.responseCode
+                            conn.disconnect()
+                            // Any HTTP status in the 2xx-3xx band proves a real
+                            // round trip through the tunnel.
+                            if (code in 200..399) {
+                                proven = code
+                                provenUrl = probeUrl
+                                break
+                            }
+                            lastDetail = "HTTP $code from $probeUrl"
+                        } catch (error: Exception) {
+                            lastDetail =
+                                "${error.javaClass.simpleName} on $probeUrl: " +
+                                    (error.message ?: "no detail")
+                        }
+                    }
+                    val code = proven
+                    if (code != null) {
                         runtimeState = "connected"
                         runtimeError = null
-                        appendNativeLog("egress verified: HTTP $code via tunnel")
+                        appendNativeLog("egress verified: HTTP $code via tunnel ($provenUrl)")
                         updateNotification("Подключено")
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                             try {
@@ -345,9 +396,15 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                         }
                         return@Thread
                     }
-                    appendNativeLog("egress probe: unexpected HTTP $code, retrying")
+                    appendNativeLog("egress probe: $lastDetail, retrying")
                 } catch (error: Exception) {
-                    appendNativeLog("egress probe failed (${error.javaClass.simpleName}), retrying")
+                    // Per-target failures are already reported with their real
+                    // message above; a bare class name is what once hid the
+                    // cleartext rejection and made a healthy node look dead.
+                    appendNativeLog(
+                        "egress probe pass failed (${error.javaClass.simpleName}): " +
+                            "${error.message ?: "no detail"}, retrying"
+                    )
                 }
                 attempt++
             }

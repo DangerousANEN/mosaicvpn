@@ -345,9 +345,11 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     // Give the freshly raised TUN interface and urltest group a brief moment to settle.
     await Future<void>.delayed(const Duration(milliseconds: 600));
 
+    // All HTTPS: a cleartext target would be rejected by Android's network
+    // security policy before it reached the tunnel, turning the diagnostics
+    // screen into a false alarm about a healthy connection.
     const targets = <String>[
       'https://cp.cloudflare.com/generate_204',
-      'http://1.1.1.1/generate_204',
       'https://www.gstatic.com/generate_204',
       'https://captive.apple.com/hotspot-detect.html',
     ];
@@ -1261,7 +1263,16 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   @override
   Future<List<Subscription>> listSubscriptions() async {
     final localSource = await _localSubscription();
-    final stored = await _readLocalSubscriptions();
+    var stored = await _readLocalSubscriptions();
+    // Keep the visible route count honest on first paint, not only after the
+    // user presses Refresh. A Mosaic source derives its count from the
+    // capability manifest (physical feed rows are deliberately hidden), so
+    // without this the account card read "0 маршрутов" beside a populated
+    // Routes tab.
+    if (stored.any(_isMosaicSubscription)) {
+      final reconciled = await _reconcileCountsWithManifest(stored);
+      if (reconciled != null) stored = reconciled;
+    }
     var migrated = false;
     final normalized = <Subscription>[];
     final urls = <String>{};
@@ -1398,6 +1409,36 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       ),
     );
     return stored;
+  }
+
+  /// Fills in `serverCount` for every Mosaic source from the capability
+  /// manifest. Returns the rewritten list when something changed, else null.
+  /// A manifest failure is non-fatal: the previous counter is kept rather than
+  /// flashing a zero at the user.
+  Future<List<Subscription>?> _reconcileCountsWithManifest(
+      List<Subscription> stored) async {
+    final hasMosaic = stored.any(_isMosaicSubscription);
+    if (!hasMosaic) return null;
+    final ProviderManifest manifest;
+    try {
+      manifest = await _account.getProviderManifest();
+    } catch (_) {
+      return null;
+    }
+    final visible =
+        manifest.routes.where((group) => group.category != 'raw').length;
+    if (visible <= 0) return null;
+    var changed = false;
+    final updated = stored.map((value) {
+      if (!_isMosaicSubscription(value) || value.serverCount == visible) {
+        return value;
+      }
+      changed = true;
+      return value.copyWith(serverCount: visible, lastFetched: DateTime.now());
+    }).toList();
+    if (!changed) return null;
+    await _writeLocalSubscriptions(updated);
+    return updated;
   }
 
   @override

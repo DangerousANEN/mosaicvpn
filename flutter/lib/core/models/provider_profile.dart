@@ -155,10 +155,20 @@ class ManifestClientPolicy {
     this.speedProbe = const SpeedProbePolicy(),
     this.probeMode = 'auto',
     this.probeSamples = 5,
-    /// Default probe URL uses direct IP to avoid DNS cold-start delays.
-    /// 1.1.1.1/generate_204 returns HTTP 204 without DNS resolution,
-    /// giving a clean transport-level RTT measurement.
-    this.probeUrl = 'http://1.1.1.1/generate_204',
+    /// HTTPS on purpose.
+    ///
+    /// This used to be 'http://1.1.1.1/generate_204' for its DNS-free
+    /// cold-start. That target is unusable from this app: with targetSdk 36 and
+    /// no usesCleartextTraffic flag, Android's network security policy rejects
+    /// cleartext requests before they leave the device (measured 7ms, message
+    /// "Cleartext HTTP traffic to 1.1.1.1 not permitted"), so every probe
+    /// "failed" instantly and healthy nodes were discarded as dead.
+    ///
+    /// https://1.1.1.1 keeps the same DNS-free direct-IP property -- its
+    /// certificate carries the IP SAN -- while travelling over TLS. Cloudflare
+    /// answers /cdn-cgi/trace there and the gstatic endpoint answers 204, so
+    /// either is a valid round-trip proof.
+    this.probeUrl = 'https://1.1.1.1/cdn-cgi/trace',
   });
 
   factory ManifestClientPolicy.fromJson(Map<String, dynamic>? json) {
@@ -182,7 +192,7 @@ class ManifestClientPolicy {
           value['speed_probe'] as Map<String, dynamic>?),
       probeMode: value['probe_mode']?.toString() ?? 'auto',
       probeSamples: boundedInt('probe_samples', 5, 3, 20),
-      probeUrl: value['probe_url']?.toString() ?? 'http://1.1.1.1/generate_204',
+      probeUrl: value['probe_url']?.toString() ?? 'https://1.1.1.1/cdn-cgi/trace',
     );
   }
 }

@@ -48,7 +48,7 @@ class HttpSpeedTestProbe implements SpeedTestProbe {
             const [
               'https://cp.cloudflare.com/generate_204',
               'https://speed.cloudflare.com/__down?bytes=0',
-              'http://1.1.1.1/generate_204',
+              'https://cp.cloudflare.com/generate_204',
             ];
 
   HttpClient _createClient({Duration timeout = const Duration(seconds: 5)}) {
