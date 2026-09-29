@@ -65,173 +65,196 @@ class _ServersScreenState extends ConsumerState<ServersScreen> {
       }
     });
 
+    // On a short viewport the chrome gets a hard height cap; otherwise null
+    // (no constraint), preserving the original layout on normal screens.
+    final screenH = MediaQuery.of(context).size.height;
+    final chromeMax = screenH < 560 ? screenH * 0.5 : null;
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Header Section ──
-          SectionHeader(
-            title: 'Stations & Sources',
-            subtitle:
-                'Manage remote subscription groups and active connections',
-            action: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
+          // Chrome cap. On a short viewport (landscape phone, ~360px tall) the
+          // header plus filters alone exceed the screen, and `Expanded` below
+          // cannot recover space already spent -- measured 157px of overflow.
+          // Capping the chrome keeps the list's flex layout intact; on tall
+          // screens maxHeight is null, so nothing changes.
+          Flexible(
+            fit: FlexFit.loose,
+            child: ConstrainedBox(
+              // Infinity = no practical cap, so tall screens behave exactly as
+              // before while short ones are bounded.
+              constraints: BoxConstraints(maxHeight: chromeMax ?? double.infinity),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+              // ── Header Section ──
+              SectionHeader(
+                title: 'Stations & Sources',
+                subtitle:
+                    'Manage remote subscription groups and active connections',
+                action: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      // Global Action: Add Subscription URL
+                      ElevatedButton.icon(
+                        onPressed: () => _showAddSubscriptionDialog(context),
+                        icon: const Icon(Icons.add_link, size: 16),
+                        label: const Text('Add Source',
+                            style: TextStyle(fontSize: 12)),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 10),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Global Action: Add Server (manual / clipboard / QR / file)
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final servers = await showAddServerDialog(context);
+                          if (servers == null ||
+                              servers.isEmpty ||
+                              !context.mounted) {
+                            return;
+                          }
+                          final api = ref.read(daemonApiProvider);
+                          for (final s in servers) {
+                            await api.addServer(s);
+                          }
+                          ref.invalidate(serversProvider);
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                                content: Text('Added ${servers.length} server(s)')),
+                          );
+                        },
+                        icon: const Icon(Icons.dns_outlined, size: 16),
+                        label: const Text('Add Server',
+                            style: TextStyle(fontSize: 12)),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Global Action: Create Group
+                      OutlinedButton.icon(
+                        onPressed: () => _showCreateGroupDialog(context),
+                        icon:
+                            const Icon(Icons.create_new_folder_outlined, size: 16),
+                        label:
+                            const Text('New Group', style: TextStyle(fontSize: 12)),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Global Action: Test All Latencies
+                      OutlinedButton.icon(
+                        onPressed: () => _testAll(ref),
+                        icon: const Icon(Icons.speed, size: 16),
+                        label:
+                            const Text('Test All', style: TextStyle(fontSize: 12)),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
+                          foregroundColor: AtlasTheme.accent,
+                          side: const BorderSide(
+                              color: AtlasTheme.accent, width: 1.2),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // ── Search & Filter Controls ──
+              Row(
                 children: [
-                  // Global Action: Add Subscription URL
-                  ElevatedButton.icon(
-                    onPressed: () => _showAddSubscriptionDialog(context),
-                    icon: const Icon(Icons.add_link, size: 16),
-                    label: const Text('Add Source',
-                        style: TextStyle(fontSize: 12)),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
+                  // Search input
+                  Expanded(
+                    child: TextField(
+                      controller: _searchCtrl,
+                      onChanged: (v) =>
+                          setState(() => _searchQuery = v.toLowerCase()),
+                      decoration: InputDecoration(
+                        hintText:
+                            'Search destinations by name, region or protocol...',
+                        hintStyle: TextStyle(fontSize: 12, color: c.textMuted),
+                        isDense: true,
+                        prefixIcon:
+                            Icon(Icons.search, size: 16, color: c.textMuted),
+                        prefixIconConstraints: const BoxConstraints(minWidth: 36),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear, size: 14),
+                                tooltip: 'Clear search',
+                                onPressed: () {
+                                  _searchCtrl.clear();
+                                  setState(() => _searchQuery = '');
+                                },
+                              )
+                            : null,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-
-                  // Global Action: Add Server (manual / clipboard / QR / file)
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      final servers = await showAddServerDialog(context);
-                      if (servers == null ||
-                          servers.isEmpty ||
-                          !context.mounted) {
-                        return;
-                      }
-                      final api = ref.read(daemonApiProvider);
-                      for (final s in servers) {
-                        await api.addServer(s);
-                      }
-                      ref.invalidate(serversProvider);
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content: Text('Added ${servers.length} server(s)')),
-                      );
-                    },
-                    icon: const Icon(Icons.dns_outlined, size: 16),
-                    label: const Text('Add Server',
-                        style: TextStyle(fontSize: 12)),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 10),
+                  const SizedBox(width: 12),
+                  // Sort dropdown (Guarded dropdownColor to prevent white-on-white)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      border: Border.all(color: c.border),
+                      borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-
-                  // Global Action: Create Group
-                  OutlinedButton.icon(
-                    onPressed: () => _showCreateGroupDialog(context),
-                    icon:
-                        const Icon(Icons.create_new_folder_outlined, size: 16),
-                    label:
-                        const Text('New Group', style: TextStyle(fontSize: 12)),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 10),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-
-                  // Global Action: Test All Latencies
-                  OutlinedButton.icon(
-                    onPressed: () => _testAll(ref),
-                    icon: const Icon(Icons.speed, size: 16),
-                    label:
-                        const Text('Test All', style: TextStyle(fontSize: 12)),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 10),
-                      foregroundColor: AtlasTheme.accent,
-                      side: const BorderSide(
-                          color: AtlasTheme.accent, width: 1.2),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _sortBy,
+                        dropdownColor: Theme.of(context).cardColor,
+                        style: TextStyle(
+                          fontFamily: AtlasTheme.sansFamily,
+                          fontSize: 12,
+                          color: Theme.of(context).textTheme.bodyMedium?.color,
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'favorites',
+                            child: Text('★ Favorites first'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'name',
+                            child: Text('Name A-Z'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'country',
+                            child: Text('Country / Region'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'latency',
+                            child: Text('Lowest latency'),
+                          ),
+                        ],
+                        onChanged: (v) =>
+                            setState(() => _sortBy = v ?? 'favorites'),
+                      ),
                     ),
                   ),
                 ],
               ),
+              const SizedBox(height: 16),
+                  ],
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 16),
-
-          // ── Search & Filter Controls ──
-          Row(
-            children: [
-              // Search input
-              Expanded(
-                child: TextField(
-                  controller: _searchCtrl,
-                  onChanged: (v) =>
-                      setState(() => _searchQuery = v.toLowerCase()),
-                  decoration: InputDecoration(
-                    hintText:
-                        'Search destinations by name, region or protocol...',
-                    hintStyle: TextStyle(fontSize: 12, color: c.textMuted),
-                    isDense: true,
-                    prefixIcon:
-                        Icon(Icons.search, size: 16, color: c.textMuted),
-                    prefixIconConstraints: const BoxConstraints(minWidth: 36),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear, size: 14),
-                            tooltip: 'Clear search',
-                            onPressed: () {
-                              _searchCtrl.clear();
-                              setState(() => _searchQuery = '');
-                            },
-                          )
-                        : null,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              // Sort dropdown (Guarded dropdownColor to prevent white-on-white)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor,
-                  border: Border.all(color: c.border),
-                  borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _sortBy,
-                    dropdownColor: Theme.of(context).cardColor,
-                    style: TextStyle(
-                      fontFamily: AtlasTheme.sansFamily,
-                      fontSize: 12,
-                      color: Theme.of(context).textTheme.bodyMedium?.color,
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'favorites',
-                        child: Text('★ Favorites first'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'name',
-                        child: Text('Name A-Z'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'country',
-                        child: Text('Country / Region'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'latency',
-                        child: Text('Lowest latency'),
-                      ),
-                    ],
-                    onChanged: (v) =>
-                        setState(() => _sortBy = v ?? 'favorites'),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
           // ── Expandable Group List ──
           Expanded(
             child: subsAsync.when(

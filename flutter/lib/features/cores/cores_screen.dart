@@ -221,13 +221,18 @@ class _CoreTile extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Text(
+                    // Long core names overflow the card on a phone (76px at
+                    // 360dp). Flexible + ellipsis keeps the row inside bounds.
+                    Flexible(
+                      child: Text(
                       core.name,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontFamily: AtlasTheme.serifFamily,
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),
+                    ),
                     ),
                     const SizedBox(width: 8),
                     if (core.active)

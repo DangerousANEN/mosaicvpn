@@ -480,6 +480,9 @@ class _GroupsCard extends StatelessWidget {
                   ),
                 ),
                 child: Row(
+                  // Badges must not force the row wider than the tile: wrap the
+                  // trailing text in Flexible so it ellipsises on a phone
+                  // instead of overflowing (measured 124px at 360dp).
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (g.badge.isNotEmpty) ...[
@@ -491,11 +494,16 @@ class _GroupsCard extends StatelessWidget {
                           )),
                       const SizedBox(width: 6),
                     ],
-                    Text(g.title,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: c.textPrimary,
-                        )),
+                    // Flexible: carrier titles are arbitrary length, and a long
+                                        // one pushed this row 124px past a 360dp screen.
+                                        Flexible(
+                                          child: Text(g.title,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                color: c.textPrimary,
+                                              )),
+                                        ),
                     if (isPremium) ...[
                       const SizedBox(width: 4),
                       Icon(Icons.star, size: 12, color: AtlasTheme.accent),
@@ -532,18 +540,30 @@ class _BillingCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Icon(Icons.account_balance_wallet, size: 20, color: AtlasTheme.accent),
-                  const SizedBox(width: 8),
-                  Text('Billing',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: c.textPrimary,
-                            fontWeight: FontWeight.w600,
-                          )),
-                ],
-              ),
-              Container(
+              // Flexible + mainAxisSize.min: the label row shrinks to its
+                            // content, leaving the "Provider offer" badge its space. Without
+                            // both, the inner Row claimed the full width and the outer Row
+                            // overflowed by 39px at 360dp.
+                            Flexible(
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.account_balance_wallet,
+                                      size: 20, color: AtlasTheme.accent),
+                                  const SizedBox(width: 8),
+                                  Flexible(
+                                    child: Text('Billing',
+                                        overflow: TextOverflow.ellipsis,
+                                        style:
+                                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                                  color: c.textPrimary,
+                                                  fontWeight: FontWeight.w600,
+                                                )),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: c.bgChild,

@@ -72,20 +72,41 @@ class RoutingScreen extends ConsumerWidget {
           ] else
             Row(
               children: [
-                Text(
-                  'Активный режим:',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: c.textSecondary,
+                // The label is the first thing that can go on a narrow screen;
+                // the segmented control below carries the meaning.
+                Expanded(
+                  child: Text(
+                    'Активный режим:',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: c.textSecondary,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
-                SegmentedButton<String>(
+                // Short labels: three long Russian ones needed ~600dp and were
+                // the source of a 295px overflow (measured at 740x360). A
+                // horizontal scroll keeps all three reachable on tiny screens.
+                Flexible(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SegmentedButton<String>(
                   segments: const [
-                    ButtonSegment(value: 'global', label: Text('Весь трафик (VPN)')),
-                    ButtonSegment(value: 'rule', label: Text('По правилам')),
-                    ButtonSegment(value: 'direct', label: Text('Прямой доступ')),
+                    ButtonSegment(
+                        value: 'global',
+                        label: Text('VPN'),
+                        tooltip: 'Весь трафик через VPN'),
+                    ButtonSegment(
+                        value: 'rule',
+                        label: Text('Правила'),
+                        tooltip: 'Маршрутизация по правилам'),
+                    ButtonSegment(
+                        value: 'direct',
+                        label: Text('Напрямую'),
+                        tooltip: 'Прямой доступ без VPN'),
                   ],
                   selected: {prefs?.routingMode ?? 'rule'},
                   onSelectionChanged: (s) async {
@@ -98,6 +119,8 @@ class RoutingScreen extends ConsumerWidget {
                       debugPrint('routing mode switch failed: $e');
                     }
                   },
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -440,20 +463,31 @@ class _RuleTile extends StatelessWidget {
           ),
           const SizedBox(width: 8),
 
-          // Action badge
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: actionColor.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
-              border: Border.all(color: actionColor.withValues(alpha: 0.3)),
-            ),
-            child: Text(
-              rule.action.value.toUpperCase(),
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: actionColor,
+          // Action badge. Bounded: the label comes from the rule itself and can
+          // be long ("PROXY-DIRECT"), which used to push this row 295px past a
+          // phone's width. Ellipsis + tooltip keeps the value discoverable.
+          Tooltip(
+            message: rule.action.value.toUpperCase(),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 72),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: actionColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
+                  border: Border.all(color: actionColor.withValues(alpha: 0.3)),
+                ),
+                child: Text(
+                  rule.action.value.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: actionColor,
+                  ),
+                ),
               ),
             ),
           ),
@@ -503,6 +537,8 @@ class _RoutingPresetsSection extends ConsumerWidget {
             children: [
               Row(
                 children: [
+                  // Expanded keeps the title from pushing the trailing actions
+                  // off-screen on a narrow phone.
                   Expanded(
                     child: Text(
                       'Пресеты роутинга',
@@ -624,52 +660,66 @@ class _PresetTile extends ConsumerWidget {
         overflow: TextOverflow.ellipsis,
         style: TextStyle(fontSize: 11.5, color: c.textSecondary),
       ),
+      // Width budget: ListTile does not constrain `trailing`, so packing
+      // several buttons into a Row overflows on a phone (measured up to 295px).
+      // One visible action plus a menu keeps the common path one tap away and
+      // always fits.
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          IconButton(
-            tooltip: 'Экспорт (скопировать JSON)',
-            icon: const Icon(Icons.ios_share, size: 18),
-            onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: preset.encode()));
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('JSON пресета скопирован')),
-                );
+          PopupMenuButton<String>(
+            tooltip: 'Действия с пресетом',
+            icon: const Icon(Icons.more_vert, size: 20),
+            onSelected: (action) async {
+              switch (action) {
+                case 'apply':
+                  try {
+                    await applyRoutingPreset(ref, preset);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                            content: Text(
+                                'Пресет «${preset.name}» применён. Переподключитесь.')),
+                      );
+                    }
+                  } catch (_) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Не удалось применить пресет')),
+                      );
+                    }
+                  }
+                case 'export':
+                  await Clipboard.setData(ClipboardData(text: preset.encode()));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('JSON пресета скопирован')),
+                    );
+                  }
+                case 'delete':
+                  final current =
+                      await ref.read(routingPresetsProvider.future);
+                  await saveUserPresets(ref, [
+                    for (final p in current) if (p.id != preset.id) p,
+                  ]);
               }
             },
-          ),
-          if (!preset.builtIn)
-            IconButton(
-              tooltip: 'Удалить пресет',
-              icon: const Icon(Icons.delete_outline, size: 18),
-              onPressed: () async {
-                final current = await ref.read(routingPresetsProvider.future);
-                await saveUserPresets(ref, [
-                  for (final p in current) if (p.id != preset.id) p,
-                ]);
-              },
-            ),
-          TextButton(
-            onPressed: () async {
-              try {
-                await applyRoutingPreset(ref, preset);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                        content:
-                            Text('Пресет «${preset.name}» применён. Переподключитесь.')),
-                  );
-                }
-              } catch (_) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Не удалось применить пресет')),
-                  );
-                }
-              }
-            },
-            child: const Text('Применить'),
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'apply',
+                child: Text('Применить'),
+              ),
+              const PopupMenuItem(
+                value: 'export',
+                child: Text('Экспорт (JSON)'),
+              ),
+              if (!preset.builtIn)
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Text('Удалить пресет'),
+                ),
+            ],
           ),
         ],
       ),
