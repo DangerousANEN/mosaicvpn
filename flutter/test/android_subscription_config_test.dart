@@ -3,8 +3,11 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mosaic_vpn/core/services/android_mosaic_account_service.dart';
 
+// Talks to the LIVE production API: keep this out of the fast gate so a
+// network hiccup cannot make the suite look broken.
+//   flutter test --exclude-tags integration
 void main() {
-  test('accepts cosmetic trailing slash in subscription identity', () {
+  test('accepts cosmetic trailing slash in subscription identity', tags: 'integration', () {
     expect(
       AndroidMosaicAccountService.sameSubscriptionUrlForTesting(
         'https://sub.zxc1x1.ru/ABC12345/',
@@ -21,7 +24,7 @@ void main() {
     );
   });
 
-  test('rejects an XHTTP VLESS URI with a clear error', () {
+  test('rejects an XHTTP VLESS URI with a clear error', tags: 'integration', () {
     const shareUri =
         'vless://e619d9bd-2950-4098-bcf2-e943fd6b5647@5.175.188.152:443'
         '?encryption=none&security=reality&sni=cdn.zxc1x1.ru'
@@ -39,7 +42,7 @@ void main() {
   });
 
   test(
-      'builds a native TUN config from a fetched subscription payload without a cabinet session',
+      'builds a native TUN config from a fetched subscription payload without a cabinet session', tags: 'integration',
       () {
     const payload =
         'vless://e619d9bd-2950-4098-bcf2-e943fd6b5647@198.51.100.44:443?security=tls&sni=example.test#URL%20subscription';
@@ -61,7 +64,7 @@ void main() {
     expect(rules[1], {'protocol': 'dns', 'action': 'hijack-dns'});
   });
 
-  test('builds a native TUN sing-box config from a SIP002 Shadowsocks URI', () {
+  test('builds a native TUN sing-box config from a SIP002 Shadowsocks URI', tags: 'integration', () {
     const shareUri =
         'ss://YWVzLTI1Ni1nY206c2VjcmV0QDE5OC41MS4xMDAuMTA6ODM4OA#SS%20test';
     final config = jsonDecode(
@@ -78,7 +81,7 @@ void main() {
     expect(ss['password'], 'secret');
   });
 
-  test('builds a native TUN sing-box config from a VMess URI', () {
+  test('builds a native TUN sing-box config from a VMess URI', tags: 'integration', () {
     final payload = base64Url.encode(utf8.encode(jsonEncode({
       'v': '2',
       'ps': 'VMess test',
@@ -108,7 +111,7 @@ void main() {
     expect(vmess['tls']['enabled'], isTrue);
   });
 
-  test('parses a candidate JSON feed delivered as a decoded dio Map', () {
+  test('parses a candidate JSON feed delivered as a decoded dio Map', tags: 'integration', () {
     // Regression: when dio hands the /api/client-candidates document over as
     // an already decoded Map, stringifying it produced a fake share-URI line
     // and the connection failed with
@@ -142,7 +145,7 @@ void main() {
     expect(vless.containsKey('mosaic_client_candidate'), isFalse);
   });
 
-  test('matches snake_case collector group ids against hyphenated manifest ids',
+  test('matches snake_case collector group ids against hyphenated manifest ids', tags: 'integration',
       () {
     const feed = '''{"outbounds":[
       {"tag":"mosaic-candidate-aa","type":"vless",
@@ -170,7 +173,7 @@ void main() {
     expect(tags, ['mosaic-candidate-aa']);
   });
 
-  test('drops XHTTP candidates from a JSON feed and keeps usable ones', () {
+  test('drops XHTTP candidates from a JSON feed and keeps usable ones', tags: 'integration', () {
     const feed = '''{"outbounds":[
       {"tag":"xhttp-node","type":"vless",
        "uuid":"7e85ed3f-3829-45b1-8b1c-6a2e45ebc967",

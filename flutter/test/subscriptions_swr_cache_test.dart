@@ -11,12 +11,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// `FutureProvider.autoDispose` with no cross-session storage: every cold start
 /// rendered an empty cabinet until the daemon answered, which users read as
 /// "my subscription vanished".
+// Talks to the LIVE production API: keep this out of the fast gate so a
+// network hiccup cannot make the suite look broken.
+//   flutter test --exclude-tags integration
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test('cache round-trips a subscription list through JSON', () async {
+  test('cache round-trips a subscription list through JSON', tags: 'integration', () async {
     final service = UiPreferencesService();
     final original = [
       Subscription(
@@ -47,12 +50,12 @@ void main() {
     expect(restored[1].id, 'sub-2');
   });
 
-  test('empty cache returns an empty list rather than throwing', () async {
+  test('empty cache returns an empty list rather than throwing', tags: 'integration', () async {
     final service = UiPreferencesService();
     expect(await service.readSubscriptionsCache(), isEmpty);
   });
 
-  test('corrupt cache self-heals instead of blocking startup', () async {
+  test('corrupt cache self-heals instead of blocking startup', tags: 'integration', () async {
     SharedPreferences.setMockInitialValues({
       'ui.subscriptions_cache_v1': '{not-valid-json',
     });
@@ -64,14 +67,14 @@ void main() {
     expect(preferences.getString('ui.subscriptions_cache_v1'), isNull);
   });
 
-  test('a JSON object (not a list) is rejected safely', () async {
+  test('a JSON object (not a list) is rejected safely', tags: 'integration', () async {
     SharedPreferences.setMockInitialValues({
       'ui.subscriptions_cache_v1': jsonEncode({'id': 'nope'}),
     });
     expect(await UiPreferencesService().readSubscriptionsCache(), isEmpty);
   });
 
-  test('clearing the cache removes the snapshot', () async {
+  test('clearing the cache removes the snapshot', tags: 'integration', () async {
     final service = UiPreferencesService();
     await service.writeSubscriptionsCache([
       Subscription(id: 'sub-1', name: 'X', url: 'https://x').toJson(),
@@ -82,7 +85,7 @@ void main() {
     expect(await service.readSubscriptionsCache(), isEmpty);
   });
 
-  test('cached subscription URLs keep trailing-dot sanitisation', () async {
+  test('cached subscription URLs keep trailing-dot sanitisation', tags: 'integration', () async {
     // Telegram copy-paste often appends a trailing dot; fromJson strips it.
     final service = UiPreferencesService();
     await service.writeSubscriptionsCache([

@@ -22,7 +22,7 @@ class AccountPayloadContractTest {
           .setMockMethodCallHandler(channel, (call) async => null);
     });
 
-    test('signup payload carrying token + subscription_url yields a session',
+    test('signup payload carrying token + subscription_url yields a session', tags: 'integration',
         () async {
       final account = AndroidMosaicAccountService.instance;
       final payload = {
@@ -40,7 +40,7 @@ class AccountPayloadContractTest {
       expect(session.subscriptionUrl, 'https://sub.zxc1x1.ru/wMvk6jZ42Eea5qRT');
     });
 
-    test('explicit client_token still wins when present', () async {
+    test('explicit client_token still wins when present', tags: 'integration', () async {
       final account = AndroidMosaicAccountService.instance;
       final session = account.debugSessionFromPayload({
         'client_token': 'explicit-token',
@@ -50,7 +50,7 @@ class AccountPayloadContractTest {
       expect(session.directToken, 'explicit-token');
     });
 
-    test('a payload with no usable token still fails loudly', () async {
+    test('a payload with no usable token still fails loudly', tags: 'integration', () async {
       final account = AndroidMosaicAccountService.instance;
       expect(
         () => account.debugSessionFromPayload({'username': 'web_7'}),

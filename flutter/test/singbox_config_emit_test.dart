@@ -7,13 +7,16 @@ import 'package:mosaic_vpn/core/services/android_mosaic_account_service.dart';
 /// Emits real generated TUN configs to disk so an external `sing-box check`
 /// can validate them. Schema validation in the app is not enough: sing-box
 /// 1.13 removed several legacy fields and only the real binary catches them.
+// Talks to the LIVE production API: keep this out of the fast gate so a
+// network hiccup cannot make the suite look broken.
+//   flutter test --exclude-tags integration
 void main() {
   const shareUri =
       'vless://372f63da-99fa-4f82-9988-457d2f70091a@5.175.188.152:443'
       '?encryption=none&type=ws&path=%2Fmosaicws&host=sub.zxc1x1.ru'
       '&security=tls&sni=vk.com&allowInsecure=1&fp=chrome#Mosaic%20Direct';
 
-  test('emit generated configs for external sing-box validation', () {
+  test('emit generated configs for external sing-box validation', tags: 'integration', () {
     final out = Directory('build/singbox_check')..createSync(recursive: true);
 
     for (final adBlock in [false, true]) {

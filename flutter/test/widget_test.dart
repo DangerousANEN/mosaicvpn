@@ -80,6 +80,9 @@ Future<void> _pumpAt(WidgetTester tester, Size size,
   await tester.pump();
 }
 
+// Talks to the LIVE production API: keep this out of the fast gate so a
+// network hiccup cannot make the suite look broken.
+//   flutter test --exclude-tags integration
 void main() {
   setUp(() {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
@@ -88,7 +91,7 @@ void main() {
     AppPlatform.debugTargetPlatformOverride = null;
   });
 
-  testWidgets('phone shell exposes four clear primary tabs', (tester) async {
+  testWidgets('phone shell exposes four clear primary tabs', tags: 'integration', (tester) async {
     await _pumpAt(tester, const Size(390, 844));
 
     // Four primary tasks keep first use calm; technical controls live in «Ещё».
@@ -104,7 +107,7 @@ void main() {
         reason: 'phone navigation must build without a framework exception');
   });
 
-  testWidgets('phone shell lays out without overflow on a small screen',
+  testWidgets('phone shell lays out without overflow on a small screen', tags: 'integration',
       (tester) async {
     await _pumpAt(tester, const Size(360, 640));
 
@@ -112,7 +115,7 @@ void main() {
         reason: '360x640 is a real device size and must lay out clean');
   });
 
-  testWidgets('desktop shell starts on the connection dashboard',
+  testWidgets('desktop shell starts on the connection dashboard', tags: 'integration',
       (tester) async {
     await _pumpAt(tester, const Size(1440, 960));
 
@@ -133,7 +136,7 @@ void main() {
         reason: 'English dashboard must render without an exception');
   });
 
-  testWidgets('dashboard localizes UI while preserving provider route name',
+  testWidgets('dashboard localizes UI while preserving provider route name', tags: 'integration',
       (tester) async {
     await _pumpAt(tester, const Size(1440, 960), locale: const Locale('en'));
 
@@ -150,7 +153,7 @@ void main() {
         reason: 'English dashboard must render without a framework exception');
   });
 
-  testWidgets('dashboard uses branded dialogs for route and subscription choice',
+  testWidgets('dashboard uses branded dialogs for route and subscription choice', tags: 'integration',
       (tester) async {
     await _pumpAt(tester, const Size(1440, 960));
 

@@ -42,10 +42,13 @@ Map<String, dynamic> node(String tag, {List<String>? groups}) => {
   if (groups != null) 'mosaic_group_ids': groups,
 };
 
+// Talks to the LIVE production API: keep this out of the fast gate so a
+// network hiccup cannot make the suite look broken.
+//   flutter test --exclude-tags integration
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('named groups reject a feed with no membership metadata', () async {
+  test('named groups reject a feed with no membership metadata', tags: 'integration', () async {
     final account = AndroidMosaicAccountService.withHttpAdapter(
       FeedAdapter({'outbounds': [node('unscoped')]}));
     for (final group in ['free-lte', 'min-latency']) {
@@ -54,7 +57,7 @@ void main() {
     }
   });
 
-  test('candidate API errors propagate without ordinary subscription fallback', () async {
+  test('candidate API errors propagate without ordinary subscription fallback', tags: 'integration', () async {
     final adapter = FeedAdapter({'error': 'unavailable'}, status: 503);
     final account = AndroidMosaicAccountService.withHttpAdapter(adapter);
     await expectLater(account.buildNativeTunConfigFromScopedCandidates(
@@ -63,7 +66,7 @@ void main() {
     expect(adapter.paths, ['/api/client-candidates/fixture']);
   });
 
-  test('whole-group config retains only scoped candidates', () async {
+  test('whole-group config retains only scoped candidates', tags: 'integration', () async {
     final adapter = FeedAdapter({'outbounds': [
       node('first', groups: ['free-lte']), node('second', groups: ['free-lte']),
       node('foreign', groups: ['germany']),
@@ -89,7 +92,7 @@ void main() {
     );
   });
 
-  test('empty scoped feed fails without fetching ordinary subscription', () async {
+  test('empty scoped feed fails without fetching ordinary subscription', tags: 'integration', () async {
     final adapter = FeedAdapter({'outbounds': []});
     final account = AndroidMosaicAccountService.withHttpAdapter(adapter);
     await expectLater(

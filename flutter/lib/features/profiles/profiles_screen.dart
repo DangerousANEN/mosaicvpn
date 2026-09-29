@@ -118,6 +118,18 @@ class ProfilesScreen extends ConsumerWidget {
     final allowLAN = ValueNotifier<bool>(existing?.allowLAN ?? true);
     final autoConnect = ValueNotifier<bool>(existing?.autoConnect ?? false);
 
+    // These objects live exactly as long as the dialog. Disposing on dismissal
+    // is what stops them accumulating across every open/close in a session.
+    void releaseDialogResources() {
+      nameCtrl.dispose();
+      iconCtrl.dispose();
+      colorCtrl.dispose();
+      tunnelMode.dispose();
+      killSwitch.dispose();
+      allowLAN.dispose();
+      autoConnect.dispose();
+    }
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -235,7 +247,7 @@ class ProfilesScreen extends ConsumerWidget {
           ),
         ],
       ),
-    );
+    ).whenComplete(releaseDialogResources);
   }
 }
 

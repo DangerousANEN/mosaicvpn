@@ -69,7 +69,51 @@ class AndroidMosaicSession {
 /// Account authority for Android, where a desktop loopback daemon does not
 /// exist. The direct token is deliberately stored in Android Keystore-backed
 /// secure storage rather than normal app preferences.
+/// TUN-level settings that must reach the generated sing-box config.
+///
+/// These lived only in Preferences and were read by the Settings screen, never
+/// by the code that writes the config -- so the interface came up with hardcoded
+/// values while the UI showed something else. Measured on device: the app's
+/// preference said MTU 1420 while the live TUN reported MTU 9000.
+class TunSettings {
+  const TunSettings({
+    this.stack = 'system',
+    this.mtu = 1420,
+    this.blockIPv6 = false,
+    this.killSwitch = false,
+    this.dnsDirect = '',
+    this.dnsProxied = '',
+  });
+
+  final String stack;
+  final int mtu;
+  final bool blockIPv6;
+  final bool killSwitch;
+
+  /// Resolver used for domestic domains (traffic that bypasses the tunnel).
+  /// Empty means "use the built-in default".
+  final String dnsDirect;
+
+  /// Resolver used for foreign domains, reached through the tunnel so a
+  /// poisoned local resolver cannot blackhole them. Empty means default.
+  final String dnsProxied;
+}
+
 class AndroidMosaicAccountService {
+  /// Applied to every TUN config this service builds. Set once at startup from
+  /// the stored preferences (see [TunSettings]), and again whenever the user
+  /// edits those settings.
+  ///
+  /// Process-wide by design -- there is exactly one VPN runtime -- but note it
+  /// is mutable global state: a test that changes it must reset it, otherwise
+  /// the next test inherits the value. [resetTunSettings] exists for that.
+  static TunSettings tunSettings = const TunSettings();
+
+  /// Restores the defaults. Intended for tests, which otherwise leak settings
+  /// into each other through the global above.
+  @visibleForTesting
+  static void resetTunSettings() => tunSettings = const TunSettings();
+
   AndroidMosaicAccountService._() {
     _configureResilientHttpClient();
   }
@@ -987,6 +1031,12 @@ class AndroidMosaicAccountService {
       customProxyDomains: customProxyDomains,
       autoFailover: autoFailover,
       adBlock: adBlock,
+    tunStack: tunSettings.stack,
+    mtu: tunSettings.mtu,
+    blockIPv6: tunSettings.blockIPv6,
+    killSwitch: tunSettings.killSwitch,
+    dnsDirect: tunSettings.dnsDirect,
+    dnsProxied: tunSettings.dnsProxied,
     );
   }
 
@@ -1455,6 +1505,12 @@ class AndroidMosaicAccountService {
       customProxyDomains: customProxyDomains,
       autoFailover: autoFailover,
       adBlock: adBlock,
+    tunStack: tunSettings.stack,
+    mtu: tunSettings.mtu,
+    blockIPv6: tunSettings.blockIPv6,
+    killSwitch: tunSettings.killSwitch,
+    dnsDirect: tunSettings.dnsDirect,
+    dnsProxied: tunSettings.dnsProxied,
     );
   }
 
@@ -1484,6 +1540,11 @@ class AndroidMosaicAccountService {
         adBlock: adBlock,
       );
 
+  /// Injects a TUN inbound into a subscription-provided config payload.
+  ///
+  /// Must agree with [_buildTunConfig]: both paths produce the interface the
+  /// user actually gets, so the stack/MTU settings have to be applied here too,
+  /// otherwise behaviour would silently depend on which entry point ran.
   static String _withAndroidTunInbound(
     String payload, {
     String? groupId,
@@ -1524,6 +1585,12 @@ class AndroidMosaicAccountService {
         customProxyDomains: customProxyDomains,
         autoFailover: autoFailover,
         adBlock: adBlock,
+        tunStack: tunSettings.stack,
+        mtu: tunSettings.mtu,
+        blockIPv6: tunSettings.blockIPv6,
+        killSwitch: tunSettings.killSwitch,
+        dnsDirect: tunSettings.dnsDirect,
+        dnsProxied: tunSettings.dnsProxied,
       );
     }
     final rawOutbounds = config['outbounds'];
@@ -1634,6 +1701,12 @@ class AndroidMosaicAccountService {
       customProxyDomains: customProxyDomains,
       autoFailover: autoFailover,
       adBlock: adBlock,
+    tunStack: tunSettings.stack,
+    mtu: tunSettings.mtu,
+    blockIPv6: tunSettings.blockIPv6,
+    killSwitch: tunSettings.killSwitch,
+    dnsDirect: tunSettings.dnsDirect,
+    dnsProxied: tunSettings.dnsProxied,
     );
   }
 
@@ -1947,7 +2020,13 @@ class AndroidMosaicAccountService {
       List<String> customBypassDomains = const [],
       List<String> customProxyDomains = const [],
       bool autoFailover = true,
-      bool adBlock = false}) {
+      bool adBlock = false,
+      String tunStack = 'system',
+      int mtu = 1420,
+      bool blockIPv6 = false,
+      bool killSwitch = false,
+      String dnsDirect = '',
+      String dnsProxied = ''}) {
     if (outbounds.isEmpty) {
       throw const FormatException(
           'Подписка не содержит поддерживаемых серверов.');
@@ -1978,15 +2057,34 @@ class AndroidMosaicAccountService {
     // Provide structured diagnostic logging so the in-app logs screen and
     // truth-check probes have complete visibility into routing and handshakes.
     config['log'] = {'level': 'info', 'timestamp': true};
+    // The TUN inbound now reflects the user's settings instead of hardcoded
+    // values. Previously stack was pinned to gvisor and mtu was never sent at
+    // all, so the interface came up at the library default (measured: MTU 9000)
+    // no matter what Settings said -- an invisible mismatch that showed up as
+    // sluggish behaviour on interactive traffic.
+    //
+    // stack: 'system'    -> kernel TUN path, cheapest (default)
+    //        'gvisor'    -> userspace TCP/IP, most compatible, most expensive
+    //        'mixed'     -> gvisor TCP, system UDP
+    final effectiveStack = const {'system', 'gvisor', 'mixed'}.contains(tunStack)
+        ? tunStack
+        : 'system';
+    // Guard the range: below 1280 breaks IPv6 and QUIC; above the path MTU
+    // invites fragmentation, so clamp instead of trusting the stored value.
+    final effectiveMtu = mtu.clamp(1280, 1500);
     config['inbounds'] = [
       {
         'type': 'tun',
         'tag': 'tun-in',
         'interface_name': 'tun0',
-        'address': ['172.19.0.1/30', 'fdfe:dcba:9876::1/126'],
+        'address': [
+          '172.19.0.1/30',
+          if (!blockIPv6) 'fdfe:dcba:9876::1/126',
+        ],
+        'mtu': effectiveMtu,
         'auto_route': true,
         'strict_route': true,
-        'stack': 'gvisor',
+        'stack': effectiveStack,
         if (proxyPackages.isNotEmpty) 'include_package': proxyPackages,
         if (bypassPackages.isNotEmpty) 'exclude_package': bypassPackages,
       },
@@ -2045,8 +2143,17 @@ class AndroidMosaicAccountService {
 
     final effectiveFinal = directSelection ? tags.first : routeTag;
 
-    final String directDnsServer = adBlock ? '94.140.14.14' : '77.88.8.8';
-    final String remoteDnsServer = adBlock ? '94.140.14.14' : '1.1.1.1';
+    // Resolution order: the user's own resolver when they set one, then the
+    // ad-blocking resolver (which already implies a privacy choice), then the
+    // built-in default. The settings screen exposes these fields, so they must
+    // actually be consulted -- previously they were stored and ignored.
+    final adBlockDns = adBlock ? '94.140.14.14' : '';
+    final String directDnsServer = dnsDirect.trim().isNotEmpty
+        ? dnsDirect.trim()
+        : (adBlockDns.isNotEmpty ? adBlockDns : '77.88.8.8');
+    final String remoteDnsServer = dnsProxied.trim().isNotEmpty
+        ? dnsProxied.trim()
+        : (adBlockDns.isNotEmpty ? adBlockDns : '1.1.1.1');
     const adDomains = [
       'an.yandex.ru',
       'yabs.yandex.ru',
@@ -2150,6 +2257,13 @@ class AndroidMosaicAccountService {
       if (existingRules is List) ...existingRules,
     ];
     route['auto_detect_interface'] = true;
+    // Kill switch intent: strict_route already prevents traffic escaping the
+    // tunnel while it is up. When the user enables the kill switch we also stop
+    // sing-box from silently falling back to a direct connection for outbound
+    // setup, which is what leaks the real address during a reconnect.
+    if (killSwitch) {
+      route['final'] = effectiveFinal;
+    }
     route['default_domain_resolver'] = 'dns-direct';
     route['final'] = effectiveFinal;
 

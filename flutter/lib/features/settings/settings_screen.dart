@@ -1707,6 +1707,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     try {
       final api = ref.read(daemonApiProvider);
       await api.setPrefs(updated.toJson());
+      // Publish TUN settings immediately. The config builder reads them when it
+      // next builds a config, so without this a changed MTU or stack would only
+      // take effect after an app restart -- the classic "I changed the setting
+      // and nothing happened" report.
+      AndroidMosaicAccountService.tunSettings = TunSettings(
+        stack: updated.tunStack,
+        mtu: updated.mtu,
+        blockIPv6: updated.blockIPv6,
+        killSwitch: updated.killSwitch,
+      dnsDirect: updated.dnsDirect,
+      dnsProxied: updated.dnsProxied,
+      );
       ref.invalidate(prefsProvider);
       // Settings that shape the sing-box config (split tunneling, MTU, DNS,
       // engine…) only take effect when the runtime rebuilds its config. When

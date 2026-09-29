@@ -213,15 +213,29 @@ class _AppShellState extends ConsumerState<AppShell>
     if (AppPlatform.isAndroid) {
       _enrollmentCallbackSubscription =
           AndroidVpnService.instance.enrollmentCallbacks.listen(_enqueueEnrollment);
-      // Telegram WS resilience booster: start the embedded engine at app
-      // launch when the user enabled it, so Telegram keeps working even
-      // before any tunnel is raised (and independently of it).
       () async {
         try {
           final prefs = await ref.read(daemonApiProvider).getPrefs();
+          // TUN-level settings (stack, MTU, IPv6, kill switch) only exist in
+          // Preferences and were read by the Settings screen alone -- the code
+          // that builds the sing-box config never saw them. Measured on device:
+          // the UI said MTU 1420 while the live interface reported 9000, and
+          // stack was pinned to gvisor regardless of the 'system' default.
+          // Publishing them here is what makes those controls real.
+          AndroidMosaicAccountService.tunSettings = TunSettings(
+            stack: prefs.tunStack,
+            mtu: prefs.mtu,
+            blockIPv6: prefs.blockIPv6,
+            killSwitch: prefs.killSwitch,
+            dnsDirect: prefs.dnsDirect,
+            dnsProxied: prefs.dnsProxied,
+          );
+          // Telegram WS resilience booster: start the embedded engine at app
+          // launch when the user enabled it, so Telegram keeps working even
+          // before any tunnel is raised (and independently of it).
           if (prefs.tgBooster) await TgWsBooster.start();
         } catch (_) {
-          // Booster is best-effort; never block app startup.
+          // These are best-effort; never block app startup.
         }
       }();
     }

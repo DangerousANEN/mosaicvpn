@@ -1,0 +1,22 @@
+# Test configuration.
+#
+# Why this exists: 13 test files call the LIVE production API
+# (sub.zxc1x1.ru) to validate real subscription/candidate parsing. That is
+# genuinely useful, but it makes them fail on a network hiccup, a rate limit or
+# a server deploy even when the client code is correct -- and an intermittently
+# red suite trains everyone to ignore it.
+#
+# Those files are tagged `integration` so the fast gate can stay trustworthy:
+#
+#   flutter test --exclude-tags integration    # fast, deterministic gate
+#   flutter test --tags integration            # deliberate live probes
+#
+# Files are matched by filename; add new live-server tests to this list.
+tags:
+  integration:
+    # A tag must be declared to be used.
+
+# Presets keep the intent explicit and discoverable.
+presets:
+  fast:
+    exclude_tags: "integration"

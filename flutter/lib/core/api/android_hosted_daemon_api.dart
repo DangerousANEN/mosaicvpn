@@ -109,12 +109,34 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
           '[ROUTE] Active route changing from "${_activeRoute?.name}" to "${route.name}". Stopping previous tunnel...',
         );
         await vpn.stop();
-        var loops = 0;
-        while (loops < 15) {
+        // Wait for the native side to reach a terminal state. The native
+        // stopLatch allows 4s, so a shorter wait here would start the new core
+        // on top of a still-dying tunnel -- the reason connecting sometimes
+        // needed a second attempt. Poll for the full window and, if the old
+        // session is still busy afterwards, stop once more rather than
+        // proceeding into a race.
+        final stopDeadline = DateTime.now().add(const Duration(seconds: 4));
+        var settled = false;
+        while (DateTime.now().isBefore(stopDeadline)) {
           final s = await vpn.status();
-          if (!s.isConnected && !s.isBusy) break;
+          if (!s.isConnected && !s.isBusy) {
+            settled = true;
+            break;
+          }
           await Future<void>.delayed(const Duration(milliseconds: 80));
-          loops++;
+        }
+        if (!settled) {
+          await vpn.appendNativeLog(
+            '[ROUTE] previous tunnel still busy after 4s; issuing a second stop',
+          );
+          await vpn.stop();
+          final retryDeadline =
+              DateTime.now().add(const Duration(seconds: 2));
+          while (DateTime.now().isBefore(retryDeadline)) {
+            final s = await vpn.status();
+            if (!s.isConnected && !s.isBusy) break;
+            await Future<void>.delayed(const Duration(milliseconds: 80));
+          }
         }
       }
     }

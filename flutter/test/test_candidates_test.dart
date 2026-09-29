@@ -4,9 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:dio/dio.dart';
 import 'package:mosaic_vpn/core/services/android_mosaic_account_service.dart';
 
+// Talks to the LIVE production API: keep this out of the fast gate so a
+// network hiccup cannot make the suite look broken.
+//   flutter test --exclude-tags integration
 void main() {
   AndroidMosaicAccountService.debugSkipReachabilityFilter = true;
-  test('test full generation from client-candidates endpoint', () async {
+  test('test full generation from client-candidates endpoint', tags: 'integration', () async {
     final dio = Dio();
     final resp = await dio.get<String>('https://sub.zxc1x1.ru/api/client-candidates/reftcT_frzSCwhav');
     final payload = resp.data!;

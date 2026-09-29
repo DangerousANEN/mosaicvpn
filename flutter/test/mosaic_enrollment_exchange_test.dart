@@ -23,9 +23,12 @@ class _MockExchangeAdapter implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
+// Talks to the LIVE production API: keep this out of the fast gate so a
+// network hiccup cannot make the suite look broken.
+//   flutter test --exclude-tags integration
 void main() {
   group('MosaicEnrollmentExchange.isSupportedCallback', () {
-    test('accepts verified https website callbacks', () {
+    test('accepts verified https website callbacks', tags: 'integration', () {
       expect(
         MosaicEnrollmentExchange.isSupportedCallback(
           Uri.parse('https://sub.zxc1x1.ru/enroll/callback?code=12345678'),
@@ -34,7 +37,7 @@ void main() {
       );
     });
 
-    test('accepts mosaicvpn and mosaic custom schemes', () {
+    test('accepts mosaicvpn and mosaic custom schemes', tags: 'integration', () {
       expect(
         MosaicEnrollmentExchange.isSupportedCallback(
           Uri.parse('mosaicvpn://enroll/callback?code=12345678'),
@@ -49,7 +52,7 @@ void main() {
       );
     });
 
-    test('rejects unsupported domains or schemes', () {
+    test('rejects unsupported domains or schemes', tags: 'integration', () {
       expect(
         MosaicEnrollmentExchange.isSupportedCallback(
           Uri.parse('https://evil.com/enroll/callback?code=12345678'),
@@ -66,7 +69,7 @@ void main() {
   });
 
   group('MosaicEnrollmentExchange.callbackDeliveryKey', () {
-    test('creates one stable key for equivalent custom protocol callbacks', () {
+    test('creates one stable key for equivalent custom protocol callbacks', tags: 'integration', () {
       const code = 'A1B2C3D4E5F6G7H8I9J0K1L2';
       const state = 'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPp';
       final callback = Uri.parse(
@@ -79,7 +82,7 @@ void main() {
       );
     });
 
-    test('creates stable key for 8-char bot pairing links without state', () {
+    test('creates stable key for 8-char bot pairing links without state', tags: 'integration', () {
       const code = 'ABCD1234';
       final callback = Uri.parse(
         'https://sub.zxc1x1.ru/enroll/callback?code=$code',
@@ -91,7 +94,7 @@ void main() {
       );
     });
 
-    test('deduplicates identical cold and warm deliveries', () {
+    test('deduplicates identical cold and warm deliveries', tags: 'integration', () {
       const code = 'K1L2M3N4O5P6Q7R8S9T0U1V2';
       const state = 'ZzYyXxWwVvUuTtSsRrQqPpOo';
       final coldUri = Uri.parse('mosaicvpn://enroll/callback?code=$code&state=$state');
@@ -104,7 +107,7 @@ void main() {
       expect(coldKey, '$code::$state');
     });
 
-    test('rejects malformed or unrelated callbacks', () {
+    test('rejects malformed or unrelated callbacks', tags: 'integration', () {
       expect(
         MosaicEnrollmentExchange.callbackDeliveryKey(
           Uri.parse('mosaicvpn://enroll/callback?code=short&state=short'),
@@ -121,7 +124,7 @@ void main() {
   });
 
   group('MosaicEnrollmentExchange.redeem & burn-before-durable-save', () {
-    test('redeems valid exchange response with durable tokens', () async {
+    test('redeems valid exchange response with durable tokens', tags: 'integration', () async {
       const code = 'X1Y2Z3A4B5C6D7E8F9G0H1I2';
       const state = 'StateToken12345678901234567890';
       final callback = Uri.parse(
@@ -160,7 +163,7 @@ void main() {
       expect(result.username, 'tg_user_123');
     });
 
-    test('throws FormatException if purpose is not enroll', () async {
+    test('throws FormatException if purpose is not enroll', tags: 'integration', () async {
       const code = 'X1Y2Z3A4B5C6D7E8F9G0H1I2';
       const state = 'StateToken12345678901234567890';
       final callback = Uri.parse(

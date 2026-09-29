@@ -7,6 +7,9 @@ import 'package:mosaic_vpn/core/services/android_mosaic_account_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'android_scoped_candidate_connection_test.dart' show FeedAdapter, node;
 
+// Talks to the LIVE production API: keep this out of the fast gate so a
+// network hiccup cannot make the suite look broken.
+//   flutter test --exclude-tags integration
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const channel = MethodChannel('ru.mosaicvpn.mosaic_vpn/android_vpn');
@@ -48,7 +51,7 @@ void main() {
       .setMockMethodCallHandler(channel, null);
   });
 
-  test('explicit candidate launches only its own outbound', () async {
+  test('explicit candidate launches only its own outbound', tags: 'integration', () async {
     final shard = await api.getCandidateShard('provider:fixture:free-lte', 'test-installation');
     await expectLater(api.connectGroupCandidate('provider:fixture:free-lte',
       shard.candidateIds.last), throwsStateError);
@@ -59,7 +62,7 @@ void main() {
   });
 
   for (final candidate in ['other', 'missing', '']) {
-    test('rejects out-of-scope or invalid candidate: $candidate', () async {
+    test('rejects out-of-scope or invalid candidate: $candidate', tags: 'integration', () async {
       await expectLater(api.connectGroupCandidate(
         'provider:fixture:free-lte', candidate), throwsStateError);
       expect(configs, isEmpty);
@@ -67,7 +70,7 @@ void main() {
     });
   }
 
-  test('removed shard candidate is rejected before native startup', () async {
+  test('removed shard candidate is rejected before native startup', tags: 'integration', () async {
     await api.getCandidateShard('provider:fixture:free-lte', 'test-installation');
     (adapter.feed['outbounds'] as List).removeWhere((entry) => entry['tag'] == 'second');
     await expectLater(api.connectGroupCandidate(
@@ -75,20 +78,20 @@ void main() {
     expect(configs, isEmpty);
   });
 
-  test('ambiguous duplicate candidate tags are rejected', () async {
+  test('ambiguous duplicate candidate tags are rejected', tags: 'integration', () async {
     (adapter.feed['outbounds'] as List).add(node('second', groups: ['free-lte']));
     await expectLater(api.connectGroupCandidate(
       'provider:fixture:free-lte', 'second'), throwsStateError);
     expect(configs, isEmpty);
   });
 
-  test('group startup failure never substitutes ordinary subscription', () async {
+  test('group startup failure never substitutes ordinary subscription', tags: 'integration', () async {
     await expectLater(api.connectGroup('provider:fixture:free-lte'), throwsStateError);
     expect(configs, hasLength(1));
     expect(adapter.paths, isNot(contains('/fixture')));
   });
 
-  test('a dead-traffic candidate is rotated out, not retried', () async {
+  test('a dead-traffic candidate is rotated out, not retried', tags: 'integration', () async {
     // The diagnosed production failure: the core starts, the tunnel comes up,
     // but the node carries no traffic ("connects, lags, dies in 3s"). The
     // connect layer must drop THAT node and start again with the next one,

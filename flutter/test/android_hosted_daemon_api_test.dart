@@ -7,6 +7,9 @@ import 'package:mosaic_vpn/core/api/android_hosted_daemon_api.dart';
 import 'package:mosaic_vpn/core/models/models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+// Talks to the LIVE production API: keep this out of the fast gate so a
+// network hiccup cannot make the suite look broken.
+//   flutter test --exclude-tags integration
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const secureStorageChannel =
@@ -26,7 +29,7 @@ void main() {
         .setMockMethodCallHandler(secureStorageChannel, null);
   });
 
-  test('unknown Android candidate never contacts caller-supplied HTTP target', () async {
+  test('unknown Android candidate never contacts caller-supplied HTTP target', tags: 'integration', () async {
     var requests = 0;
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((request) {
@@ -49,7 +52,7 @@ void main() {
   });
 
   test(
-      'persists Android-local groups and servers as a connectable local source',
+      'persists Android-local groups and servers as a connectable local source', tags: 'integration',
       () async {
     final api = AndroidHostedDaemonApi.instance;
     final group = await api.createGroup('Работа');
@@ -76,7 +79,7 @@ void main() {
     expect(servers.single.importUri, contains('vless://'));
   });
 
-  test('keeps a MosaicVPN URL as a normal user-owned subscription', () async {
+  test('keeps a MosaicVPN URL as a normal user-owned subscription', tags: 'integration', () async {
     final api = AndroidHostedDaemonApi.instance;
     final subscription = await api.addSubscription(
       'Моя MosaicVPN подписка',
@@ -94,7 +97,7 @@ void main() {
     expect(await api.listSubscriptions(), isEmpty);
   });
 
-  test('migrates legacy Mosaic provider rows into deletable URL subscriptions',
+  test('migrates legacy Mosaic provider rows into deletable URL subscriptions', tags: 'integration',
       () async {
     const subscriptionsKey = 'mosaic.android.subscriptions.v1';
     SharedPreferences.setMockInitialValues(<String, Object>{
@@ -127,7 +130,7 @@ void main() {
     expect(await api.listSubscriptions(), isEmpty);
   });
 
-  test('deleting an Android-local group keeps its servers but ungroups them',
+  test('deleting an Android-local group keeps its servers but ungroups them', tags: 'integration',
       () async {
     final api = AndroidHostedDaemonApi.instance;
     final group = await api.createGroup('Temporary');
@@ -149,7 +152,7 @@ void main() {
     expect(servers.single.tag, isEmpty);
   });
 
-  test('testDirectRoute refuses Smart Group IDs instead of probing them',
+  test('testDirectRoute refuses Smart Group IDs instead of probing them', tags: 'integration',
       () async {
     final api = AndroidHostedDaemonApi.instance;
     // A scoped Smart Group id must never be probed as a single server.

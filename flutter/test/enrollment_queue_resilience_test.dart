@@ -28,9 +28,12 @@ class _CountingMockAdapter implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
+// Talks to the LIVE production API: keep this out of the fast gate so a
+// network hiccup cannot make the suite look broken.
+//   flutter test --exclude-tags integration
 void main() {
   group('Enrollment Queue & Cold/Warm Duplicate Delivery Resilience', () {
-    test('deduplicates identical cold and warm deliveries via callbackDeliveryKey', () {
+    test('deduplicates identical cold and warm deliveries via callbackDeliveryKey', tags: 'integration', () {
       final queue = <Uri>[];
       final completed = <String>{};
       int processCount = 0;
@@ -76,7 +79,7 @@ void main() {
       expect(queue.isEmpty, isTrue, reason: 'Completed callback key must not re-enter queue');
     });
 
-    test('queues distinct callbacks and processes sequentially', () {
+    test('queues distinct callbacks and processes sequentially', tags: 'integration', () {
       final queue = <Uri>[];
       final processedOrder = <String>[];
 
@@ -104,7 +107,7 @@ void main() {
       ]);
     });
 
-    test('burn-before-durable-save ensures complete credential material is delivered', () async {
+    test('burn-before-durable-save ensures complete credential material is delivered', tags: 'integration', () async {
       const code = 'DurableSaveCode12345678';
       const state = 'DurableSaveState87654321';
       final callback = Uri.parse('https://sub.zxc1x1.ru/enroll/callback?code=$code&state=$state');
