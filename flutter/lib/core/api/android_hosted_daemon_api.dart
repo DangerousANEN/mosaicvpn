@@ -1494,7 +1494,9 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
             providerAccountId: current.providerAccountId,
             hidePhysicalNodes: current.hidePhysicalNodes,
           );
-          return _updateStoredSubscription(current, (_) => updated);
+          // await so a failure here is caught by the catch below instead of
+          // escaping the try as an unobserved future.
+          return await _updateStoredSubscription(current, (_) => updated);
         }
       } catch (_) {
         // Keep the previous counter on a transient manifest failure.

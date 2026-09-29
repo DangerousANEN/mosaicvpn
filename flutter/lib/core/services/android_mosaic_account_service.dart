@@ -560,7 +560,9 @@ class AndroidMosaicAccountService {
         throw const FormatException(
             'Сервис вернул неподходящий код добавления. Повторите действие на сайте.');
       }
-      return _savePayload(payload, directKey: 'direct_token');
+      // await inside the try so a save failure is handled here rather than
+      // being returned as an unobserved future past the catch.
+      return await _savePayload(payload, directKey: 'direct_token');
     } on DioException catch (e) {
       if (e.response?.statusCode == 409 || e.response?.statusCode == 410) {
         final existing = await restoreSession();
