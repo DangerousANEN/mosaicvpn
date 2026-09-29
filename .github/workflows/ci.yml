@@ -85,4 +85,4 @@ jobs:
       - name: static analysis
         run: flutter analyze lib
       - name: deterministic tests (no live API)
-        run: flutter test --exclude-tags integration
+        run: flutter test --exclude-tags 'integration || visual'

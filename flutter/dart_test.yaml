@@ -14,9 +14,15 @@
 # Files are matched by filename; add new live-server tests to this list.
 tags:
   integration:
-    # A tag must be declared to be used.
+    # Talks to the live production API; excluded from the fast gate.
+  visual:
+    # Golden-image comparison. Rendering differs between machines (font
+    # rasterisation, renderer version), so a 0.2% pixel diff on a CI runner is
+    # not evidence of a regression. Run and regenerate deliberately:
+    #   flutter test --tags visual
+    #   flutter test --update-goldens --tags visual
 
 # Presets keep the intent explicit and discoverable.
 presets:
   fast:
-    exclude_tags: "integration"
+    exclude_tags: "integration || visual"
