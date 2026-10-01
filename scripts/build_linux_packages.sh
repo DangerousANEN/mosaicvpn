@@ -8,10 +8,21 @@ FLUTTER_DIR="$ROOT/flutter"
 DIST_DIR="$ROOT/dist/linux"
 STAGE_DIR="$DIST_DIR/MosaicVPN"
 VERSION="${VERSION:-$(grep -E '^version:' "$FLUTTER_DIR/pubspec.yaml" | head -1 | sed -E 's/version:[[:space:]]*//' | cut -d+ -f1)}"
-SING_BOX_BINARY="${SING_BOX_BINARY:-$ROOT/build/sing-box_linux_amd64}"
-DAEMON_BINARY="${DAEMON_BINARY:-$ROOT/build/mosaicd_linux_amd64}"
-CLI_BINARY="${CLI_BINARY:-$ROOT/build/mosaic_linux_amd64}"
-BUNDLE="$FLUTTER_DIR/build/linux/x64/release/bundle"
+# Target architecture. ARM laptops and Chromebooks run arm64/armv7; the
+# x86 defaults stay unchanged so the existing amd64 release is unaffected.
+#   ARCH=amd64 (default) | arm64 | armv7
+ARCH="${ARCH:-amd64}"
+case "$ARCH" in
+  amd64) GOARCH_VALUE="amd64"; GOARM_VALUE=""; DEB_ARCH="amd64"; FLUTTER_ARCH="x64"; TAR_ARCH="x86_64" ;;
+  arm64) GOARCH_VALUE="arm64"; GOARM_VALUE=""; DEB_ARCH="arm64"; FLUTTER_ARCH="arm64"; TAR_ARCH="arm64" ;;
+  armv7) GOARCH_VALUE="arm";   GOARM_VALUE="7"; DEB_ARCH="armhf"; FLUTTER_ARCH="arm";   TAR_ARCH="armv7l" ;;
+  *) printf 'Unsupported ARCH: %s (use amd64, arm64 or armv7)\n' "$ARCH" >&2; exit 2 ;;
+esac
+if [[ -n "$GOARM_VALUE" ]]; then export GOARM="$GOARM_VALUE"; fi
+SING_BOX_BINARY="${SING_BOX_BINARY:-$ROOT/build/sing-box_linux_$ARCH}"
+DAEMON_BINARY="${DAEMON_BINARY:-$ROOT/build/mosaicd_linux_$ARCH}"
+CLI_BINARY="${CLI_BINARY:-$ROOT/build/mosaic_linux_$ARCH}"
+BUNDLE="$FLUTTER_DIR/build/linux/$FLUTTER_ARCH/release/bundle"
 PACKAGE_ROOT="$DIST_DIR/deb-root"
 
 require_file() {
@@ -32,10 +43,12 @@ require_file "$BUNDLE/mosaicvpn" 'Verify flutter/linux/CMakeLists.txt sets BINAR
 
 mkdir -p "$ROOT/build" "$DIST_DIR"
 if [[ ! -f "$DAEMON_BINARY" ]]; then
-  (cd "$ROOT" && go build -trimpath -ldflags="-s -w -X main.Version=$VERSION" -o "$DAEMON_BINARY" ./cmd/mosaicd)
+  (cd "$ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH_VALUE" go build -trimpath \
+    -ldflags="-s -w -X main.Version=$VERSION" -o "$DAEMON_BINARY" ./cmd/mosaicd)
 fi
 if [[ ! -f "$CLI_BINARY" && -d "$ROOT/cmd/mosaic" ]]; then
-  (cd "$ROOT" && go build -trimpath -ldflags='-s -w' -o "$CLI_BINARY" ./cmd/mosaic)
+  (cd "$ROOT" && CGO_ENABLED=0 GOOS=linux GOARCH="$GOARCH_VALUE" go build -trimpath \
+    -ldflags='-s -w' -o "$CLI_BINARY" ./cmd/mosaic)
 fi
 require_file "$DAEMON_BINARY" 'Build mosaicd successfully before packaging.'
 require_file "$SING_BOX_BINARY" 'Set SING_BOX_BINARY to the verified sing-box Linux executable.'
@@ -58,9 +71,9 @@ Start the client with: ./mosaicvpn
 Keep mosaicd and sing-box next to mosaicvpn. The client needs these native files
 for a complete local tunnel runtime. Portable subscriptions and settings are stored
 under the data/ directory next to this README. For system installation use the matching
-MosaicVPN_${VERSION}_amd64.deb package.
+MosaicVPN_${VERSION}_${DEB_ARCH}.deb package.
 EOF
-python3 "$ROOT/scripts/make_linux_tar.py" "$STAGE_DIR" "$DIST_DIR/MosaicVPN-Portable-x86_64-v$VERSION.tar.gz"
+python3 "$ROOT/scripts/make_linux_tar.py" "$STAGE_DIR" "$DIST_DIR/MosaicVPN-Portable-$TAR_ARCH-v$VERSION.tar.gz"
 
 rm -rf "$PACKAGE_ROOT"
 mkdir -p "$PACKAGE_ROOT/DEBIAN" "$PACKAGE_ROOT/opt/mosaicvpn" \
@@ -73,7 +86,7 @@ Package: mosaicvpn
 Version: $VERSION
 Section: net
 Priority: optional
-Architecture: amd64
+Architecture: $DEB_ARCH
 Depends: libgtk-3-0, libayatana-appindicator3-1 | libappindicator3-1, libcap2-bin
 Maintainer: MosaicVPN <support@mosaicvpn.local>
 Description: MosaicVPN desktop client
@@ -114,8 +127,8 @@ if command -v setcap >/dev/null 2>&1 && [ -e /opt/mosaicvpn/sing-box ]; then
 fi
 EOF
 chmod 0755 "$PACKAGE_ROOT/DEBIAN" "$PACKAGE_ROOT/DEBIAN/postinst" "$PACKAGE_ROOT/DEBIAN/prerm"
-dpkg-deb --root-owner-group --build "$PACKAGE_ROOT" "$DIST_DIR/MosaicVPN_${VERSION}_amd64.deb"
+dpkg-deb --root-owner-group --build "$PACKAGE_ROOT" "$DIST_DIR/MosaicVPN_${VERSION}_${DEB_ARCH}.deb"
 
 printf '\nCreated artifacts:\n  %s\n  %s\n' \
-  "$DIST_DIR/MosaicVPN-Portable-x86_64-v$VERSION.tar.gz" \
-  "$DIST_DIR/MosaicVPN_${VERSION}_amd64.deb"
+  "$DIST_DIR/MosaicVPN-Portable-$TAR_ARCH-v$VERSION.tar.gz" \
+  "$DIST_DIR/MosaicVPN_${VERSION}_${DEB_ARCH}.deb"

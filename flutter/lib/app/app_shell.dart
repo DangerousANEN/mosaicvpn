@@ -515,12 +515,25 @@ class _AppShellState extends ConsumerState<AppShell>
       );
     }
     final mq = MediaQuery.of(context);
-    // Use the shortest side so a phone in landscape (wide but short)
-    // still gets the mobile layout.  A typical 6" phone in landscape
-    // is ~360dp tall — well below 600.  Tablets start around 800dp
-    // on the shortest side and deserve the desktop layout.
+    // Use the shortest side so a phone in landscape (wide but short) still
+    // gets the mobile layout: a typical 6" phone in landscape is ~360dp tall,
+    // far below 600, while tablets start around 800dp on the shortest side.
+    //
+    // Three tiers instead of one boolean: a tablet in portrait (800x1280) used
+    // to get the desktop layout with a bare 72px icon rail while ~1000px of
+    // width stayed unused, and a small laptop window was treated as a 27"
+    // monitor. The middle tier draws a labelled rail, which is what actually
+    // fits a tablet or a laptop window.
     final shortest = mq.size.shortestSide;
-    final isWide = shortest > 600;
+    final sizeClass = shortest <= 600
+        ? _AdaptiveSizeClass.compact
+        : (shortest <= 900
+            ? _AdaptiveSizeClass.medium
+            : _AdaptiveSizeClass.expanded);
+    final isWide = sizeClass != _AdaptiveSizeClass.compact;
+    // A labelled rail needs ~180px; short-side 900 is the point where a
+    // tablet or laptop window can spare it without squeezing the content.
+    final showRailLabels = sizeClass == _AdaptiveSizeClass.expanded;
 
     // Auto-connect on first frame (q3)
     if (!_autoConnectTriggered) {
@@ -569,9 +582,12 @@ class _AppShellState extends ConsumerState<AppShell>
               body: isWide
                   ? Row(
                       children: [
-                        // ── Sidebar on wide screens (>900px) ──
+                        // ── Sidebar: icon strip on tablets, labelled rail
+                        // on large tablets and desktops. Width follows the
+                        // size class so a 1280px-wide tablet portrait keeps
+                        // its content area instead of wasting it on padding.
                         Container(
-                          width: 72,
+                          width: showRailLabels ? 188 : 72,
                           decoration: BoxDecoration(
                             color: c.bgInk,
                             border: Border(
@@ -583,6 +599,9 @@ class _AppShellState extends ConsumerState<AppShell>
                               children: [
                                 const SizedBox(height: 12),
                                 // Logo / app icon
+                                if (showRailLabels)
+                                  _RailBrandHeader(theme: c)
+                                else
                                 Tooltip(
                                   message: 'MosaicVPN',
                                   child: Container(
@@ -645,6 +664,7 @@ class _AppShellState extends ConsumerState<AppShell>
                                               : dest.icon,
                                           label: dest.label,
                                           isSelected: isSelected,
+                                          showLabel: showRailLabels,
                                           onTap: () =>
                                               setState(() => _currentIndex = i),
                                         );
@@ -1099,47 +1119,146 @@ class _SideIcon extends StatelessWidget {
   final bool isSelected;
   final VoidCallback onTap;
 
+  /// Draw the destination name beside the icon. Enabled for the labelled rail
+  /// (large tablets, desktops); a compact rail keeps icons only and relies on
+  /// the tooltip.
+  final bool showLabel;
+
   const _SideIcon({
     required this.icon,
     required this.label,
     required this.isSelected,
     required this.onTap,
+    this.showLabel = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
-    return Tooltip(
-      message: label,
-      waitDuration: const Duration(milliseconds: 400),
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? AtlasTheme.accent.withValues(alpha: 0.15)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
-            border: Border.all(
-              color: isSelected
-                  ? AtlasTheme.accent.withValues(alpha: 0.3)
-                  : Colors.transparent,
-            ),
-          ),
-          child: Icon(
+    final content = Container(
+      margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
+      padding: EdgeInsets.symmetric(
+        vertical: 10,
+        horizontal: showLabel ? 10 : 0,
+      ),
+      decoration: BoxDecoration(
+        color: isSelected
+            ? AtlasTheme.accent.withValues(alpha: 0.15)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
+        border: Border.all(
+          color: isSelected
+              ? AtlasTheme.accent.withValues(alpha: 0.3)
+              : Colors.transparent,
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment:
+            showLabel ? MainAxisAlignment.start : MainAxisAlignment.center,
+        children: [
+          Icon(
             icon,
             size: 22,
             color: isSelected ? AtlasTheme.accent : c.textMuted,
           ),
-        ),
+          if (showLabel) ...[
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                  color: isSelected ? AtlasTheme.accent : c.textMuted,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+    return Tooltip(
+      message: label,
+      waitDuration: const Duration(milliseconds: 400),
+      child: InkWell(onTap: onTap, child: content),
+    );
+  }
+}
+
+/// Brand block for the labelled rail: app icon plus wordmark. The compact rail
+/// keeps the icon-only logo.
+class _RailBrandHeader extends StatelessWidget {
+  final ThemeColors theme;
+
+  const _RailBrandHeader({required this.theme});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = theme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 18, 14, 10),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: c.isDark ? AtlasTheme.darkBgElevated : AtlasTheme.bgCard,
+              borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
+              border: Border.all(
+                color: c.isDark
+                    ? AtlasTheme.accent.withValues(alpha: .48)
+                    : c.border,
+              ),
+              boxShadow: c.isDark
+                  ? [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: .28),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Image.asset(
+              'assets/icon_adaptive.png',
+              width: 30,
+              height: 30,
+              fit: BoxFit.contain,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'MosaicVPN',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.2,
+                color: c.textPrimary,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
 /// Navigation destination metadata.
+/// Width tiers for the adaptive shell.
+///
+/// The shell used to branch on a single `isWide` boolean, so a tablet in
+/// portrait and a desktop monitor took the same path. Three tiers let the
+/// middle range (tablet portrait, small laptop window) draw a labelled rail
+/// instead of a bare icon strip, while phones keep bottom navigation.
+enum _AdaptiveSizeClass { compact, medium, expanded }
+
 class _NavDestination {
   final IconData icon;
   final IconData activeIcon;

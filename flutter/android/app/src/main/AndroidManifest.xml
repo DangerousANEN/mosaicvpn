@@ -7,6 +7,23 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
+    <!-- Large-screen and arm-laptop support.
+         No touchscreen is required: the UI is a keyboard/mouse-usable Flutter
+         surface and ships ARM64 + ARMv7 slices only, which is what devices
+         like Android-on-ARM laptops and Chromebooks execute. Declaring the
+         features explicitly stops Android from inferring a touch-only profile
+         and keeps the app installable in desktop/free-form windowing modes. -->
+    <uses-feature android:name="android.hardware.touchscreen"
+        android:required="false"/>
+    <uses-feature android:name="android.hardware.faketouch"
+        android:required="false"/>
+    <supports-screens
+        android:smallScreens="true"
+        android:normalScreens="true"
+        android:largeScreens="true"
+        android:xlargeScreens="true"
+        android:anyDensity="true"/>
+
     <application
         android:label="MosaicVPN"
         android:name="${applicationName}"
@@ -21,6 +38,7 @@
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:resizeableActivity="true"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
             <!-- Specifies an Android theme to apply to this Activity as soon as
