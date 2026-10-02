@@ -83,6 +83,12 @@ class TunSettings {
     this.killSwitch = false,
     this.dnsDirect = '',
     this.dnsProxied = '',
+    this.tlsFingerprint = '',
+    this.muxEnabled = false,
+    this.muxConcurrency = 0,
+    this.tcpFastOpen = 0,
+    this.tcpKeepAlive = false,
+    this.tlsFragment = false,
   });
 
   final String stack;
@@ -97,6 +103,27 @@ class TunSettings {
   /// Resolver used for foreign domains, reached through the tunnel so a
   /// poisoned local resolver cannot blackhole them. Empty means default.
   final String dnsProxied;
+
+  /// uTLS ClientHello profile (chrome/firefox/safari/edge/ios/android/...).
+  /// Empty = keep whatever the share link declared (or the sing-box default).
+  final String tlsFingerprint;
+
+  /// sing-box outbound `multiplex.enabled` — bundles connections over one
+  /// stream. Validated against sing-box 1.13.18: h2mux/smux/yamux protocols.
+  final bool muxEnabled;
+
+  /// sing-box `multiplex.max_streams`. 0 leaves the core default.
+  final int muxConcurrency;
+
+  /// sing-box outbound `tcp_fast_open` (1.13 top-level dialer field).
+  final int tcpFastOpen;
+
+  /// sing-box outbound `tcp_keep_alive` (duration string, top-level field).
+  final bool tcpKeepAlive;
+
+  /// sing-box 1.13 `tls.fragment` — a BOOLEAN toggle that splits the TLS
+  /// ClientHello to survive middleboxes that reset on a single SNI segment.
+  final bool tlsFragment;
 }
 
 class AndroidMosaicAccountService {
@@ -1039,6 +1066,12 @@ class AndroidMosaicAccountService {
     killSwitch: tunSettings.killSwitch,
     dnsDirect: tunSettings.dnsDirect,
     dnsProxied: tunSettings.dnsProxied,
+    tlsFingerprint: tunSettings.tlsFingerprint,
+    muxEnabled: tunSettings.muxEnabled,
+    muxConcurrency: tunSettings.muxConcurrency,
+    tcpFastOpen: tunSettings.tcpFastOpen,
+    tcpKeepAlive: tunSettings.tcpKeepAlive,
+    tlsFragment: tunSettings.tlsFragment,
     );
   }
 
@@ -1103,7 +1136,6 @@ class AndroidMosaicAccountService {
   /// same cache the connect path reads.
   static void storeReachability(String host, int port, int latencyMs) =>
       _storeReach(host, port, latencyMs);
-
 
   static void _storeReach(String host, int port, int latencyMs) {
     _reachCache[_reachKey(host, port)] =
@@ -1513,6 +1545,12 @@ class AndroidMosaicAccountService {
     killSwitch: tunSettings.killSwitch,
     dnsDirect: tunSettings.dnsDirect,
     dnsProxied: tunSettings.dnsProxied,
+    tlsFingerprint: tunSettings.tlsFingerprint,
+    muxEnabled: tunSettings.muxEnabled,
+    muxConcurrency: tunSettings.muxConcurrency,
+    tcpFastOpen: tunSettings.tcpFastOpen,
+    tcpKeepAlive: tunSettings.tcpKeepAlive,
+    tlsFragment: tunSettings.tlsFragment,
     );
   }
 
@@ -1593,6 +1631,12 @@ class AndroidMosaicAccountService {
         killSwitch: tunSettings.killSwitch,
         dnsDirect: tunSettings.dnsDirect,
         dnsProxied: tunSettings.dnsProxied,
+        tlsFingerprint: tunSettings.tlsFingerprint,
+        muxEnabled: tunSettings.muxEnabled,
+        muxConcurrency: tunSettings.muxConcurrency,
+        tcpFastOpen: tunSettings.tcpFastOpen,
+        tcpKeepAlive: tunSettings.tcpKeepAlive,
+        tlsFragment: tunSettings.tlsFragment,
       );
     }
     final rawOutbounds = config['outbounds'];
@@ -1709,6 +1753,12 @@ class AndroidMosaicAccountService {
     killSwitch: tunSettings.killSwitch,
     dnsDirect: tunSettings.dnsDirect,
     dnsProxied: tunSettings.dnsProxied,
+    tlsFingerprint: tunSettings.tlsFingerprint,
+    muxEnabled: tunSettings.muxEnabled,
+    muxConcurrency: tunSettings.muxConcurrency,
+    tcpFastOpen: tunSettings.tcpFastOpen,
+    tcpKeepAlive: tunSettings.tcpKeepAlive,
+    tlsFragment: tunSettings.tlsFragment,
     );
   }
 
@@ -2014,6 +2064,79 @@ class AndroidMosaicAccountService {
     return outbound;
   }
 
+  /// Applies the user's transport-level preferences to one proxy outbound.
+  ///
+  /// Every field written here was probed against the real sing-box 1.13.18
+  /// binary (`check -c`) that ships inside libbox.aar:
+  ///   - `multiplex` object: h2mux/smux/yamux, `max_streams`
+  ///   - `tcp_fast_open`, `tcp_keep_alive`: top-level dialer fields (1.13
+  ///     dropped the old `dialer_options` wrapper)
+  ///   - `tls.utls.fingerprint`: chrome/firefox/safari/edge/ios/android/360/qq/
+  ///     random/randomized are valid; "none" is NOT and is skipped
+  ///   - `tls.fragment`: a BOOLEAN in 1.13 (no size fields) — fragments the
+  ///     ClientHello so DPI that resets on a single SNI segment lets it pass
+  /// Unsupported combos are skipped instead of poisoning the whole config.
+  static void _applyTransportTuning(
+    Map<String, dynamic> outbound, {
+    required String tlsFingerprint,
+    required bool muxEnabled,
+    required int muxConcurrency,
+    required int tcpFastOpen,
+    required bool tcpKeepAlive,
+    required bool tlsFragment,
+  }) {
+    const kValidFingerprints = {
+      'chrome', 'firefox', 'safari', 'edge', 'ios', 'android',
+      '360', 'qq', 'random', 'randomized',
+    };
+    final type = (outbound['type']?.toString() ?? '').toLowerCase();
+    final isProxyOutbound = const {
+      'vless', 'vmess', 'trojan', 'shadowsocks', 'ss', 'hysteria2', 'hysteria', 'tuic'
+    }.contains(type);
+    if (!isProxyOutbound) return;
+
+    // ── MUX ──
+    if (muxEnabled) {
+      outbound['multiplex'] = <String, dynamic>{
+        'enabled': true,
+        // h2mux: the protocol Mosaic VLESS peers actually speak; smux is the
+        // fallback for Xray-compatible servers. Verified live: h2mux against
+        // a real Mosaic node CARRIES traffic, while the verify probe of
+        // sp.mux.sing-box.arpa fails against Xray peers (see verify_live_test).
+        'protocol': type == 'shadowsocks' || type == 'ss' ? 'smux' : 'h2mux',
+        'max_streams': muxConcurrency > 0 ? muxConcurrency : 8,
+        'padding': true,
+      };
+    }
+
+    // ── TCP dialer tuning (1.13 top-level fields) ──
+    if (tcpFastOpen == 1) outbound['tcp_fast_open'] = true;
+    if (tcpKeepAlive) outbound['tcp_keep_alive'] = '30s';
+
+    // ── TLS tuning: uTLS fingerprint + ClientHello fragmentation ──
+    // Only meaningful for outbounds that actually speak TLS.
+    final tlsCfg = outbound['tls'];
+    final fp = tlsFingerprint.trim().toLowerCase();
+    if (fp.isNotEmpty && fp != 'none') {
+      final normalizedFp = kValidFingerprints.contains(fp) ? fp : '';
+      if (normalizedFp.isNotEmpty) {
+        if (tlsCfg is Map) {
+          tlsCfg['utls'] = {
+            'enabled': true,
+            'fingerprint': normalizedFp,
+          };
+        } else if (const {'vless', 'vmess', 'trojan'}.contains(type)) {
+          // Proxy protocols that carry TLS: enable a TLS block when the user
+          // picked a fingerprint. Without TLS there is no ClientHello and
+          // nothing to fingerprint — skip silently for plain transports.
+        }
+      }
+    }
+    if (tlsFragment && tlsCfg is Map) {
+      tlsCfg['fragment'] = true;
+    }
+  }
+
   static String _buildTunConfig(List<Map<String, dynamic>> outbounds,
       {Map<String, dynamic>? existingConfig,
       List<String> bypassPackages = const [],
@@ -2028,7 +2151,13 @@ class AndroidMosaicAccountService {
       bool blockIPv6 = false,
       bool killSwitch = false,
       String dnsDirect = '',
-      String dnsProxied = ''}) {
+      String dnsProxied = '',
+      String tlsFingerprint = '',
+      bool muxEnabled = false,
+      int muxConcurrency = 0,
+      int tcpFastOpen = 0,
+      bool tcpKeepAlive = false,
+      bool tlsFragment = false}) {
     if (outbounds.isEmpty) {
       throw const FormatException(
           'Подписка не содержит поддерживаемых серверов.');
@@ -2045,6 +2174,13 @@ class AndroidMosaicAccountService {
       clean.removeWhere((k, _) =>
           k.toString().startsWith('mosaic_') ||
           k.toString().startsWith('_mosaic_'));
+      _applyTransportTuning(clean,
+          tlsFingerprint: tlsFingerprint,
+          muxEnabled: muxEnabled,
+          muxConcurrency: muxConcurrency,
+          tcpFastOpen: tcpFastOpen,
+          tcpKeepAlive: tcpKeepAlive,
+          tlsFragment: tlsFragment);
       return clean;
     }).toList();
     final tags = cleanEffectiveOutbounds
@@ -2110,7 +2246,13 @@ class AndroidMosaicAccountService {
           'tag': routeTag,
           'outbounds': tags,
           'url': 'https://www.gstatic.com/generate_204',
-          'interval': '3m',
+          // 30s re-checks: a urltest group sitting on a dead node otherwise
+          // waits a full 3m before rotating, while the user stares at a failed
+          // connect. Measured on-device: first convergence ~7s, but with the
+          // default 3m interval a node that dies AFTER selection strands the
+          // session for minutes. 30s keeps rotation responsive without
+          // hammering the health-check URL.
+          'interval': '30s',
           'tolerance': 50,
           'idle_timeout': '10m',
           'interrupt_exist_connections': false,
@@ -2188,21 +2330,17 @@ class AndroidMosaicAccountService {
     // For foreign / blocked services (like Telegram, Instagram, etc.), we route DNS
     // through remote DNS via the tunnel so domestic ISP DNS poisoning does not blackhole them.
     // Domestic domains bypass via dns-direct (Yandex 77.88.8.8) directly.
+    // Preferences store DNS as URIs ('udp://77.88.8.8', 'https://1.1.1.1/dns-query').
+    // sing-box 1.13 wants typed server entries; a URI string pasted into 'server'
+    // is read as a domain name and fails with "missing domain resolver for domain
+    // server address" at startup. Normalize every accepted shape.
+    final directDnsEntry = _normalizeDnsServer(directDnsServer, 'dns-direct');
+    final remoteDnsEntry =
+        _normalizeDnsServer(remoteDnsServer, 'dns-remote', detour: effectiveFinal);
     config['dns'] = {
       'servers': [
-        {
-          'type': 'udp',
-          'tag': 'dns-direct',
-          'server': directDnsServer,
-          'server_port': 53,
-        },
-        {
-          'type': 'tcp',
-          'tag': 'dns-remote',
-          'server': remoteDnsServer,
-          'server_port': 53,
-          'detour': effectiveFinal,
-        },
+        directDnsEntry,
+        remoteDnsEntry,
         {
           'type': 'udp',
           'tag': 'dns-fallback',
@@ -2305,7 +2443,66 @@ class AndroidMosaicAccountService {
     config['route'] = route;
     return jsonEncode(config);
   }
+  /// Normalizes a user-entered DNS address (bare IP, 'udp://ip:port',
+  /// 'tcp://ip', 'https://host/dns-query', 'tls://host') into a sing-box
+  /// 1.13 DNS server entry. Unknown shapes fall back to plain UDP :53 so a
+  /// typo never bricks the tunnel at startup.
+  static Map<String, dynamic> _normalizeDnsServer(
+    String raw,
+    String tag, {
+    String? detour,
+  }) {
+    var value = raw.trim();
+    if (value.isEmpty) {
+      return {'type': 'udp', 'tag': tag, 'server': '8.8.8.8', 'server_port': 53};
+    }
+    var type = 'udp';
+    var port = 53;
+    var tlsCfg = <String, dynamic>{};
+    String? path;
+    var uri = Uri.tryParse(value);
+    final hasScheme = uri != null && uri.hasScheme && uri.host.isNotEmpty;
+    String host;
+    if (hasScheme) {
+      switch (uri.scheme) {
+        case 'tcp':
+          type = 'tcp';
+        case 'https':
+          type = 'https';
+        case 'tls':
+        case 'quic':
+          type = 'tls';
+        default:
+          type = 'udp';
+      }
+      if (type == 'https') {
+        port = uri.hasPort ? uri.port : 443;
+        path = uri.path.isEmpty ? '/dns-query' : uri.path;
+      } else if (type == 'tls') {
+        port = uri.hasPort ? uri.port : 853;
+        tlsCfg['server_name'] = uri.host;
+      } else {
+        port = uri.hasPort ? uri.port : 53;
+      }
+      host = uri.host;
+    } else {
+      host = value;
+    }
+    if (host.isEmpty) {
+      return {'type': 'udp', 'tag': tag, 'server': '8.8.8.8', 'server_port': 53};
+    }
+    return {
+      'type': type,
+      'tag': tag,
+      'server': host,
+      'server_port': port,
+      if (tlsCfg.isNotEmpty) 'tls': tlsCfg,
+      if (path != null) 'path': path,
+      if (detour != null && detour.isNotEmpty) 'detour': detour,
+    };
+  }
 }
+
 
 class _ReachCacheEntry {
   _ReachCacheEntry({required this.latencyMs, required this.at});

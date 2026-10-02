@@ -21,7 +21,6 @@ import '../../core/services/tray_service.dart';
 import '../../core/services/autostart_service.dart';
 import '../../core/config/app_config.dart';
 import '../../core/utils/daemon_error_message.dart';
-import '../../core/services/app_update_service.dart';
 import '../../shared/widgets/atlas_widgets.dart';
 import '../../shared/widgets/skeleton_loader.dart';
 import 'split_tunnel_screen.dart';
@@ -384,6 +383,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 24),
 
           // ── WARP (Cloudflare) ──
+          // Desktop-only: the WARP outbound chain is a mosaicd feature; the
+          // Android runtime has no daemon to accept setWARP, and a toggle
+          // that can only throw an error is worse than no toggle.
+          if (AppPlatform.isDesktop)
           _SettingsGroup(
             title: 'Cloudflare WARP',
             children: [
@@ -630,7 +633,80 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           const SizedBox(height: 24),
 
+          // ─── Аккаунт и приложение ──
+          // These actions existed as implemented handlers whose buttons were
+          // lost in earlier UI passes (sign-out, about, onboarding reset) —
+          // a settings screen that cannot log you out is not a real screen.
+          _SettingsGroup(
+            title: 'Аккаунт и приложение',
+            children: [
+              _SettingTile(
+                label: 'Выйти из аккаунта',
+                description: 'Отключить VPN и удалить локальные учётные данные',
+                difficulty: 1,
+                child: FilledButton.tonal(
+                  onPressed: _signOut,
+                  child: const Text('Выйти'),
+                ),
+              ),
+              _SettingTile(
+                label: 'Повторить мастер настройки',
+                description: 'Сбросить локальные данные и пройти онбординг заново',
+                difficulty: 2,
+                child: OutlinedButton(
+                  onPressed: _resetOnboarding,
+                  child: const Text('Сбросить'),
+                ),
+              ),
+              _SettingTile(
+                label: 'О приложении',
+                description: 'Версия, протокол и открытые компоненты',
+                difficulty: 1,
+                child: OutlinedButton(
+                  onPressed: () => _showAboutDialog(context),
+                  child: const Text('Открыть'),
+                ),
+              ),
+              if (AppPlatform.isDesktop)
+                _SettingTile(
+                  label: 'Экспорт/импорт конфигурации',
+                  description: 'Сохранить настройки в файл или восстановить из него',
+                  difficulty: 3,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      OutlinedButton(
+                        onPressed: () => _exportConfig(prefs),
+                        child: const Text('Экспорт'),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: _importConfig,
+                        child: const Text('Импорт'),
+                      ),
+                    ],
+                  ),
+                ),
+              if (AppPlatform.isDesktop)
+                _SettingTile(
+                  label: 'Сведения о демоне',
+                  description: 'Версия mosaicd, аптайм и активный профиль',
+                  difficulty: 2,
+                  child: OutlinedButton(
+                    onPressed: () => _showDaemonInfo(context),
+                    child: const Text('Показать'),
+                  ),
+                ),
+            ],
+          ),
+
+          const SizedBox(height: 24),
+
           // ─── MCP ──
+          // Desktop-only: MCP is served by the mosaicd daemon on /mcp; the
+          // Android app runs the native TUN runtime without a daemon, so an
+          // MCP toggle there would control nothing.
+          if (AppPlatform.isDesktop)
           _SettingsGroup(
             title: 'MCP (Model Context Protocol)',
             children: [
@@ -643,50 +719,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: Switch(
                   value: prefs.mcpEnabled,
                   onChanged: (v) => _update(prefs, mcpEnabled: v),
-                ),
-              ),
-              _SettingTile(
-                label: 'Адрес прослушивания MCP',
-                description: 'Сетевой интерфейс для входящих запросов',
-                tooltip:
-                    '127.0.0.1:9090 — только локальные подключения. 0.0.0.0:9090 — доступ из локальной сети.',
-                difficulty: 3,
-                child: SizedBox(
-                  width: 200,
-                  child: TextFormField(
-                    spellCheckConfiguration:
-                        const SpellCheckConfiguration.disabled(),
-                    initialValue: prefs.mcpAddr,
-                    onChanged: (v) => _update(prefs, mcpAddr: v),
-                  ),
-                ),
-              ),
-              _SettingTile(
-                label: 'Права доступа MCP',
-                description: 'read (только чтение) · connect · full (полный доступ)',
-                tooltip:
-                    'Read — только просмотр статуса. Connect — подключение/смена серверов. Full — изменение настроек и профилей.',
-                difficulty: 3,
-                child: SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(value: 'read', label: Text('Чтение')),
-                    ButtonSegment(value: 'connect', label: Text('Подключение')),
-                    ButtonSegment(value: 'full', label: Text('Полный')),
-                  ],
-                  selected: {prefs.mcpPermission},
-                  onSelectionChanged: (s) =>
-                      _update(prefs, mcpPermission: s.first),
-                ),
-              ),
-              _SettingTile(
-                label: 'Confirm Actions',
-                description: 'Require UI confirmation for MCP actions',
-                tooltip:
-                    'When enabled, MosaicVPN shows a dialog before executing any MCP command (connect, egress change, etc.). Click Allow or Deny. Recommended for Full permission mode.',
-                difficulty: 1,
-                child: Switch(
-                  value: prefs.mcpConfirm,
-                  onChanged: (v) => _update(prefs, mcpConfirm: v),
                 ),
               ),
               // ── MCP Guide ──
@@ -884,8 +916,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     DropdownMenuItem(value: 'firefox', child: Text('Firefox')),
                     DropdownMenuItem(value: 'safari', child: Text('Safari')),
                     DropdownMenuItem(value: 'edge', child: Text('Edge')),
+                    DropdownMenuItem(value: 'ios', child: Text('iOS')),
+                    DropdownMenuItem(value: 'android', child: Text('Android')),
                     DropdownMenuItem(value: 'random', child: Text('Random')),
-                    DropdownMenuItem(value: 'none', child: Text('None')),
+                    DropdownMenuItem(value: 'randomized', child: Text('Randomized')),
                   ],
                   onChanged: (v) =>
                       v == null ? null : _update(prefs, tlsFingerprint: v),
@@ -913,48 +947,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               _SettingTile(
                 label: 'TLS segmentation',
                 description:
-                    'Adjust TLS handshake segmentation for network compatibility',
+                    'Split the TLS ClientHello into smaller segments (sing-box tls.fragment)',
                 tooltip:
-                    'Size-based splits at a random byte in [min,max]. TLS-SNI splits at the SNI field. Disable it if the selected route does not require segmentation.',
+                    'Включает дробление ClientHello в sing-box 1.13 (tls.fragment). Помогает там, где провайдер сбрасывает соединения по единичному SNI-сегменту. Применяется к TLS-исходящим при следующем подключении.',
                 difficulty: 4,
-                child: SegmentedButton<int>(
-                  segments: const [
-                    ButtonSegment(value: 0, label: Text('Off')),
-                    ButtonSegment(value: 1, label: Text('Size')),
-                    ButtonSegment(value: 2, label: Text('TLS-SNI')),
-                  ],
-                  selected: {prefs.fragmentStrategy},
-                  onSelectionChanged: (s) =>
-                      _update(prefs, fragmentStrategy: s.first),
+                child: Switch(
+                  value: prefs.fragmentationDefense,
+                  onChanged: (v) =>
+                      _update(prefs, fragmentationDefense: v),
                 ),
               ),
-              if (prefs.fragmentStrategy == 1)
-                _SettingTile(
-                  label: 'Fragment Size Range',
-                  description: 'Random split offset between min and max bytes',
-                  child: SizedBox(
-                    width: 240,
-                    child: TextFormField(
-                      spellCheckConfiguration:
-                          const SpellCheckConfiguration.disabled(),
-                      initialValue:
-                          '${prefs.fragmentSizeMin}-${prefs.fragmentSizeMax}',
-                      decoration:
-                          const InputDecoration(hintText: 'min-max e.g. 1-100'),
-                      onChanged: (v) {
-                        final parts = v.split('-');
-                        if (parts.length == 2) {
-                          final mn = int.tryParse(parts[0].trim());
-                          final mx = int.tryParse(parts[1].trim());
-                          if (mn != null && mx != null) {
-                            _update(prefs,
-                                fragmentSizeMin: mn, fragmentSizeMax: mx);
-                          }
-                        }
-                      },
-                    ),
-                  ),
-                ),
             ],
           ),
 
@@ -1100,7 +1102,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   segments: const [
                     ButtonSegment(value: 'url', label: Text('HTTP/URL')),
                     ButtonSegment(value: 'tcp', label: Text('TCP')),
-                    ButtonSegment(value: 'icmp', label: Text('ICMP')),
                   ],
                   selected: {prefs.pingMethod},
                   onSelectionChanged: (s) =>
@@ -1174,296 +1175,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                 ),
               ),
-              _SettingTile(
-                label: 'Core Engine',
-                description: 'Active VPN backend: ${prefs.coreEngine}',
-                tooltip:
-                    'Managed via Cores & Engines tab. sing-box: modern, all-protocol support. xray-core: legacy, proven.',
-                difficulty: 2,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: c.bgElevated,
-                    borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
-                    border: Border.all(color: c.border),
-                  ),
-                  child: Text(
-                    'Active: ${prefs.coreEngine}',
-                    style: TextStyle(
-                      fontFamily: AtlasTheme.monoFamily,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: AtlasTheme.accent,
-                    ),
-                  ),
-                ),
-              ),
-              _SettingTile(
-                label: 'DNS-over-HTTPS/TLS',
-                description: 'Custom DNS provider URL (empty = system default)',
-                tooltip:
-                    'e.g. https://cloudflare-dns.com/dns-query (DoH) or tls://dns.google (DoT)',
-                difficulty: 2,
-                child: SizedBox(
-                  width: 280,
-                  child: TextFormField(
-                    spellCheckConfiguration:
-                        const SpellCheckConfiguration.disabled(),
-                    initialValue: prefs.dnsProvider,
-                    decoration: const InputDecoration(
-                        hintText: 'https://... or tls://...'),
-                    onChanged: (v) => _update(prefs, dnsProvider: v),
-                  ),
-                ),
-              ),
-              _SettingTile(
-                label: 'Connect Timeout',
-                description: 'Seconds to wait before dial fails',
-                child: SizedBox(
-                  width: 120,
-                  child: TextFormField(
-                    spellCheckConfiguration:
-                        const SpellCheckConfiguration.disabled(),
-                    initialValue: prefs.connectTimeout.toString(),
-                    keyboardType: TextInputType.number,
-                    onChanged: (v) {
-                      final n = int.tryParse(v);
-                      if (n != null && n > 0) _update(prefs, connectTimeout: n);
-                    },
-                  ),
-                ),
-              ),
-              _SettingTile(
-                label: 'Max Retries',
-                description: 'Dial retries before giving up',
-                child: SizedBox(
-                  width: 120,
-                  child: TextFormField(
-                    spellCheckConfiguration:
-                        const SpellCheckConfiguration.disabled(),
-                    initialValue: prefs.maxRetries.toString(),
-                    keyboardType: TextInputType.number,
-                    onChanged: (v) {
-                      final n = int.tryParse(v);
-                      if (n != null && n >= 0) _update(prefs, maxRetries: n);
-                    },
-                  ),
-                ),
-              ),
-              _SettingTile(
-                label: 'Concurrent Dials',
-                description: 'Parallel dial attempts for multi-IP servers',
-                tooltip:
-                    '1 = sequential (safe). 4 = race all IPs, use the winner (Happy Eyeballs).',
-                difficulty: 3,
-                child: SizedBox(
-                  width: 120,
-                  child: TextFormField(
-                    spellCheckConfiguration:
-                        const SpellCheckConfiguration.disabled(),
-                    initialValue: prefs.concurrentDials.toString(),
-                    keyboardType: TextInputType.number,
-                    onChanged: (v) {
-                      final n = int.tryParse(v);
-                      if (n != null && n >= 1) {
-                        _update(prefs, concurrentDials: n);
-                      }
-                    },
-                  ),
-                ),
-              ),
             ],
           ),
-
-          const SizedBox(height: 24),
-
-          // ── Phase 2: Interface & Geo ──
-          _SettingsGroup(
-            title: 'Интерфейс и базы GeoIP',
-            children: [
-              _SettingTile(
-                label: 'Компактный режим',
-                description: 'Более плотный интерфейс для небольших экранов',
-                child: Switch(
-                  value: prefs.compactMode,
-                  onChanged: (v) => _update(prefs, compactMode: v),
-                ),
-              ),
-              _SettingTile(
-                label: 'Автообновление GeoIP/GeoSite',
-                description: 'Еженедельно загружать свежие базы маршрутов',
-                child: Switch(
-                  value: prefs.autoUpdateGeo,
-                  onChanged: (v) => _update(prefs, autoUpdateGeo: v),
-                ),
-              ),
-            ],
-          ),
-
-          // ── Phase 2.5: Backup & Restore ──
-          _SettingsGroup(
-            title: 'Резервное копирование и восстановление',
-            children: [
-              _SettingTile(
-                label: 'Автобэкап',
-                description: 'Периодически сохранять снимок конфигурации',
-                child: Switch(
-                  value: prefs.backupEnabled,
-                  onChanged: (v) => _update(prefs, backupEnabled: v),
-                ),
-              ),
-              _SettingTile(
-                label: 'Папка резервных копий',
-                description: prefs.backupPath.isEmpty
-                    ? 'Выберите папку для сохранения снимков'
-                    : prefs.backupPath,
-                child: TextButton.icon(
-                  icon: const Icon(Icons.folder_open_outlined, size: 18),
-                  label: const Text('Pick'),
-                  onPressed: () async {
-                    final picked = await FilePicker.platform.getDirectoryPath(
-                      dialogTitle: 'Backup folder',
-                    );
-                    if (picked != null) {
-                      _update(prefs, backupPath: picked);
-                    }
-                  },
-                ),
-              ),
-              _SettingTile(
-                label: 'Auto-backup interval',
-                description: '0 = off, hours between snapshots',
-                child: SizedBox(
-                  width: 90,
-                  child: TextFormField(
-                    spellCheckConfiguration:
-                        const SpellCheckConfiguration.disabled(),
-                    initialValue: prefs.autoBackupInterval.toString(),
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(suffixText: 'h'),
-                    onChanged: (v) {
-                      final n = int.tryParse(v) ?? 0;
-                      _update(prefs, autoBackupInterval: n);
-                    },
-                  ),
-                ),
-              ),
-              _SettingTile(
-                label: 'Include subscription URLs',
-                description: 'Off = strip remote feed URLs from export',
-                child: Switch(
-                  value: prefs.includeSubscriptions,
-                  onChanged: (v) => _update(prefs, includeSubscriptions: v),
-                ),
-              ),
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        icon: const Icon(Icons.download_outlined),
-                        label: const Text('Export config'),
-                        onPressed: () => _exportConfig(prefs),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        icon: const Icon(Icons.upload_outlined),
-                        label: const Text('Import config'),
-                        onPressed: _importConfig,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 24),
-
-          // ── About ──
-          _SettingsGroup(
-            title: s.t('about'),
-            children: [
-              _SettingTile(
-                label: 'MosaicVPN',
-                description: 'Версия v${AppConfig.appVersion} · Сборка готова к работе',
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.end,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.sync_rounded, size: 16),
-                      label: const Text('Обновления'),
-                      onPressed: () async {
-                        final scaffoldMessenger = ScaffoldMessenger.of(context);
-                        scaffoldMessenger.showSnackBar(
-                          const SnackBar(
-                            content: Text('Проверка обновлений MosaicVPN...'),
-                            duration: Duration(seconds: 2),
-                          ),
-                        );
-                        final update = await AppUpdateService.instance.checkForUpdate();
-                        if (!context.mounted) return;
-                        if (update != null) {
-                          AppUpdateService.instance.checkAndShowPrompt(context);
-                        } else {
-                          scaffoldMessenger.showSnackBar(
-                            const SnackBar(
-                              content: Text('У вас установлена самая актуальная версия (v${AppConfig.appVersion})!'),
-                              duration: Duration(seconds: 3),
-                            ),
-                          );
-                        }
-                      },
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.info_outline, size: 20),
-                      tooltip: 'О приложении',
-                      onPressed: () => _showAboutDialog(context),
-                    ),
-                  ],
-                ),
-              ),
-              _SettingTile(
-                label: s.t('daemon_status'),
-                description: s.t('daemon_status_description'),
-                child: IconButton(
-                  icon: const Icon(Icons.router_outlined, size: 20),
-                  onPressed: () => _showDaemonInfo(context),
-                ),
-              ),
-              _SettingTile(
-                label: 'Сбросить мастер настройки',
-                description:
-                    'Удалить локальные данные, подписки и кэш для повторного теста первого запуска.',
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.restart_alt, size: 18),
-                  label: const Text('Повторить мастер'),
-                  style: OutlinedButton.styleFrom(foregroundColor: c.warning),
-                  onPressed: _resetOnboarding,
-                ),
-              ),
-              _SettingTile(
-                label: s.t('sign_out'),
-                description: s.t('sign_out_description'),
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.logout, size: 18),
-                  label: Text(s.t('sign_out')),
-                  style: OutlinedButton.styleFrom(foregroundColor: c.danger),
-                  onPressed: _signOut,
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 32),
         ],
       ),
     );
@@ -1716,8 +1429,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         mtu: updated.mtu,
         blockIPv6: updated.blockIPv6,
         killSwitch: updated.killSwitch,
-      dnsDirect: updated.dnsDirect,
-      dnsProxied: updated.dnsProxied,
+        dnsDirect: updated.dnsDirect,
+        dnsProxied: updated.dnsProxied,
+        tlsFingerprint: updated.tlsFingerprint,
+        muxEnabled: updated.muxEnabled,
+        muxConcurrency: updated.muxConcurrency,
+        tcpFastOpen: updated.tcpFastOpen,
+        tcpKeepAlive: updated.tcpKeepAlive,
+        tlsFragment: updated.fragmentationDefense,
       );
       ref.invalidate(prefsProvider);
       // Settings that shape the sing-box config (split tunneling, MTU, DNS,

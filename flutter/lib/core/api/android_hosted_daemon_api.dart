@@ -607,7 +607,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   /// Returns null when the tunnel is confirmed carrying traffic, otherwise a
   /// human-readable reason the candidate must be rotated out.
   Future<String?> _awaitEgressVerdict(AndroidVpnService vpn) async {
-    final deadline = DateTime.now().add(const Duration(seconds: 20));
+    final deadline = DateTime.now().add(const Duration(seconds: 26));
     while (DateTime.now().isBefore(deadline)) {
       final status = await vpn.status();
       if (status.state == 'connected') return null;
@@ -901,16 +901,28 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
           ),
         );
     final endpoint = directUri == null ? null : _endpointOfShareUri(directUri);
+    // The user-configurable ping URL (Settings → Сеть и тестирование задержки)
+    // must actually steer the HTTP probe; falling back to the endpoint's own
+    // /mosaicws URL keeps the probe meaningful when no custom URL is set.
+    final configuredPingUrl =
+        prefs.testUrl.trim().isNotEmpty ? prefs.testUrl.trim() : null;
+    final fallbackProbeUrl = endpoint == null
+        ? null
+        : 'https://${endpoint.$1}:${endpoint.$2}/mosaicws';
+    final httpProbeUrl = configuredPingUrl != null &&
+            Uri.tryParse(configuredPingUrl)?.host.isNotEmpty == true
+        ? configuredPingUrl
+        : fallbackProbeUrl;
     final latency = endpoint == null
         ? null
-        : (prefs.pingMethod == 'url'
+        : (prefs.pingMethod == 'url' && httpProbeUrl != null
             ? (await _probeHttpSamples(
-                'https://${endpoint.$1}:${endpoint.$2}/mosaicws',
+                httpProbeUrl,
                 attempts: prefs.pingRounds,
                 timeoutMs: prefs.pingTimeoutMs,
               )).samples.isNotEmpty
                 ? (await _probeHttpSamples(
-                    'https://${endpoint.$1}:${endpoint.$2}/mosaicws',
+                    httpProbeUrl,
                     attempts: prefs.pingRounds,
                     timeoutMs: prefs.pingTimeoutMs,
                   )).samples.first

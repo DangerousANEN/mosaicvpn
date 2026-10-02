@@ -333,11 +333,15 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
             //
             // The old schedule (6 sleeps + 4s connect timeout each) could run
             // past 35s, i.e. longer than the Dart side waited, which produced
-            // a rotation verdict on a live group. A 15s deadline with 2.5s
-            // probes keeps the worst case ~17.5s: comfortably inside the
-            // client's 25s wait, and comfortably past urltest convergence, so
-            // the verifier only fails a group that is genuinely dead.
-            val deadline = System.currentTimeMillis() + 15_000L
+            // a rotation verdict on a live group. A 24s deadline with 2.5s
+            // probes keeps the worst case ~26.5s: inside the client's 26s
+            // verdict wait and comfortably past urltest convergence (the
+            // group now also re-checks members every 30s instead of 3m), so
+            // the verifier only fails a group that is genuinely dead. On a
+            // real device the first ~10s of a fresh session can still answer
+            // RST while the group rotates off a dead node -- the budget has
+            // to survive that window.
+            val deadline = System.currentTimeMillis() + 24_000L
             var attempt = 0
             while (System.currentTimeMillis() < deadline) {
                 // Bail out if the user cancelled or a new session started.

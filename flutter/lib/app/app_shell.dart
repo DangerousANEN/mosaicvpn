@@ -229,6 +229,12 @@ class _AppShellState extends ConsumerState<AppShell>
             killSwitch: prefs.killSwitch,
             dnsDirect: prefs.dnsDirect,
             dnsProxied: prefs.dnsProxied,
+            tlsFingerprint: prefs.tlsFingerprint,
+            muxEnabled: prefs.muxEnabled,
+            muxConcurrency: prefs.muxConcurrency,
+            tcpFastOpen: prefs.tcpFastOpen,
+            tcpKeepAlive: prefs.tcpKeepAlive,
+            tlsFragment: prefs.fragmentationDefense,
           );
           // Telegram WS resilience booster: start the embedded engine at app
           // launch when the user enabled it, so Telegram keeps working even
