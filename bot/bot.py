@@ -3225,8 +3225,8 @@ def get_install_os_keyboard(lang):
 def get_install_android_keyboard(lang):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton(
-        "⬇️ Скачать APK v0.3.58 (53 МБ)" if lang == "ru" else "⬇️ Download APK v0.3.58 (53 MB)",
-        url="https://sub.zxc1x1.ru/assets/MosaicVPN-Android-v0.3.58.apk",
+        "⬇️ Скачать APK v0.3.72 (67 МБ)" if lang == "ru" else "⬇️ Download APK v0.3.72 (67 MB)",
+        url="https://sub.zxc1x1.ru/assets/MosaicVPN-Android.apk",
         style="primary",
     ))
     markup.add(types.InlineKeyboardButton(
@@ -3250,13 +3250,13 @@ def get_install_android_keyboard(lang):
 def get_install_windows_keyboard(lang):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton(
-        "⬇️ Скачать Setup.exe (24.7 МБ)" if lang == "ru" else "⬇️ Download Setup.exe (24.7 MB)",
-        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.58/MosaicVPN-Setup-x64-v0.3.58.exe",
+        "⬇️ Скачать Setup.exe (25 МБ)" if lang == "ru" else "⬇️ Download Setup.exe (25 MB)",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.72/MosaicVPN-Setup-x64-v0.3.72.exe",
         style="primary",
     ))
     markup.add(types.InlineKeyboardButton(
-        "📦 Скачать Portable .zip (36.8 МБ)" if lang == "ru" else "📦 Download Portable .zip (36.8 MB)",
-        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.58/MosaicVPN-Portable-x64-v0.3.58.zip",
+        "📦 Скачать Portable .zip (38 МБ)" if lang == "ru" else "📦 Download Portable .zip (38 MB)",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.72/MosaicVPN-Portable-x64-v0.3.72.zip",
         style="primary",
     ))
     markup.add(types.InlineKeyboardButton(
@@ -3281,12 +3281,12 @@ def get_install_linux_keyboard(lang):
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton(
         "📦 Ubuntu / Debian (.deb)" if lang == "ru" else "📦 Ubuntu / Debian (.deb)",
-        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.58/MosaicVPN_0.3.58_amd64.deb",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.72/MosaicVPN_0.3.72_amd64.deb",
         style="primary",
     ))
     markup.add(types.InlineKeyboardButton(
         "📦 Любой Linux (.tar.gz)" if lang == "ru" else "📦 Any Linux (.tar.gz)",
-        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.58/MosaicVPN-Portable-x86_64-v0.3.58.tar.gz",
+        url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.72/MosaicVPN-Portable-x86_64-v0.3.72.tar.gz",
         style="primary",
     ))
     markup.add(types.InlineKeyboardButton(
@@ -3313,9 +3313,9 @@ def get_download_keyboard(lang):
     def button(text, **kwargs):
         kwargs.setdefault("style", "primary")
         return types.InlineKeyboardButton(text, **kwargs)
-    markup.add(button("📱 Android", url="https://sub.zxc1x1.ru/assets/MosaicVPN-Android-v0.3.58.apk", style="primary"))
-    markup.add(button("🪟 Windows (Setup)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.58/MosaicVPN-Setup-x64-v0.3.58.exe", style="primary"))
-    markup.add(button("🐧 Linux (Debian/Ubuntu)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.58/MosaicVPN_0.3.58_amd64.deb", style="primary"))
+    markup.add(button("📱 Android", url="https://sub.zxc1x1.ru/assets/MosaicVPN-Android.apk", style="primary"))
+    markup.add(button("🪟 Windows (Setup)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.72/MosaicVPN-Setup-x64-v0.3.72.exe", style="primary"))
+    markup.add(button("🐧 Linux (Debian/Ubuntu)", url="https://github.com/DangerousANEN/mosaicvpn/releases/download/v0.3.72/MosaicVPN_0.3.72_amd64.deb", style="primary"))
     markup.add(button("📲 Добавить в клиент" if lang == "ru" else "📲 Add to Client", callback_data="home_add_client_menu", style="success"))
     # home_add_app alias supported
     return markup
@@ -6305,9 +6305,9 @@ class StatsRequestHandler(BaseHTTPRequestHandler):
             "provider_name": "MosaicVPN",
             "user_tier": "standard",
             "app_update": {
-                "version": "0.3.70",
+                "version": "0.3.72",
                 "download_url": "https://sub.zxc1x1.ru/",
-                "changelog": "Починены вкладки, которые выглядели сломанными: элементы интерфейса не помещались на экранах телефонов и вылезали за край — в маршрутизации, серверах, профиле провайдера и ядрах. Теперь всё умещается и на маленьком экране, и в горизонтальном положении. Также исправлены настройки, которые не применялись (размер пакета, сетевой стек, блокировка IPv6, DNS), и подключение теперь устанавливается с первой попытки."
+                "changelog": "Онбординг стал мгновенным и живым: кнопка показывает этапы (создание аккаунта, настройка маршрутов), после готовности — экран с галочкой. При истёкшем доступе компас сразу открывает пополнение с готовыми суммами, без ошибок. Биллинг открывается сразу на пресетах оплаты."
             },
             "groups": groups,
             # A direct route is deliberately separate from Smart Groups. Its
