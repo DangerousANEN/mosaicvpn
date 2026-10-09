@@ -13,6 +13,7 @@ import '../logs/logs_screen.dart';
 import '../settings/settings_screen.dart';
 import '../groups/groups_screen.dart';
 import '../egresses/egresses_screen.dart';
+import '../settings/split_tunnel_screen.dart';
 
 class MoreScreen extends StatelessWidget {
   const MoreScreen({super.key});
@@ -48,8 +49,15 @@ class MoreScreen extends StatelessWidget {
         builder: (_) => const RoutingScreen(),
       ),
       _MoreItem(
+        title: 'Приложения',
+        subtitle: 'Какие приложения через VPN, а какие напрямую',
+        icon: Icons.apps_rounded,
+        builder: (_) => const SplitTunnelScreen(),
+      ),
+      _MoreItem(
         title: 'Egresses (Прокси-порты)',
-        subtitle: 'Одновременные прокси для разных приложений и локальной сети (0.0.0.0)',
+        subtitle:
+            'Одновременные прокси для разных приложений и локальной сети (0.0.0.0)',
         icon: Icons.account_tree_outlined,
         builder: (_) => const EgressesScreen(),
       ),

@@ -21,6 +21,7 @@ import '../../core/utils/formatters.dart';
 import 'dashboard_facts.dart';
 import 'atlas_route_picker_sheet.dart';
 import 'atlas_onboarding_card.dart';
+import '../settings/split_tunnel_screen.dart';
 
 /// The first screen of MosaicVPN: one calm connection decision, with smart
 /// groups rather than an overwhelming inventory of physical nodes.
@@ -56,6 +57,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
   final UiPreferencesService _uiPrefs = UiPreferencesService();
   bool _busy = false;
   bool _isBackgrounded = false;
+  bool _showSplitHint = false;
   StreamSubscription<ConnectPhaseEvent>? _connectProgressSub;
   ConnectPhaseEvent? _connectProgress;
 
@@ -77,6 +79,9 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
           }
         });
       }
+      if (event.phase == 'done') {
+        _maybeShowSplitHint();
+      }
     });
   }
 
@@ -86,6 +91,23 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.hidden);
     _syncPulseAnimation();
+  }
+
+  Future<void> _maybeShowSplitHint() async {
+    if (!mounted || _showSplitHint) return;
+    try {
+      final shown = await _uiPrefs.readBool('split_hint_shown') ?? false;
+      if (shown) return;
+      await _uiPrefs.writeBool('split_hint_shown', true);
+    } catch (_) {
+      // preference failures must never break the dashboard
+    }
+    if (mounted) {
+      setState(() => _showSplitHint = true);
+      Future<void>.delayed(const Duration(seconds: 12), () {
+        if (mounted) setState(() => _showSplitHint = false);
+      });
+    }
   }
 
   void _syncPulseAnimation([VpnStatus? currentStatus]) {
@@ -108,8 +130,8 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
       final started = _pulseStartedAt;
       if (started == null) return;
       final elapsed = DateTime.now().difference(started).inMilliseconds;
-      _pulse.value = (elapsed % _pulsePeriod.inMilliseconds) /
-          _pulsePeriod.inMilliseconds;
+      _pulse.value =
+          (elapsed % _pulsePeriod.inMilliseconds) / _pulsePeriod.inMilliseconds;
     });
   }
 
@@ -262,7 +284,8 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     // Tunnel last-known-alive but the status transport is unreachable:
     // honest wording instead of flashing "ОТКЛЮЧЕНО" on a transient poll
     // failure while the VPN is actually still up.
-    final statusUnreachable = !connected && !connecting && !status.agentConnected;
+    final statusUnreachable =
+        !connected && !connecting && !status.agentConnected;
     // Expired access changes what the compass MEANS: the tap becomes a
     // money action (see the billing gate in _toggle), so the caption under
     // the dial must point there instead of promising a tunnel.
@@ -284,6 +307,25 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
               onRefresh: () => ref.invalidate(vpnStatusProvider),
             ),
             const SizedBox(height: 8),
+
+            // ── One-time split-tunnel hint ──
+            // Most non-technical users never discover per-app routing until
+            // a bank app misbehaves behind VPN. Show one gentle pointer,
+            // once per install, right after the first connect.
+            if (_showSplitHint) ...[
+              _SplitTunnelHintCard(
+                onClose: () => setState(() => _showSplitHint = false),
+                onOpen: () {
+                  setState(() => _showSplitHint = false);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const SplitTunnelScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 6),
+            ],
 
             // ── Access status strip ──
             // The single most common support question is "why did it stop
@@ -616,47 +658,47 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
       }
       ref.read(connectingRouteProvider.notifier).begin(selected.id);
       try {
-      if (selected.disabled) {
-        final disabledLabel = selected.disabledReason.isEmpty
-            ? 'Маршрут временно отключён.'
-            : selected.disabledReason;
-        _notice(disabledLabel, error: true);
-      } else if (AppPlatform.isAndroid) {
-        await _toggleAndroidRuntime(selected);
-        await _uiPrefs.writeLastConnectedRouteId(selected.id);
-        if (_selectedSubscriptionId(ref) case final subId?
-            when subId.isNotEmpty) {
-          await _uiPrefs.writeLastConnectedSubscriptionId(subId);
+        if (selected.disabled) {
+          final disabledLabel = selected.disabledReason.isEmpty
+              ? 'Маршрут временно отключён.'
+              : selected.disabledReason;
+          _notice(disabledLabel, error: true);
+        } else if (AppPlatform.isAndroid) {
+          await _toggleAndroidRuntime(selected);
+          await _uiPrefs.writeLastConnectedRouteId(selected.id);
+          if (_selectedSubscriptionId(ref) case final subId?
+              when subId.isNotEmpty) {
+            await _uiPrefs.writeLastConnectedSubscriptionId(subId);
+          }
+        } else if (selected.isSmartGroup && selected.manifestGroup != null) {
+          final group = selected.manifestGroup!;
+          final selection = await _smartGroupSelector.connect(api, group);
+          SmartGroupRuntimeController.instance.start(
+            api: api,
+            selector: _smartGroupSelector,
+            group: group,
+            candidateId: selection.candidateId,
+          );
+          await _uiPrefs.writeLastConnectedRouteId(selected.id);
+          if (_selectedSubscriptionId(ref) case final subId?
+              when subId.isNotEmpty) {
+            await _uiPrefs.writeLastConnectedSubscriptionId(subId);
+          }
+        } else if (selected.isGroup) {
+          await api.connectGroup(selected.id);
+          await _uiPrefs.writeLastConnectedRouteId(selected.id);
+          if (_selectedSubscriptionId(ref) case final subId?
+              when subId.isNotEmpty) {
+            await _uiPrefs.writeLastConnectedSubscriptionId(subId);
+          }
+        } else {
+          await api.connect(selected.id);
+          await _uiPrefs.writeLastConnectedRouteId(selected.id);
+          if (_selectedSubscriptionId(ref) case final subId?
+              when subId.isNotEmpty) {
+            await _uiPrefs.writeLastConnectedSubscriptionId(subId);
+          }
         }
-      } else if (selected.isSmartGroup && selected.manifestGroup != null) {
-        final group = selected.manifestGroup!;
-        final selection = await _smartGroupSelector.connect(api, group);
-        SmartGroupRuntimeController.instance.start(
-          api: api,
-          selector: _smartGroupSelector,
-          group: group,
-          candidateId: selection.candidateId,
-        );
-        await _uiPrefs.writeLastConnectedRouteId(selected.id);
-        if (_selectedSubscriptionId(ref) case final subId?
-            when subId.isNotEmpty) {
-          await _uiPrefs.writeLastConnectedSubscriptionId(subId);
-        }
-      } else if (selected.isGroup) {
-        await api.connectGroup(selected.id);
-        await _uiPrefs.writeLastConnectedRouteId(selected.id);
-        if (_selectedSubscriptionId(ref) case final subId?
-            when subId.isNotEmpty) {
-          await _uiPrefs.writeLastConnectedSubscriptionId(subId);
-        }
-      } else {
-        await api.connect(selected.id);
-        await _uiPrefs.writeLastConnectedRouteId(selected.id);
-        if (_selectedSubscriptionId(ref) case final subId?
-            when subId.isNotEmpty) {
-          await _uiPrefs.writeLastConnectedSubscriptionId(subId);
-        }
-      }
       } finally {
         ref.read(connectingRouteProvider.notifier).end();
       }
@@ -1423,58 +1465,58 @@ class _AtlasHeroCompassButtonState extends State<_AtlasHeroCompassButton> {
                 children: [
                   RepaintBoundary(
                     child: Container(
-                        width: 146,
-                        height: 146,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [
-                              connected
-                                  ? c.successDim
-                                  : connecting
-                                      ? c.warningDim
-                                      : c.bgElevated,
-                              connected
-                                  ? c.bgInk
-                                  : connecting
-                                      ? c.bgInk
-                                      : c.bgInk,
-                            ],
-                            radius: 0.85,
-                          ),
-                          border: Border.all(
-                            color: tint.withValues(alpha: connected ? .70 : .35),
-                            width: 2.2,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: tint.withValues(alpha: active ? .35 : .12),
-                              blurRadius: active ? 28 : 14,
-                              spreadRadius: active ? 3 : 0,
-                            ),
+                      width: 146,
+                      height: 146,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [
+                            connected
+                                ? c.successDim
+                                : connecting
+                                    ? c.warningDim
+                                    : c.bgElevated,
+                            connected
+                                ? c.bgInk
+                                : connecting
+                                    ? c.bgInk
+                                    : c.bgInk,
                           ],
+                          radius: 0.85,
                         ),
-                        child: Center(
-                          child: widget.busy
-                              ? SizedBox(
-                                  width: 44,
-                                  height: 44,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 3.5,
-                                    valueColor:
-                                        AlwaysStoppedAnimation<Color>(tint),
-                                  ),
-                                )
-                              : Icon(
-                                  connected
-                                      ? Icons.shield_rounded
-                                      : connecting
-                                          ? Icons.route_rounded
-                                          : Icons.power_settings_new_rounded,
-                                  color: tint,
-                                  size: 54,
+                        border: Border.all(
+                          color: tint.withValues(alpha: connected ? .70 : .35),
+                          width: 2.2,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: tint.withValues(alpha: active ? .35 : .12),
+                            blurRadius: active ? 28 : 14,
+                            spreadRadius: active ? 3 : 0,
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: widget.busy
+                            ? SizedBox(
+                                width: 44,
+                                height: 44,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 3.5,
+                                  valueColor:
+                                      AlwaysStoppedAnimation<Color>(tint),
                                 ),
-                        ),
+                              )
+                            : Icon(
+                                connected
+                                    ? Icons.shield_rounded
+                                    : connecting
+                                        ? Icons.route_rounded
+                                        : Icons.power_settings_new_rounded,
+                                color: tint,
+                                size: 54,
+                              ),
+                      ),
                     ),
                   ),
                   // Animated layer: stroked ring + ripples only.
@@ -1629,9 +1671,7 @@ class _AtlasRouteSelectorCard extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(18),
               border: Border.all(
-                color: connected
-                    ? c.success.withValues(alpha: .35)
-                    : c.border,
+                color: connected ? c.success.withValues(alpha: .35) : c.border,
                 width: 1.2,
               ),
               boxShadow: [
@@ -1687,15 +1727,13 @@ class _AtlasRouteSelectorCard extends StatelessWidget {
                 ),
                 if (connected && status.latencyMS > 0) ...[
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 9, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                     decoration: BoxDecoration(
-                      color:
-                          c.success.withValues(alpha: .15),
+                      color: c.success.withValues(alpha: .15),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color:
-                            c.success.withValues(alpha: .35),
+                        color: c.success.withValues(alpha: .35),
                       ),
                     ),
                     child: Text(
@@ -1902,9 +1940,8 @@ class _DashboardNetworkStatsCard extends ConsumerWidget {
     final isConn = status.isConnected;
     final traffic = ref.watch(trafficStatsProvider).valueOrNull;
 
-    final ping = status.latencyMS > 0
-        ? '${status.latencyMS} мс'
-        : (isConn ? '—' : '—');
+    final ping =
+        status.latencyMS > 0 ? '${status.latencyMS} мс' : (isConn ? '—' : '—');
     final dlSpeed = traffic != null && traffic.downloadSpeed > 0
         ? formatSpeed(traffic.downloadSpeed * 8)
         : (isConn ? '—' : '0 Mbps');
@@ -1913,10 +1950,14 @@ class _DashboardNetworkStatsCard extends ConsumerWidget {
         : (isConn ? '—' : '0 Mbps');
     final totalDown = traffic != null && traffic.totalDownload > 0
         ? formatBytes(traffic.totalDownload)
-        : (status.bytesIn > 0 ? formatBytes(status.bytesIn) : (isConn ? '—' : '0 B'));
+        : (status.bytesIn > 0
+            ? formatBytes(status.bytesIn)
+            : (isConn ? '—' : '0 B'));
     final totalUp = traffic != null && traffic.totalUpload > 0
         ? formatBytes(traffic.totalUpload)
-        : (status.bytesOut > 0 ? formatBytes(status.bytesOut) : (isConn ? '—' : '0 B'));
+        : (status.bytesOut > 0
+            ? formatBytes(status.bytesOut)
+            : (isConn ? '—' : '0 B'));
 
     return Container(
       margin: const EdgeInsets.only(top: 14),
@@ -1975,7 +2016,8 @@ class _DashboardNetworkStatsCard extends ConsumerWidget {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.data_usage_rounded, size: 14, color: c.textMuted),
+                    Icon(Icons.data_usage_rounded,
+                        size: 14, color: c.textMuted),
                     const SizedBox(width: 6),
                     Text(
                       '↓ $totalDown   ↑ $totalUp',
@@ -2129,7 +2171,8 @@ class _QuickControlsRow extends ConsumerWidget {
                 ref.read(autoFailoverProvider.notifier).toggle();
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
@@ -2152,7 +2195,9 @@ class _QuickControlsRow extends ConsumerWidget {
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
-                          color: autoFailover ? AtlasTheme.success : c.textSecondary,
+                          color: autoFailover
+                              ? AtlasTheme.success
+                              : c.textSecondary,
                         ),
                       ),
                     ),
@@ -2173,7 +2218,8 @@ class _QuickControlsRow extends ConsumerWidget {
                 ref.read(bypassRussianSitesProvider.notifier).toggle();
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
@@ -2192,7 +2238,9 @@ class _QuickControlsRow extends ConsumerWidget {
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
-                          color: bypassRussian ? AtlasTheme.accent : c.textSecondary,
+                          color: bypassRussian
+                              ? AtlasTheme.accent
+                              : c.textSecondary,
                         ),
                       ),
                     ),
@@ -2213,7 +2261,8 @@ class _QuickControlsRow extends ConsumerWidget {
                 ref.read(adBlockFilterProvider.notifier).toggle();
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
@@ -2250,7 +2299,6 @@ class _QuickControlsRow extends ConsumerWidget {
     );
   }
 }
-
 
 /// Live connect progress card: shows the actual phase of the connect
 /// pipeline and, during the node sweep, a linear progress with counts
@@ -2357,8 +2405,8 @@ class _AccessStrip extends ConsumerWidget {
     if (profile == null) return const SizedBox.shrink();
 
     final daysLeft = profile.daysLeft;
-    final expired = daysLeft <= 0 ||
-        profile.status.toLowerCase().contains('expired');
+    final expired =
+        daysLeft <= 0 || profile.status.toLowerCase().contains('expired');
 
     if (expired) {
       return _strip(
@@ -2424,6 +2472,55 @@ class _AccessStrip extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Gentle one-time hint pointing at per-app split tunneling.
+class _SplitTunnelHintCard extends StatelessWidget {
+  final VoidCallback onClose;
+  final VoidCallback onOpen;
+
+  const _SplitTunnelHintCard({
+    required this.onClose,
+    required this.onOpen,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeColors.of(context);
+    return Material(
+      color: c.bgCard,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onOpen,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+          child: Row(
+            children: [
+              Icon(Icons.apps_rounded, size: 20, color: AtlasTheme.accent),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Банк или такси за VPN работают хуже? Исключите их — 1 тап',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: c.textPrimary,
+                  ),
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                iconSize: 16,
+                onPressed: onClose,
+                icon: Icon(Icons.close_rounded, color: c.textMuted),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

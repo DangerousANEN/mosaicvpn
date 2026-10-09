@@ -16,7 +16,8 @@ class _SplitTunnelScreenState extends ConsumerState<SplitTunnelScreen> {
   final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>> _installedApps = [];
   Set<String> _selectedPackages = {};
-  String _mode = 'bypass'; // 'bypass' (exclude from vpn) | 'proxy' (only through vpn)
+  String _mode =
+      'bypass'; // 'bypass' (exclude from vpn) | 'proxy' (only through vpn)
   bool _isLoading = true;
   bool _showSystemApps = false;
   String _filter = '';
@@ -46,6 +47,14 @@ class _SplitTunnelScreenState extends ConsumerState<SplitTunnelScreen> {
       setState(() => _filter = _searchController.text.trim().toLowerCase());
     });
     _loadData();
+  }
+
+  /// Sort comparator: selected packages first (stable), then by name.
+  int _compareBySelected(Map<String, dynamic> a, Map<String, dynamic> b) {
+    final aSel = _selectedPackages.contains(a['package']);
+    final bSel = _selectedPackages.contains(b['package']);
+    if (aSel != bSel) return aSel ? -1 : 1;
+    return (a['name'] as String).compareTo(b['name'] as String);
   }
 
   @override
@@ -79,7 +88,8 @@ class _SplitTunnelScreenState extends ConsumerState<SplitTunnelScreen> {
       final api = ref.read(daemonApiProvider);
       final current = await api.getPrefs();
       final updated = current.copyWith(
-        bypassProcesses: _mode == 'bypass' ? _selectedPackages.toList() : const [],
+        bypassProcesses:
+            _mode == 'bypass' ? _selectedPackages.toList() : const [],
         proxyPackages: _mode == 'proxy' ? _selectedPackages.toList() : const [],
       );
       await api.setPrefs(updated.toJson());
@@ -123,6 +133,10 @@ class _SplitTunnelScreenState extends ConsumerState<SplitTunnelScreen> {
       final pkg = (app['package'] as String).toLowerCase();
       return name.contains(_filter) || pkg.contains(_filter);
     }).toList();
+    // Selected apps always float to the top so the user instantly sees
+    // and can un-tick what they already excluded, without scrolling
+    // through hundreds of entries.
+    filtered.sort(_compareBySelected);
 
     return Scaffold(
       backgroundColor: c.bgBase,
@@ -197,7 +211,8 @@ class _SplitTunnelScreenState extends ConsumerState<SplitTunnelScreen> {
                       ElevatedButton.icon(
                         onPressed: _applyRussianPreset,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AtlasTheme.accent.withValues(alpha: .12),
+                          backgroundColor:
+                              AtlasTheme.accent.withValues(alpha: .12),
                           foregroundColor: AtlasTheme.accent,
                           elevation: 0,
                           padding: const EdgeInsets.symmetric(vertical: 11),
@@ -208,7 +223,8 @@ class _SplitTunnelScreenState extends ConsumerState<SplitTunnelScreen> {
                             ),
                           ),
                         ),
-                        icon: const Icon(Icons.account_balance_rounded, size: 18),
+                        icon:
+                            const Icon(Icons.account_balance_rounded, size: 18),
                         label: const Text(
                           'Исключить банки РФ и Госуслуги в 1 клик',
                           style: TextStyle(
@@ -223,10 +239,12 @@ class _SplitTunnelScreenState extends ConsumerState<SplitTunnelScreen> {
                           Expanded(
                             child: TextField(
                               controller: _searchController,
-                              style: TextStyle(color: c.textPrimary, fontSize: 13.5),
+                              style: TextStyle(
+                                  color: c.textPrimary, fontSize: 13.5),
                               decoration: InputDecoration(
                                 hintText: 'Поиск приложений...',
-                                hintStyle: TextStyle(color: c.textMuted, fontSize: 13),
+                                hintStyle:
+                                    TextStyle(color: c.textMuted, fontSize: 13),
                                 prefixIcon: Icon(Icons.search_rounded,
                                     size: 18, color: c.textMuted),
                                 filled: true,
@@ -246,14 +264,19 @@ class _SplitTunnelScreenState extends ConsumerState<SplitTunnelScreen> {
                           ),
                           const SizedBox(width: 8),
                           FilterChip(
-                            label: const Text('Системные', style: TextStyle(fontSize: 11.5)),
+                            label: const Text('Системные',
+                                style: TextStyle(fontSize: 11.5)),
                             selected: _showSystemApps,
-                            onSelected: (val) => setState(() => _showSystemApps = val),
+                            onSelected: (val) =>
+                                setState(() => _showSystemApps = val),
                             backgroundColor: c.bgCard,
-                            selectedColor: AtlasTheme.accent.withValues(alpha: .2),
+                            selectedColor:
+                                AtlasTheme.accent.withValues(alpha: .2),
                             checkmarkColor: AtlasTheme.accent,
                             labelStyle: TextStyle(
-                              color: _showSystemApps ? AtlasTheme.accent : c.textSecondary,
+                              color: _showSystemApps
+                                  ? AtlasTheme.accent
+                                  : c.textSecondary,
                             ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
@@ -266,7 +289,8 @@ class _SplitTunnelScreenState extends ConsumerState<SplitTunnelScreen> {
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -286,7 +310,8 @@ class _SplitTunnelScreenState extends ConsumerState<SplitTunnelScreen> {
                           },
                           child: Text(
                             'Сбросить выбор',
-                            style: TextStyle(fontSize: 12, color: AtlasTheme.accent),
+                            style: TextStyle(
+                                fontSize: 12, color: AtlasTheme.accent),
                           ),
                         ),
                     ],
@@ -392,7 +417,9 @@ class _ModeChip extends StatelessWidget {
                 subtitle,
                 style: TextStyle(
                   fontSize: 10,
-                  color: selected ? AtlasTheme.onAccent.withValues(alpha: .8) : c.textMuted,
+                  color: selected
+                      ? AtlasTheme.onAccent.withValues(alpha: .8)
+                      : c.textMuted,
                 ),
               ),
             ],
@@ -415,7 +442,8 @@ class AppIconTile extends StatelessWidget {
     if (iconB64.isNotEmpty) {
       try {
         final bytes = base64Decode(iconB64);
-        icon = Image.memory(bytes, width: 34, height: 34, gaplessPlayback: true);
+        icon =
+            Image.memory(bytes, width: 34, height: 34, gaplessPlayback: true);
       } catch (_) {
         icon = null;
       }
@@ -428,8 +456,7 @@ class AppIconTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
       ),
       alignment: Alignment.center,
-      child: icon ??
-          const Icon(Icons.android_rounded, size: 20),
+      child: icon ?? const Icon(Icons.android_rounded, size: 20),
     );
   }
 }

@@ -9,6 +9,7 @@ import '../../core/models/models.dart';
 import '../../core/models/routing_preset.dart';
 import '../../shared/widgets/atlas_widgets.dart';
 import '../../shared/widgets/skeleton_loader.dart';
+import '../settings/split_tunnel_screen.dart';
 
 /// Routing screen — manage routing rules.
 class RoutingScreen extends ConsumerWidget {
@@ -37,6 +38,20 @@ class RoutingScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 12),
 
+          // Per-app split tunneling entry point — the single most requested
+          // beginner feature. Kept visual and one-tap: choose which apps go
+          // through the VPN and which stay direct (banks, taxis, delivery).
+          _AppSplitCard(
+            bypassCount: prefs?.bypassProcesses.length ?? 0,
+            proxyCount: prefs?.proxyPackages.length ?? 0,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const SplitTunnelScreen(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
           // Routing Mode bar (Single Source of Truth)
           if (isMobile) ...[
             Text(
@@ -61,7 +76,9 @@ class RoutingScreen extends ConsumerWidget {
                   final current = prefs ?? Preferences();
                   final updated = current.copyWith(routingMode: s.first);
                   try {
-                    await ref.read(daemonApiProvider).setPrefs(updated.toJson());
+                    await ref
+                        .read(daemonApiProvider)
+                        .setPrefs(updated.toJson());
                     ref.invalidate(prefsProvider);
                   } catch (e) {
                     debugPrint('routing mode switch failed: $e');
@@ -94,31 +111,33 @@ class RoutingScreen extends ConsumerWidget {
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(
-                        value: 'global',
-                        label: Text('VPN'),
-                        tooltip: 'Весь трафик через VPN'),
-                    ButtonSegment(
-                        value: 'rule',
-                        label: Text('Правила'),
-                        tooltip: 'Маршрутизация по правилам'),
-                    ButtonSegment(
-                        value: 'direct',
-                        label: Text('Напрямую'),
-                        tooltip: 'Прямой доступ без VPN'),
-                  ],
-                  selected: {prefs?.routingMode ?? 'rule'},
-                  onSelectionChanged: (s) async {
-                    final current = prefs ?? Preferences();
-                    final updated = current.copyWith(routingMode: s.first);
-                    try {
-                      await ref.read(daemonApiProvider).setPrefs(updated.toJson());
-                      ref.invalidate(prefsProvider);
-                    } catch (e) {
-                      debugPrint('routing mode switch failed: $e');
-                    }
-                  },
+                      segments: const [
+                        ButtonSegment(
+                            value: 'global',
+                            label: Text('VPN'),
+                            tooltip: 'Весь трафик через VPN'),
+                        ButtonSegment(
+                            value: 'rule',
+                            label: Text('Правила'),
+                            tooltip: 'Маршрутизация по правилам'),
+                        ButtonSegment(
+                            value: 'direct',
+                            label: Text('Напрямую'),
+                            tooltip: 'Прямой доступ без VPN'),
+                      ],
+                      selected: {prefs?.routingMode ?? 'rule'},
+                      onSelectionChanged: (s) async {
+                        final current = prefs ?? Preferences();
+                        final updated = current.copyWith(routingMode: s.first);
+                        try {
+                          await ref
+                              .read(daemonApiProvider)
+                              .setPrefs(updated.toJson());
+                          ref.invalidate(prefsProvider);
+                        } catch (e) {
+                          debugPrint('routing mode switch failed: $e');
+                        }
+                      },
                     ),
                   ),
                 ),
@@ -141,8 +160,8 @@ class RoutingScreen extends ConsumerWidget {
                     reordered.insert(newIdx, item);
                     final api = ref.read(daemonApiProvider);
                     try {
-                      await api.reorderRules(
-                          reordered.map((r) => r.id).toList());
+                      await api
+                          .reorderRules(reordered.map((r) => r.id).toList());
                       ref.invalidate(rulesProvider);
                     } catch (e) {
                       debugPrint('reorderRules failed: $e');
@@ -343,8 +362,8 @@ class RoutingScreen extends ConsumerWidget {
                           style: const TextStyle(fontFamily: 'monospace')),
                       action: SnackBarAction(
                         label: 'Copy',
-                        onPressed: () =>
-                            Clipboard.setData(ClipboardData(text: e.toString())),
+                        onPressed: () => Clipboard.setData(
+                            ClipboardData(text: e.toString())),
                       ),
                     ),
                   );
@@ -471,8 +490,7 @@ class _RuleTile extends StatelessWidget {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 72),
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: actionColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(AtlasTheme.radiusSm),
@@ -627,7 +645,8 @@ class _RoutingPresetsSection extends ConsumerWidget {
     } catch (_) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Не удалось разобрать пресет: проверьте JSON')),
+          const SnackBar(
+              content: Text('Не удалось разобрать пресет: проверьте JSON')),
         );
       }
     }
@@ -698,10 +717,10 @@ class _PresetTile extends ConsumerWidget {
                     );
                   }
                 case 'delete':
-                  final current =
-                      await ref.read(routingPresetsProvider.future);
+                  final current = await ref.read(routingPresetsProvider.future);
                   await saveUserPresets(ref, [
-                    for (final p in current) if (p.id != preset.id) p,
+                    for (final p in current)
+                      if (p.id != preset.id) p,
                   ]);
               }
             },
@@ -722,6 +741,87 @@ class _PresetTile extends ConsumerWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Compact, tappable summary card for per-app split tunneling.
+///
+/// Grandma-friendly copy: no "tunnel/bypass/policy" jargon in the title,
+/// plain "какие приложения идут через VPN". Counts show current state.
+class _AppSplitCard extends StatelessWidget {
+  final int bypassCount;
+  final int proxyCount;
+  final VoidCallback onTap;
+
+  const _AppSplitCard({
+    required this.bypassCount,
+    required this.proxyCount,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeColors.of(context);
+    final active = bypassCount > 0 || proxyCount > 0;
+    final modeLabel = proxyCount > 0
+        ? 'через VPN только выбранные ($proxyCount)'
+        : bypassCount > 0
+            ? 'напрямую без VPN: $bypassCount прил.'
+            : 'все приложения идут через VPN';
+    return Material(
+      color: c.bgCard,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: (active ? AtlasTheme.accent : c.textMuted)
+                      .withValues(alpha: .14),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.apps_rounded,
+                  size: 19,
+                  color: active ? AtlasTheme.accent : c.textMuted,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Приложения',
+                      style: TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                        color: c.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      modeLabel,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: c.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, size: 22, color: c.textMuted),
+            ],
+          ),
+        ),
       ),
     );
   }

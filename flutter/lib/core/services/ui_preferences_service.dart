@@ -8,6 +8,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// daemon has started and on Android, where daemon-backed preferences do not exist.
 /// This class stores no credentials, subscription links, or other account secrets.
 class UiPreferencesService {
+  /// Generic one-shot boolean flags (e.g. "hint already shown").
+  Future<bool?> readBool(String key) async {
+    final preferences = await SharedPreferences.getInstance();
+    return preferences.getBool(key);
+  }
+
+  Future<void> writeBool(String key, bool value) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(key, value);
+  }
+
   static const _themeModeKey = 'ui.theme_mode';
   static const _languageKey = 'ui.language';
   static const _selectedSubscriptionIdKey = 'ui.selected_subscription_id';
@@ -47,8 +58,7 @@ class UiPreferencesService {
     }
   }
 
-  Future<void> writeSubscriptionsCache(
-      List<Map<String, dynamic>> value) async {
+  Future<void> writeSubscriptionsCache(List<Map<String, dynamic>> value) async {
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString(_subscriptionsCacheKey, jsonEncode(value));
   }
