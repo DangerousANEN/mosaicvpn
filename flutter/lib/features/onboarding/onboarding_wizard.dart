@@ -63,7 +63,9 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
 
   bool _obscurePassword = true;
   bool _busy = false;
+  String? _busyPhase;
   String? _error;
+  bool _showSuccess = false;
 
   /// Warnings that must not block the happy path (e.g. the account was created
   /// but the default route could not be applied yet).
@@ -154,7 +156,9 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         raw.toLowerCase().contains('connection')) {
       return 'Нет связи с сервисом. Проверьте интернет и повторите.';
     }
-    return raw.isEmpty ? 'Не удалось выполнить действие. Попробуйте ещё раз.' : raw;
+    return raw.isEmpty
+        ? 'Не удалось выполнить действие. Попробуйте ещё раз.'
+        : raw;
   }
 
   /// Locally generated credentials for the zero-typing signup.
@@ -165,9 +169,10 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   /// screen lets them attach their own email the moment they want the account
   /// on a second device.
   (String, String) _generatedCredentials() {
-    String random(int length) => List.generate(length, (_) => _random.nextInt(36))
-        .map((value) => value.toRadixString(36))
-        .join();
+    String random(int length) =>
+        List.generate(length, (_) => _random.nextInt(36))
+            .map((value) => value.toRadixString(36))
+            .join();
     return ('mosaic-${random(12)}@mosaic-trial.app', random(24));
   }
 
@@ -198,6 +203,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
 
     setState(() {
       _busy = true;
+      _busyPhase = 'Создаём аккаунт…';
       _error = null;
       _notice = null;
     });
@@ -217,21 +223,26 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
       ref.invalidate(mosaicManifestProvider);
       ref.invalidate(unifiedAccountProvider);
 
+      setState(() => _busyPhase = 'Настраиваем маршруты…');
       // 3. Sensible routing defaults, silently.
       await _applySensibleDefaults();
 
       if (!mounted) return;
-      setState(() => _busy = false);
+      setState(() {
+        _busy = false;
+        _busyPhase = null;
+      });
       // The shell navigates to the connection screen; connecting itself is a
       // single tap on the dashboard compass, where the route table and the
       // live progress card live. Landing the user there is the shortest
       // honest path (the VPN permission dialog must appear in context).
       await OnboardingWizard.markDone();
-      if (mounted) widget.onDone();
+      if (mounted) await _finishWithSuccess();
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _busy = false;
+        _busyPhase = null;
         _error = _friendlyError(error);
         // A generated address is unique, so this only happens when the user
         // opted into their own email -> surface the sign-in option.
@@ -251,6 +262,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     }
     setState(() {
       _busy = true;
+      _busyPhase = 'Входим в аккаунт…';
       _error = null;
     });
     final account = AndroidMosaicAccountService.instance;
@@ -271,6 +283,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
       if (!mounted) return;
       setState(() {
         _busy = false;
+        _busyPhase = null;
         _error = error.toString().contains('401')
             ? 'Неверная почта или пароль.'
             : _friendlyError(error);
@@ -288,6 +301,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     }
     setState(() {
       _busy = true;
+      _busyPhase = 'Подключаем подписку…';
       _error = null;
     });
     final api = ref.read(daemonApiProvider);
@@ -320,9 +334,20 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
       if (!mounted) return;
       setState(() {
         _busy = false;
+        _busyPhase = null;
         _error = _friendlyError(error);
       });
     }
+  }
+
+  /// A 1400 ms celebratory beat: the account exists, the subscription is
+  /// persisted, defaults are applied. Showing this BEFORE revealing the
+  /// main app makes completion feel instant and certain instead of the
+  /// screen just silently swapping.
+  Future<void> _finishWithSuccess() async {
+    setState(() => _showSuccess = true);
+    await Future<void>.delayed(const Duration(milliseconds: 1400));
+    if (mounted) widget.onDone();
   }
 
   Future<void> _skip() async {
@@ -338,68 +363,122 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
       canPop: false,
       child: Scaffold(
         backgroundColor: c.bgBase,
-        body: SafeArea(
-          child: Column(
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildBrand(c),
-                      const SizedBox(height: 26),
-                      Text(
-                        'Приватность\nв один шаг',
-                        style: TextStyle(
-                          fontFamily: AtlasTheme.serifFamily,
-                          fontSize: 27,
-                          fontWeight: FontWeight.w700,
-                          color: c.textPrimary,
-                          height: 1.18,
-                        ),
+        body: Stack(
+          children: [
+            SafeArea(
+              child: Column(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildBrand(c),
+                          const SizedBox(height: 26),
+                          Text(
+                            'Приватность\nв один шаг',
+                            style: TextStyle(
+                              fontFamily: AtlasTheme.serifFamily,
+                              fontSize: 27,
+                              fontWeight: FontWeight.w700,
+                              color: c.textPrimary,
+                              height: 1.18,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Создайте аккаунт и пополните баланс — от 1 ₽ в день.',
+                            style: TextStyle(
+                              fontSize: 14.5,
+                              color: c.textSecondary,
+                              height: 1.4,
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+                          _buildBenefitStrip(c),
+                          const SizedBox(height: 22),
+                          if (!_showExistingSubscription && _useOwnCredentials)
+                            _buildAccountCard(c),
+                          if (!_showExistingSubscription && !_useOwnCredentials)
+                            _buildReassurance(c),
+                          if (_showExistingSubscription)
+                            _buildExistingSubscriptionCard(c),
+                          if (_error != null) ...[
+                            const SizedBox(height: 12),
+                            _buildMessage(c, _error!, isError: true),
+                          ],
+                          if (_notice != null) ...[
+                            const SizedBox(height: 12),
+                            _buildMessage(c, _notice!, isError: false),
+                          ],
+                          const SizedBox(height: 18),
+                          _buildPrimaryAction(c),
+                          const SizedBox(height: 10),
+                          _buildSecondaryRow(c),
+                        ],
                       ),
-                      const SizedBox(height: 10),
-                      Text(
-                        'Создайте аккаунт и пополните баланс — от 1 ₽ в день.',
-                        style: TextStyle(
-                          fontSize: 14.5,
-                          color: c.textSecondary,
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 22),
-                      _buildBenefitStrip(c),
-                      const SizedBox(height: 22),
-                      if (!_showExistingSubscription && _useOwnCredentials)
-                        _buildAccountCard(c),
-                      if (!_showExistingSubscription && !_useOwnCredentials)
-                        _buildReassurance(c),
-                      if (_showExistingSubscription)
-                        _buildExistingSubscriptionCard(c),
-                      if (_error != null) ...[
-                        const SizedBox(height: 12),
-                        _buildMessage(c, _error!, isError: true),
-                      ],
-                      if (_notice != null) ...[
-                        const SizedBox(height: 12),
-                        _buildMessage(c, _notice!, isError: false),
-                      ],
-                      const SizedBox(height: 18),
-                      _buildPrimaryAction(c),
-                      const SizedBox(height: 10),
-                      _buildSecondaryRow(c),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
-            ],
-          ),
+            ),
+            if (_showSuccess) _buildSuccessOverlay(c),
+          ],
         ),
       ),
     );
   }
 
+  Widget _buildSuccessOverlay(ThemeColors c) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 350),
+      child: Container(
+        key: const ValueKey('onboarding-success'),
+        color: c.bgBase.withValues(alpha: .96),
+        alignment: Alignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: 1),
+              duration: const Duration(milliseconds: 600),
+              curve: Curves.elasticOut,
+              builder: (context, t, child) =>
+                  Transform.scale(scale: t, child: child),
+              child: Container(
+                width: 84,
+                height: 84,
+                decoration: BoxDecoration(
+                  color: c.success.withValues(alpha: .14),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                      color: c.success.withValues(alpha: .6), width: 2),
+                ),
+                child: Icon(Icons.check_rounded, size: 46, color: c.success),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'Готово',
+              style: TextStyle(
+                fontFamily: AtlasTheme.serifFamily,
+                fontSize: 26,
+                fontWeight: FontWeight.w700,
+                color: c.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Аккаунт создан. Подключайтесь одним нажатием.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13.5, color: c.textSecondary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildBrand(ThemeColors c) {
     return Row(
@@ -418,7 +497,8 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
             ),
             borderRadius: BorderRadius.circular(9),
           ),
-          child: Icon(Icons.shield_rounded, size: 17, color: AtlasTheme.onAccent),
+          child:
+              Icon(Icons.shield_rounded, size: 17, color: AtlasTheme.onAccent),
         ),
         const SizedBox(width: 9),
         Text(
@@ -535,19 +615,22 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
             autofillHints: const [AutofillHints.newPassword],
             textInputAction: TextInputAction.done,
             onSubmitted: (_) => _busy ? null : _startFreeAndConnect(),
-            decoration: _fieldDecoration(c, 'Пароль от $_minPasswordLength символов',
-                suffix: IconButton(
-                  icon: Icon(
-                    _obscurePassword
-                        ? Icons.visibility_off_rounded
-                        : Icons.visibility_rounded,
-                    size: 18,
-                    color: c.textMuted,
-                  ),
-                  tooltip: _obscurePassword ? 'Показать пароль' : 'Скрыть пароль',
-                  onPressed: () =>
-                      setState(() => _obscurePassword = !_obscurePassword),
-                )),
+            decoration:
+                _fieldDecoration(c, 'Пароль от $_minPasswordLength символов',
+                    suffix: IconButton(
+                      icon: Icon(
+                        _obscurePassword
+                            ? Icons.visibility_off_rounded
+                            : Icons.visibility_rounded,
+                        size: 18,
+                        color: c.textMuted,
+                      ),
+                      tooltip: _obscurePassword
+                          ? 'Показать пароль'
+                          : 'Скрыть пароль',
+                      onPressed: () =>
+                          setState(() => _obscurePassword = !_obscurePassword),
+                    )),
             style: TextStyle(color: c.textPrimary, fontSize: 14),
           ),
           const SizedBox(height: 9),
@@ -575,8 +658,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
       border: border(c.border),
       enabledBorder: border(c.border),
       focusedBorder: border(AtlasTheme.accent, 1.5),
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
       suffixIcon: suffix,
     );
   }
@@ -585,9 +667,18 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   /// it asks for nothing.
   Widget _buildReassurance(ThemeColors c) {
     final rows = <(IconData, String)>[
-      (Icons.touch_app_rounded, 'Аккаунт создастся сам; доступ — после пополнения от 1 ₽ в день'),
-      (Icons.account_balance_rounded, 'Банки, Госуслуги и российские сервисы — напрямую'),
-      (Icons.route_rounded, 'Маршрут подберётся автоматически и переключится при сбое'),
+      (
+        Icons.touch_app_rounded,
+        'Аккаунт создастся сам; доступ — после пополнения от 1 ₽ в день'
+      ),
+      (
+        Icons.account_balance_rounded,
+        'Банки, Госуслуги и российские сервисы — напрямую'
+      ),
+      (
+        Icons.route_rounded,
+        'Маршрут подберётся автоматически и переключится при сбое'
+      ),
     ];
     return Container(
       padding: const EdgeInsets.all(16),
@@ -683,7 +774,9 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            isError ? Icons.error_outline_rounded : Icons.check_circle_outline_rounded,
+            isError
+                ? Icons.error_outline_rounded
+                : Icons.check_circle_outline_rounded,
             size: 18,
             color: color,
           ),
@@ -691,7 +784,8 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           Expanded(
             child: Text(
               text,
-              style: TextStyle(fontSize: 12.5, color: c.textPrimary, height: 1.35),
+              style:
+                  TextStyle(fontSize: 12.5, color: c.textPrimary, height: 1.35),
             ),
           ),
         ],
@@ -721,11 +815,26 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
           elevation: 0,
         ),
         child: _busy
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: AtlasTheme.onAccent),
+            ? Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: AtlasTheme.onAccent),
+                  ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      _busyPhase ?? 'Подождите…',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 15.5, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
               )
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -769,8 +878,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                 ),
               ),
             if (!_showExistingSubscription && !_useOwnCredentials)
-              Text('·',
-                  style: TextStyle(fontSize: 13.5, color: c.textMuted)),
+              Text('·', style: TextStyle(fontSize: 13.5, color: c.textMuted)),
             if (!_showExistingSubscription && _useOwnCredentials)
               TextButton(
                 onPressed: _busy ? null : _signInAndConnect,
@@ -784,8 +892,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                 ),
               ),
             if (!_showExistingSubscription && _useOwnCredentials)
-              Text('·',
-                  style: TextStyle(fontSize: 13.5, color: c.textMuted)),
+              Text('·', style: TextStyle(fontSize: 13.5, color: c.textMuted)),
             TextButton(
               onPressed: _busy
                   ? null

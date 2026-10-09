@@ -232,9 +232,10 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
   /// Opens the billing screen where the user tops up their balance.
   /// Reachable from the access strip so renewal is one tap away from the
   /// screen the user is already looking at.
-  void _openBilling() {
+  void _openBilling({bool focusTopup = false}) {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const BillingScreen()),
+      MaterialPageRoute<void>(
+          builder: (_) => BillingScreen(focusTopup: focusTopup)),
     );
   }
 
@@ -262,6 +263,15 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     // honest wording instead of flashing "ОТКЛЮЧЕНО" on a transient poll
     // failure while the VPN is actually still up.
     final statusUnreachable = !connected && !connecting && !status.agentConnected;
+    // Expired access changes what the compass MEANS: the tap becomes a
+    // money action (see the billing gate in _toggle), so the caption under
+    // the dial must point there instead of promising a tunnel.
+    final billing = ref.watch(billingProfileProvider).valueOrNull;
+    final statusExpiredAccess = !connected &&
+        !connecting &&
+        billing != null &&
+        (billing.daysLeft <= 0 ||
+            billing.status.toLowerCase().contains('expired'));
 
     return SafeArea(
       top: false,
@@ -308,7 +318,9 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                                     ? 'ПОДКЛЮЧЕНИЕ…'
                                     : statusUnreachable
                                         ? 'СОСТОЯНИЕ УТОЧНЯЕТСЯ'
-                                        : 'ОТКЛЮЧЕНО',
+                                        : statusExpiredAccess
+                                            ? 'НЕТ ДОСТУПА'
+                                            : 'ОТКЛЮЧЕНО',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontFamily: AtlasTheme.serifFamily,
@@ -334,7 +346,9 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                                     ? 'Установка защищённого соединения…'
                                     : statusUnreachable
                                         ? 'Нет связи с сервисом — туннель мог остаться активным'
-                                        : 'Нажмите на компас для подключения',
+                                        : statusExpiredAccess
+                                            ? 'Пополните баланс — и компас оживёт'
+                                            : 'Нажмите на компас для подключения',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 13,
@@ -565,6 +579,23 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
             : selected.disabledReason;
         _notice(disabledLabel, error: true);
         return;
+      }
+      // Money first, tunnels second: when access has lapsed the connect tap
+      // is a request to GET ACCESS, not to debug a tunnel. Route it straight
+      // to billing so the shortest path to a working VPN is a payment, not
+      // an error dialog the user cannot act on.
+      {
+        final profile = ref.read(billingProfileProvider).valueOrNull;
+        final daysLeft = profile?.daysLeft ?? 0;
+        final expired = profile == null
+            ? false
+            : (daysLeft <= 0 ||
+                profile.status.toLowerCase().contains('expired'));
+        if (expired) {
+          setState(() => _busy = false);
+          _openBilling(focusTopup: true);
+          return;
+        }
       }
       if (status.isConnected || status.isConnecting) {
         final wasSameRoute = _sameActiveRoute(status, selected);

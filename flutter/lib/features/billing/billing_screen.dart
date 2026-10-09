@@ -12,13 +12,34 @@ import '../../shared/widgets/skeleton_loader.dart';
 import 'billing_dialogs.dart';
 
 /// BillingScreen — MosaicVPN Telegram account link, subscription stats, and CryptoBot top-ups.
-class BillingScreen extends ConsumerWidget {
-  const BillingScreen({super.key});
+/// When true the screen lands pre-scrolled on the top-up card: the user
+/// arrived from a 'Доступ закончился' strip or an expired-connect tap, and
+/// every pixel between them and the payment presets is friction.
+class BillingScreen extends ConsumerStatefulWidget {
+  const BillingScreen({super.key, this.focusTopup = false});
+
+  final bool focusTopup;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<BillingScreen> createState() => _BillingScreenState();
+}
+
+class _BillingScreenState extends ConsumerState<BillingScreen> {
+  final _topupKey = GlobalKey();
+  bool _scrolled = false;
+
+  @override
+  Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
     final billingAsync = ref.watch(billingProfileProvider);
+
+    if (widget.focusTopup && !_scrolled && !billingAsync.isLoading) {
+      _scrolled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = _topupKey.currentContext;
+        if (ctx != null) Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 450), curve: Curves.easeOutCubic);
+      });
+    }
 
     return Scaffold(
       backgroundColor: c.bgBase,
@@ -41,7 +62,8 @@ class BillingScreen extends ConsumerWidget {
             const SizedBox(height: 16),
             Expanded(
               child: billingAsync.when(
-                data: (profile) => _BillingContent(profile: profile),
+                data: (profile) =>
+                    _BillingContent(profile: profile, topupKey: _topupKey),
                 loading: () => const _BillingSkeleton(),
                 error: (err, stack) => _BillingError(
                   error: err,
@@ -60,8 +82,9 @@ class BillingScreen extends ConsumerWidget {
 
 class _BillingContent extends ConsumerWidget {
   final BillingProfile profile;
+  final Key topupKey;
 
-  const _BillingContent({required this.profile});
+  const _BillingContent({required this.profile, required this.topupKey});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -74,7 +97,10 @@ class _BillingContent extends ConsumerWidget {
           const SizedBox(height: 16),
           _SubscriptionDetailsCard(profile: profile),
           const SizedBox(height: 16),
-          _TopupActionCard(profile: profile),
+          KeyedSubtree(
+            key: topupKey,
+            child: _TopupActionCard(profile: profile),
+          ),
         ],
       ),
     );
