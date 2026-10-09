@@ -612,6 +612,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ],
 
           // ── Testing ──
+          if (prefs.advancedMode)
           _SettingsGroup(
             title: 'Тестирование и диагностика',
             children: [
@@ -874,6 +875,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 24),
 
           // ── Phase 2: Routing & compatibility ──
+          if (prefs.advancedMode)
           _SettingsGroup(
             title: 'Маршрутизация и совместимость',
             children: [
@@ -963,6 +965,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 24),
 
           // ── Phase 2: MUX ──
+          if (prefs.advancedMode)
           _SettingsGroup(
             title: 'Мультиплексирование соединений (MUX)',
             children: [
@@ -1089,6 +1092,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 24),
 
           // ── Phase 2: Network & Speed Test ──
+          if (prefs.advancedMode)
           _SettingsGroup(
             title: 'Сеть и тестирование задержки',
             children: [
@@ -1695,7 +1699,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Version: v${AppConfig.appVersion}',
+            Text('Version: v${AppConfig.effectiveAppVersion}',
                 style: TextStyle(
                     color: c.textPrimary, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),

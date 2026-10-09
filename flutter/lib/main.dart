@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
+import 'core/config/app_config.dart';
 
 import 'app/app.dart';
 import 'core/platform/app_platform.dart';
@@ -17,6 +18,10 @@ final connectOnStartProvider = Provider<bool>((ref) {
 
 void main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Sync the reported app version with the real package version (build-time
+  // pubspec version), so About and the update checker never drift.
+  await AppConfig.resolveAppVersion();
 
   // Throne-style resume flag from an elevated relaunch must be consumed
   // before any async work can lose it.

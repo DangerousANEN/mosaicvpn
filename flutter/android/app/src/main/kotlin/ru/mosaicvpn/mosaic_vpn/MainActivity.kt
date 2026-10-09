@@ -120,6 +120,28 @@ class MainActivity : FlutterActivity() {
                         val pm = packageManager
                         val packages = pm.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
                         val list = mutableListOf<Map<String, Any>>()
+                        // Adaptive icons are rendered into small PNGs once and
+                        // shipped to Dart as base64: the split-tunnel list shows
+                        // real app icons without a per-row platform channel.
+                        val iconDp = 48
+                        val iconPx = (iconDp * resources.displayMetrics.density).toInt().coerceAtLeast(48)
+                        val iconCache = HashMap<String, String>()
+                        fun appIcon(appInfo: android.content.pm.ApplicationInfo): String {
+                            val pkg = appInfo.packageName
+                            iconCache[pkg]?.let { return it }
+                            val encoded = runCatching {
+                                val drawable = appInfo.loadIcon(pm)
+                                val bitmap = android.graphics.Bitmap.createBitmap(iconPx, iconPx, android.graphics.Bitmap.Config.ARGB_8888)
+                                val canvas = android.graphics.Canvas(bitmap)
+                                drawable.setBounds(0, 0, iconPx, iconPx)
+                                drawable.draw(canvas)
+                                val out = java.io.ByteArrayOutputStream()
+                                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+                                android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)
+                            }.getOrDefault("")
+                            iconCache[pkg] = encoded
+                            return encoded
+                        }
                         for (app in packages) {
                             val isSystem = (app.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
                             val name = runCatching { pm.getApplicationLabel(app).toString() }.getOrDefault(app.packageName)
@@ -128,7 +150,8 @@ class MainActivity : FlutterActivity() {
                             list.add(mapOf(
                                 "name" to name,
                                 "package" to pkg,
-                                "isSystem" to isSystem
+                                "isSystem" to isSystem,
+                                "icon" to appIcon(app)
                             ))
                         }
                         list.sortBy { (it["name"] as? String)?.lowercase() ?: "" }

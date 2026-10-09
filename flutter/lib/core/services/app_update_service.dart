@@ -46,7 +46,7 @@ class AppUpdateService {
       final updateData = data['app_update'] ?? data['update'];
       if (updateData is Map) {
         final info = AppUpdateInfo.fromJson(Map<String, dynamic>.from(updateData));
-        if (_isNewer(info.version, AppConfig.appVersion)) {
+        if (_isNewer(info.version, AppConfig.effectiveAppVersion)) {
           return info;
         }
       }

@@ -136,6 +136,11 @@ class AndroidMosaicAccountService {
   /// the next test inherits the value. [resetTunSettings] exists for that.
   static TunSettings tunSettings = const TunSettings();
 
+  /// Loopback port of the mixed inbound used when [inboundMode] == 'proxy'.
+  /// Chosen to avoid the common 1080/7890 defaults that clash with other
+  /// proxy apps installed on the same device.
+  static const int proxyListenPort = 2080;
+
   /// Restores the defaults. Intended for tests, which otherwise leak settings
   /// into each other through the global above.
   @visibleForTesting
@@ -952,6 +957,8 @@ class AndroidMosaicAccountService {
     List<String> customProxyDomains = const [],
     bool autoFailover = true,
     bool adBlock = false,
+    bool proxyMode = false,
+    List<Map<String, dynamic>> egressListeners = const [],
   }) async {
     final cleanUrl = subscriptionUrl.trim().replaceAll(RegExp(r'\.+$'), '');
     final uri = Uri.tryParse(cleanUrl);
@@ -986,6 +993,8 @@ class AndroidMosaicAccountService {
       customProxyDomains: customProxyDomains,
       autoFailover: autoFailover,
       adBlock: adBlock,
+      proxyMode: proxyMode,
+      egressListeners: egressListeners,
     );
   }
 
@@ -1004,6 +1013,8 @@ class AndroidMosaicAccountService {
     List<String> customProxyDomains = const [],
     bool autoFailover = true,
     bool adBlock = false,
+    bool proxyMode = false,
+    List<Map<String, dynamic>> egressListeners = const [],
   }) async {
     ConnectProgressBus.instance
         .publishSimple('fetching', 'Получение списка нод с сервера');
@@ -1060,6 +1071,8 @@ class AndroidMosaicAccountService {
       customProxyDomains: customProxyDomains,
       autoFailover: autoFailover,
       adBlock: adBlock,
+      inboundMode: proxyMode ? 'proxy' : 'tun',
+      egressListeners: egressListeners,
     tunStack: tunSettings.stack,
     mtu: tunSettings.mtu,
     blockIPv6: tunSettings.blockIPv6,
@@ -1523,6 +1536,8 @@ class AndroidMosaicAccountService {
     List<String> customProxyDomains = const [],
     bool autoFailover = true,
     bool adBlock = false,
+    bool proxyMode = false,
+    List<Map<String, dynamic>> egressListeners = const [],
   }) {
     final outbound = _outboundFromShareUri(shareUri);
     if (outbound == null) {
@@ -1539,6 +1554,8 @@ class AndroidMosaicAccountService {
       customProxyDomains: customProxyDomains,
       autoFailover: autoFailover,
       adBlock: adBlock,
+      inboundMode: proxyMode ? 'proxy' : 'tun',
+      egressListeners: egressListeners,
     tunStack: tunSettings.stack,
     mtu: tunSettings.mtu,
     blockIPv6: tunSettings.blockIPv6,
@@ -1567,6 +1584,8 @@ class AndroidMosaicAccountService {
     List<String> customProxyDomains = const [],
     bool autoFailover = true,
     bool adBlock = false,
+    bool proxyMode = false,
+    List<Map<String, dynamic>> egressListeners = const [],
   }) =>
       _withAndroidTunInbound(
         payload,
@@ -1595,6 +1614,8 @@ class AndroidMosaicAccountService {
     List<String> customProxyDomains = const [],
     bool autoFailover = true,
     bool adBlock = false,
+    bool proxyMode = false,
+    List<Map<String, dynamic>> egressListeners = const [],
   }) {
     final normalized = _decodeSubscriptionPayload(payload);
     Map<String, dynamic>? config;
@@ -1747,6 +1768,8 @@ class AndroidMosaicAccountService {
       customProxyDomains: customProxyDomains,
       autoFailover: autoFailover,
       adBlock: adBlock,
+      inboundMode: proxyMode ? 'proxy' : 'tun',
+      egressListeners: egressListeners,
     tunStack: tunSettings.stack,
     mtu: tunSettings.mtu,
     blockIPv6: tunSettings.blockIPv6,
@@ -2146,6 +2169,13 @@ class AndroidMosaicAccountService {
       List<String> customProxyDomains = const [],
       bool autoFailover = true,
       bool adBlock = false,
+      // 'tun' (default) builds the system VPN interface; 'proxy' builds a
+      // loopback-only mixed inbound so the tunnel never touches the system
+      // routing table -- apps must point at 127.0.0.1:<port> explicitly.
+      String inboundMode = 'tun',
+      // Raw egress definitions (maps with port/type/active/listen/outbound_tag)
+      // materialised as sing-box inbounds in proxy mode.
+      List<Map<String, dynamic>> egressListeners = const [],
       String tunStack = 'system',
       int mtu = 1420,
       bool blockIPv6 = false,
@@ -2210,23 +2240,62 @@ class AndroidMosaicAccountService {
     // Guard the range: below 1280 breaks IPv6 and QUIC; above the path MTU
     // invites fragmentation, so clamp instead of trusting the stored value.
     final effectiveMtu = mtu.clamp(1280, 1500);
-    config['inbounds'] = [
-      {
-        'type': 'tun',
-        'tag': 'tun-in',
-        'interface_name': 'tun0',
-        'address': [
-          '172.19.0.1/30',
-          if (!blockIPv6) 'fdfe:dcba:9876::1/126',
-        ],
-        'mtu': effectiveMtu,
-        'auto_route': true,
-        'strict_route': true,
-        'stack': effectiveStack,
-        if (proxyPackages.isNotEmpty) 'include_package': proxyPackages,
-        if (bypassPackages.isNotEmpty) 'exclude_package': bypassPackages,
-      },
-    ];
+    if (inboundMode == 'proxy') {
+      // Proxy mode: loopback-only inbounds, no TUN interface. Android never
+      // routes system traffic through the tunnel -- the user opts apps in by
+      // pointing them at 127.0.0.1:<port>. Active egress listeners from the
+      // Egresses screen are materialised here as real sing-box inbounds, each
+      // routed to its own outbound; a default mixed listener on
+      // [proxyListenPort] is always kept so the mode works out of the box.
+      final egressInbounds = <Map<String, dynamic>>[];
+      final usedPorts = <int>{};
+      for (final eg in egressListeners) {
+        final egPort = (eg['port'] as num?)?.toInt() ?? 0;
+        final egActive = eg['active'] != false;
+        final egType = eg['type']?.toString() ?? 'mixed';
+        if (!egActive || egPort <= 0 || egPort > 65535) continue;
+        if (!usedPorts.add(egPort)) continue; // duplicate port: first wins
+        egressInbounds.add({
+          'type': egType == 'socks' || egType == 'http' ? egType : 'mixed',
+          'tag': 'egress-in-$egPort',
+          'listen': eg['listen']?.toString() ?? '127.0.0.1',
+          'listen_port': egPort,
+          // Egresses bound to a concrete server tag route to that outbound;
+          // egresses without one fall through to the default route below.
+          if ((eg['outbound_tag'] as String?)?.isNotEmpty == true)
+            'detour': eg['outbound_tag'],
+        });
+      }
+      // The default listener never collides: skip it if the user already
+      // claimed the port with an egress.
+      if (!usedPorts.contains(proxyListenPort)) {
+        egressInbounds.insert(0, {
+          'type': 'mixed',
+          'tag': 'mixed-in',
+          'listen': '127.0.0.1',
+          'listen_port': proxyListenPort,
+        });
+      }
+      if (egressInbounds.isNotEmpty) config['inbounds'] = egressInbounds;
+    } else {
+      config['inbounds'] = [
+        {
+          'type': 'tun',
+          'tag': 'tun-in',
+          'interface_name': 'tun0',
+          'address': [
+            '172.19.0.1/30',
+            if (!blockIPv6) 'fdfe:dcba:9876::1/126',
+          ],
+          'mtu': effectiveMtu,
+          'auto_route': true,
+          'strict_route': true,
+          'stack': effectiveStack,
+          if (proxyPackages.isNotEmpty) 'include_package': proxyPackages,
+          if (bypassPackages.isNotEmpty) 'exclude_package': bypassPackages,
+        },
+      ];
+    }
     // Mosaic Direct is a single physical server; all Smart Groups carry multiple
     // candidates. When there is only one outbound, skip urltest completely:
     // sing-box does not need to health-check a candidate pool for a direct

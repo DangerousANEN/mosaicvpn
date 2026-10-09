@@ -1,4 +1,3 @@
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -30,7 +29,6 @@ class _AtlasOnboardingCardState extends ConsumerState<AtlasOnboardingCard> {
   String? _clipboardCandidate;
 
   /// Guards the primary CTA against double taps while signup is in flight.
-  bool _busy = false;
 
   /// Human-readable failure of the last signup attempt, shown inline so the
   /// user gets an explanation without leaving this screen.
@@ -40,65 +38,6 @@ class _AtlasOnboardingCardState extends ConsumerState<AtlasOnboardingCard> {
   void initState() {
     super.initState();
     _checkClipboard();
-  }
-
-  /// Creates an account in-app and persists its subscription.
-  ///
-  /// This is the whole point of the screen: a user who installed the app but
-  /// has no subscription yet should be ONE tap away from a working tunnel,
-  /// not sent to a browser to register and then asked to paste a link back.
-  /// The default credentials are generated locally, so the user does not even
-  /// have to invent a password at this stage -- the account can be claimed
-  /// properly (own email/password) later from the cabinet.
-  Future<void> _startFreeInApp() async {
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    final account = AndroidMosaicAccountService.instance;
-    final api = ref.read(daemonApiProvider);
-    try {
-      final credentials = _generateTrialCredentials();
-      final session = await account.registerWithEmail(
-          credentials.$1, credentials.$2);
-      final subUrl = session.subscriptionUrl?.trim().isNotEmpty == true
-          ? session.subscriptionUrl!.trim()
-          : 'https://sub.zxc1x1.ru/${Uri.encodeComponent(session.directToken)}';
-      await api.addSubscription('Моя подписка', subUrl, autoRefresh: true);
-      ref.invalidate(subscriptionsProvider);
-      ref.invalidate(mosaicManifestProvider);
-      if (!mounted) return;
-      setState(() => _busy = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Доступ на 3 дня активирован. Выберите маршрут и подключитесь.'),
-          backgroundColor: AtlasTheme.success,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      final raw = error.toString().replaceFirst('Bad state: ', '').trim();
-      setState(() {
-        _busy = false;
-        _error = raw.contains('502') || raw.isEmpty
-            ? 'Сервис временно недоступен. Попробуйте ещё раз через минуту.'
-            : raw;
-      });
-    }
-  }
-
-  /// Local email/password pair for an instant trial account: random, unique,
-  /// and never shown to the user (they can set real credentials later).
-  (String, String) _generateTrialCredentials() {
-    final random = Random.secure();
-    final suffix = List.generate(12, (_) => random.nextInt(36))
-        .map((value) => value.toRadixString(36))
-        .join();
-    final password = List.generate(24, (_) => random.nextInt(36))
-        .map((value) => value.toRadixString(36))
-        .join();
-    return ('mosaic-$suffix@mosaic-trial.app', password);
   }
 
   Future<void> _checkClipboard() async {
@@ -362,15 +301,14 @@ class _AtlasOnboardingCardState extends ConsumerState<AtlasOnboardingCard> {
                 style: TextStyle(fontSize: 13, color: c.textSecondary),
               ),
               const SizedBox(height: 24),
-              // PRIMARY: the shortest path to a working tunnel. One tap runs
-              // the in-app signup, which grants the free trial and persists the
-              // subscription, then lands the user on the connect screen. No
-              // browser, no Telegram, no link to copy.
+              // PRIMARY: the shortest path to a working tunnel without a
+              // free trial: link an existing subscription or buy one via the
+              // Telegram bot / website.
               Semantics(
                 button: true,
-                label: 'Начать бесплатно',
+                label: 'Получить доступ',
                 child: ElevatedButton.icon(
-                  onPressed: _busy ? null : _startFreeInApp,
+                  onPressed: _openAccessOptions,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AtlasTheme.accent,
                     foregroundColor: AtlasTheme.onAccent,
@@ -382,23 +320,16 @@ class _AtlasOnboardingCardState extends ConsumerState<AtlasOnboardingCard> {
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  icon: _busy
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: AtlasTheme.onAccent),
-                        )
-                      : const Icon(Icons.arrow_forward_rounded, size: 20),
+                  icon: const Icon(Icons.arrow_forward_rounded, size: 20),
                   label: const Text(
-                    'Начать бесплатно',
+                    'Получить доступ',
                     style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                   ),
                 ),
               ),
               const SizedBox(height: 6),
               Text(
-                'Создаст аккаунт и подключит доступ на 3 дня. Карта не нужна.',
+                'Создаст аккаунт — доступ активируется после подписки от 1 ₽ в день.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 11.5, color: c.textMuted),
               ),
@@ -434,7 +365,7 @@ class _AtlasOnboardingCardState extends ConsumerState<AtlasOnboardingCard> {
               // visually secondary: the default path above is what a newcomer
               // should take.
               OutlinedButton.icon(
-                onPressed: _busy ? null : _openAccessOptions,
+                onPressed: _openAccessOptions,
                 style: OutlinedButton.styleFrom(
                   foregroundColor: c.textPrimary,
                   padding: const EdgeInsets.symmetric(vertical: 14),

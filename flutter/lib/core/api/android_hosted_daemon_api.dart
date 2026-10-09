@@ -71,10 +71,45 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     }
   }
 
+  /// Tunnel mode from prefs: 'tun' (system VPN) or 'proxy' (loopback mixed
+  /// inbound; the TUN interface is never established in that mode).
+  Future<String> _readTunnelMode() async {
+    try {
+      final prefs = await getPrefs();
+      return prefs.tunnelMode == 'proxy' ? 'proxy' : 'tun';
+    } catch (_) {
+      return 'tun';
+    }
+  }
+
+  /// Active egress definitions (raw maps for the config builder). Only called
+  /// in proxy mode, where egresses become real sing-box inbounds.
+  Future<List<Map<String, dynamic>>> _readEgressListeners() async {
+    try {
+      final egresses = await listEgresses();
+      return egresses
+          .where((e) => e.active)
+          .map((e) => <String, dynamic>{
+                'port': e.port,
+                'type': e.type,
+                'listen': e.listen,
+                'active': e.active,
+                'serverID': e.serverID,
+              })
+          .toList();
+    } catch (_) {
+      return const <Map<String, dynamic>>[];
+    }
+  }
+
   /// The route the native runtime is currently connected to, or `null`.
   /// Exposed for the status poller so the dashboard and the Routes screen
   /// highlight the same, actually connected row.
   Server? get activeRoute => _activeRoute;
+
+  /// Tunnel mode of the running core ('tun' | 'proxy'); drives getStatus so
+  /// the dashboard badge reflects what was actually started, not a constant.
+  String _activeTunnelMode = 'tun';
 
   /// Starts Android's native TUN runtime and commits a connected route only
   /// after the service reports its terminal `connected` state. This must never
@@ -88,7 +123,13 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     await vpn.appendNativeLog(
       '[ROUTE] Initializing route: "${route.name}" (id: ${route.id}, tag: ${route.tag})',
     );
-    if (!await vpn.requestPermission()) {
+    // Proxy mode never creates a TUN interface, so the VPN permission
+    // dialog must not be requested -- the whole point of the mode is that
+    // the system routing table is untouched.
+    final isProxyMode = !config.contains('"type":"tun"') &&
+        !config.contains('"type": "tun"');
+    _activeTunnelMode = isProxyMode ? 'proxy' : 'tun';
+    if (!isProxyMode && !await vpn.requestPermission()) {
       await vpn.appendNativeLog('[ROUTE] ERROR: VPN permission not granted by user.');
       throw StateError(
         'Разрешение на создание VPN-подключения не получено. '
@@ -509,7 +550,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       agentConnected: true,
       state: state.state,
       networkFingerprint: state.networkFingerprint,
-      tunnelMode: 'tun',
+      tunnelMode: (state.isConnected || state.isBusy) ? _activeTunnelMode : await _readTunnelMode(),
       server: (state.isConnected || state.isBusy) ? _activeRoute : null,
       lastError: state.error ?? '',
       latencyMS: state.isConnected ? _lastMeasuredLatencyMS : 0,
@@ -531,6 +572,9 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     if (importUri.isEmpty) {
       throw StateError('Этот маршрут не содержит конфигурации для Android.');
     }
+    final tunnelMode = await _readTunnelMode();
+    final egressListeners =
+        tunnelMode == 'proxy' ? await _readEgressListeners() : const <Map<String, dynamic>>[];
     final config = AndroidMosaicAccountService.buildNativeTunConfigFromShareUri(
       importUri,
       bypassPackages: perApp.bypassPackages,
@@ -538,6 +582,8 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       bypassRussianSites: perApp.bypassRussian,
       autoFailover: perApp.autoFailover,
       adBlock: perApp.adBlock,
+      proxyMode: tunnelMode == 'proxy',
+      egressListeners: egressListeners,
     );
     await _startNativeRoute(config: config, route: server);
   }
@@ -657,6 +703,10 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     // cached probe verdicts belong to this network, not a previous Wi-Fi/ISP.
     AndroidMosaicAccountService.primeReachabilityCache(
         await _currentNetworkFingerprint());
+    final tunnelMode = await _readTunnelMode();
+    final egressListeners = tunnelMode == 'proxy'
+        ? await _readEgressListeners()
+        : const <Map<String, dynamic>>[];
     final config = group.routeType == 'direct'
         ? await _account.buildNativeTunConfigFromSubscriptionUrl(
             resolved.$1.url,
@@ -665,6 +715,8 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
             bypassRussianSites: perApp.bypassRussian,
             autoFailover: perApp.autoFailover,
             adBlock: perApp.adBlock,
+            proxyMode: tunnelMode == 'proxy',
+            egressListeners: egressListeners,
           )
         : await _account.buildNativeTunConfigFromScopedCandidates(
             resolved.$1.url,
@@ -676,6 +728,8 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
             bypassRussianSites: perApp.bypassRussian,
             autoFailover: perApp.autoFailover,
             adBlock: perApp.adBlock,
+            proxyMode: tunnelMode == 'proxy',
+            egressListeners: egressListeners,
           );
 
     final routeServer = Server(
@@ -694,7 +748,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     final routeConfigFingerprint =
         '${candidateID ?? 'auto'}|${perApp.bypassPackages.length}p|'
         '${perApp.proxyPackages.length}|${perApp.autoFailover ? 1 : 0}|'
-        '${perApp.adBlock ? 1 : 0}|${config.hashCode}';
+        '${perApp.adBlock ? 1 : 0}|$tunnelMode|${config.hashCode}';
 
     final vpn = AndroidVpnService.instance;
     await vpn.appendNativeLog(

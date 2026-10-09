@@ -361,8 +361,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        'Создайте аккаунт — и пользуйтесь бесплатно '
-                        '$_trialDays дня. Карта не нужна.',
+                        'Создайте аккаунт и пополните баланс — от 1 ₽ в день.',
                         style: TextStyle(
                           fontSize: 14.5,
                           color: c.textSecondary,
@@ -401,7 +400,6 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
     );
   }
 
-  static const _trialDays = 3;
 
   Widget _buildBrand(ThemeColors c) {
     return Row(
@@ -587,7 +585,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   /// it asks for nothing.
   Widget _buildReassurance(ThemeColors c) {
     final rows = <(IconData, String)>[
-      (Icons.touch_app_rounded, 'Аккаунт и доступ на $_trialDays дня создадутся сами'),
+      (Icons.touch_app_rounded, 'Аккаунт создастся сам; доступ — после пополнения от 1 ₽ в день'),
       (Icons.account_balance_rounded, 'Банки, Госуслуги и российские сервисы — напрямую'),
       (Icons.route_rounded, 'Маршрут подберётся автоматически и переключится при сбое'),
     ];
@@ -702,7 +700,7 @@ class _OnboardingWizardState extends ConsumerState<OnboardingWizard> {
   }
 
   Widget _buildPrimaryAction(ThemeColors c) {
-    final label = _showExistingSubscription ? 'Подключить' : 'Начать бесплатно';
+    final label = _showExistingSubscription ? 'Подключить' : 'Создать аккаунт';
     return Semantics(
       button: true,
       label: label,

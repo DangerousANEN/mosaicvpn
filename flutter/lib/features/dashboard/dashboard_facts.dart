@@ -40,7 +40,12 @@ class DashboardFacts extends StatelessWidget {
                 ? Icons.vpn_lock_outlined
                 : Icons.settings_input_component,
             'Режим',
-            status.tunnelMode == 'tun' ? 'TUN' : 'Прокси'),
+            // In proxy mode the value doubles as the address the user must
+            // point their apps at -- without it the badge says "proxy" but
+            // leaves them guessing where to connect.
+            status.tunnelMode == 'tun'
+                ? 'TUN'
+                : 'Прокси 127.0.0.1:2080'),
         _fact(c, Icons.shield_outlined, 'Защита утечек',
             status.killSwitch ? 'Включена' : 'Выключена'),
       ]),

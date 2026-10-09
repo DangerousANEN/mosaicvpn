@@ -1,3 +1,4 @@
+import 'package:package_info_plus/package_info_plus.dart';
 /// Central application configuration.
 ///
 /// All hardcoded URLs, ports, timeouts, and paths live here so they
@@ -59,7 +60,29 @@ class AppConfig {
 
   // ── App metadata ──
   static const String appName = 'MosaicVPN';
-  static const String appVersion = '0.3.58';
+  /// Fallback synced with pubspec.yaml (version: X.Y.Z+N). Resolved to the
+  /// real build version from package_info_plus at runtime [resolveAppVersion].
+  static const String appVersion = '0.3.71';
+
+  /// True build version, filled once at startup by resolveAppVersion().
+  static String? _resolvedAppVersion;
+
+  /// The version the UI and the update checker must use: the real package
+  /// version when available, otherwise the const fallback above.
+  static String get effectiveAppVersion => _resolvedAppVersion ?? appVersion;
+
+  /// Called once during app bootstrap to sync the version with the actual
+  /// package (pubspec version + build number), so the About screen and the
+  /// update dialog never drift from the built APK again.
+  static Future<void> resolveAppVersion() async {
+    if (_resolvedAppVersion != null) return;
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (info.version.isNotEmpty) _resolvedAppVersion = info.version;
+    } catch (_) {
+      // Keep the const fallback: package_info is unavailable (tests, fakes).
+    }
+  }
   static const String appAuthor = 'MosaicVPN';
 
   // ── Supported protocols ──

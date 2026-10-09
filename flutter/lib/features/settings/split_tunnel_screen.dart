@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers/vpn_providers.dart';
@@ -300,10 +301,15 @@ class _SplitTunnelScreenState extends ConsumerState<SplitTunnelScreen> {
                       final name = app['name'] as String;
                       final isSelected = _selectedPackages.contains(pkg);
 
+                      // Real launcher icon (base64 PNG from the native
+                      // side); falls back to a neutral tile when the package
+                      // has no icon or the payload is missing.
+                      final iconB64 = app['icon'] as String? ?? '';
                       return CheckboxListTile(
                         value: isSelected,
                         activeColor: AtlasTheme.accent,
                         checkColor: AtlasTheme.onAccent,
+                        secondary: AppIconTile(iconB64: iconB64),
                         title: Text(
                           name.isEmpty ? pkg : name,
                           maxLines: 1,
@@ -393,6 +399,37 @@ class _ModeChip extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class AppIconTile extends StatelessWidget {
+  const AppIconTile({super.key, required this.iconB64});
+
+  final String iconB64;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeColors.of(context);
+    Widget? icon;
+    if (iconB64.isNotEmpty) {
+      try {
+        final bytes = base64Decode(iconB64);
+        icon = Image.memory(bytes, width: 34, height: 34, gaplessPlayback: true);
+      } catch (_) {
+        icon = null;
+      }
+    }
+    return Container(
+      width: 38,
+      height: 38,
+      decoration: BoxDecoration(
+        color: c.bgElevated,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      alignment: Alignment.center,
+      child: icon ??
+          const Icon(Icons.android_rounded, size: 20),
     );
   }
 }
