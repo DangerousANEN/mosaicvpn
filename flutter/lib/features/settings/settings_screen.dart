@@ -102,6 +102,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     'TUN mode captures all system traffic through a virtual network adapter (requires admin). Proxy mode only routes apps configured to use the local SOCKS/HTTP proxy.',
                 difficulty: 2,
                 child: SegmentedButton<String>(
+                  showSelectedIcon: false,
+                  style: SegmentedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                  ),
                   segments: const [
                     ButtonSegment(value: 'tun', label: Text('TUN')),
                     ButtonSegment(value: 'proxy', label: Text('Proxy')),
@@ -337,6 +342,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     'Fake-IP returns synthetic IPs for DNS queries, routing them through the tunnel. Faster and more private. Real-IP resolves directly, needed for apps that check DNS separately.',
                 difficulty: 3,
                 child: SegmentedButton<String>(
+                  showSelectedIcon: false,
+                  style: SegmentedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                  ),
                   segments: const [
                     ButtonSegment(value: 'fake-ip', label: Text('Fake-IP')),
                     ButtonSegment(value: 'real-ip', label: Text('Real-IP')),
@@ -479,6 +489,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 label: 'Автозапуск',
                 description: 'Как служба запускается вместе с системой',
                 child: SegmentedButton<String>(
+                  showSelectedIcon: false,
+                  style: SegmentedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
                   segments: const [
                     ButtonSegment(value: 'service', label: Text('Служба')),
                     ButtonSegment(value: 'user', label: Text('Автозагрузка')),
@@ -541,19 +556,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: Consumer(builder: (context, ref, _) {
                   final themeMode = ref.watch(themeModeProvider);
                   return SegmentedButton<String>(
-                    segments: [
+                    showSelectedIcon: false,
+                    style: SegmentedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                    segments: const [
                       ButtonSegment(
                           value: 'dark',
-                          icon: const Icon(Icons.dark_mode, size: 16),
-                          label: Text(s.t('dark_theme'))),
+                          icon: Icon(Icons.dark_mode, size: 16),
+                          label: Text('Тёмная')),
                       ButtonSegment(
                           value: 'light',
-                          icon: const Icon(Icons.light_mode, size: 16),
-                          label: Text(s.t('light_theme'))),
+                          icon: Icon(Icons.light_mode, size: 16),
+                          label: Text('Светлая')),
                       ButtonSegment(
                           value: 'system',
-                          icon: const Icon(Icons.settings_brightness, size: 16),
-                          label: Text(s.t('system_theme'))),
+                          icon: Icon(Icons.settings_brightness, size: 16),
+                          label: Text('Системная')),
                     ],
                     selected: {themeMode},
                     onSelectionChanged: (s) =>
@@ -567,11 +587,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: Consumer(builder: (context, ref, _) {
                   final language = ref.watch(languageProvider);
                   return SegmentedButton<String>(
-                    segments: [
+                    showSelectedIcon: false,
+                    style: SegmentedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                    ),
+                    segments: const [
                       ButtonSegment(
-                          value: 'system', label: Text(s.t('system_default'))),
-                      ButtonSegment(value: 'en', label: Text(s.t('english'))),
-                      ButtonSegment(value: 'ru', label: Text(s.t('russian'))),
+                          value: 'system', label: Text('Системный')),
+                      ButtonSegment(value: 'en', label: Text('English')),
+                      ButtonSegment(value: 'ru', label: Text('Русский')),
                     ],
                     selected: {language},
                     onSelectionChanged: (value) =>
@@ -1032,6 +1057,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     'Exclude: listed items use the local network connection. Include: only listed items use the selected route.',
                 difficulty: 2,
                 child: SegmentedButton<String>(
+                  showSelectedIcon: false,
+                  style: SegmentedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
                   segments: const [
                     ButtonSegment(value: 'off', label: Text('Off')),
                     ButtonSegment(value: 'exclude', label: Text('Exclude')),
@@ -1103,6 +1133,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     'HTTP: запрос к тестовому URL. TCP: прямое TCP-рукопожатие с сокетом ноды (быстро и точно). ICMP: эхо-пакет.',
                 difficulty: 2,
                 child: SegmentedButton<String>(
+                  showSelectedIcon: false,
+                  style: SegmentedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                  ),
                   segments: const [
                     ButtonSegment(value: 'url', label: Text('HTTP/URL')),
                     ButtonSegment(value: 'tcp', label: Text('TCP')),
@@ -1935,8 +1970,9 @@ class _SettingTile extends StatelessWidget {
     return LayoutBuilder(builder: (context, constraints) {
       final narrow = constraints.maxWidth < 620;
       final control = narrow
-          ? SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
+          ? FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
               child: child,
             )
           : child;

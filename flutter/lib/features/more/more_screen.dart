@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/atlas_theme.dart';
 import '../../core/i18n/app_strings.dart';
+import '../../core/providers/vpn_providers.dart';
 import '../account/accounts_screen.dart';
 import '../profiles/profiles_screen.dart';
 import '../routing/routing_screen.dart';
@@ -15,15 +17,17 @@ import '../groups/groups_screen.dart';
 import '../egresses/egresses_screen.dart';
 import '../settings/split_tunnel_screen.dart';
 
-class MoreScreen extends StatelessWidget {
+class MoreScreen extends ConsumerWidget {
   const MoreScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final c = ThemeColors.of(context);
     final s = AppStrings.of(context);
+    final prefs = ref.watch(prefsProvider).valueOrNull;
+    final isAdvanced = prefs?.advancedMode ?? false;
 
-    final items = <_MoreItem>[
+    final allItems = <_MoreItem>[
       _MoreItem(
         title: s.t('accounts'),
         subtitle: 'Subscription-scoped profiles, traffic and payments',
@@ -41,12 +45,14 @@ class MoreScreen extends StatelessWidget {
         subtitle: 'Named configurations and presets',
         icon: Icons.book_outlined,
         builder: (_) => const ProfilesScreen(),
+        advancedOnly: true,
       ),
       _MoreItem(
         title: s.t('routing'),
         subtitle: 'Routing rules and split tunneling',
         icon: Icons.hub_outlined,
         builder: (_) => const RoutingScreen(),
+        advancedOnly: true,
       ),
       _MoreItem(
         title: 'Приложения',
@@ -60,24 +66,28 @@ class MoreScreen extends StatelessWidget {
             'Одновременные прокси для разных приложений и локальной сети (0.0.0.0)',
         icon: Icons.account_tree_outlined,
         builder: (_) => const EgressesScreen(),
+        advancedOnly: true,
       ),
       _MoreItem(
         title: s.t('activity'),
         subtitle: 'Active connections and bandwidth',
         icon: Icons.visibility_outlined,
         builder: (_) => const ConnectionsScreen(),
+        advancedOnly: true,
       ),
       _MoreItem(
         title: s.t('stats'),
         subtitle: 'Traffic statistics and graphs',
         icon: Icons.bar_chart_outlined,
         builder: (_) => const StatsScreen(),
+        advancedOnly: true,
       ),
       _MoreItem(
         title: s.t('diagnostics'),
         subtitle: 'Clock, DNS, tunnel traffic, IPv6 leak and MTU',
         icon: Icons.health_and_safety_outlined,
         builder: (_) => const DiagnosticsScreen(),
+        advancedOnly: true,
       ),
       _MoreItem(
         title: s.t('speed'),
@@ -90,6 +100,7 @@ class MoreScreen extends StatelessWidget {
         subtitle: 'System events and daemon logs',
         icon: Icons.receipt_long_outlined,
         builder: (_) => const LogsScreen(),
+        advancedOnly: true,
       ),
       _MoreItem(
         title: s.t('settings'),
@@ -98,6 +109,9 @@ class MoreScreen extends StatelessWidget {
         builder: (_) => const SettingsScreen(),
       ),
     ];
+
+    final items =
+        allItems.where((it) => !it.advancedOnly || isAdvanced).toList();
 
     return Scaffold(
       backgroundColor: c.bgBase,
@@ -196,11 +210,13 @@ class _MoreItem {
   final String subtitle;
   final IconData icon;
   final WidgetBuilder builder;
+  final bool advancedOnly;
 
   const _MoreItem({
     required this.title,
     required this.subtitle,
     required this.icon,
     required this.builder,
+    this.advancedOnly = false,
   });
 }

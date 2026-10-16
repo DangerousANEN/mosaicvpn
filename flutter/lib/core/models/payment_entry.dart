@@ -135,19 +135,19 @@ enum LinkCodeError {
   String get message {
     switch (this) {
       case LinkCodeError.invalidFormat:
-        return 'Enter the complete 8-character code from the bot.';
+        return 'Введите 8-значный код из Telegram-бота.';
       case LinkCodeError.notFound:
-        return 'Code not recognised. Check the digits and try again.';
+        return 'Код не найден. Запросите свежий код командой /link в боте.';
       case LinkCodeError.expired:
-        return 'Code expired. Ask the bot for a new one.';
+        return 'Срок действия кода истёк. Запросите новый код в боте.';
       case LinkCodeError.alreadyUsed:
-        return 'Code already used. Ask the bot for a new one.';
+        return 'Этот код уже был использован. Запросите новый в боте.';
       case LinkCodeError.tooManyAttempts:
-        return 'Too many attempts. Ask the bot for a new code.';
+        return 'Слишком много попыток. Подождите пару минут и запросите новый код.';
       case LinkCodeError.network:
-        return 'Could not reach the daemon.';
+        return 'Не удалось связаться с сервером. Проверьте подключение к сети.';
       case LinkCodeError.unknown:
-        return 'Linking failed.';
+        return 'Не удалось войти. Попробуйте ещё раз.';
     }
   }
 }

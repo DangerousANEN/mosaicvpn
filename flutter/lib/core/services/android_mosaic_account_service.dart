@@ -691,15 +691,7 @@ class AndroidMosaicAccountService {
     final session = subscriptionID?.trim().isNotEmpty == true
         ? await restoreBinding(subscriptionID!)
         : await restoreSession();
-    String? token = session?.sessionToken;
-    if (token == null || token.isEmpty) {
-      if (subscriptionUrl != null && subscriptionUrl.isNotEmpty) {
-        final uri = Uri.tryParse(subscriptionUrl.trim());
-        if (uri != null && uri.pathSegments.isNotEmpty) {
-          token = uri.pathSegments.last;
-        }
-      }
-    }
+    final token = session?.sessionToken;
     if (token == null || token.isEmpty) return null;
     try {
       final response = await _dio.get<Map<String, dynamic>>(
@@ -724,32 +716,7 @@ class AndroidMosaicAccountService {
         if (subscriptionID != null) {
           await clearBinding(subscriptionID);
         }
-        if (subscriptionUrl != null && subscriptionUrl.isNotEmpty) {
-          final uri = Uri.tryParse(subscriptionUrl.trim());
-          if (uri != null && uri.pathSegments.isNotEmpty) {
-            final shortUuid = uri.pathSegments.last;
-            if (shortUuid != token) {
-              try {
-                final fallbackRes = await _dio.get<Map<String, dynamic>>(
-                  '/api/billing/profile',
-                  queryParameters: {'token': shortUuid},
-                );
-                final fallbackPayload =
-                    Map<String, dynamic>.from(fallbackRes.data ?? const {});
-                if (fallbackPayload.isNotEmpty &&
-                    fallbackPayload['error'] == null) {
-                  final fallbackAccount = UnifiedAccount.fromJson(
-                      fallbackPayload['account'] is Map
-                          ? Map<String, dynamic>.from(
-                              fallbackPayload['account'] as Map)
-                          : fallbackPayload);
-                  await _cacheUnifiedAccount(fallbackAccount);
-                  return fallbackAccount;
-                }
-              } catch (_) {}
-            }
-          }
-        }
+        return null;
       }
       return readCachedUnifiedAccount();
     }

@@ -27,7 +27,7 @@ class MockDaemonApi implements DaemonApiBase {
   final List<RouteProfile> _routeProfiles = [];
   final List<Connection> _connections = [];
   TrafficStats _stats = TrafficStats();
-  Preferences _prefs = Preferences();
+  Preferences _prefs = Preferences(advancedMode: true);
   DNSConfig _dns = const DNSConfig();
   WARPConfig _warp = WARPConfig();
   final List<Egress> _egresses = [];

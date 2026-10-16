@@ -293,8 +293,10 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     final statusExpiredAccess = !connected &&
         !connecting &&
         billing != null &&
+        billing.linked &&
         (billing.daysLeft <= 0 ||
-            billing.status.toLowerCase().contains('expired'));
+            billing.status.toLowerCase().contains('expired') ||
+            billing.status.toLowerCase().contains('insufficient'));
 
     return SafeArea(
       top: false,
@@ -629,10 +631,11 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
       {
         final profile = ref.read(billingProfileProvider).valueOrNull;
         final daysLeft = profile?.daysLeft ?? 0;
-        final expired = profile == null
-            ? false
-            : (daysLeft <= 0 ||
-                profile.status.toLowerCase().contains('expired'));
+        final expired = profile != null &&
+            profile.linked &&
+            (daysLeft <= 0 ||
+                profile.status.toLowerCase().contains('expired') ||
+                profile.status.toLowerCase().contains('insufficient'));
         if (expired) {
           setState(() => _busy = false);
           _openBilling(focusTopup: true);
@@ -2402,11 +2405,12 @@ class _AccessStrip extends ConsumerWidget {
     final async = ref.watch(billingProfileProvider);
     // A billing backend hiccup must never put a scary banner on the dashboard.
     final profile = async.valueOrNull;
-    if (profile == null) return const SizedBox.shrink();
+    if (profile == null || !profile.linked) return const SizedBox.shrink();
 
     final daysLeft = profile.daysLeft;
-    final expired =
-        daysLeft <= 0 || profile.status.toLowerCase().contains('expired');
+    final expired = daysLeft <= 0 ||
+        profile.status.toLowerCase().contains('expired') ||
+        profile.status.toLowerCase().contains('insufficient');
 
     if (expired) {
       return _strip(

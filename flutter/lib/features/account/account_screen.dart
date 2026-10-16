@@ -10,6 +10,7 @@ import '../../core/providers/vpn_providers.dart';
 import '../../core/platform/app_platform.dart';
 import '../../core/services/android_mosaic_account_service.dart';
 import '../../core/theme/atlas_theme.dart';
+import '../../core/utils/external_launcher.dart';
 import 'unified_account_panel.dart';
 
 /// Payment history for the linked account, newest first.
@@ -310,7 +311,7 @@ class _CabinetError extends StatelessWidget {
 }
 
 /// Pairing-code entry form shown while the account is unlinked.
-class _LinkForm extends StatelessWidget {
+class _LinkForm extends StatefulWidget {
   final TextEditingController controller;
   final TextEditingController emailController;
   final TextEditingController passwordController;
@@ -334,141 +335,244 @@ class _LinkForm extends StatelessWidget {
   });
 
   @override
+  State<_LinkForm> createState() => _LinkFormState();
+}
+
+class _LinkFormState extends State<_LinkForm> {
+  late String _tab = 'tg';
+
+  @override
   Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
     return _Card(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Link your account',
-              style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600)),
-          if (websiteFirst) ...[
-            const SizedBox(height: 6),
+          Text(
+            'Вход в аккаунт',
+            style: TextStyle(
+              color: c.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Выберите способ входа для управления подпиской и привязкой устройств.',
+            style: TextStyle(
+              color: c.textSecondary,
+              fontSize: 12.5,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SegmentedButton<String>(
+            showSelectedIcon: false,
+            style: SegmentedButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+            ),
+            segments: const [
+              ButtonSegment(
+                value: 'tg',
+                icon: Icon(Icons.send_rounded, size: 15),
+                label: Text('Telegram'),
+              ),
+              ButtonSegment(
+                value: 'email',
+                icon: Icon(Icons.email_outlined, size: 15),
+                label: Text('Почта'),
+              ),
+              ButtonSegment(
+                value: 'web',
+                icon: Icon(Icons.language_rounded, size: 15),
+                label: Text('Сайт'),
+              ),
+            ],
+            selected: {_tab},
+            onSelectionChanged: (s) => setState(() => _tab = s.first),
+          ),
+          const SizedBox(height: 16),
+          if (_tab == 'tg') ...[
             Text(
-              'Sign in securely in your MosaicVPN cabinet. You will return here automatically.',
-              style:
-                  TextStyle(color: c.textSecondary, fontSize: 12, height: 1.4),
+              'Отправьте команду /link нашему Telegram-боту @mosaicvpnbot и введите полученный 8-значный код.',
+              style: TextStyle(
+                color: c.textSecondary,
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: () => ExternalLauncher.openTelegram(
+                'mosaicvpnbot',
+                startParam: 'link',
+              ),
+              icon: const Icon(Icons.open_in_new_rounded, size: 16),
+              label: const Text('Открыть @mosaicvpnbot в Telegram'),
             ),
             const SizedBox(height: 14),
+            TextField(
+              key: const ValueKey('pairing-code-input'),
+              controller: widget.controller,
+              enabled: !widget.busy,
+              autocorrect: false,
+              textCapitalization: TextCapitalization.characters,
+              maxLength: 10,
+              onSubmitted: widget.busy ? null : (_) => widget.onSubmit(),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9\-\s]')),
+              ],
+              style: TextStyle(
+                color: c.textPrimary,
+                letterSpacing: 2,
+                fontFamily: 'monospace',
+                fontWeight: FontWeight.bold,
+              ),
+              decoration: InputDecoration(
+                labelText: 'Код из Telegram (/link)',
+                hintText: 'AB23CD45',
+                counterText: '',
+                errorText: widget.error,
+                filled: true,
+                fillColor: c.bgChild,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: c.border),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: c.border),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
             SizedBox(
-              height: 46,
-              child: FilledButton.icon(
-                onPressed: busy ? null : onWebsiteSignIn,
-                icon: const Icon(Icons.open_in_browser_rounded),
-                label: busy
+              height: 44,
+              child: FilledButton(
+                onPressed: widget.busy ? null : widget.onSubmit,
+                child: widget.busy
                     ? const SizedBox(
                         width: 18,
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('Sign in on website'),
+                    : const Text('Войти по коду'),
               ),
             ),
-            const SizedBox(height: 18),
-            Row(children: [
-              Expanded(child: Divider(color: c.border)),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Text('or use another method',
-                    style: TextStyle(color: c.textSecondary, fontSize: 11)),
+          ] else if (_tab == 'email') ...[
+            Text(
+              'Вход с почтой и паролем, указанными на сайте или при регистрации.',
+              style: TextStyle(
+                color: c.textSecondary,
+                fontSize: 12,
+                height: 1.4,
               ),
-              Expanded(child: Divider(color: c.border)),
-            ]),
-            const SizedBox(height: 18),
-          ],
-          const SizedBox(height: 6),
-          Text(
-            'Send /link to the Telegram bot and type the 8-character code it '
-            'gives you. The code works once and expires in 10 minutes.',
-            style: TextStyle(color: c.textSecondary, fontSize: 12, height: 1.4),
-          ),
-          const SizedBox(height: 14),
-          TextField(
-            key: const ValueKey('pairing-code-input'),
-            controller: controller,
-            enabled: !busy,
-            autocorrect: false,
-            textCapitalization: TextCapitalization.characters,
-            maxLength: 10, // 8 symbols plus visual separators in pasted text
-            onSubmitted: busy ? null : (_) => onSubmit(),
-            inputFormatters: [
-              // The daemon's alphabet excludes look-alike characters, so
-              // filtering here keeps typos from becoming failed requests.
-              FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9\-\s]')),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: widget.emailController,
+              enabled: !widget.busy,
+              keyboardType: TextInputType.emailAddress,
+              decoration: InputDecoration(
+                labelText: 'E-mail',
+                hintText: 'name@example.com',
+                filled: true,
+                fillColor: c.bgChild,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: widget.passwordController,
+              enabled: !widget.busy,
+              obscureText: true,
+              onSubmitted: widget.busy ? null : (_) => widget.onEmailSubmit(),
+              decoration: InputDecoration(
+                labelText: 'Пароль',
+                hintText: 'Минимум 10 символов',
+                filled: true,
+                fillColor: c.bgChild,
+              ),
+            ),
+            if (widget.error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                widget.error!,
+                style: TextStyle(color: c.danger, fontSize: 12),
+              ),
             ],
-            style: TextStyle(
-                color: c.textPrimary,
-                letterSpacing: 2,
-                fontFamily: 'monospace'),
-            decoration: InputDecoration(
-              labelText: 'Pairing code',
-              hintText: 'AB23CD45',
-              counterText: '',
-              errorText: error,
-              filled: true,
-              fillColor: c.bgChild,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: BorderSide(color: c.border),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: BorderSide(color: c.border),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 44,
-            child: FilledButton(
-              onPressed: busy ? null : onSubmit,
-              child: busy
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('Link account'),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Divider(color: c.border),
-          const SizedBox(height: 12),
-          Text('Sign in with email',
-              style:
-                  TextStyle(color: c.textPrimary, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          TextField(
-            controller: emailController,
-            enabled: !busy,
-            keyboardType: TextInputType.emailAddress,
-            decoration: InputDecoration(
-                labelText: 'Email', filled: true, fillColor: c.bgChild),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: passwordController,
-            enabled: !busy,
-            obscureText: true,
-            onSubmitted: busy ? null : (_) => onEmailSubmit(),
-            decoration: InputDecoration(
-                labelText: 'Password', filled: true, fillColor: c.bgChild),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
+            const SizedBox(height: 12),
+            SizedBox(
               height: 44,
-              child: OutlinedButton(
-                onPressed: busy ? null : onEmailSubmit,
-                child: busy
+              child: FilledButton(
+                onPressed: widget.busy ? null : widget.onEmailSubmit,
+                child: widget.busy
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('Sign in with email'),
-              )),
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Войти с паролем'),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Center(
+              child: TextButton(
+                onPressed: () {
+                  showDialog<void>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Забыли пароль?'),
+                      content: const Text(
+                        'Если вы привязывали аккаунт к Telegram, просто отправьте боту @mosaicvpnbot команду /link — пароль вводить не нужно!\n\nТакже сброс пароля доступен в веб-кабинете на сайте sub.zxc1x1.ru.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('Понятно'),
+                        ),
+                        FilledButton(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            ExternalLauncher.openTelegram(
+                              'mosaicvpnbot',
+                              startParam: 'link',
+                            );
+                          },
+                          child: const Text('Открыть бота'),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+                child: const Text('Забыли пароль?'),
+              ),
+            ),
+          ] else ...[
+            Text(
+              'Безопасный вход через веб-кабинет в браузере. После входа приложение свяжется автоматически.',
+              style: TextStyle(
+                color: c.textSecondary,
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 46,
+              child: FilledButton.icon(
+                onPressed: widget.busy ? null : widget.onWebsiteSignIn,
+                icon: const Icon(Icons.open_in_browser_rounded),
+                label: widget.busy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Открыть сайт для входа'),
+              ),
+            ),
+          ],
         ],
       ),
     );
