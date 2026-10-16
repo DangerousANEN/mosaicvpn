@@ -51,7 +51,7 @@ class BillingProfile {
         : (rawUsedTraffic != null ? int.tryParse(rawUsedTraffic.toString()) ?? 0 : 0);
 
     final rawDays = j['days_left'] ?? j['expire_days_remaining'];
-    final daysLeft = rawDays is num
+    var daysLeft = rawDays is num
         ? rawDays.toInt()
         : (rawDays != null ? int.tryParse(rawDays.toString()) ?? 0 : 0);
 
@@ -61,6 +61,13 @@ class BillingProfile {
     DateTime? expireDate;
     if (j['expire_at'] != null && j['expire_at'].toString().isNotEmpty) {
       expireDate = DateTime.tryParse(j['expire_at'].toString());
+    }
+
+    if (daysLeft <= 0 && expireDate != null) {
+      final diff = expireDate.difference(DateTime.now()).inSeconds;
+      if (diff > 0) {
+        daysLeft = (diff / 86400.0).ceil();
+      }
     }
 
     return BillingProfile(

@@ -88,6 +88,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                 final api = ref.read(daemonApiProvider);
                 try {
                   await api.resetStats();
+                  if (!mounted) return;
                   ref.invalidate(trafficStatsProvider);
                   setState(() {
                     _upSpots.clear();
@@ -96,6 +97,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                 } catch (e) {
                   debugPrint('resetStats failed: $e');
                 }
+                if (!mounted) return;
                 // Restart timer
                 _timer = Timer.periodic(const Duration(seconds: 1), (_) {
                   final stats = _lastStats;

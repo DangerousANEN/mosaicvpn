@@ -51,10 +51,14 @@ class _SplitTunnelScreenState extends ConsumerState<SplitTunnelScreen> {
 
   /// Sort comparator: selected packages first (stable), then by name.
   int _compareBySelected(Map<String, dynamic> a, Map<String, dynamic> b) {
-    final aSel = _selectedPackages.contains(a['package']);
-    final bSel = _selectedPackages.contains(b['package']);
+    final aPkg = a['package']?.toString() ?? '';
+    final bPkg = b['package']?.toString() ?? '';
+    final aSel = _selectedPackages.contains(aPkg);
+    final bSel = _selectedPackages.contains(bPkg);
     if (aSel != bSel) return aSel ? -1 : 1;
-    return (a['name'] as String).compareTo(b['name'] as String);
+    final aName = a['name']?.toString() ?? aPkg;
+    final bName = b['name']?.toString() ?? bPkg;
+    return aName.compareTo(bName);
   }
 
   @override
@@ -322,8 +326,8 @@ class _SplitTunnelScreenState extends ConsumerState<SplitTunnelScreen> {
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final app = filtered[index];
-                      final pkg = app['package'] as String;
-                      final name = app['name'] as String;
+                      final pkg = app['package']?.toString() ?? '';
+                      final name = app['name']?.toString() ?? '';
                       final isSelected = _selectedPackages.contains(pkg);
 
                       // Real launcher icon (base64 PNG from the native

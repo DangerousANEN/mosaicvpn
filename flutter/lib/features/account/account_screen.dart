@@ -144,9 +144,10 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
         await api.redeemLinkCode(code);
       }
       if (!mounted) return;
-      // Refresh both the profile and the history: linking changes what the
-      // account endpoints return.
       ref.invalidate(billingProfileProvider);
+      ref.invalidate(unifiedAccountProvider);
+      ref.invalidate(subscriptionsProvider);
+      ref.invalidate(mosaicManifestProvider);
       ref.invalidate(paymentHistoryProvider);
       _codeController.clear();
       setState(() => _linking = false);
@@ -187,6 +188,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
       }
       if (!mounted) return;
       ref.invalidate(billingProfileProvider);
+      ref.invalidate(unifiedAccountProvider);
+      ref.invalidate(subscriptionsProvider);
+      ref.invalidate(mosaicManifestProvider);
       ref.invalidate(paymentHistoryProvider);
       _passwordController.clear();
       setState(() => _linking = false);

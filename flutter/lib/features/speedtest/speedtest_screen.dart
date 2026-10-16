@@ -47,6 +47,7 @@ class _SpeedTestScreenState extends ConsumerState<SpeedTestScreen> {
 
   @override
   void dispose() {
+    _running = false;
     _progressSub?.cancel();
     _activeService?.cancel();
     super.dispose();
@@ -143,6 +144,7 @@ class _SpeedTestScreenState extends ConsumerState<SpeedTestScreen> {
         return;
       }
 
+      if (!mounted) return;
       setState(() {
         _groupTotal = servers.length;
       });

@@ -497,6 +497,9 @@ class AndroidMosaicAccountService {
   /// Android's backup/restore policy.
   Future<void> resetForOnboarding() async {
     await clearSession();
+    final prefs = await _prefs;
+    await prefs.remove(_cachedAccountKey);
+    await prefs.remove(_cachedManifestKey);
     await _secureStorage.delete(key: _cachedAccountKey);
     await _secureStorage.delete(key: _cachedManifestKey);
   }
@@ -817,6 +820,7 @@ class AndroidMosaicAccountService {
       username: session.username ?? '',
       email: session.username?.contains('@') == true ? session.username! : '',
       status: 'active',
+      daysLeft: 999, // Safe optimistic fallback while offline/retrying; does not block tunnel
       description: 'This Android device is linked to a MosaicVPN profile.',
     );
     final token = session.sessionToken;

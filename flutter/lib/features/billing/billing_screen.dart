@@ -495,8 +495,10 @@ class _TopupActionCardState extends ConsumerState<_TopupActionCard> {
         setState(() => _error = 'Онлайн-оплата временно недоступна.');
         return;
       }
+      final dailyPrice = widget.profile.pricePerDayRub;
+      final totalRub = _selectedDays * (dailyPrice > 0 ? dailyPrice : 1);
       final session = await api.createCheckout(
-        amountRub: _selectedDays,
+        amountRub: totalRub,
         provider: lava.first.id,
       );
       final url = session.checkoutUrl;

@@ -294,7 +294,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
         !connecting &&
         billing != null &&
         billing.linked &&
-        (billing.daysLeft <= 0 ||
+        ((billing.expireAt != null && billing.daysLeft <= 0) ||
             billing.status.toLowerCase().contains('expired') ||
             billing.status.toLowerCase().contains('insufficient'));
 
@@ -633,7 +633,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
         final daysLeft = profile?.daysLeft ?? 0;
         final expired = profile != null &&
             profile.linked &&
-            (daysLeft <= 0 ||
+            ((profile.expireAt != null && daysLeft <= 0) ||
                 profile.status.toLowerCase().contains('expired') ||
                 profile.status.toLowerCase().contains('insufficient'));
         if (expired) {
@@ -2408,7 +2408,7 @@ class _AccessStrip extends ConsumerWidget {
     if (profile == null || !profile.linked) return const SizedBox.shrink();
 
     final daysLeft = profile.daysLeft;
-    final expired = daysLeft <= 0 ||
+    final expired = (profile.expireAt != null && daysLeft <= 0) ||
         profile.status.toLowerCase().contains('expired') ||
         profile.status.toLowerCase().contains('insufficient');
 
