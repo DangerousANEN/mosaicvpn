@@ -457,7 +457,7 @@ class _LinkFormState extends State<_LinkForm> {
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('Войти по коду'),
+                    : const Text('Link account'),
               ),
             ),
           ] else if (_tab == 'email') ...[
