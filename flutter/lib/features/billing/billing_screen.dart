@@ -486,20 +486,39 @@ class _TopupActionCardState extends ConsumerState<_TopupActionCard> {
   String? _error;
 
   Future<void> _topUp() async {
+    if (_busy) return; // Re-entrancy guard: never mint two invoices.
     setState(() { _busy = true; _error = null; });
     try {
       final api = ref.read(daemonApiProvider);
       final options = await api.getCheckoutOptions();
       final lava = options.where((o) => o.available).toList();
+      if (!mounted) return;
       if (lava.isEmpty) {
         setState(() => _error = 'Онлайн-оплата временно недоступна.');
         return;
       }
+      final provider = lava.first;
       final dailyPrice = widget.profile.pricePerDayRub;
-      final totalRub = _selectedDays * (dailyPrice > 0 ? dailyPrice : 1);
+      final pricePerDay = dailyPrice > 0 ? dailyPrice : 1;
+      final totalRub = _selectedDays * pricePerDay;
+      // Respect the gateway limits before creating an invoice. Otherwise the
+      // server rejects the amount and the user only sees an opaque HTTP error
+      // after waiting for the round-trip.
+      if (provider.minAmountRub > 0 && totalRub < provider.minAmountRub) {
+        final minDays = (provider.minAmountRub / pricePerDay).ceil();
+        setState(() => _error =
+            'Минимум ${provider.minAmountRub} ₽ — это $minDays дн. Выберите больше.');
+        return;
+      }
+      if (provider.maxAmountRub > 0 && totalRub > provider.maxAmountRub) {
+        final maxDays = provider.maxAmountRub ~/ pricePerDay;
+        setState(() => _error =
+            'Максимум ${provider.maxAmountRub} ₽ — это $maxDays дн. Уменьшите срок.');
+        return;
+      }
       final session = await api.createCheckout(
         amountRub: totalRub,
-        provider: lava.first.id,
+        provider: provider.id,
       );
       final url = session.checkoutUrl;
       if (url.scheme != 'https') {

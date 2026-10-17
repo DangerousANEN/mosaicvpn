@@ -622,7 +622,13 @@ class SmartGroupSelector {
     String? networkScope,
     bool Function()? isCancelled,
   }) async {
-    if (_cancelled || (isCancelled?.call() ?? false)) {
+    final startCancelEpoch = _cancelEpoch;
+    bool checkCancelled() =>
+        _cancelled ||
+        _cancelEpoch != startCancelEpoch ||
+        (isCancelled?.call() ?? false);
+
+    if (checkCancelled()) {
       throw StateError('Connection cancelled.');
     }
     final ranked = await rank(
@@ -630,19 +636,16 @@ class SmartGroupSelector {
       group,
       measureSpeed: false,
       networkScope: networkScope,
-      isCancelled: isCancelled,
+      isCancelled: checkCancelled,
     );
 
-    if (ranked.isEmpty) {
-      if (_cancelled || (isCancelled?.call() ?? false)) {
-        throw StateError('Connection cancelled.');
-      }
-      throw StateError(
-          'No reachable or verified candidates are available for this route.');
+    if (checkCancelled()) {
+      throw StateError('Connection cancelled.');
     }
 
-    if (_cancelled || (isCancelled?.call() ?? false)) {
-      throw StateError('Connection cancelled.');
+    if (ranked.isEmpty) {
+      throw StateError(
+          'No reachable or verified candidates are available for this route.');
     }
 
     final attemptCount =
@@ -650,17 +653,26 @@ class SmartGroupSelector {
     Object? lastError;
 
     for (final selection in ranked.take(attemptCount)) {
-      if (_cancelled || (isCancelled?.call() ?? false)) {
+      if (checkCancelled()) {
         throw StateError('Connection cancelled.');
       }
       try {
         await api.connectGroupCandidate(group.id, selection.candidateId);
+        if (checkCancelled()) {
+          throw StateError('Connection cancelled.');
+        }
         // Settling delay: TUN interfaces and urltest pools need ~600ms before
         // the first probe can pass reliably. Without this, cold DNS and kernel
         // route setup cause false negatives on the first HTTP check.
         await Future<void>.delayed(const Duration(milliseconds: 600));
+        if (checkCancelled()) {
+          throw StateError('Connection cancelled.');
+        }
         return selection;
       } catch (error) {
+        if (checkCancelled()) {
+          throw StateError('Connection cancelled.');
+        }
         lastError = error;
       }
     }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -174,5 +175,205 @@ void main() {
       expect(find.text('Start Test'), findsOneWidget);
       expect(find.text('Cancel'), findsNothing);
     });
+
+    testWidgets('cancelling group test with empty servers does not overwrite cancelled state on completion',
+        (tester) async {
+      final mockApi = _ControllableGroupSpeedApi();
+      mockApi.groupCompleter = Completer<List<SpeedTestResult>>();
+      final mockProbe = MockSpeedTestProbe();
+      final service = SpeedTestService(probe: mockProbe);
+
+      await tester.pumpWidget(_buildTestApp(service: service, api: mockApi));
+      await tester.pump();
+
+      // Switch to Group Test
+      await tester.tap(find.text('All Servers (Group Test)'));
+      await tester.pumpAndSettle();
+
+      // Tap Start Test
+      await tester.tap(find.text('Start Test'));
+      await tester.pump();
+
+      expect(find.text('Cancel'), findsOneWidget);
+
+      // Cancel the group test
+      await tester.tap(find.text('Cancel'));
+      await tester.pump();
+
+      expect(find.text('Cancel'), findsNothing);
+      expect(find.text('Start Test'), findsOneWidget);
+
+      // In-flight group test completes after cancellation
+      mockApi.groupCompleter!.complete([
+        SpeedTestResult(
+          target: 'all',
+          serverName: 'Server 1',
+          downloadBps: 10000000,
+          uploadBps: 5000000,
+          latencyMS: 20,
+          jitterMS: 2,
+          durationSeconds: 2.0,
+        ),
+      ]);
+      await tester.pumpAndSettle();
+
+      // Must STAY cancelled / not completed:
+      // In group test, completed changes Start Test to "Run Again" and shows Fleet Speed Results.
+      // Since it was cancelled, it must NOT show Run Again or Fleet Speed Results.
+      expect(find.text('Run Again'), findsNothing);
+      expect(find.text('Start Test'), findsOneWidget);
+      expect(find.text('Fleet Speed Results (1)'), findsNothing);
+      expect(find.text('No group results yet.'), findsOneWidget);
+    });
+
+    testWidgets('cancelling group test with server list does not overwrite cancelled state after loop break',
+        (tester) async {
+      final mockApi = _ControllableServersSpeedApi();
+      mockApi.speedCompleter = Completer<SpeedTestResult>();
+      final mockProbe = MockSpeedTestProbe();
+      final service = SpeedTestService(probe: mockProbe);
+
+      await tester.pumpWidget(_buildTestApp(service: service, api: mockApi));
+      await tester.pump();
+
+      await tester.tap(find.text('All Servers (Group Test)'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Start Test'));
+      await tester.pump();
+
+      expect(find.text('Cancel'), findsOneWidget);
+
+      // Tap Cancel while server speedtest is in-flight
+      await tester.tap(find.text('Cancel'));
+      await tester.pump();
+
+      expect(find.text('Cancel'), findsNothing);
+      expect(find.text('Start Test'), findsOneWidget);
+
+      // In-flight server completes
+      mockApi.speedCompleter!.complete(SpeedTestResult(
+        target: 's1',
+        serverName: 'Server 1',
+        downloadBps: 10000000,
+        uploadBps: 5000000,
+        latencyMS: 20,
+        jitterMS: 2,
+        durationSeconds: 2.0,
+      ));
+      await tester.pumpAndSettle();
+
+      // Must STAY not-completed: Start Test must NOT have changed to Run Again
+      expect(find.text('Run Again'), findsNothing);
+      expect(find.text('Start Test'), findsOneWidget);
+    });
+
+    testWidgets('cancel followed by immediate restart does not have first test unset running state',
+        (tester) async {
+      final mockApi = _ControllableGroupSpeedApi();
+      mockApi.groupCompleter = Completer<List<SpeedTestResult>>();
+      final mockProbe = MockSpeedTestProbe();
+      final service = SpeedTestService(probe: mockProbe);
+
+      await tester.pumpWidget(_buildTestApp(service: service, api: mockApi));
+      await tester.pump();
+
+      await tester.tap(find.text('All Servers (Group Test)'));
+      await tester.pumpAndSettle();
+
+      // Start test 1
+      await tester.tap(find.text('Start Test'));
+      await tester.pump();
+
+      expect(find.text('Cancel'), findsOneWidget);
+
+      // Cancel test 1
+      await tester.tap(find.text('Cancel'));
+      await tester.pump();
+
+      expect(find.text('Start Test'), findsOneWidget);
+
+      // Immediately start test 2 (groupCompleter 2)
+      final completer1 = mockApi.groupCompleter!;
+      mockApi.groupCompleter = Completer<List<SpeedTestResult>>();
+
+      await tester.tap(find.text('Start Test'));
+      await tester.pump();
+
+      expect(find.text('Cancel'), findsOneWidget);
+
+      // Now complete test 1's old in-flight request
+      completer1.complete([]);
+      await tester.pump();
+
+      // Test 2 must still be actively running (Cancel visible, not Start Test)
+      expect(find.text('Cancel'), findsOneWidget,
+          reason: 'Old test finishing must not unset running state of newly started test');
+    });
   });
+}
+
+class _ControllableGroupSpeedApi extends MockDaemonApi {
+  Completer<List<SpeedTestResult>>? groupCompleter;
+
+  @override
+  Future<List<Server>> listServers({String? subscriptionID}) async => [];
+
+  @override
+  Future<List<SpeedTestResult>> testSpeedGroup(String groupLabel,
+      {Duration? testFor}) async {
+    if (groupCompleter != null) {
+      return groupCompleter!.future;
+    }
+    return [
+      SpeedTestResult(
+        target: 'all',
+        serverName: 'Server 1',
+        downloadBps: 10000000,
+        uploadBps: 5000000,
+        latencyMS: 20,
+        jitterMS: 2,
+        durationSeconds: 2.0,
+      ),
+    ];
+  }
+}
+
+class _ControllableServersSpeedApi extends MockDaemonApi {
+  Completer<SpeedTestResult>? speedCompleter;
+
+  @override
+  Future<List<Server>> listServers({String? subscriptionID}) async => [
+        Server(
+          id: 's1',
+          name: 'Server 1',
+          address: '1.1.1.1',
+          port: 443,
+          protocol: Protocol.vless,
+        ),
+        Server(
+          id: 's2',
+          name: 'Server 2',
+          address: '1.1.1.2',
+          port: 443,
+          protocol: Protocol.vless,
+        ),
+      ];
+
+  @override
+  Future<SpeedTestResult> testSpeed(String serverID,
+      {Duration? testFor}) async {
+    if (speedCompleter != null) {
+      return speedCompleter!.future;
+    }
+    return SpeedTestResult(
+      target: serverID,
+      serverName: serverID,
+      downloadBps: 10000000,
+      uploadBps: 5000000,
+      latencyMS: 20,
+      jitterMS: 2,
+      durationSeconds: 2.0,
+    );
+  }
 }

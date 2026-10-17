@@ -1253,5 +1253,61 @@ void main() {
         )),
       );
     });
+
+    test('cancel() followed immediately by resetCancel() during connect() probe throws StateError with Connection cancelled',
+        () async {
+      final api = DelayedDaemonApi();
+      final selector = SmartGroupSelector();
+      final group = ManifestGroup(
+        id: 'connect-cancel-reset-group',
+        title: 'Connect Cancel Reset Group',
+        category: 'smart',
+      );
+      api.customCandidateIds = ['cand-cc-1'];
+
+      final connectFuture = selector.connect(api, group);
+      await Future.delayed(const Duration(milliseconds: 10));
+      selector.cancel();
+      selector.resetCancel();
+
+      await expectLater(
+        connectFuture,
+        throwsA(isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('Connection cancelled'),
+        )),
+      );
+    });
+
+    test('cancel() followed immediately by resetCancel() during connect() settling delay throws StateError with Connection cancelled',
+        () async {
+      final api = TrackingDaemonApi();
+      final selector = SmartGroupSelector();
+      final group = ManifestGroup(
+        id: 'connect-cancel-settle-group',
+        title: 'Connect Cancel Settle Group',
+        category: 'smart',
+      );
+      api.customCandidateIds = ['cand-cc-settle'];
+
+      // First rank to populate cache so connect goes straight to connectGroupCandidate + 600ms settling delay
+      await selector.rank(api, group);
+
+      final connectFuture = selector.connect(api, group);
+      // Wait for connectGroupCandidate to finish and enter 600ms settling delay
+      await Future.delayed(const Duration(milliseconds: 50));
+      selector.cancel();
+      selector.resetCancel();
+
+      await expectLater(
+        connectFuture,
+        throwsA(isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('Connection cancelled'),
+        )),
+      );
+    });
   });
 }

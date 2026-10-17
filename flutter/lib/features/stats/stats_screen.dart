@@ -25,6 +25,8 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
   static const _maxPoints = 60;
   Timer? _timer;
   TrafficStats? _lastStats;
+  bool _isResetting = false;
+  int _resetGeneration = 0;
 
   @override
   void initState() {
@@ -32,6 +34,11 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     // Start a single timer that ticks once per second.
     // The timer reads the latest cached stats and adds a chart point.
     // We avoid per-stream-tick setState — only the timer calls setState.
+    _startTimer();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       final stats = _lastStats;
       if (stats == null || !mounted) return;
@@ -44,6 +51,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
 
   @override
   void dispose() {
+    _resetGeneration++;
     _timer?.cancel();
     _timer = null;
     super.dispose();
@@ -83,29 +91,32 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
             title: 'Statistics',
             subtitle: 'Traffic throughput and connection metrics',
             action: TextButton.icon(
-              onPressed: () async {
-                _timer?.cancel();
-                final api = ref.read(daemonApiProvider);
-                try {
-                  await api.resetStats();
-                  if (!mounted) return;
-                  ref.invalidate(trafficStatsProvider);
-                  setState(() {
-                    _upSpots.clear();
-                    _downSpots.clear();
-                  });
-                } catch (e) {
-                  debugPrint('resetStats failed: $e');
-                }
-                if (!mounted) return;
-                // Restart timer
-                _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-                  final stats = _lastStats;
-                  if (stats == null || !mounted) return;
-                  setState(
-                      () => _addPoint(stats.uploadSpeed, stats.downloadSpeed));
-                });
-              },
+              onPressed: _isResetting
+                  ? null
+                  : () async {
+                      if (_isResetting) return;
+                      _isResetting = true;
+                      final generation = ++_resetGeneration;
+                      _timer?.cancel();
+                      _timer = null;
+                      final api = ref.read(daemonApiProvider);
+                      try {
+                        await api.resetStats();
+                        if (!mounted || generation != _resetGeneration) return;
+                        ref.invalidate(trafficStatsProvider);
+                        setState(() {
+                          _upSpots.clear();
+                          _downSpots.clear();
+                        });
+                      } catch (e) {
+                        debugPrint('resetStats failed: $e');
+                      } finally {
+                        if (mounted && generation == _resetGeneration) {
+                          setState(() => _isResetting = false);
+                          _startTimer();
+                        }
+                      }
+                    },
               icon: const Icon(Icons.refresh, size: 16),
               label: const Text('Reset'),
             ),

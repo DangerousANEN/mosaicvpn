@@ -11,6 +11,7 @@ import '../../core/platform/app_platform.dart';
 import '../../core/services/android_mosaic_account_service.dart';
 import '../../core/theme/atlas_theme.dart';
 import '../../core/utils/external_launcher.dart';
+import 'account_sync_helper.dart';
 import 'unified_account_panel.dart';
 
 /// Payment history for the linked account, newest first.
@@ -36,6 +37,8 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
   final _passwordController = TextEditingController();
   bool _linking = false;
   String? _linkError;
+  String? _routeSyncError;
+  AndroidMosaicSession? _lastSession;
 
   @override
   void initState() {
@@ -76,15 +79,75 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
     return normalized.toString();
   }
 
+  void _invalidateAllAfterSync() {
+    AccountSyncService.invalidateDependentProviders(ref.invalidate);
+    ref.invalidate(paymentHistoryProvider);
+  }
+
+  Future<void> _runPostAuthSync(AndroidMosaicSession session) async {
+    _lastSession = session;
+    final syncService = ref.read(accountSyncServiceProvider);
+    try {
+      await syncService.syncSession(session);
+      if (!mounted) return;
+      _invalidateAllAfterSync();
+      setState(() {
+        _linking = false;
+        _linkError = null;
+        _routeSyncError = null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      // Invalidate cabinet/session providers so the cabinet displays the user,
+      // while preserving a dedicated recoverable route-sync error.
+      ref.invalidate(androidMosaicSessionProvider);
+      ref.invalidate(billingProfileProvider);
+      ref.invalidate(unifiedAccountProvider);
+      setState(() {
+        _linking = false;
+        _routeSyncError = AccountSyncService.routeSyncErrorMessage;
+        _linkError = null;
+      });
+    }
+  }
+
+  Future<void> _retryRouteSync() async {
+    if (_linking) return;
+    setState(() {
+      _linking = true;
+      _linkError = null;
+    });
+    var session = _lastSession;
+    if (session == null && AppPlatform.isAndroid) {
+      try {
+        final auth = ref.read(accountLoginAuthorityProvider);
+        session = await auth.restoreSession();
+      } catch (_) {
+        session = null;
+      }
+    }
+    if (session == null) {
+      if (mounted) {
+        setState(() {
+          _linking = false;
+          _routeSyncError = 'No active session found. Please log in again.';
+        });
+      }
+      return;
+    }
+    await _runPostAuthSync(session);
+  }
+
   Future<void> _startWebsiteLogin() async {
     if (!AppPlatform.isAndroid || _linking) return;
     setState(() {
       _linking = true;
       _linkError = null;
+      _routeSyncError = null;
     });
     try {
-      final uri =
-          await AndroidMosaicAccountService.instance.beginWebsiteLogin();
+      final auth = ref.read(accountLoginAuthorityProvider);
+      final uri = await auth.beginWebsiteLogin();
       final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!opened) {
         throw StateError('Не удалось открыть сайт.');
@@ -102,25 +165,38 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
 
   Future<void> _finishWebsiteLogin() async {
     if (!AppPlatform.isAndroid || _linking) return;
+    AndroidMosaicSession? session;
     try {
-      final session = await AndroidMosaicAccountService.instance
-          .completeWebsiteLoginIfPresent();
-      if (session == null || !mounted) return;
-      ref.invalidate(androidMosaicSessionProvider);
-      ref.invalidate(billingProfileProvider);
-      ref.invalidate(paymentHistoryProvider);
-      setState(() => _linkError = null);
+      final auth = ref.read(accountLoginAuthorityProvider);
+      session = await auth.completeWebsiteLoginIfPresent();
     } on DioException catch (_) {
       if (!mounted) return;
       setState(
           () => _linkError = 'Вход через сайт не завершён. Повторите попытку.');
+      return;
     } on FormatException catch (e) {
       if (!mounted) return;
       setState(() => _linkError = e.message);
+      return;
+    } catch (_) {
+      if (!mounted) return;
+      setState(
+          () => _linkError = 'Вход через сайт не завершён. Повторите попытку.');
+      return;
     }
+
+    if (session == null || !mounted) return;
+    setState(() {
+      _linking = true;
+      _linkError = null;
+      _routeSyncError = null;
+    });
+
+    await _runPostAuthSync(session);
   }
 
   Future<void> _submitCode() async {
+    if (_linking) return;
     final code = _normalizePairingCode(_codeController.text);
     if (code.length != 8) {
       setState(() => _linkError = LinkCodeError.invalidFormat.message);
@@ -134,39 +210,47 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
     setState(() {
       _linking = true;
       _linkError = null;
+      _routeSyncError = null;
     });
+
+    AndroidMosaicSession? session;
     try {
       if (AppPlatform.isAndroid) {
-        await AndroidMosaicAccountService.instance.redeemTelegramCode(code);
-        ref.invalidate(androidMosaicSessionProvider);
+        final auth = ref.read(accountLoginAuthorityProvider);
+        session = await auth.redeemTelegramCode(code);
       } else {
         final api = ref.read(daemonApiProvider);
         await api.redeemLinkCode(code);
       }
-      if (!mounted) return;
-      ref.invalidate(billingProfileProvider);
-      ref.invalidate(unifiedAccountProvider);
-      ref.invalidate(subscriptionsProvider);
-      ref.invalidate(mosaicManifestProvider);
-      ref.invalidate(paymentHistoryProvider);
-      _codeController.clear();
-      setState(() => _linking = false);
     } on DioException catch (e) {
       if (!mounted) return;
       setState(() {
         _linking = false;
         _linkError = LinkCodeError.fromStatus(e.response?.statusCode).message;
       });
+      return;
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _linking = false;
         _linkError = LinkCodeError.unknown.message;
       });
+      return;
+    }
+
+    if (!mounted) return;
+    _codeController.clear();
+
+    if (session != null) {
+      await _runPostAuthSync(session);
+    } else {
+      _invalidateAllAfterSync();
+      if (mounted) setState(() => _linking = false);
     }
   }
 
   Future<void> _submitEmail() async {
+    if (_linking) return;
     final email = _emailController.text.trim();
     final password = _passwordController.text;
     if (!email.contains('@') || password.length < 8) {
@@ -177,23 +261,17 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
     setState(() {
       _linking = true;
       _linkError = null;
+      _routeSyncError = null;
     });
+
+    AndroidMosaicSession? session;
     try {
       if (AppPlatform.isAndroid) {
-        await AndroidMosaicAccountService.instance
-            .loginWithEmail(email, password);
-        ref.invalidate(androidMosaicSessionProvider);
+        final auth = ref.read(accountLoginAuthorityProvider);
+        session = await auth.loginWithEmail(email, password);
       } else {
         await ref.read(daemonApiProvider).loginWithEmail(email, password);
       }
-      if (!mounted) return;
-      ref.invalidate(billingProfileProvider);
-      ref.invalidate(unifiedAccountProvider);
-      ref.invalidate(subscriptionsProvider);
-      ref.invalidate(mosaicManifestProvider);
-      ref.invalidate(paymentHistoryProvider);
-      _passwordController.clear();
-      setState(() => _linking = false);
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -201,6 +279,17 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
         _linkError =
             'Email or password is incorrect. Try again or create an account on the website.';
       });
+      return;
+    }
+
+    if (!mounted) return;
+    _passwordController.clear();
+
+    if (session != null) {
+      await _runPostAuthSync(session);
+    } else {
+      _invalidateAllAfterSync();
+      if (mounted) setState(() => _linking = false);
     }
   }
 
@@ -241,6 +330,14 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
                                       color: c.textPrimary,
                                       fontWeight: FontWeight.bold)),
                           const SizedBox(height: 16),
+                          if (_routeSyncError != null) ...[
+                            _RouteSyncErrorCard(
+                              message: _routeSyncError!,
+                              onRetry: _retryRouteSync,
+                              busy: _linking,
+                            ),
+                            const SizedBox(height: 16),
+                          ],
                           profile.when(
                             loading: () => const _CabinetLoading(),
                             error: (e, _) => _CabinetError(message: '$e'),
@@ -308,6 +405,74 @@ class _CabinetError extends StatelessWidget {
           // Show the real reason rather than a generic message: "daemon not
           // running" and "Remnawave unreachable" need different fixes.
           Text(message, style: TextStyle(color: c.textSecondary, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+}
+
+class _RouteSyncErrorCard extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+  final bool busy;
+
+  const _RouteSyncErrorCard({
+    required this.message,
+    required this.onRetry,
+    required this.busy,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeColors.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: c.danger.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: c.danger.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.sync_problem_rounded, color: c.danger, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Route synchronization failed',
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  message,
+                  style: TextStyle(color: c.textSecondary, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          busy
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : TextButton(
+                  key: const ValueKey('route-sync-retry-button'),
+                  onPressed: onRetry,
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: c.accent,
+                  ),
+                  child: const Text('Retry'),
+                ),
         ],
       ),
     );
@@ -561,6 +726,13 @@ class _LinkFormState extends State<_LinkForm> {
                 height: 1.4,
               ),
             ),
+            if (widget.error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                widget.error!,
+                style: TextStyle(color: c.danger, fontSize: 12),
+              ),
+            ],
             const SizedBox(height: 16),
             SizedBox(
               height: 46,

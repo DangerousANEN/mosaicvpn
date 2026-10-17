@@ -165,6 +165,10 @@ class AndroidMosaicAccountService {
   static const _appAuthStateKey = 'mosaic_android_app_auth_state';
   static const _cachedAccountKey = 'mosaic_android_cached_account.v1';
   static const _cachedManifestKey = 'mosaic_android_cached_manifest.v1';
+  // Last known-good billing profile. Offline fallbacks must replay real data
+  // (marked stale) instead of inventing an entitlement the backend never sent.
+  static const _cachedBillingProfileKey =
+      'mosaic_android_cached_billing_profile.v1';
   // Secure JSON map: local subscription ID -> AndroidMosaicSession fields.
   // A binding grants optional cabinet access only; VPN connection continues
   // through the subscription URL and never reads this map.
@@ -500,6 +504,7 @@ class AndroidMosaicAccountService {
     final prefs = await _prefs;
     await prefs.remove(_cachedAccountKey);
     await prefs.remove(_cachedManifestKey);
+    await prefs.remove(_cachedBillingProfileKey);
     await _secureStorage.delete(key: _cachedAccountKey);
     await _secureStorage.delete(key: _cachedManifestKey);
   }
@@ -811,20 +816,19 @@ class AndroidMosaicAccountService {
   /// Returns the Android account cabinet through the hosted authority. A brief
   /// billing-sync outage must never make an already-linked device look signed
   /// out, so the persisted device session is used as a safe fallback.
+  ///
+  /// The fallback replays the last known-good profile marked [BillingProfile.stale]
+  /// instead of inventing days. A profile with no expiry date is "unknown", not
+  /// "expired", so a network hiccup can never block the tunnel while a genuinely
+  /// expired account still shows its real state.
   Future<BillingProfile> getBillingProfile() async {
     final session = await restoreSession();
     if (session == null) return BillingProfile();
 
-    final local = BillingProfile(
-      linked: true,
-      username: session.username ?? '',
-      email: session.username?.contains('@') == true ? session.username! : '',
-      status: 'active',
-      daysLeft: 999, // Safe optimistic fallback while offline/retrying; does not block tunnel
-      description: 'This Android device is linked to a MosaicVPN profile.',
-    );
     final token = session.sessionToken;
-    if (token == null || token.isEmpty) return local;
+    if (token == null || token.isEmpty) {
+      return await _lastKnownBillingProfile(session);
+    }
 
     try {
       final response = await _dio.get<Map<String, dynamic>>(
@@ -832,32 +836,112 @@ class AndroidMosaicAccountService {
         queryParameters: {'token': token},
       );
       final payload = Map<String, dynamic>.from(response.data ?? const {});
-      final rawTrialEndsAt = payload['trial_ends_at']?.toString();
-      final trialEndsAt =
-          rawTrialEndsAt == null ? null : DateTime.tryParse(rawTrialEndsAt);
-      final now = DateTime.now();
-      final daysLeft = trialEndsAt == null
-          ? 0
-          : trialEndsAt
-              .difference(DateTime(now.year, now.month, now.day))
-              .inDays
-              .clamp(0, 9999);
-      return BillingProfile(
-        linked: true,
-        username: session.username ?? '',
-        email: session.username?.contains('@') == true ? session.username! : '',
-        shortUuid: payload['short_uuid']?.toString() ?? '',
-        status: payload['status']?.toString() ?? 'active',
-        tag: payload['tier']?.toString() ?? '',
-        expireAt: trialEndsAt,
-        daysLeft: daysLeft,
-        description: 'MosaicVPN direct profile on this Android device.',
-      );
+      final profile = _billingProfileFromPayload(payload, session);
+      await _cacheBillingProfile(profile);
+      return profile;
     } on DioException {
       // A server-side billing refresh is not a reason to block VPN access or
       // turn the cabinet into an opaque Dio error. The next refresh retries.
-      return local;
+      return await _lastKnownBillingProfile(session);
     }
+  }
+
+  /// Builds the cabinet profile from the unified account payload.
+  ///
+  /// The authority answers with `expires_at`/`days_left`/`billing.price_per_day_rub`
+  /// plus traffic counters. Reading only `trial_ends_at` lost the paid
+  /// entitlement and the real daily tariff, which made the top-up card charge
+  /// the wrong amount.
+  @visibleForTesting
+  BillingProfile debugBillingProfileFromPayload(Map<String, dynamic> payload) =>
+      _billingProfileFromPayload(
+        payload,
+        AndroidMosaicSession(
+          directToken: 'debug',
+          username: payload['username']?.toString(),
+        ),
+      );
+
+  BillingProfile _billingProfileFromPayload(
+    Map<String, dynamic> payload,
+    AndroidMosaicSession session,
+  ) {
+    final now = DateTime.now();
+    final rawExpiry = payload['expires_at'] ?? payload['trial_ends_at'];
+    final expiresAt =
+        rawExpiry == null ? null : DateTime.tryParse(rawExpiry.toString());
+
+    final rawDaysLeft = payload['days_left'];
+    var daysLeft = rawDaysLeft is num
+        ? rawDaysLeft.toInt()
+        : int.tryParse(rawDaysLeft?.toString() ?? '') ?? 0;
+    if (daysLeft <= 0 && expiresAt != null) {
+      final diff = expiresAt.difference(now).inSeconds;
+      if (diff > 0) daysLeft = (diff / 86400.0).ceil();
+    }
+
+    final billing = payload['billing'];
+    final billingMap =
+        billing is Map ? Map<String, dynamic>.from(billing) : const {};
+    final pricePerDay = (billingMap['price_per_day_rub'] as num?)?.toInt() ??
+        (payload['price_per_day_rub'] as num?)?.toInt() ??
+        1;
+
+    final username = (payload['username'] ?? session.username ?? '').toString();
+    return BillingProfile(
+      linked: true,
+      telegramId:
+          int.tryParse(payload['telegram_id']?.toString() ?? '') ?? 0,
+      username: username,
+      email: username.contains('@') ? username : '',
+      shortUuid: (payload['short_uuid'] ?? '').toString(),
+      status: (payload['status'] ?? 'active').toString(),
+      tag: (payload['tier'] ?? '').toString(),
+      trafficLimitBytes:
+          (payload['traffic_limit_bytes'] as num?)?.toInt() ?? 0,
+      usedTrafficBytes: (payload['traffic_used_bytes'] as num?)?.toInt() ?? 0,
+      expireAt: expiresAt,
+      daysLeft: daysLeft.clamp(0, 9999),
+      description: 'MosaicVPN direct profile on this Android device.',
+      pricePerDayRub: pricePerDay < 1 ? 1 : pricePerDay,
+    );
+  }
+
+  Future<void> _cacheBillingProfile(BillingProfile profile) async {
+    try {
+      await (await _prefs)
+          .setString(_cachedBillingProfileKey, jsonEncode(profile.toJson()));
+    } catch (_) {
+      // A cache write failure must never break a successful cabinet refresh.
+    }
+  }
+
+  Future<BillingProfile> _lastKnownBillingProfile(
+      AndroidMosaicSession session) async {
+    try {
+      final raw = (await _prefs).getString(_cachedBillingProfileKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          final cached =
+              BillingProfile.fromJson(Map<String, dynamic>.from(decoded));
+          if (cached.linked) return cached.asStale();
+        }
+      }
+    } catch (_) {
+      // Fall through to the minimal linked-device card below.
+    }
+    final username = session.username ?? '';
+    return BillingProfile(
+      linked: true,
+      username: username,
+      email: username.contains('@') ? username : '',
+      // Unknown, not expired: no expiry date means the app has never seen an
+      // authoritative answer, so the tunnel stays available.
+      status: 'unknown',
+      description: 'This Android device is linked to a MosaicVPN profile.',
+      stale: true,
+    );
   }
 
   /// Returns hosted payment history for the linked account. Billing outages

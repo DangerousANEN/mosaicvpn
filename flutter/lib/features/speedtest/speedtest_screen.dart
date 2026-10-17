@@ -30,6 +30,7 @@ enum _TestTarget { current, group }
 class _SpeedTestScreenState extends ConsumerState<SpeedTestScreen> {
   _TestTarget _target = _TestTarget.current;
   bool _running = false;
+  int _testGeneration = 0;
   SpeedTestProgress _progress = const SpeedTestProgress();
   StreamSubscription<SpeedTestProgress>? _progressSub;
   SpeedTestService? _activeService;
@@ -47,6 +48,7 @@ class _SpeedTestScreenState extends ConsumerState<SpeedTestScreen> {
 
   @override
   void dispose() {
+    _testGeneration++;
     _running = false;
     _progressSub?.cancel();
     _activeService?.cancel();
@@ -60,6 +62,7 @@ class _SpeedTestScreenState extends ConsumerState<SpeedTestScreen> {
   void _runCurrentTest() async {
     final service = _getService();
     _activeService = service;
+    final generation = ++_testGeneration;
 
     setState(() {
       _running = true;
@@ -69,7 +72,7 @@ class _SpeedTestScreenState extends ConsumerState<SpeedTestScreen> {
 
     _progressSub?.cancel();
     _progressSub = service.progressStream.listen((p) {
-      if (mounted) {
+      if (mounted && generation == _testGeneration) {
         setState(() => _progress = p);
       }
     });
@@ -83,7 +86,7 @@ class _SpeedTestScreenState extends ConsumerState<SpeedTestScreen> {
         serverName: activeServerName.isNotEmpty ? activeServerName : null,
       );
 
-      if (mounted) {
+      if (mounted && generation == _testGeneration && _running) {
         setState(() {
           _progress = _progress.copyWith(
             result: result,
@@ -96,7 +99,7 @@ class _SpeedTestScreenState extends ConsumerState<SpeedTestScreen> {
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && generation == _testGeneration && _running) {
         setState(() {
           _progress = _progress.copyWith(
             stage: SpeedTestStage.failed,
@@ -105,13 +108,14 @@ class _SpeedTestScreenState extends ConsumerState<SpeedTestScreen> {
         });
       }
     } finally {
-      if (mounted) {
+      if (mounted && generation == _testGeneration) {
         setState(() => _running = false);
       }
     }
   }
 
   void _runGroupTest() async {
+    final generation = ++_testGeneration;
     setState(() {
       _running = true;
       _progress = const SpeedTestProgress(
@@ -128,32 +132,32 @@ class _SpeedTestScreenState extends ConsumerState<SpeedTestScreen> {
       final api = ref.read(daemonApiProvider);
       final servers = await api.listServers();
 
+      if (!mounted || generation != _testGeneration || !_running) return;
+
       if (servers.isEmpty) {
         // Fallback to group test on daemon directly
         final results = await api.testSpeedGroup('all');
-        if (mounted) {
-          setState(() {
-            _groupResults = results;
-            _progress = _progress.copyWith(
-              stage: SpeedTestStage.completed,
-              totalProgress: 1.0,
-              statusMessage: 'Group test completed',
-            );
-          });
-        }
+        if (!mounted || generation != _testGeneration || !_running) return;
+        setState(() {
+          _groupResults = results;
+          _progress = _progress.copyWith(
+            stage: SpeedTestStage.completed,
+            totalProgress: 1.0,
+            statusMessage: 'Group test completed',
+          );
+        });
         return;
       }
 
-      if (!mounted) return;
       setState(() {
         _groupTotal = servers.length;
       });
 
       final results = <SpeedTestResult>[];
       for (int i = 0; i < servers.length; i++) {
-        if (!_running) break;
+        if (!_running || generation != _testGeneration) break;
         final s = servers[i];
-        if (mounted) {
+        if (mounted && generation == _testGeneration && _running) {
           setState(() {
             _groupCurrentIndex = i + 1;
             _currentServerName = s.name.isNotEmpty ? s.name : s.id;
@@ -168,13 +172,13 @@ class _SpeedTestScreenState extends ConsumerState<SpeedTestScreen> {
 
         try {
           final res = await api.testSpeed(s.id, testFor: const Duration(seconds: 2));
+          if (!mounted || generation != _testGeneration || !_running) break;
           results.add(res);
-          if (mounted) {
-            setState(() {
-              _groupResults = List.from(results);
-            });
-          }
+          setState(() {
+            _groupResults = List.from(results);
+          });
         } catch (err) {
+          if (!mounted || generation != _testGeneration || !_running) break;
           results.add(SpeedTestResult(
             target: s.id,
             serverName: s.name,
@@ -188,7 +192,7 @@ class _SpeedTestScreenState extends ConsumerState<SpeedTestScreen> {
         }
       }
 
-      if (mounted) {
+      if (mounted && generation == _testGeneration && _running) {
         setState(() {
           _progress = _progress.copyWith(
             stage: SpeedTestStage.completed,
@@ -198,7 +202,7 @@ class _SpeedTestScreenState extends ConsumerState<SpeedTestScreen> {
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && generation == _testGeneration && _running) {
         setState(() {
           _progress = _progress.copyWith(
             stage: SpeedTestStage.failed,
@@ -207,13 +211,14 @@ class _SpeedTestScreenState extends ConsumerState<SpeedTestScreen> {
         });
       }
     } finally {
-      if (mounted) {
+      if (mounted && generation == _testGeneration) {
         setState(() => _running = false);
       }
     }
   }
 
   void _cancelTest() {
+    _testGeneration++;
     if (_target == _TestTarget.current) {
       _activeService?.cancel();
     }

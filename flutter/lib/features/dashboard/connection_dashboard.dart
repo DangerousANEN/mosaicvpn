@@ -28,6 +28,24 @@ import '../settings/split_tunnel_screen.dart';
 class ConnectionDashboard extends ConsumerStatefulWidget {
   const ConnectionDashboard({super.key});
 
+  /// True when an error is the intentional abort of an in-flight connect.
+  ///
+  /// `SmartGroupSelector.connect` throws `StateError('Connection cancelled.')`
+  /// on a deliberate cancel, and the daemon reports the same situation as a
+  /// cancelled context. These are decisions, not faults, and must never reach
+  /// the user as "connection failed".
+  static bool isCancellationError(Object error) {
+    if (error is StateError && error.message.toLowerCase().contains('cancel')) {
+      return true;
+    }
+    if (error is TimeoutException) return false;
+    final raw = error.toString().toLowerCase();
+    return raw.contains('connection cancelled') ||
+        raw.contains('cancelled by') ||
+        raw.contains('context canceled') ||
+        raw.contains('context cancelled');
+  }
+
   @override
   ConsumerState<ConnectionDashboard> createState() =>
       _ConnectionDashboardState();
@@ -290,13 +308,8 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     // money action (see the billing gate in _toggle), so the caption under
     // the dial must point there instead of promising a tunnel.
     final billing = ref.watch(billingProfileProvider).valueOrNull;
-    final statusExpiredAccess = !connected &&
-        !connecting &&
-        billing != null &&
-        billing.linked &&
-        ((billing.expireAt != null && billing.daysLeft <= 0) ||
-            billing.status.toLowerCase().contains('expired') ||
-            billing.status.toLowerCase().contains('insufficient'));
+    final statusExpiredAccess =
+        !connected && !connecting && billing != null && billing.linked && billing.isExpired;
 
     return SafeArea(
       top: false,
@@ -630,12 +643,8 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
       // an error dialog the user cannot act on.
       {
         final profile = ref.read(billingProfileProvider).valueOrNull;
-        final daysLeft = profile?.daysLeft ?? 0;
-        final expired = profile != null &&
-            profile.linked &&
-            ((profile.expireAt != null && daysLeft <= 0) ||
-                profile.status.toLowerCase().contains('expired') ||
-                profile.status.toLowerCase().contains('insufficient'));
+        final expired =
+            profile != null && profile.linked && profile.isExpired;
         if (expired) {
           setState(() => _busy = false);
           _openBilling(focusTopup: true);
@@ -707,6 +716,14 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
       }
       ref.invalidate(vpnStatusProvider);
     } catch (error, stackTrace) {
+      // Cancel is a user decision, not a failure. When the user taps "Отмена"
+      // the in-flight connect is aborted and throws StateError('Connection
+      // cancelled.'); reporting that as a connection failure tells the user
+      // their VPN is broken when they simply changed their mind.
+      if (_isCancellation(error)) {
+        debugPrint('[HERO_COMPASS] connect cancelled by the user');
+        return;
+      }
       debugPrint('[HERO_COMPASS] _toggle ERROR: $error\n$stackTrace');
       // TUN without an administrator token is fully recoverable: offer the
       // UAC restart instead of a dead-end error notice (Throne behaviour).
@@ -758,6 +775,15 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     }
     throw TimeoutException('VPN runtime не подтвердил отключение.');
   }
+
+  /// True when an error is the intentional abort of an in-flight connect.
+  ///
+  /// `SmartGroupSelector.connect` throws `StateError('Connection cancelled.')`
+  /// on a deliberate cancel, and the daemon reports the same situation as a
+  /// cancelled context. These are not failures and must not reach the user as
+  /// one.
+  static bool _isCancellation(Object error) =>
+      ConnectionDashboard.isCancellationError(error);
 
   String _connectionErrorDetail(Object error) {
     if (error is StateError && error.message.isNotEmpty) {
@@ -2408,9 +2434,7 @@ class _AccessStrip extends ConsumerWidget {
     if (profile == null || !profile.linked) return const SizedBox.shrink();
 
     final daysLeft = profile.daysLeft;
-    final expired = (profile.expireAt != null && daysLeft <= 0) ||
-        profile.status.toLowerCase().contains('expired') ||
-        profile.status.toLowerCase().contains('insufficient');
+    final expired = profile.isExpired;
 
     if (expired) {
       return _strip(
@@ -2419,6 +2443,19 @@ class _AccessStrip extends ConsumerWidget {
         color: AtlasTheme.error,
         text: 'Доступ закончился',
         actionLabel: 'Пополнить',
+      );
+    }
+    // Last-known data from an offline fallback: say so instead of showing a
+    // countdown the app cannot currently verify.
+    if (profile.stale) {
+      return _strip(
+        c,
+        icon: Icons.cloud_off_rounded,
+        color: AtlasTheme.warning,
+        text: daysLeft > 0
+            ? 'Последние данные: $daysLeft дн. Обновим при связи'
+            : 'Данные обновятся при связи',
+        actionLabel: 'Обновить',
       );
     }
     if (daysLeft <= 2) {
