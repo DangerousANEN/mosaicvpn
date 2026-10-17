@@ -33,6 +33,14 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   static const _localGroupsKey = 'mosaic.android.local_groups.v1';
   static const _localSubscriptionID = 'local-default';
   final AndroidMosaicAccountService _account;
+  int _connectGeneration = 0;
+
+  void _requireConnectAttempt(int generation) {
+    if (generation != _connectGeneration) {
+      throw StateError('Connection cancelled.');
+    }
+  }
+
   Server? _activeRoute;
   String? _activeRouteConfigFingerprint;
   int _lastMeasuredLatencyMS = 0;
@@ -117,12 +125,15 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   Future<void> _startNativeRoute({
     required String config,
     required Server route,
+    required int connectGeneration,
     String? configFingerprint,
   }) async {
+    _requireConnectAttempt(connectGeneration);
     final vpn = AndroidVpnService.instance;
     await vpn.appendNativeLog(
       '[ROUTE] Initializing route: "${route.name}" (id: ${route.id}, tag: ${route.tag})',
     );
+    _requireConnectAttempt(connectGeneration);
     // Proxy mode never creates a TUN interface, so the VPN permission
     // dialog must not be requested -- the whole point of the mode is that
     // the system routing table is untouched.
@@ -136,7 +147,9 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         'Разрешите VPN в системном окне Android и повторите попытку.',
       );
     }
+    _requireConnectAttempt(connectGeneration);
     final currentStatus = await vpn.status();
+    _requireConnectAttempt(connectGeneration);
     if (currentStatus.isConnected || currentStatus.isBusy) {
       // route.id equality is NOT sufficient: switching candidates inside one
       // smart group keeps the same id, and skipping the stop leaves the new
@@ -149,7 +162,9 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         await vpn.appendNativeLog(
           '[ROUTE] Active route changing from "${_activeRoute?.name}" to "${route.name}". Stopping previous tunnel...',
         );
+        _requireConnectAttempt(connectGeneration);
         await vpn.stop();
+        _requireConnectAttempt(connectGeneration);
         // Wait for the native side to reach a terminal state. The native
         // stopLatch allows 4s, so a shorter wait here would start the new core
         // on top of a still-dying tunnel -- the reason connecting sometimes
@@ -160,6 +175,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
         var settled = false;
         while (DateTime.now().isBefore(stopDeadline)) {
           final s = await vpn.status();
+          _requireConnectAttempt(connectGeneration);
           if (!s.isConnected && !s.isBusy) {
             settled = true;
             break;
@@ -170,11 +186,14 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
           await vpn.appendNativeLog(
             '[ROUTE] previous tunnel still busy after 4s; issuing a second stop',
           );
+          _requireConnectAttempt(connectGeneration);
           await vpn.stop();
+          _requireConnectAttempt(connectGeneration);
           final retryDeadline =
               DateTime.now().add(const Duration(seconds: 2));
           while (DateTime.now().isBefore(retryDeadline)) {
             final s = await vpn.status();
+            _requireConnectAttempt(connectGeneration);
             if (!s.isConnected && !s.isBusy) break;
             await Future<void>.delayed(const Duration(milliseconds: 80));
           }
@@ -184,10 +203,14 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     await vpn.appendNativeLog(
       '[ROUTE] Starting sing-box native core for "${route.name}"...',
     );
-    final state = await vpn.startAndAwaitReady(config, routeTitle: route.name);
+    _requireConnectAttempt(connectGeneration);
+    final state = await vpn.startAndAwaitReady(config, routeTitle: route.name,
+        isCancelled: () => connectGeneration != _connectGeneration);
+    _requireConnectAttempt(connectGeneration);
     await vpn.appendNativeLog(
       '[ROUTE] sing-box startup state: state=${state.state}, error=${state.error ?? "none"}',
     );
+    _requireConnectAttempt(connectGeneration);
     if (state.state == 'error') {
       throw StateError(
         state.error?.trim().isNotEmpty == true
@@ -559,7 +582,9 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
 
   @override
   Future<void> connect(String serverID) async {
+    final connectGeneration = ++_connectGeneration;
     final perApp = await _readPerAppLists();
+    _requireConnectAttempt(connectGeneration);
     final server = (await listServers()).cast<Server?>().firstWhere(
           (value) => value?.id == serverID,
           orElse: () => null,
@@ -585,11 +610,14 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
       proxyMode: tunnelMode == 'proxy',
       egressListeners: egressListeners,
     );
-    await _startNativeRoute(config: config, route: server);
+    _requireConnectAttempt(connectGeneration);
+    await _startNativeRoute(config: config, route: server,
+        connectGeneration: connectGeneration);
   }
 
   @override
-  Future<void> connectGroup(String groupID) => _connectGroupWithRotation(groupID);
+  Future<void> connectGroup(String groupID) => _connectGroupWithRotation(
+      groupID, connectGeneration: ++_connectGeneration);
 
   /// Connects a Smart Group with NODE ROTATION.
   ///
@@ -601,27 +629,31 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   /// nothing). Now the dead candidate is excluded and the next one is tried,
   /// so the user ends up connected instead of bounced.
   Future<void> _connectGroupWithRotation(String groupID,
-      {String? candidateID}) async {
+      {required int connectGeneration, String? candidateID}) async {
     if (candidateID != null) {
       // An explicit user pick is honored as-is: rotating away from a
       // deliberately chosen node would be surprising.
-      await _connectGroup(groupID, candidateID: candidateID);
+      await _connectGroup(groupID, candidateID: candidateID,
+          connectGeneration: connectGeneration);
       return;
     }
     const maxAttempts = 3;
     final excluded = <String>{};
     Object? lastError;
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      _requireConnectAttempt(connectGeneration);
       final vpn = AndroidVpnService.instance;
       try {
         final picked = await _connectGroup(
           groupID,
+          connectGeneration: connectGeneration,
           excludeTags: excluded,
           attempt: attempt + 1,
           maxAttempts: maxAttempts,
         );
         if (picked != null && picked.isNotEmpty) {
-          final verdict = await _awaitEgressVerdict(vpn);
+          final verdict = await _awaitEgressVerdict(vpn, connectGeneration);
+          _requireConnectAttempt(connectGeneration);
           if (verdict == null) return; // connected
           lastError = StateError(verdict);
           await vpn.appendNativeLog(
@@ -652,10 +684,13 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   /// Waits for the native egress verdict on the current session.
   /// Returns null when the tunnel is confirmed carrying traffic, otherwise a
   /// human-readable reason the candidate must be rotated out.
-  Future<String?> _awaitEgressVerdict(AndroidVpnService vpn) async {
+  Future<String?> _awaitEgressVerdict(
+      AndroidVpnService vpn, int connectGeneration) async {
     final deadline = DateTime.now().add(const Duration(seconds: 26));
     while (DateTime.now().isBefore(deadline)) {
+      _requireConnectAttempt(connectGeneration);
       final status = await vpn.status();
+      _requireConnectAttempt(connectGeneration);
       if (status.state == 'connected') return null;
       if (status.state == 'error') {
         return status.error?.trim().isNotEmpty == true
@@ -674,13 +709,18 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
   /// of the probed, latency-sorted list), so the caller can rotate it out on a
   /// bad egress verdict. Null when the single-candidate path was used.
   Future<String?> _connectGroup(String groupID,
-      {String? candidateID,
+      {required int connectGeneration,
+      String? candidateID,
       Set<String> excludeTags = const <String>{},
       int attempt = 1,
       int maxAttempts = 1}) async {
+    _requireConnectAttempt(connectGeneration);
     final perApp = await _readPerAppLists();
+    _requireConnectAttempt(connectGeneration);
     final resolved = await _resolveMosaicGroup(groupID);
+    _requireConnectAttempt(connectGeneration);
     final manifest = await getProviderManifest(subscriptionId: resolved.$1.id);
+    _requireConnectAttempt(connectGeneration);
     final scoped = _parseScopedGroupID(groupID);
     final manifestGroupID = scoped?.manifestGroupID ?? resolved.$2;
     final group = manifest.routes.cast<ManifestGroup?>().firstWhere(
@@ -732,6 +772,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
             egressListeners: egressListeners,
           );
 
+    _requireConnectAttempt(connectGeneration);
     final routeServer = Server(
       id: group.id,
       name: group.title.isEmpty ? group.id : group.title,
@@ -761,6 +802,7 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     }
     await _startNativeRoute(
       config: config,
+      connectGeneration: connectGeneration,
       route: routeServer,
       configFingerprint: routeConfigFingerprint,
     );
@@ -769,11 +811,13 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
 
   @override
   Future<void> connectGroupCandidate(String groupID, String candidateID) async {
-    await _connectGroup(groupID, candidateID: candidateID);
+    await _connectGroup(groupID, candidateID: candidateID,
+        connectGeneration: ++_connectGeneration);
   }
 
   @override
   Future<void> disconnect() async {
+    final generation = ++_connectGeneration;
     // Stopping is best-effort: the native runtime may already be gone.
     try {
       final vpn = AndroidVpnService.instance;
@@ -788,8 +832,10 @@ class AndroidHostedDaemonApi extends UnavailableDaemonApi {
     } finally {
       // Never leave a phantom active route if the platform channel or service
       // disappeared while stopping.
-      _activeRoute = null;
-      _activeRouteConfigFingerprint = null;
+      if (generation == _connectGeneration) {
+        _activeRoute = null;
+        _activeRouteConfigFingerprint = null;
+      }
     }
   }
 

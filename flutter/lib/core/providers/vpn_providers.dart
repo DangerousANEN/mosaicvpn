@@ -692,7 +692,9 @@ final subscriptionsForDisplayProvider =
   final live = ref.watch(subscriptionsProvider);
   if (live.hasValue && live.value!.isNotEmpty) return live.value!;
   final cached = ref.watch(cachedSubscriptionsProvider);
-  return live.value ?? cached.value ?? const [];
+  // AsyncError.value throws when there is no previous value. A failed daemon
+  // read must fall back to the cache, not crash the entire dashboard.
+  return live.valueOrNull ?? cached.valueOrNull ?? const [];
 });
 
 /// Trigger for "add subscription" dialog — set to true to open dialog.

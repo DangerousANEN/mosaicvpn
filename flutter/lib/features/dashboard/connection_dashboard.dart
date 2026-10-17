@@ -74,10 +74,15 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
   final SmartGroupSelector _smartGroupSelector = SmartGroupSelector();
   final UiPreferencesService _uiPrefs = UiPreferencesService();
   bool _busy = false;
+  int _connectAttempt = 0;
+  Future<void>? _disconnecting;
+  bool _disconnectFailed = false;
   bool _isBackgrounded = false;
   bool _showSplitHint = false;
   StreamSubscription<ConnectPhaseEvent>? _connectProgressSub;
   ConnectPhaseEvent? _connectProgress;
+  Timer? _progressClearTimer;
+  Timer? _splitHintTimer;
 
   @override
   void initState() {
@@ -89,10 +94,11 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     );
     _connectProgressSub = ConnectProgressBus.instance.stream.listen((event) {
       if (!mounted) return;
+      _progressClearTimer?.cancel();
       setState(() => _connectProgress = event);
       if (event.phase == 'done' || event.phase == 'idle') {
-        Future<void>.delayed(const Duration(seconds: 3), () {
-          if (mounted && _connectProgress?.phase == event.phase) {
+        _progressClearTimer = Timer(const Duration(seconds: 3), () {
+          if (mounted && identical(_connectProgress, event)) {
             setState(() => _connectProgress = null);
           }
         });
@@ -122,7 +128,8 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     }
     if (mounted) {
       setState(() => _showSplitHint = true);
-      Future<void>.delayed(const Duration(seconds: 12), () {
+      _splitHintTimer?.cancel();
+      _splitHintTimer = Timer(const Duration(seconds: 12), () {
         if (mounted) setState(() => _showSplitHint = false);
       });
     }
@@ -162,7 +169,11 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
 
   @override
   void dispose() {
+    _connectAttempt++;
+    _smartGroupSelector.cancel();
     _connectProgressSub?.cancel();
+    _progressClearTimer?.cancel();
+    _splitHintTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _pulseTimer?.cancel();
     _pulseTimer = null;
@@ -298,7 +309,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     _RouteChoice selected,
   ) {
     final connected = status.isConnected;
-    final connecting = status.isConnecting;
+    final connecting = status.isConnecting || (_busy && !connected);
     // Tunnel last-known-alive but the status transport is unreachable:
     // honest wording instead of flashing "ОТКЛЮЧЕНО" on a transient poll
     // failure while the VPN is actually still up.
@@ -363,7 +374,9 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                         status: status,
                         animation: _pulse,
                         busy: _busy,
-                        onTap: () => _toggle(status, selected),
+                        onTap: (_busy || status.isConnecting) && !status.isConnected
+                            ? _cancelConnect
+                            : () => _toggle(status, selected),
                       ),
                       const SizedBox(height: 18),
                       Text(
@@ -400,7 +413,7 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                             : status.isVerifying
                                 ? 'Верификация сквозного трафика…'
                                 : connecting
-                                    ? 'Установка защищённого соединения…'
+                                    ? 'Подключаемся. Нажмите на компас для отмены'
                                     : statusUnreachable
                                         ? 'Нет связи с сервисом — туннель мог остаться активным'
                                         : statusExpiredAccess
@@ -481,7 +494,8 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             _ConnectionVisual(
-                              status: status,
+                              status: _busy && !status.isConnected && !status.isConnecting
+                                  ? status.copyWith(state: 'connecting') : status,
                               animation: _pulse,
                               compact: true,
                             ),
@@ -562,11 +576,11 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
                 : () => _toggle(status, selected),
         style: FilledButton.styleFrom(
           backgroundColor: isCancelling
-              ? null
+              ? c.bgCard
               : status.isConnected
                   ? c.danger
                   : AtlasTheme.accent,
-          foregroundColor: isCancelling ? c.danger : null,
+          foregroundColor: isCancelling ? c.textPrimary : null,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
         ),
@@ -593,159 +607,137 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
     return expand ? button : Align(alignment: Alignment.center, child: button);
   }
 
-  /// Aborts an in-flight connection attempt (selector sweep, monitor, daemon
-  /// runtime) without leaving the dashboard in a busy state. Safe when the
-  /// attempt already finished: _waitForDisconnected is a no-op then.
-  ///
-  /// The CANCEL must feel instant. The native stop already marks the runtime
-  /// `disconnected` synchronously before cleanup completes, so the UI state
-  /// flips the moment this method starts; teardown continues in the
-  /// background and any residual error is logged, not surfaced as a dialog —
-  /// the user asked to stop, not to fix.
+  /// Teardown has one owner. A retry can be requested immediately, but its
+  /// native start must wait until the previous stop has actually completed.
+  Future<void> _stopRuntime(DaemonApiBase api) {
+    final pending = _disconnecting;
+    if (pending != null) return pending;
+    SmartGroupRuntimeController.instance.stop();
+    _smartGroupSelector.cancel();
+    final future = () async {
+      try {
+        await api.disconnect();
+        await _waitForDisconnected(api);
+        _disconnectFailed = false;
+      } catch (_) {
+        _disconnectFailed = true;
+        rethrow;
+      }
+    }().whenComplete(() => _disconnecting = null);
+    _disconnecting = future;
+    return future;
+  }
+
   Future<void> _cancelConnect() async {
+    if (!mounted) return;
     final api = ref.read(daemonApiProvider);
-    // Flip UI immediately: busy off, progress cleared, status re-read.
+    final attempt = ++_connectAttempt;
+    _smartGroupSelector.cancel();
     setState(() {
       _busy = false;
       _connectProgress = null;
     });
     ConnectProgressBus.instance.publishSimple('idle', 'Отменено');
-    ref.invalidate(vpnStatusProvider);
     ref.read(connectingRouteProvider.notifier).end();
-    unawaited(() async {
-      try {
-        SmartGroupRuntimeController.instance.stop();
-        _smartGroupSelector.cancel();
-        _smartGroupSelector.resetCancel();
-        await api.disconnect();
-        await _waitForDisconnected(api);
-        if (mounted) ref.invalidate(vpnStatusProvider);
-      } catch (error) {
-        debugPrint('[HERO_COMPASS] _cancelConnect ERROR: $error');
+    try {
+      await _stopRuntime(api);
+      if (mounted && attempt == _connectAttempt) {
+        ref.invalidate(vpnStatusProvider);
       }
-    }());
+    } catch (error) {
+      // A failed stop is not confirmation that the VPN is disconnected.
+      if (mounted && attempt == _connectAttempt) {
+        ref.invalidate(vpnStatusProvider);
+        _notice(_connectionErrorDetail(error), error: true);
+      }
+    }
   }
 
   Future<void> _toggle(VpnStatus status, _RouteChoice selected) async {
+    if (!mounted) return;
+    final wasBusy = _busy;
+    final attempt = ++_connectAttempt;
+    bool isCurrent() => mounted && attempt == _connectAttempt;
     final api = ref.read(daemonApiProvider);
+    final subscriptionId = _selectedSubscriptionId(ref);
     try {
       setState(() => _busy = true);
       if (selected.disabled) {
-        final disabledLabel = selected.disabledReason.isEmpty
-            ? 'Маршрут временно отключён.'
-            : selected.disabledReason;
-        _notice(disabledLabel, error: true);
+        _notice(selected.disabledReason.isEmpty
+            ? 'Маршрут временно отключён.' : selected.disabledReason,
+            error: true);
         return;
       }
-      // Money first, tunnels second: when access has lapsed the connect tap
-      // is a request to GET ACCESS, not to debug a tunnel. Route it straight
-      // to billing so the shortest path to a working VPN is a payment, not
-      // an error dialog the user cannot act on.
-      {
+      // Disconnect remains possible even if the account has since expired.
+      if (!status.isConnected && !status.isConnecting && !wasBusy) {
         final profile = ref.read(billingProfileProvider).valueOrNull;
-        final expired =
-            profile != null && profile.linked && profile.isExpired;
-        if (expired) {
-          setState(() => _busy = false);
+        if (profile != null && profile.linked && profile.isExpired) {
           _openBilling(focusTopup: true);
           return;
         }
       }
-      if (status.isConnected || status.isConnecting) {
-        final wasSameRoute = _sameActiveRoute(status, selected);
-        // Stop the CURRENT attempt first: selector sweeps, monitor, and the
-        // daemon runtime. Choosing another route mid-connect must cancel the
-        // in-flight attempt instead of silently leaving it racing the new one.
-        SmartGroupRuntimeController.instance.stop();
-        _smartGroupSelector.cancel();
-        await api.disconnect();
-        // The daemon stop is asynchronous. Do not race the next connect with
-        // the old runtime; wait for the authoritative state transition.
-        await _waitForDisconnected(api);
-        _smartGroupSelector.resetCancel();
-        if (wasSameRoute && !status.isConnecting) {
-          ref.invalidate(vpnStatusProvider);
-          return;
-        }
+      final pendingStop = _disconnecting;
+      if (pendingStop != null) {
+        await pendingStop;
+        if (!isCurrent()) return;
+      } else if (status.isConnected || status.isConnecting || wasBusy ||
+          _disconnectFailed) {
+        await _stopRuntime(api);
+        if (!isCurrent()) return;
       }
+      if (status.isConnected && _sameActiveRoute(status, selected)) {
+        ref.invalidate(vpnStatusProvider);
+        return;
+      }
+      if (!isCurrent()) return;
+      _smartGroupSelector.resetCancel();
       ref.read(connectingRouteProvider.notifier).begin(selected.id);
       try {
-        if (selected.disabled) {
-          final disabledLabel = selected.disabledReason.isEmpty
-              ? 'Маршрут временно отключён.'
-              : selected.disabledReason;
-          _notice(disabledLabel, error: true);
-        } else if (AppPlatform.isAndroid) {
+        if (AppPlatform.isAndroid) {
           await _toggleAndroidRuntime(selected);
-          await _uiPrefs.writeLastConnectedRouteId(selected.id);
-          if (_selectedSubscriptionId(ref) case final subId?
-              when subId.isNotEmpty) {
-            await _uiPrefs.writeLastConnectedSubscriptionId(subId);
-          }
         } else if (selected.isSmartGroup && selected.manifestGroup != null) {
           final group = selected.manifestGroup!;
-          final selection = await _smartGroupSelector.connect(api, group);
+          final selection = await _smartGroupSelector.connect(api, group,
+              isCancelled: () => !isCurrent());
+          if (!isCurrent()) return;
           SmartGroupRuntimeController.instance.start(
             api: api,
             selector: _smartGroupSelector,
             group: group,
             candidateId: selection.candidateId,
           );
-          await _uiPrefs.writeLastConnectedRouteId(selected.id);
-          if (_selectedSubscriptionId(ref) case final subId?
-              when subId.isNotEmpty) {
-            await _uiPrefs.writeLastConnectedSubscriptionId(subId);
-          }
         } else if (selected.isGroup) {
           await api.connectGroup(selected.id);
-          await _uiPrefs.writeLastConnectedRouteId(selected.id);
-          if (_selectedSubscriptionId(ref) case final subId?
-              when subId.isNotEmpty) {
-            await _uiPrefs.writeLastConnectedSubscriptionId(subId);
-          }
         } else {
           await api.connect(selected.id);
-          await _uiPrefs.writeLastConnectedRouteId(selected.id);
-          if (_selectedSubscriptionId(ref) case final subId?
-              when subId.isNotEmpty) {
-            await _uiPrefs.writeLastConnectedSubscriptionId(subId);
-          }
+        }
+        if (!isCurrent()) return;
+        await _uiPrefs.writeLastConnectedRouteId(selected.id);
+        if (!isCurrent()) return;
+        if (subscriptionId != null && subscriptionId.isNotEmpty) {
+          await _uiPrefs.writeLastConnectedSubscriptionId(subscriptionId);
         }
       } finally {
-        ref.read(connectingRouteProvider.notifier).end();
+        if (isCurrent()) ref.read(connectingRouteProvider.notifier).end();
       }
-      ref.invalidate(vpnStatusProvider);
+      if (isCurrent()) ref.invalidate(vpnStatusProvider);
     } catch (error, stackTrace) {
-      // Cancel is a user decision, not a failure. When the user taps "Отмена"
-      // the in-flight connect is aborted and throws StateError('Connection
-      // cancelled.'); reporting that as a connection failure tells the user
-      // their VPN is broken when they simply changed their mind.
-      if (_isCancellation(error)) {
-        debugPrint('[HERO_COMPASS] connect cancelled by the user');
-        return;
-      }
+      // Results from an old request no longer describe the user's intent.
+      if (!mounted || !isCurrent() || _isCancellation(error)) return;
       debugPrint('[HERO_COMPASS] _toggle ERROR: $error\n$stackTrace');
-      // TUN without an administrator token is fully recoverable: offer the
-      // UAC restart instead of a dead-end error notice (Throne behaviour).
-      if (isElevationRequiredError(error) && mounted) {
+      if (isElevationRequiredError(error)) {
         final accepted = await handleElevationRequired(context, ref);
+        if (!mounted || !isCurrent()) return;
         if (!accepted) {
-          _notice(
-            'Подключение в режиме TUN требует прав администратора.',
-            error: true,
-          );
+          _notice('Подключение в режиме TUN требует прав администратора.',
+              error: true);
         }
         return;
       }
-      if (mounted) {
-        final detail = _connectionErrorDetail(error);
-        _notice(
-          '${AppStrings.of(context).t('connection_failed')} $detail',
-          error: true,
-        );
-      }
+      _notice('${AppStrings.of(context).t('connection_failed')} '
+          '${_connectionErrorDetail(error)}', error: true);
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (isCurrent()) setState(() => _busy = false);
     }
   }
 
@@ -770,7 +762,10 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
   Future<void> _waitForDisconnected(DaemonApiBase api) async {
     for (var attempt = 0; attempt < 20; attempt++) {
       final current = await api.getStatus();
-      if (!current.isConnected && !current.isConnecting) return;
+      if (current.agentConnected &&
+          (current.isDisconnected || current.hasError)) {
+        return;
+      }
       await Future<void>.delayed(const Duration(milliseconds: 150));
     }
     throw TimeoutException('VPN runtime не подтвердил отключение.');
@@ -833,8 +828,8 @@ class _ConnectionDashboardState extends ConsumerState<ConnectionDashboard>
       // attempt is in flight: the second case used to be a no-op — the old
       // attempt kept running and the dashboard/route tab disagreed about
       // what was happening. _toggle cancels the in-flight attempt first.
-      if (status?.isConnected == true || status?.isConnecting == true) {
-        await _toggle(status!, chosenChoice);
+      if (_busy || status?.isConnected == true || status?.isConnecting == true) {
+        await _toggle(status ?? VpnStatus(), chosenChoice);
       }
     }
   }
@@ -1454,7 +1449,7 @@ class _AtlasHeroCompassButtonState extends State<_AtlasHeroCompassButton> {
   Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
     final connected = widget.status.isConnected;
-    final connecting = widget.status.isConnecting;
+    final connecting = widget.status.isConnecting || (widget.busy && !connected);
     final active = connected || connecting;
     final tint = connected
         ? c.success
@@ -1464,13 +1459,15 @@ class _AtlasHeroCompassButtonState extends State<_AtlasHeroCompassButton> {
 
     return Semantics(
       button: true,
-      label: connected ? 'Отключить VPN' : 'Подключить VPN',
+      label: (widget.busy || connecting) && !connected
+          ? 'Отменить подключение'
+          : connected ? 'Отключить VPN' : 'Подключить VPN',
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapDown: (_) => setState(() => _pressed = true),
         onTapUp: (_) => setState(() => _pressed = false),
         onTapCancel: () => setState(() => _pressed = false),
-        onTap: widget.busy ? null : widget.onTap,
+        onTap: widget.busy && connected ? null : widget.onTap,
         child: AnimatedScale(
           scale: _pressed ? 0.94 : 1.0,
           duration: const Duration(milliseconds: 140),

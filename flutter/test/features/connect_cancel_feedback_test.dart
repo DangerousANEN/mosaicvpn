@@ -93,19 +93,27 @@ void main() {
     }
 
     // Start the connect, then abort it the way the Cancel button does.
-    final dial = find.byType(GestureDetector).first;
+    final dial = find.descendant(
+      of: find.byWidgetPredicate((widget) => widget is Semantics &&
+          widget.properties.label == 'Подключить VPN'),
+      matching: find.byType(GestureDetector),
+    ).first;
     await tester.tap(dial);
     await tester.pump(const Duration(milliseconds: 50));
     await tester.pump(const Duration(milliseconds: 400));
 
+    expect(api.connectCalls, 1, reason: 'the compass tap must invoke connect');
+    expect(find.byType(SnackBar), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }
 
 /// Connect always aborts, mimicking an aborted candidate attempt.
 class _CancellingApi extends MockDaemonApi {
+  int connectCalls = 0;
   @override
   Future<void> connect(String serverId) async {
+    connectCalls++;
     throw StateError('Connection cancelled.');
   }
 }

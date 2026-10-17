@@ -100,9 +100,18 @@ class AndroidVpnService {
     String singBoxConfig, {
     String? routeTitle,
     Duration timeout = const Duration(seconds: 20),
+    bool Function()? isCancelled,
   }) async {
+    void checkCancelled() {
+      if (isCancelled?.call() ?? false) {
+        throw StateError('Connection cancelled.');
+      }
+    }
+    checkCancelled();
     await validateConfig(singBoxConfig);
+    checkCancelled();
     var state = await start(singBoxConfig, routeTitle: routeTitle);
+    checkCancelled();
     final deadline = DateTime.now().add(timeout);
     while (DateTime.now().isBefore(deadline)) {
       // `verifying` = TUN is up; that is the moment the user considers
@@ -110,7 +119,9 @@ class AndroidVpnService {
       if (state.state == 'verifying') return state;
       if (!state.isBusy) return state;
       await Future<void>.delayed(const Duration(milliseconds: 120));
+      checkCancelled();
       state = await status();
+      checkCancelled();
     }
     if (state.isBusy) {
       return const AndroidVpnRuntimeState(
