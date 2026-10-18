@@ -165,13 +165,14 @@ class LogsNotifier extends StateNotifier<LogsState> {
         }
         if (newEntries.isNotEmpty) {
           _buffer.addAll(newEntries);
-          if (_buffer.length > _maxLogs) {
-            _buffer.removeRange(0, _buffer.length - _maxLogs);
+          if (_buffer.length > LogsState.maxEntries) {
+            final overflow = _buffer.length - LogsState.maxEntries;
+            _buffer.removeRange(0, overflow);
           }
           state = LogsState(
-            entries: List.unmodifiable(_buffer),
-            connected: state.connected,
-            loading: false,
+            entries: UnmodifiableListView(_buffer),
+            autoScroll: state.autoScroll,
+            levelFilter: state.levelFilter,
           );
         }
       }

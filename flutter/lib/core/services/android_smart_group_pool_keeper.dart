@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'android_mosaic_account_service.dart';
+import 'android_vpn_service.dart';
 import 'smart_group_runtime_controller.dart';
 
 /// Background maintenance of the endpoint reachability cache while the app is
