@@ -145,6 +145,7 @@ class LogsNotifier extends StateNotifier<LogsState> {
       final res = await AndroidVpnService.instance.readNativeLogs(afterSeq: _lastAndroidSeq);
       if (res.lines.isNotEmpty) {
         _lastAndroidSeq = res.lastSeq;
+        final newEntries = <LogEntry>[];
         for (final item in res.lines) {
           final line = item.$2.trim();
           if (line.isEmpty) continue;
@@ -156,11 +157,22 @@ class LogsNotifier extends StateNotifier<LogsState> {
                   : upper.contains('DEBUG')
                       ? 'DEBUG'
                       : 'INFO';
-          _addEntry(LogEntry(
+          newEntries.add(LogEntry(
             timestamp: DateTime.now(),
             level: level,
             message: line,
           ));
+        }
+        if (newEntries.isNotEmpty) {
+          _buffer.addAll(newEntries);
+          if (_buffer.length > _maxLogs) {
+            _buffer.removeRange(0, _buffer.length - _maxLogs);
+          }
+          state = LogsState(
+            entries: List.unmodifiable(_buffer),
+            connected: state.connected,
+            loading: false,
+          );
         }
       }
     } catch (_) {}

@@ -244,7 +244,7 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
 
     override fun onRevoke() {
         runtimeError = "VPN permission was revoked"
-        stopRuntime()
+        stopRuntime(preserveError = true)
     }
 
     private fun startOrReloadRuntime(config: String) {
@@ -541,8 +541,13 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
         if (lower.contains("error") || lower.contains("fatal") || lower.contains("panic")) {
             Log.e(TAG, "SINGBOX_ERR: $message")
             try {
-                java.io.File(filesDir, "singbox.log")
-                    .appendText(simpleDateFormat.format(java.util.Date()) + " " + message + "\n")
+                val logFile = java.io.File(filesDir, "singbox.log")
+                if (logFile.exists() && logFile.length() > 1_000_000L) {
+                    val oldLog = java.io.File(filesDir, "singbox.log.1")
+                    if (oldLog.exists()) oldLog.delete()
+                    logFile.renameTo(oldLog)
+                }
+                logFile.appendText(simpleDateFormat.format(java.util.Date()) + " " + message + "\n")
             } catch (_: Exception) {}
         }
     }
@@ -735,10 +740,15 @@ class MosaicVpnService : VpnService(), PlatformInterface, CommandServerHandler {
                 appendNativeLog("underlying network changed; generation=${action.fingerprint.substringAfter(':')}")
             }
             is UnderlyingNetworkPolicy.PolicyAction.Lost -> {
-                setUnderlyingNetworks(emptyArray())
+                // Pass null instead of emptyArray(): passing emptyArray() tells
+                // the Android OS to hard-block all traffic on the VPN TUN until
+                // a new network is explicitly bound. Passing null allows the OS
+                // to gracefully fall back to the system default network as soon
+                // as radio transitions (e.g. Wi-Fi -> Cellular) complete.
+                setUnderlyingNetworks(null)
                 activeNetworkFingerprint = action.fingerprint
                 listener.updateDefaultInterface("", -1, false, false)
-                appendNativeLog("underlying network unavailable")
+                appendNativeLog("underlying network unavailable (fallback to default)")
             }
             UnderlyingNetworkPolicy.PolicyAction.NoChange -> Unit
         }

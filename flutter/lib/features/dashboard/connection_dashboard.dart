@@ -1680,8 +1680,11 @@ class _AtlasRouteSelectorCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = ThemeColors.of(context);
     final connected = status.isConnected;
-    final cleanTitle =
-        selected.title.replaceAll(RegExp(r'\[SG\]\s*'), '').trim();
+    final cleanTitle = selected.title
+        .replaceAll(RegExp(r'\[SG\]\s*'), '')
+        .replaceAll(' (Vision)', '')
+        .replaceAll(RegExp(r'^Напрямую$'), 'Выделенный узел')
+        .trim();
 
     return Semantics(
       button: true,

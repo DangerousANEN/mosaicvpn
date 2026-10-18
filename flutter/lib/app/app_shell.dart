@@ -263,6 +263,7 @@ class _AppShellState extends ConsumerState<AppShell>
   @override
   void dispose() {
     SmartGroupRuntimeController.instance.stop();
+    AndroidSmartGroupPoolKeeper.instance.stop();
     unawaited(LocalRestApi.instance.stop());
     _enrollmentCallbackSubscription?.cancel();
     _desktopEnrollmentCallbackSubscription?.cancel();
@@ -466,6 +467,7 @@ class _AppShellState extends ConsumerState<AppShell>
                state == AppLifecycleState.inactive) {
       // Pause quality monitoring probes to save battery when the app leaves.
       SmartGroupRuntimeController.instance.pause();
+      AndroidSmartGroupPoolKeeper.instance.stop();
     }
   }
 

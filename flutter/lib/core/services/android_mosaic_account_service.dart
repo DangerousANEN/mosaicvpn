@@ -2370,16 +2370,13 @@ class AndroidMosaicAccountService {
           'tag': routeTag,
           'outbounds': tags,
           'url': 'https://www.gstatic.com/generate_204',
-          // 30s re-checks: a urltest group sitting on a dead node otherwise
-          // waits a full 3m before rotating, while the user stares at a failed
-          // connect. Measured on-device: first convergence ~7s, but with the
-          // default 3m interval a node that dies AFTER selection strands the
-          // session for minutes. 30s keeps rotation responsive without
-          // hammering the health-check URL.
-          'interval': '30s',
+          // 120s re-checks: balances fast rotation with radio sleep.
+          // 30s kept the mobile modem continuously awake (12 HTTP/TLS
+          // handshakes/min), draining battery in deep sleep.
+          'interval': '120s',
           'tolerance': 50,
           'idle_timeout': '10m',
-          'interrupt_exist_connections': false,
+          'interrupt_exist_connections': true,
         },
       {'type': 'direct', 'tag': 'direct'},
       if (adBlock) {'type': 'block', 'tag': 'block'},
