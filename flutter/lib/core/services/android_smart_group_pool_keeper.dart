@@ -111,7 +111,10 @@ class AndroidSmartGroupPoolKeeper {
     // tunnel" — not what we want, and it disturbs nothing. Skip instead: the
     // active session's own urltest already health-checks the tunnel path.
     if (SmartGroupRuntimeController.instance.isRunning) return;
-    if (AndroidVpnService.instance.currentState.state == 'connected') return;
+    try {
+      final current = await AndroidVpnService.instance.status();
+      if (current.isConnected) return;
+    } catch (_) {}
     try {
       final sw = Stopwatch()..start();
       final socket = await Socket.connect(host, port,
