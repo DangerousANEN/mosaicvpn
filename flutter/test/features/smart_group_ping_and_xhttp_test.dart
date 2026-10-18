@@ -122,10 +122,10 @@ void main() {
     final urlTestOutbound = (configMinLatency['outbounds'] as List<dynamic>)
         .cast<Map<String, dynamic>>()
         .firstWhere((o) => o['type'] == 'urltest');
-    expect(urlTestOutbound['interval'], '30s');
+    expect(urlTestOutbound['interval'], '120s');
     expect(urlTestOutbound['tolerance'], 50);
     expect(urlTestOutbound['idle_timeout'], '10m');
-    expect(urlTestOutbound['interrupt_exist_connections'], isFalse);
+    expect(urlTestOutbound['interrupt_exist_connections'], isTrue);
   });
 
   test('AndroidMosaicAccountService drops splithttp transport from candidate feeds', () async {
